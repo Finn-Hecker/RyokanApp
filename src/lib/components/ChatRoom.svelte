@@ -13,14 +13,43 @@
   let isGenerating = false;
   let unlisten: UnlistenFn;
 
+  let rawStreamBuffer = "";
+  let isThinkingPhase = false;
   let streamingText = "";
 
-  onMount(async () => {
+onMount(async () => {
     unlisten = await listen<{token: string}>('ai-token', (event) => {
-      streamingText += event.payload.token;
+      const token = event.payload.token;
+      
+      rawStreamBuffer += token;
+
+      if ($apiSettings.isThinkingModel) {
+        processThinkingStream(false);
+      } else {
+        streamingText = rawStreamBuffer;
+      }
+
       if (autoscroll) smoothScroll();
     });
   });
+
+function processThinkingStream(isFinished: boolean) {
+    const thinkEnd = "</think>";
+    
+    if (rawStreamBuffer.includes(thinkEnd)) {
+      isThinkingPhase = false;
+      const parts = rawStreamBuffer.split(thinkEnd);
+      streamingText = parts[parts.length - 1].trimStart();
+    } else {
+      if (isFinished) {
+        isThinkingPhase = false;
+        streamingText = rawStreamBuffer;
+      } else {
+        isThinkingPhase = true;
+        streamingText = ""; 
+      }
+    }
+  }
 
   onDestroy(() => { if (unlisten) unlisten(); });
 
@@ -51,6 +80,8 @@
     inputText = "";
     isGenerating = true;
     streamingText = "";
+    rawStreamBuffer = "";
+    isThinkingPhase = false;
     autoscroll = true;
 
     await addMessage('user', prompt);
@@ -76,14 +107,19 @@
 
     try {
       await invoke("call_ai_api", { payload: { url: $apiSettings.url, messages: apiMessages } });
-      
-      await addMessage('assistant', streamingText);
+      if ($apiSettings.isThinkingModel) {
+          processThinkingStream(true);
+      } else {
+          streamingText = rawStreamBuffer;
+      }
+      await addMessage('assistant', streamingText || rawStreamBuffer);
     } catch (err) {
       console.error(err);
       await addMessage('assistant', "Verbindung unterbrochen.");
     } finally {
       isGenerating = false;
       streamingText = "";
+      rawStreamBuffer = "";
     }
   }
 
@@ -114,13 +150,33 @@
       <ChatMessage {msg} />
     {/each}
 
-    {#if isGenerating && streamingText}
-      <ChatMessage msg={{
-        id: 'streaming',
-        text: streamingText,
-        isUser: false,
-        senderName: $activeCharacter?.name || "AI"
-      }} isLast={true} {isGenerating} />
+    {#if isGenerating}
+      
+      {#if isThinkingPhase}
+        <div class="flex items-start mb-6 animate-fade-in pl-4">
+           <div class="flex flex-col items-start">
+             <span class="text-[10px] text-gray-500 mb-1 uppercase tracking-wide">
+               {$activeCharacter?.name || "AI"}
+             </span>
+             <div class="flex items-center space-x-3 text-gray-500 bg-white/5 px-4 py-2 rounded-xl border border-white/5 shadow-inner">
+                <span class="relative flex h-2.5 w-2.5">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-ryokan-accent opacity-50"></span>
+                  <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-ryokan-accent/80"></span>
+                </span>
+                <span class="text-xs font-medium italic tracking-wide">denkt nach...</span>
+             </div>
+           </div>
+        </div>
+
+      {:else if streamingText}
+        <ChatMessage msg={{
+          id: 'streaming',
+          text: streamingText,
+          isUser: false,
+          senderName: $activeCharacter?.name || "AI"
+        }} isLast={true} {isGenerating} />
+      {/if}
+
     {/if}
   </div>
 
