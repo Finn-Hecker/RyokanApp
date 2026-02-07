@@ -4,25 +4,8 @@
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { tick, onMount, onDestroy } from 'svelte';
   
+  import { currentMessages, addMessage, activeChatId, createNewConversation } from '$lib/stores/chatStore';
   import ChatMessage from './ChatMessage.svelte';
-
-  type Message = {
-    id: string;
-    text: string;
-    isUser: boolean;
-    senderName: string;
-  };
-
-  const uuid = () => crypto.randomUUID();
-
-  let chatHistory: Message[] = [
-    { 
-      id: uuid(), 
-      isUser: false, 
-      senderName: $activeCharacter?.name || "Begleiter", 
-      text: "Schön, dass du hier bist. Worüber möchtest du sprechen?" 
-    }
-  ];
 
   let inputText = "";
   let chatContainer: HTMLDivElement;
@@ -30,27 +13,29 @@
   let isGenerating = false;
   let unlisten: UnlistenFn;
 
+  let streamingText = "";
+
   onMount(async () => {
     unlisten = await listen<{token: string}>('ai-token', (event) => {
-      if (chatHistory.length > 0) {
-        chatHistory[chatHistory.length - 1].text += event.payload.token;
-        chatHistory = chatHistory;
-        if (autoscroll) smoothScroll();
-      }
+      streamingText += event.payload.token;
+      if (autoscroll) smoothScroll();
     });
   });
 
   onDestroy(() => { if (unlisten) unlisten(); });
 
-  let scheduledScroll = false;
-  function smoothScroll() {
-    if (!chatContainer || scheduledScroll) return;
-    scheduledScroll = true;
-    requestAnimationFrame(async () => {
-      await tick();
+  $: displayMessages = $currentMessages.map(m => ({
+    id: m.id?.toString() || Math.random().toString(),
+    text: m.content,
+    isUser: m.role === 'user',
+    senderName: m.role === 'user' ? "Du" : ($activeCharacter?.name || "AI")
+  }));
+
+  async function smoothScroll() {
+    await tick();
+    if (chatContainer) {
       chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
-      scheduledScroll = false;
-    });
+    }
   }
 
   function handleScroll() {
@@ -61,39 +46,44 @@
 
   async function sendMessage() {
     if (!inputText.trim() || isGenerating) return;
+    
     const prompt = inputText;
     inputText = "";
     isGenerating = true;
+    streamingText = "";
     autoscroll = true;
 
-    chatHistory = [
-      ...chatHistory, 
-      { id: uuid(), isUser: true, senderName: "Du", text: prompt }, 
-      { id: uuid(), isUser: false, senderName: $activeCharacter?.name || "AI", text: "" }
-    ];
-    
+    await addMessage('user', prompt);
     smoothScroll();
 
     const apiMessages = [
       {
         role: "system",
-        content: `### Roleplay Instructions:
-You are ${$activeCharacter?.name}. ${$activeCharacter?.desc}.
-Rules: Stay in character. No commentary. German only. Keep it immersive.`
+        content: `You are playing the role of ${$activeCharacter?.name}.
+        ${$activeCharacter?.desc}.
+        
+        CRITICAL RULES:
+        1. Answer ONLY in German.
+        2. You are the character, NOT an AI assistant.
+        3. DO NOT output your internal thought process or instructions.
+        4. START DIRECTLY with the response.`
       },
-      ...chatHistory.slice(0, -1).map(msg => ({ 
-          role: msg.isUser ? "user" : "assistant", 
-          content: msg.text 
+      ...$currentMessages.map(msg => ({ 
+          role: msg.role, 
+          content: msg.content 
       }))
     ];
 
     try {
       await invoke("call_ai_api", { payload: { url: $apiSettings.url, messages: apiMessages } });
+      
+      await addMessage('assistant', streamingText);
     } catch (err) {
       console.error(err);
-      chatHistory[chatHistory.length - 1].text = "Verbindung unterbrochen.";
+      await addMessage('assistant', "Verbindung unterbrochen.");
     } finally {
       isGenerating = false;
+      streamingText = "";
     }
   }
 
@@ -106,7 +96,7 @@ Rules: Stay in character. No commentary. German only. Keep it immersive.`
 
 <div class="flex flex-col h-full font-sans overflow-hidden bg-ryokan-bg relative">
   <div class="flex items-center pt-20 pb-4 px-6 shrink-0 z-10">
-    <button on:click={goBack} class="text-gray-500 hover:text-white mr-4 transition-colors" aria-label="Zurück">
+    <button on:click={goBack} class="text-gray-500 hover:text-white mr-4 transition-colors" aria-label="button">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
     </button>
     <div>
@@ -120,13 +110,18 @@ Rules: Stay in character. No commentary. German only. Keep it immersive.`
     on:scroll={handleScroll}
     class="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 pt-4 scroll-smooth pb-4"
   >
-    {#each chatHistory as msg (msg.id)}
-      <ChatMessage 
-        {msg} 
-        isLast={chatHistory[chatHistory.length - 1] === msg}
-        {isGenerating}
-      />
+    {#each displayMessages as msg (msg.id)}
+      <ChatMessage {msg} />
     {/each}
+
+    {#if isGenerating && streamingText}
+      <ChatMessage msg={{
+        id: 'streaming',
+        text: streamingText,
+        isUser: false,
+        senderName: $activeCharacter?.name || "AI"
+      }} isLast={true} {isGenerating} />
+    {/if}
   </div>
 
   <div class="p-4 sm:p-6 shrink-0">
@@ -142,17 +137,14 @@ Rules: Stay in character. No commentary. German only. Keep it immersive.`
       <button
         on:click={sendMessage}
         disabled={isGenerating}
-        class="shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-ryokan-accent text-ryokan-bg hover:opacity-90 transition-all active:scale-95 disabled:opacity-50 disabled:grayscale"
+        class="shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-ryokan-accent text-ryokan-bg hover:opacity-90 transition-all disabled:opacity-50"
       >
         {#if isGenerating}
           <div class="w-3 h-3 border-2 border-ryokan-bg border-t-transparent rounded-full animate-spin"></div>
         {:else}
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
         {/if}
       </button>
-    </div>
-    <div class="text-center mt-2">
-      <p class="text-[10px] text-gray-700">Ryokan AI kann Fehler machen.</p>
     </div>
   </div>
 </div>

@@ -1,13 +1,9 @@
 <script lang="ts">
   import { marked } from 'marked';
   import DOMPurify from 'dompurify';
+  import type { DisplayMessage } from '$lib/stores/chatStore';
 
-  export let msg: {
-    text: string;
-    isUser: boolean;
-    senderName: string;
-  };
-  
+  export let msg: DisplayMessage;
   export let isGenerating: boolean = false;
   export let isLast: boolean = false;
 
@@ -37,7 +33,7 @@
       </div>
       
       {#if isLast && isGenerating}
-        <span class="animate-pulse text-ryokan-accent inline-block ml-1">▋</span>
+        <span class="animate-pulse text-ryokan-accent inline-block ml-1">|</span>
       {:else if !msg.text}
         <span class="animate-pulse text-ryokan-accent text-xs">schreibt...</span>
       {/if}
