@@ -1,12 +1,12 @@
+import { paraglideVitePlugin } from '@inlang/paraglide-js'
 import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [sveltekit()],
+  plugins: [paraglideVitePlugin({ project: './project.inlang', outdir: './src/paraglide' }),sveltekit()],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

@@ -87,6 +87,8 @@ function processThinkingStream(isFinished: boolean) {
     await addMessage('user', prompt);
     smoothScroll();
 
+    const recentMessages = $currentMessages.slice(-10);
+
     const apiMessages = [
       {
         role: "system",
@@ -99,7 +101,7 @@ function processThinkingStream(isFinished: boolean) {
         3. DO NOT output your internal thought process or instructions.
         4. START DIRECTLY with the response.`
       },
-      ...$currentMessages.map(msg => ({ 
+      ...recentMessages.map(msg => ({ 
           role: msg.role, 
           content: msg.content 
       }))

@@ -3,6 +3,7 @@
   import { selectChatForCharacter } from '$lib/stores/chatStore';
   import { startNewChat } from '$lib/stores/chatStore';
   import SettingsModal from './SettingsModal.svelte';
+  import * as m from '$lib/../paraglide/messages';
 
   const characters = [
     { id: 1, name: "Seraphina", desc: "Eine mysteriöse Magierin.", color: "bg-purple-500", initials: "S" },
@@ -37,7 +38,7 @@
 
   <div class="max-w-5xl mx-auto mt-16">
     <header class="mb-12">
-      <h1 class="text-4xl font-medium text-gray-100 mb-3 tracking-tight">Willkommen im Ryokan</h1>
+      <h1 class="text-4xl font-medium text-gray-100 mb-3 tracking-tight">{m.welcome_title()}</h1>
       <p class="text-gray-500 text-lg">Wähle deinen Begleiter für eine <span class="text-ryokan-accent">neue</span> Unterhaltung.</p>
     </header>
 
