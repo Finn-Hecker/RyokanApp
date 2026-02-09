@@ -7,6 +7,8 @@
   import { currentMessages, addMessage, activeChatId, createNewConversation } from '$lib/stores/chatStore';
   import ChatMessage from './ChatMessage.svelte';
 
+  import * as m from '$lib/paraglide/messages';
+
   let inputText = "";
   let chatContainer: HTMLDivElement;
   let autoscroll = true;
@@ -17,7 +19,7 @@
   let isThinkingPhase = false;
   let streamingText = "";
 
-onMount(async () => {
+  onMount(async () => {
     unlisten = await listen<{token: string}>('ai-token', (event) => {
       const token = event.payload.token;
       
@@ -33,7 +35,7 @@ onMount(async () => {
     });
   });
 
-function processThinkingStream(isFinished: boolean) {
+  function processThinkingStream(isFinished: boolean) {
     const thinkEnd = "</think>";
     
     if (rawStreamBuffer.includes(thinkEnd)) {
@@ -53,11 +55,11 @@ function processThinkingStream(isFinished: boolean) {
 
   onDestroy(() => { if (unlisten) unlisten(); });
 
-  $: displayMessages = $currentMessages.map(m => ({
-    id: m.id?.toString() || Math.random().toString(),
-    text: m.content,
-    isUser: m.role === 'user',
-    senderName: m.role === 'user' ? "Du" : ($activeCharacter?.name || "AI")
+  $: displayMessages = $currentMessages.map(msg => ({
+    id: msg.id?.toString() || Math.random().toString(),
+    text: msg.content,
+    isUser: msg.role === 'user',
+    senderName: msg.role === 'user' ? m.chat_sender_you() : ($activeCharacter?.name || m.chat_sender_ai())
   }));
 
   async function smoothScroll() {
@@ -96,7 +98,7 @@ function processThinkingStream(isFinished: boolean) {
         ${$activeCharacter?.desc}.
         
         CRITICAL RULES:
-        1. Answer ONLY in German.
+        1. Always answer in German.
         2. You are the character, NOT an AI assistant.
         3. DO NOT output your internal thought process or instructions.
         4. START DIRECTLY with the response.`
@@ -117,7 +119,7 @@ function processThinkingStream(isFinished: boolean) {
       await addMessage('assistant', streamingText || rawStreamBuffer);
     } catch (err) {
       console.error(err);
-      await addMessage('assistant', "Verbindung unterbrochen.");
+      await addMessage('assistant', m.chat_error_connection());
     } finally {
       isGenerating = false;
       streamingText = "";
@@ -134,12 +136,12 @@ function processThinkingStream(isFinished: boolean) {
 
 <div class="flex flex-col h-full font-sans overflow-hidden bg-ryokan-bg relative">
   <div class="flex items-center pt-20 pb-4 px-6 shrink-0 z-10">
-    <button on:click={goBack} class="text-gray-500 hover:text-white mr-4 transition-colors" aria-label="button">
+    <button on:click={goBack} class="text-gray-500 hover:text-white mr-4 transition-colors" aria-label="Zurück">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
     </button>
     <div>
       <h2 class="text-lg font-medium text-gray-200">{$activeCharacter?.name}</h2>
-      <p class="text-xs text-ryokan-accent opacity-80">Online</p>
+      <p class="text-xs text-ryokan-accent opacity-80">{m.chat_status_online()}</p>
     </div>
   </div>
 
@@ -158,14 +160,14 @@ function processThinkingStream(isFinished: boolean) {
         <div class="flex items-start mb-6 animate-fade-in pl-4">
            <div class="flex flex-col items-start">
              <span class="text-[10px] text-gray-500 mb-1 uppercase tracking-wide">
-               {$activeCharacter?.name || "AI"}
+               {$activeCharacter?.name || m.chat_sender_ai()}
              </span>
              <div class="flex items-center space-x-3 text-gray-500 bg-white/5 px-4 py-2 rounded-xl border border-white/5 shadow-inner">
                 <span class="relative flex h-2.5 w-2.5">
                   <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-ryokan-accent opacity-50"></span>
                   <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-ryokan-accent/80"></span>
                 </span>
-                <span class="text-xs font-medium italic tracking-wide">denkt nach...</span>
+                <span class="text-xs font-medium italic tracking-wide">{m.chat_thinking()}</span>
              </div>
            </div>
         </div>
@@ -175,7 +177,7 @@ function processThinkingStream(isFinished: boolean) {
           id: 'streaming',
           text: streamingText,
           isUser: false,
-          senderName: $activeCharacter?.name || "AI"
+          senderName: $activeCharacter?.name || m.chat_sender_ai()
         }} isLast={true} {isGenerating} />
       {/if}
 
@@ -187,7 +189,7 @@ function processThinkingStream(isFinished: boolean) {
       <textarea
         bind:value={inputText}
         on:keydown={handleKeydown}
-        placeholder="Antworte..."
+        placeholder={m.chat_placeholder()} 
         rows="1"
         class="bg-transparent flex-1 min-w-0 text-gray-200 px-4 py-3 outline-none placeholder-gray-600 resize-none max-h-32 text-sm"
       ></textarea>

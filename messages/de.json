@@ -1,4 +1,38 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
-  "welcome_title": "Willkommen im Ryokan"
+  "app_name": "Ryokan",
+  "welcome_title": "Willkommen im Ryokan",
+  "lobby_subtitle_pre": "Wähle deinen Begleiter für eine",
+  "lobby_subtitle_highlight": "neue",
+  "lobby_subtitle_post": "Unterhaltung.",
+  "lobby_btn_open_settings": "Einstellungen öffnen",
+
+  "char_seraphina_name": "Seraphina",
+  "char_seraphina_desc": "Eine mysteriöse Magierin mit dunkler Vergangenheit.",
+  
+  "char_barkeeper_name": "Der Barkeeper",
+  "char_barkeeper_desc": "Hört immer zu. Verurteilt nie.",
+
+  "settings_title": "Einstellungen",
+  "settings_language_label": "Sprache",
+  "settings_api_url_label": "API Endpoint",
+  "settings_api_key_label": "API Key (Optional)",
+  "settings_thinking_label": "Thinking Model Unterstützung",
+  "settings_thinking_sub": "Versteckt <think> Tags",
+  "settings_btn_save": "Speichern & Schließen",
+
+  "chat_typing_indicator": "schreibt...",
+
+  "chat_status_online": "Online",
+  "chat_thinking": "denkt nach...",
+  "chat_placeholder": "Antworte...",
+  "chat_error_connection": "Verbindung unterbrochen.",
+  "chat_sender_you": "Du",
+  "chat_sender_ai": "KI",
+
+  "history_title": "Deine Reisen",
+  "history_no_chats": "Noch keine Gespräche.",
+  "history_close_label": "Sidebar schließen",
+
+  "main_menu_label": "Menü öffnen"
 }

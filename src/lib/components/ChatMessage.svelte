@@ -2,6 +2,8 @@
   import { marked } from 'marked';
   import DOMPurify from 'dompurify';
   import type { DisplayMessage } from '$lib/stores/chatStore';
+  
+  import * as m from '$lib/paraglide/messages';
 
   export let msg: DisplayMessage;
   export let isGenerating: boolean = false;
@@ -35,7 +37,7 @@
       {#if isLast && isGenerating}
         <span class="animate-pulse text-ryokan-accent inline-block ml-1">|</span>
       {:else if !msg.text}
-        <span class="animate-pulse text-ryokan-accent text-xs">schreibt...</span>
+        <span class="animate-pulse text-ryokan-accent text-xs">{m.chat_typing_indicator()}</span>
       {/if}
     {/if}
   </div>

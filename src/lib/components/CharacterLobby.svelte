@@ -1,16 +1,27 @@
 <script lang="ts">
   import { currentView, activeCharacter } from '$lib/stores/appState';
-  import { selectChatForCharacter } from '$lib/stores/chatStore';
   import { startNewChat } from '$lib/stores/chatStore';
   import SettingsModal from './SettingsModal.svelte';
-  import * as m from '$lib/../paraglide/messages';
-
-  const characters = [
-    { id: 1, name: "Seraphina", desc: "Eine mysteriöse Magierin.", color: "bg-purple-500", initials: "S" },
-    { id: 3, name: "Der Barkeeper", desc: "Hört dir immer zu.", color: "bg-orange-500", initials: "B" }
-  ];
+  import * as m from '$lib/paraglide/messages';
 
   let showSettings = false;
+
+  $: characters = [
+    { 
+      id: 1,
+      name: m.char_seraphina_name(), 
+      desc: m.char_seraphina_desc(), 
+      color: "bg-purple-500", 
+      initials: "S" 
+    },
+    { 
+      id: 3, 
+      name: m.char_barkeeper_name(), 
+      desc: m.char_barkeeper_desc(), 
+      color: "bg-orange-500", 
+      initials: "B" 
+    }
+  ];
 
   async function onSelectChar(char: any) {
     activeCharacter.set(char);
@@ -24,7 +35,7 @@
   <div class="absolute top-6 right-8">
     <button 
       on:click={() => showSettings = true}
-      aria-label="Charakter auswählen"
+      aria-label={m.lobby_btn_open_settings()}
       class="text-gray-500 hover:text-white transition p-2 bg-white/5 rounded-full hover:bg-white/10"
     >
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -39,7 +50,9 @@
   <div class="max-w-5xl mx-auto mt-16">
     <header class="mb-12">
       <h1 class="text-4xl font-medium text-gray-100 mb-3 tracking-tight">{m.welcome_title()}</h1>
-      <p class="text-gray-500 text-lg">Wähle deinen Begleiter für eine <span class="text-ryokan-accent">neue</span> Unterhaltung.</p>
+      <p class="text-gray-500 text-lg">
+        {m.lobby_subtitle_pre()} <span class="text-ryokan-accent">{m.lobby_subtitle_highlight()}</span> {m.lobby_subtitle_post()}
+      </p>
     </header>
 
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -50,7 +63,7 @@
         >
           <div class="relative z-10 flex items-start gap-5">
              <div class="w-14 h-14 rounded-2xl {char.color} shadow-lg flex items-center justify-center shrink-0 text-white text-xl font-bold">
-               {char.initials || char.name[0]}
+               {char.initials}
              </div>
              <div>
                <h3 class="text-lg font-medium text-gray-200 group-hover:text-ryokan-accent transition-colors">

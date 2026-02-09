@@ -2,7 +2,9 @@
   import { fade, fly } from 'svelte/transition';
   import { conversations, openHistoryChat, loadAllConversations } from '$lib/stores/chatStore';
   import { currentView } from '$lib/stores/appState';
-  import { onMount } from 'svelte';
+  
+  import * as m from '$lib/paraglide/messages';
+  import { getLocale } from '$lib/paraglide/runtime';
 
   export let isOpen: boolean;
   export let close: () => void;
@@ -22,7 +24,7 @@
   <button
     type="button"
     transition:fade={{ duration: 200 }}
-    aria-label="Sidebar schließen"
+    aria-label={m.history_close_label()} 
     on:click={close}
     class="fixed inset-0 w-full h-full bg-black/60 z-40 backdrop-blur-sm cursor-pointer border-none"
   ></button>
@@ -32,13 +34,17 @@
     class="fixed left-0 top-0 bottom-0 w-72 bg-ryokan-surface border-r border-white/5 shadow-2xl z-50 flex flex-col"
   >
     <div class="p-6 border-b border-white/5 flex justify-between items-center">
-      <h2 class="text-lg font-medium text-ryokan-accent">Deine Reisen</h2>
-      <button on:click={close} class="text-gray-500 hover:text-white">✕</button>
+      <h2 class="text-lg font-medium text-ryokan-accent">{m.history_title()}</h2>
+      <button 
+        on:click={close} 
+        aria-label={m.history_close_label()}
+        class="text-gray-500 hover:text-white"
+      >✕</button>
     </div>
 
     <div class="flex-1 overflow-y-auto p-4 space-y-2">
       {#if $conversations.length === 0}
-        <p class="text-gray-600 text-sm text-center mt-10">Noch keine Gespräche.</p>
+        <p class="text-gray-600 text-sm text-center mt-10">{m.history_no_chats()}</p>
       {/if}
 
       {#each $conversations as chat}
@@ -50,7 +56,7 @@
             {chat.title}
           </div>
           <div class="text-gray-600 text-xs mt-1">
-            {new Date(chat.created_at).toLocaleString()}
+            {new Date(chat.created_at).toLocaleString(getLocale())}
           </div>
         </button>
       {/each}

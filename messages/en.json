@@ -1,4 +1,38 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
-  "welcome_title": "Welcome to Ryokan"
+  "app_name": "Ryokan",
+  "welcome_title": "Welcome to Ryokan",
+  "lobby_subtitle_pre": "Choose your companion for a",
+  "lobby_subtitle_highlight": "new",
+  "lobby_subtitle_post": "conversation.",
+  "lobby_btn_open_settings": "Open settings",
+
+  "char_seraphina_name": "Seraphina",
+  "char_seraphina_desc": "A mysterious mage with a dark past.",
+  
+  "char_barkeeper_name": "The Barkeeper",
+  "char_barkeeper_desc": "Always listens. Never judges.",
+
+  "settings_title": "Settings",
+  "settings_language_label": "Language",
+  "settings_api_url_label": "API Endpoint",
+  "settings_api_key_label": "API Key (Optional)",
+  "settings_thinking_label": "Thinking Model Support",
+  "settings_thinking_sub": "Hides <think> tags",
+  "settings_btn_save": "Save & Close",
+
+  "chat_typing_indicator": "is typing...",
+
+  "chat_status_online": "Online",
+  "chat_thinking": "thinking...",
+  "chat_placeholder": "Type a message...",
+  "chat_error_connection": "Connection lost.",
+  "chat_sender_you": "You",
+  "chat_sender_ai": "AI",
+
+  "history_title": "Your Journeys",
+  "history_no_chats": "No conversations yet.",
+  "history_close_label": "Close sidebar",
+
+  "main_menu_label": "Open menu"
 }
