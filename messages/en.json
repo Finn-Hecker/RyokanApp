@@ -34,5 +34,11 @@
   "history_no_chats": "No conversations yet.",
   "history_close_label": "Close sidebar",
 
-  "main_menu_label": "Open menu"
+  "main_menu_label": "Open menu",
+
+  "modal_delete_title": "Delete Chat?",
+  "modal_delete_body": "Are you sure you want to delete this chat permanently?",
+  "modal_btn_cancel": "Cancel",
+  "modal_btn_confirm": "Delete",
+  "history_delete_label": "Delete chat"
 }

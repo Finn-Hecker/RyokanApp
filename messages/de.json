@@ -34,5 +34,11 @@
   "history_no_chats": "Noch keine Gespräche.",
   "history_close_label": "Sidebar schließen",
 
-  "main_menu_label": "Menü öffnen"
+  "main_menu_label": "Menü öffnen",
+
+  "modal_delete_title": "Chat löschen?",
+  "modal_delete_body": "Möchtest du diesen Chat wirklich unwiderruflich löschen?",
+  "modal_btn_cancel": "Abbrechen",
+  "modal_btn_confirm": "Löschen",
+  "history_delete_label": "Chat löschen"
 }

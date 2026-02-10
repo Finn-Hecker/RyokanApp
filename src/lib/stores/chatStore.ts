@@ -136,3 +136,24 @@ export async function createNewConversation(characterName: string) {
     
     return newId;
 }
+
+export async function deleteConversation(id: string) {
+  try {
+    const instance = await initDb(); 
+    
+    await instance.execute("DELETE FROM messages WHERE conversation_id = $1", [id]);
+    
+    await instance.execute("DELETE FROM conversations WHERE id = $1", [id]);
+
+    conversations.update(currentChats => currentChats.filter(chat => chat.id !== id));
+    
+    if (get(activeChatId) === id) {
+        activeChatId.set(null);
+        currentMessages.set([]);
+    }
+    
+    console.log("Chat deleted:", id);
+  } catch (error) {
+    console.error("Error while deleting:", error);
+  }
+}
