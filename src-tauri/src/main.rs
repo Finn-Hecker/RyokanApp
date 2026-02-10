@@ -6,9 +6,10 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Window};
-use tauri_plugin_sql::{Migration, MigrationKind};
 
 static CLIENT: Lazy<reqwest::Client> = Lazy::new(reqwest::Client::new);
+
+mod database;
 
 #[derive(Deserialize)]
 struct StreamChunk {
@@ -93,48 +94,21 @@ async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), String> {
 }
 
 fn main() {
-    let migrations = vec![
-        Migration {
-            version: 1,
-            description: "create conversations and messages tables",
-            sql: "
-                CREATE TABLE conversations (
-                    id TEXT PRIMARY KEY,
-                    title TEXT,
-                    character_id TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-                CREATE TABLE messages (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    conversation_id TEXT,
-                    role TEXT,
-                    content TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (conversation_id) REFERENCES conversations(id)
-                );
-            ",
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 2,
-            description: "create settings table",
-            sql: "
-                CREATE TABLE settings (
-                    key TEXT PRIMARY KEY,
-                    value TEXT
-                );
-            ",
-            kind: MigrationKind::Up,
-        }
-    ];
-
     tauri::Builder::default()
-        .plugin(
-            tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:ryokan.db", migrations)
-                .build(),
-        )
-        .invoke_handler(tauri::generate_handler![call_ai_api])
+        .setup(|app| {
+            database::init_db(app.handle())?;
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            call_ai_api,
+            database::chats::get_conversations,
+            database::chats::create_chat,
+            database::chats::delete_chat,
+            database::messages::get_messages,
+            database::messages::add_message,
+            database::settings::get_all_settings,
+            database::settings::save_setting,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

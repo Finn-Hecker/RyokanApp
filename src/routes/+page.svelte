@@ -1,17 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { currentView } from '$lib/stores/appState';
-  import { initDb, loadConversations } from '$lib/stores/chatStore';
   import CharacterLobby from '$lib/components/CharacterLobby.svelte';
   import ChatRoom from '$lib/components/ChatRoom.svelte';
   import Sidebar from '$lib/components/Sidebar.svelte';
-  
+  import { loadConversations } from '$lib/stores/chatStore';
   import * as m from '$lib/paraglide/messages';
 
   let isMenuOpen = false;
 
   onMount(async () => {
-    await initDb();
     await loadConversations();
   });
 </script>

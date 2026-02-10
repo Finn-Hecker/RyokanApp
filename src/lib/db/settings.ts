@@ -1,32 +1,31 @@
-import Database from "@tauri-apps/plugin-sql";
-
-const DB_PATH = "sqlite:ryokan.db";
+import { invoke } from "@tauri-apps/api/core";
 
 export interface SettingRow {
   key: string;
   value: string;
 }
 
-export async function getSetting(key: string): Promise<string | null> {
-  const db = await Database.load(DB_PATH);
-  const result = await db.select<SettingRow[]>(
-    "SELECT value FROM settings WHERE key = $1", 
-    [key]
-  );
-  return result.length > 0 ? result[0].value : null;
-}
-
 export async function getAllSettings(): Promise<SettingRow[]> {
-  const db = await Database.load(DB_PATH);
-  return await db.select<SettingRow[]>("SELECT key, value FROM settings");
+  try {
+    return await invoke<SettingRow[]>("get_all_settings");
+  } catch (e) {
+    console.error("Failed to load settings:", e);
+    return [];
+  }
 }
 
 export async function saveSetting(key: string, value: string | boolean) {
-  const db = await Database.load(DB_PATH);
-  const stringValue = String(value);
-  
-  await db.execute(
-    "INSERT OR REPLACE INTO settings (key, value) VALUES ($1, $2)",
-    [key, stringValue]
-  );
+  try {
+    const stringValue = String(value);
+    await invoke("save_setting", { key, value: stringValue });
+    console.log(`Saved setting '${key}' = ${stringValue}`);
+  } catch (e) {
+    console.error(`Failed to save setting '${key}':`, e);
+  }
+}
+
+export async function getSetting(key: string): Promise<string | null> {
+  const all = await getAllSettings();
+  const found = all.find(s => s.key === key);
+  return found ? found.value : null;
 }

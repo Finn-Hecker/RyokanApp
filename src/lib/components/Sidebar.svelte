@@ -2,6 +2,7 @@
   import { fade, fly, scale } from 'svelte/transition';
   import { conversations, openHistoryChat, loadAllConversations, deleteConversation } from '$lib/stores/chatStore';
   import { currentView } from '$lib/stores/appState';
+  import { CHARACTERS } from '$lib/data/characters';
   
   import * as m from '$lib/paraglide/messages';
   import { getLocale } from '$lib/paraglide/runtime';
@@ -35,6 +36,11 @@
 
   function cancelDelete() {
     chatToDelete = null;
+  }
+
+  function getCharacterName(id: string | undefined) {
+    if (!id) return "";
+    return CHARACTERS.find(c => c.id.toString() === id)?.name || "";
   }
 </script>
 
@@ -73,11 +79,19 @@
           on:keydown={(e) => e.key === 'Enter' && loadChat(chat.id)}
           class="relative w-full text-left p-3 rounded-lg hover:bg-white/5 group transition-all border border-transparent hover:border-white/5 cursor-pointer"
         >
-          <div class="pr-8"> <div class="text-gray-200 text-sm font-medium group-hover:text-ryokan-accent truncate">
+          <div class="pr-8"> 
+            <div class="text-gray-200 text-sm font-medium group-hover:text-ryokan-accent truncate">
               {chat.title}
             </div>
-            <div class="text-gray-600 text-xs mt-1">
-              {new Date(chat.created_at).toLocaleString(getLocale())}
+            
+            <div class="flex justify-between items-center mt-1">
+              <div class="text-gray-600 text-[10px]">
+                {new Date(chat.created_at).toLocaleString(getLocale())}
+              </div>
+              
+              <div class="text-ryokan-accent/60 text-[10px] font-bold uppercase tracking-widest italic">
+                {getCharacterName(chat.character_id)}
+              </div>
             </div>
           </div>
 

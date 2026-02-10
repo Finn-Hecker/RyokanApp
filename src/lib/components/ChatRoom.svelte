@@ -4,7 +4,7 @@
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { tick, onMount, onDestroy } from 'svelte';
   
-  import { currentMessages, addMessage, activeChatId, createNewConversation } from '$lib/stores/chatStore';
+  import { currentMessages, addMessage } from '$lib/stores/chatStore';
   import ChatMessage from './ChatMessage.svelte';
 
   import * as m from '$lib/paraglide/messages';
