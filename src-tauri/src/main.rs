@@ -114,6 +114,17 @@ fn main() {
                 );
             ",
             kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 2,
+            description: "create settings table",
+            sql: "
+                CREATE TABLE settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                );
+            ",
+            kind: MigrationKind::Up,
         }
     ];
 

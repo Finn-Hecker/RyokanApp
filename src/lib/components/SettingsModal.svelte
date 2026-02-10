@@ -3,9 +3,41 @@
   import { fade, scale } from 'svelte/transition';
   import LanguageSelect from '$lib/components/ui/LanguageSelect.svelte';
   import * as m from '$lib/paraglide/messages';
+  import { getAllSettings, saveSetting } from '$lib/db/settings';
+  import { onMount } from 'svelte';
 
   export let isOpen: boolean;
   export let close: () => void;
+
+  onMount(async () => {
+    try {
+      const settings = await getAllSettings();
+      
+      settings.forEach(row => {
+        if (row.key === "api_url") $apiSettings.url = row.value;
+        if (row.key === "api_key") $apiSettings.apiKey = row.value;
+        if (row.key === "thinking_mode") $apiSettings.isThinkingModel = row.value === "true";
+      });
+      
+    } catch (e) {
+      console.error("Error saving settings:", e);
+    }
+  });
+
+  async function saveAndClose() {
+    try {
+      await Promise.all([
+        saveSetting("api_url", $apiSettings.url),
+        saveSetting("api_key", $apiSettings.apiKey),
+        saveSetting("thinking_mode", $apiSettings.isThinkingModel)
+      ]);
+
+      console.log("Settings saved successfully.");
+      close();
+    } catch (e) {
+      console.error("Error saving settings:", e);
+    }
+  }
 </script>
 
 {#if isOpen}
@@ -50,6 +82,7 @@
             id="api-key"
             type="password" 
             bind:value={$apiSettings.apiKey} 
+            placeholder="sk-or-..."
             class="w-full bg-black/20 border border-white/10 rounded-lg p-3 text-sm text-gray-200 focus:border-ryokan-accent outline-none" 
           />
         </div>
@@ -74,7 +107,7 @@
       <!-- Save Button -->
       <div class="mt-8 flex justify-end">
         <button 
-          on:click={close}
+          on:click={saveAndClose}
           class="bg-ryokan-accent text-ryokan-bg px-4 py-2 rounded-lg font-medium hover:opacity-90 transition" 
         >
           {m.settings_btn_save()}
