@@ -165,7 +165,7 @@
 
       <!-- AI Language Selection -->
       <div class="pt-4 border-t border-white/5">
-          <label for="ai-language-select" class="text-sm text-gray-400 block mb-2">Antwort-Sprache der KI</label>
+          <label for="ai-language-select" class="text-sm text-gray-400 block mb-2">{m.settings_ai_lang_label()}</label>
           <LanguageSelect 
               id="ai-language-select"
               items={aiLanguages}
@@ -180,20 +180,20 @@
                 on:click={() => showAdvanced = !showAdvanced}
                 class="flex items-center text-xs text-ryokan-accent hover:underline focus:outline-none"
             >
-                {showAdvanced ? '▼ Weniger anzeigen' : '▶ Erweiterte Einstellungen (Power User)'}
+                {showAdvanced ? m.settings_advanced_hide() : m.settings_advanced_show()}
             </button>
         </div>
 
         {#if showAdvanced}
             <div transition:slide class="pt-4 space-y-2">
                 <div class="flex justify-between items-center">
-                    <span class="text-sm text-gray-400">System Prompt (World Info)</span>
+                    <span class="text-sm text-gray-400">{m.settings_prompt_label()}</span>
                     <button on:click={resetPrompt} class="text-[10px] text-gray-500 hover:text-white">
-                        Reset to Default
+                        {m.settings_prompt_reset()}
                     </button>
                 </div>
                 <p class="text-[10px] text-gray-500 mb-2">
-                    Platzhalter: <code>{`{{char}}`}</code>, <code>{`{{desc}}`}</code>, <code>{`{{lang}}`}</code>
+                    {m.settings_prompt_placeholders()}: <code>{`{{char}}`}</code>, <code>{`{{desc}}`}</code>, <code>{`{{lang}}`}</code>
                 </p>
                 <textarea 
                     bind:value={$apiSettings.systemPrompt} 

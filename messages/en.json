@@ -20,6 +20,12 @@
   "settings_thinking_label": "Thinking Model Support",
   "settings_thinking_sub": "Hides <think> tags",
   "settings_btn_save": "Save & Close",
+  "settings_ai_lang_label": "AI Response Language",
+  "settings_advanced_show": "▶ Advanced Settings (Power User)",
+  "settings_advanced_hide": "▼ Show less",
+  "settings_prompt_label": "System Prompt (World Info)",
+  "settings_prompt_reset": "Reset to Default",
+  "settings_prompt_placeholders": "Placeholders",
 
   "chat_typing_indicator": "is typing...",
 

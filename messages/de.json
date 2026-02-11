@@ -20,6 +20,12 @@
   "settings_thinking_label": "Thinking Model Unterstützung",
   "settings_thinking_sub": "Versteckt <think> Tags",
   "settings_btn_save": "Speichern & Schließen",
+  "settings_ai_lang_label": "Antwort-Sprache der KI",
+  "settings_advanced_show": "▶ Erweiterte Einstellungen (Power User)",
+  "settings_advanced_hide": "▼ Weniger anzeigen",
+  "settings_prompt_label": "System Prompt (World Info)",
+  "settings_prompt_reset": "Auf Standard zurücksetzen",
+  "settings_prompt_placeholders": "Platzhalter",
 
   "chat_typing_indicator": "schreibt...",
 
