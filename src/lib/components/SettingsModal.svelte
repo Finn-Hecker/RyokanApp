@@ -1,42 +1,96 @@
 <script lang="ts">
-  import { apiSettings } from '$lib/stores/appState';
-  import { fade, scale } from 'svelte/transition';
-  import LanguageSelect from '$lib/components/ui/LanguageSelect.svelte';
-  import * as m from '$lib/paraglide/messages';
-  import { getAllSettings, saveSetting } from '$lib/db/settings';
-  import { onMount } from 'svelte';
+  import { onMount } from "svelte";
+  import { fade, scale, slide } from "svelte/transition";
+
+  import { apiSettings } from "$lib/stores/appState";
+  import { getAllSettings, saveSetting } from "$lib/db/settings";
+  import { getLocale, setLocale } from "$lib/paraglide/runtime";
+
+  import LanguageSelect from "$lib/components/ui/LanguageSelect.svelte";
+  import * as m from "$lib/paraglide/messages";
 
   export let isOpen: boolean;
   export let close: () => void;
 
-  onMount(async () => {
+  let showAdvanced = false;
+
+  const uiLanguages = [
+    { code: "de", label: "Deutsch" },
+    { code: "en", label: "English" }
+  ];
+
+  const aiLanguages = [
+    { code: "German", label: "Deutsch" },
+    { code: "English", label: "English" },
+    { code: "French", label: "Français" },
+    { code: "Japanese", label: "日本語" },
+    { code: "Spanish", label: "Español" }
+  ];
+
+  function handleUiLanguageChange(event: CustomEvent<string>) {
+      setLocale(event.detail as any);
+  }
+  
+  function handleAiLanguageChange(event: CustomEvent<string>) {
+      $apiSettings.aiLanguage = event.detail;
+  }
+
+  const DEFAULT_AI_LANGUAGE = "German";
+
+  const DEFAULT_PROMPT_TEMPLATE = `You are playing the role of {{char}}.
+  {{desc}}.
+
+  CRITICAL RULES:
+  1. Always answer in {{lang}}.
+  2. You are the character, NOT an AI assistant.
+  3. DO NOT output your internal thought process.
+  4. START DIRECTLY with the response.`;
+
+  const SETTINGS_MAP: Record<string, (value: string) => void> = {
+    api_url: (v) => ($apiSettings.url = v),
+    api_key: (v) => ($apiSettings.apiKey = v),
+    thinking_mode: (v) => ($apiSettings.isThinkingModel = v === "true"),
+    ai_language: (v) => ($apiSettings.aiLanguage = v),
+    system_prompt: (v) => ($apiSettings.systemPrompt = v),
+  };
+
+  onMount(loadSettings);
+
+  async function loadSettings() {
     try {
       const settings = await getAllSettings();
-      
-      settings.forEach(row => {
-        if (row.key === "api_url") $apiSettings.url = row.value;
-        if (row.key === "api_key") $apiSettings.apiKey = row.value;
-        if (row.key === "thinking_mode") $apiSettings.isThinkingModel = row.value === "true";
-      });
-      
-    } catch (e) {
-      console.error("Error saving settings:", e);
+
+      for (const row of settings) {
+        SETTINGS_MAP[row.key]?.(row.value);
+      }
+
+      if (!$apiSettings.aiLanguage) {
+        $apiSettings.aiLanguage = DEFAULT_AI_LANGUAGE;
+      }
+    } catch (error) {
+      console.error("[Settings] Failed to load settings:", error);
     }
-  });
+  }
 
   async function saveAndClose() {
     try {
       await Promise.all([
         saveSetting("api_url", $apiSettings.url),
         saveSetting("api_key", $apiSettings.apiKey),
-        saveSetting("thinking_mode", $apiSettings.isThinkingModel)
+        saveSetting("thinking_mode", $apiSettings.isThinkingModel),
+        saveSetting("ai_language", $apiSettings.aiLanguage),
+        saveSetting("system_prompt", $apiSettings.systemPrompt),
       ]);
 
-      console.log("Settings saved successfully.");
+      console.info("[Settings] Saved successfully.");
       close();
-    } catch (e) {
-      console.error("Error saving settings:", e);
+    } catch (error) {
+      console.error("[Settings] Failed to save settings:", error);
     }
+  }
+
+  function resetPrompt() {
+    $apiSettings.systemPrompt = DEFAULT_PROMPT_TEMPLATE;
   }
 </script>
 
@@ -60,8 +114,13 @@
       <div class="space-y-4">
         <!-- Language Select -->
         <div>
-          <label for="language-select" class="text-sm text-gray-400 block mb-2">{m.settings_language_label()}</label>
-          <LanguageSelect />
+          <label for="ui-language-select" class="text-sm text-gray-400 block mb-2">{m.settings_language_label()}</label>
+          <LanguageSelect 
+            id="ui-language-select"
+            items={uiLanguages}
+            selectedCode={getLocale()} 
+            on:select={handleUiLanguageChange}
+          />
         </div>
 
         <!-- API URL -->
@@ -103,6 +162,47 @@
           </label>
         </div>
       </div>
+
+      <!-- AI Language Selection -->
+      <div class="pt-4 border-t border-white/5">
+          <label for="ai-language-select" class="text-sm text-gray-400 block mb-2">Antwort-Sprache der KI</label>
+          <LanguageSelect 
+              id="ai-language-select"
+              items={aiLanguages}
+              selectedCode={$apiSettings.aiLanguage} 
+              on:select={handleAiLanguageChange}
+          />
+        </div>
+
+        <!-- Advanced Settings -->
+        <div class="pt-4 mt-4 border-t border-white/5">
+            <button 
+                on:click={() => showAdvanced = !showAdvanced}
+                class="flex items-center text-xs text-ryokan-accent hover:underline focus:outline-none"
+            >
+                {showAdvanced ? '▼ Weniger anzeigen' : '▶ Erweiterte Einstellungen (Power User)'}
+            </button>
+        </div>
+
+        {#if showAdvanced}
+            <div transition:slide class="pt-4 space-y-2">
+                <div class="flex justify-between items-center">
+                    <span class="text-sm text-gray-400">System Prompt (World Info)</span>
+                    <button on:click={resetPrompt} class="text-[10px] text-gray-500 hover:text-white">
+                        Reset to Default
+                    </button>
+                </div>
+                <p class="text-[10px] text-gray-500 mb-2">
+                    Platzhalter: <code>{`{{char}}`}</code>, <code>{`{{desc}}`}</code>, <code>{`{{lang}}`}</code>
+                </p>
+                <textarea 
+                    bind:value={$apiSettings.systemPrompt} 
+                    rows="8"
+                    placeholder={DEFAULT_PROMPT_TEMPLATE}
+                    class="w-full bg-black/20 border border-white/10 rounded-lg p-3 text-xs font-mono text-gray-300 focus:border-ryokan-accent outline-none resize-y"
+                ></textarea>
+            </div>
+        {/if}
 
       <!-- Save Button -->
       <div class="mt-8 flex justify-end">

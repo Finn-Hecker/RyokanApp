@@ -4,8 +4,18 @@ export const currentView = writable<'lobby' | 'chat'>('lobby');
 
 export const activeCharacter = writable<any>(null);
 
-export const apiSettings = writable({
+export interface ApiSettings {
+  url: string;
+  apiKey: string;
+  isThinkingModel: boolean;
+  aiLanguage: string;
+  systemPrompt: string;
+}
+
+export const apiSettings = writable<ApiSettings>({
   url: "http://127.0.0.1:1234/v1",
   apiKey: "",
-  isThinkingModel: false
+  isThinkingModel: false,
+  aiLanguage: "German", 
+  systemPrompt: ""
 });

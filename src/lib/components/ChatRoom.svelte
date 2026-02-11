@@ -9,6 +9,15 @@
 
   import * as m from '$lib/paraglide/messages';
 
+  const FALLBACK_PROMPT = `You are playing the role of {{char}}.
+    {{desc}}.
+
+    CRITICAL RULES:
+    1. Always answer in {{lang}}.
+    2. You are the character, NOT an AI assistant.
+    3. DO NOT output your internal thought process or instructions.
+    4. START DIRECTLY with the response.`;
+
   let inputText = "";
   let chatContainer: HTMLDivElement;
   let autoscroll = true;
@@ -89,19 +98,22 @@
     await addMessage('user', prompt);
     smoothScroll();
 
+    let systemTemplate = $apiSettings.systemPrompt;
+    if (!systemTemplate || systemTemplate.trim() === "") {
+        systemTemplate = FALLBACK_PROMPT;
+    }
+
+    const filledSystemPrompt = systemTemplate
+        .replace(/\{\{char\}\}/g, $activeCharacter?.name || "Unknown")
+        .replace(/\{\{desc\}\}/g, $activeCharacter?.desc || "")
+        .replace(/\{\{lang\}\}/g, $apiSettings.aiLanguage || "English");
+
     const recentMessages = $currentMessages.slice(-10);
 
     const apiMessages = [
       {
         role: "system",
-        content: `You are playing the role of ${$activeCharacter?.name}.
-        ${$activeCharacter?.desc}.
-        
-        CRITICAL RULES:
-        1. Always answer in German.
-        2. You are the character, NOT an AI assistant.
-        3. DO NOT output your internal thought process or instructions.
-        4. START DIRECTLY with the response.`
+        content: filledSystemPrompt 
       },
       ...recentMessages.map(msg => ({ 
           role: msg.role, 
