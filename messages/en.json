@@ -9,9 +9,11 @@
 
   "char_seraphina_name": "Seraphina",
   "char_seraphina_desc": "A mysterious mage with a dark past.",
+  "char_seraphina_greeting": "Hey! Nice to see you. I'm Seraphina. What's bringing you here? Tell me everything!",
   
   "char_barkeeper_name": "The Barkeeper",
   "char_barkeeper_desc": "Always listens. Never judges.",
+  "char_barkeeper_greeting": "Welcome to my bar. What can I pour for you? Or just want to chat first?",
 
   "settings_title": "Settings",
   "settings_language_label": "Language",
