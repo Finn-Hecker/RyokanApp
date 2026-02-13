@@ -39,7 +39,7 @@ pub fn create_chat(app: AppHandle, character_id: String, character_name: String,
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     let new_id = Uuid::new_v4().to_string();
-    let title = format!("Chat mit {}", character_name);
+    let title = format!("💬 {}", character_name);
 
     tx.execute(
         "INSERT INTO conversations (id, title, character_id) VALUES (?1, ?2, ?3)",

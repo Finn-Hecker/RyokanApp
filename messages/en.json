@@ -6,6 +6,7 @@
   "lobby_subtitle_highlight": "new",
   "lobby_subtitle_post": "conversation.",
   "lobby_btn_open_settings": "Open settings",
+  "lobby_btn_open_create_char": "Create",
 
 "char_yumi_name": "Yumi",
   "char_yumi_desc": "The soul of the Ryokan. Warm-hearted, caring, and always there for you.",
@@ -48,5 +49,17 @@
   "modal_delete_body": "Are you sure you want to delete this chat permanently?",
   "modal_btn_cancel": "Cancel",
   "modal_btn_confirm": "Delete",
-  "history_delete_label": "Delete chat"
+  "history_delete_label": "Delete chat",
+
+  "create_char_title": "New Character",
+  "create_char_close_aria": "Close",
+  "create_char_label_name": "Name",
+  "create_char_placeholder_name": "Enter name",
+  "create_char_label_desc": "Persona",
+  "create_char_placeholder_desc": "Define personality, behavior, and context.",
+  "create_char_label_greeting": "Greeting",
+  "create_char_placeholder_greeting": "First message when chat starts",
+  "create_char_btn_cancel": "Cancel",
+  "create_char_btn_save": "Create",
+  "create_char_btn_saving": "Saving..."
 }

@@ -52,7 +52,7 @@ async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     if !res.status().is_success() {
-        return Err(format!("API Fehler: Status {}", res.status()));
+        return Err(format!("API error: Status {}", res.status()));
     }
 
     let mut stream = res.bytes_stream().eventsource();
@@ -108,6 +108,8 @@ fn main() {
             database::messages::add_message,
             database::settings::get_all_settings,
             database::settings::save_setting,
+            database::characters::get_custom_characters,
+            database::characters::create_character,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

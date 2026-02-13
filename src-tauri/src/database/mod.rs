@@ -5,6 +5,7 @@ use std::fs;
 pub mod chats;
 pub mod messages;
 pub mod settings;
+pub mod characters;
 
 const DB_FILENAME: &str = "ryokan.db";
 
@@ -40,6 +41,15 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT
+        );
+        CREATE TABLE IF NOT EXISTS characters (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            desc TEXT,
+            greeting TEXT,
+            initials TEXT,
+            color TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );"
     ).map_err(|e| e.to_string())?;
     Ok(())

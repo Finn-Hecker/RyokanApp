@@ -1,27 +1,58 @@
 <script lang="ts">
   import { currentView, activeCharacter } from '$lib/stores/appState';
+  import { allCharacters, loadCharacters, createCharacter } from '$lib/stores/characterStore';
+  import CreateCharModal from './CreateCharModal.svelte';
   import { startNewChat } from '$lib/stores/chatStore';
-  import { CHARACTERS } from '$lib/data/characters';
   import SettingsModal from './SettingsModal.svelte';
   import * as m from '$lib/paraglide/messages';
+  import { onMount } from 'svelte';
 
   let showSettings = false;
-  let characters = CHARACTERS;
+  let showCreateModal = false
+
+  onMount(async () => {
+      await loadCharacters();
+  });
 
   async function onSelectChar(char: any) {
     activeCharacter.set(char);
     await startNewChat(char);
     currentView.set('chat');
   }
+
+  function onOpenCreate() {
+    showCreateModal = true;
+  }
+
+async function handleCreateNew(event: CustomEvent) {
+      const newCharData = event.detail;
+      await createCharacter(newCharData);
+      showCreateModal = false;
+  }
 </script>
 
 <div class="h-full overflow-y-auto p-8 pt-10 relative">
   
-  <div class="absolute top-6 right-8">
+<div class="absolute top-6 right-8 flex items-center gap-3">
+    
+    <button 
+      on:click={onOpenCreate}
+      class="group flex items-center justify-center gap-2 h-10 w-10 md:w-32 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-ryokan-accent/30 text-gray-400 hover:text-white transition-all rounded-full active:scale-95"
+    >
+      <svg class="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+      
+      <span class="text-sm font-medium tracking-wide truncate max-w-[70px] hidden md:block">
+        {m.lobby_btn_open_create_char()}
+      </span> 
+    </button>
+
     <button 
       on:click={() => showSettings = true}
       aria-label={m.lobby_btn_open_settings()}
-      class="text-gray-500 hover:text-white transition p-2 bg-white/5 rounded-full hover:bg-white/10"
+      class="w-10 h-10 flex items-center justify-center text-gray-500 hover:text-white transition bg-white/5 rounded-full hover:bg-white/10 active:scale-95"
     >
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="3"></circle>
@@ -32,6 +63,8 @@
 
   <SettingsModal isOpen={showSettings} close={() => showSettings = false} />
 
+  <CreateCharModal isOpen={showCreateModal} close={() => showCreateModal = false} on:create={handleCreateNew} />
+
   <div class="max-w-5xl mx-auto mt-16">
     <header class="mb-12">
       <h1 class="text-4xl font-medium text-gray-100 mb-3 tracking-tight">{m.welcome_title()}</h1>
@@ -40,25 +73,27 @@
       </p>
     </header>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {#each characters as char}
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {#each $allCharacters as char}
         <button 
           on:click={() => onSelectChar(char)}
-          class="group relative bg-ryokan-surface rounded-2xl p-6 text-left transition-all duration-300 border border-white/5 hover:border-ryokan-accent/30 hover:shadow-2xl hover:-translate-y-1 overflow-hidden"
+          class="group w-full bg-ryokan-surface hover:bg-white/5 border border-white/5 hover:border-ryokan-accent/30 rounded-2xl p-4 transition-all duration-200 active:scale-[0.98] text-left"
         >
-          <div class="relative z-10 flex items-start gap-5">
-             <div class="w-14 h-14 rounded-2xl {char.color} shadow-lg flex items-center justify-center shrink-0 text-white text-xl font-bold">
+          <div class="flex items-center gap-4">
+             <div class="w-12 h-12 rounded-xl {char.color} shadow-lg flex items-center justify-center shrink-0 text-white font-bold text-lg group-hover:scale-105 transition-transform">
                {char.initials}
              </div>
-             <div>
-               <h3 class="text-lg font-medium text-gray-200 group-hover:text-ryokan-accent transition-colors">
+
+             <div class="flex-1 min-w-0">
+               <h3 class="text-base font-semibold text-gray-200 truncate group-hover:text-ryokan-accent transition-colors">
                  {char.name}
                </h3>
-               <p class="text-sm text-gray-500 mt-1 leading-relaxed">
+               
+               <p class="text-sm text-gray-500 mt-0.5 line-clamp-2 leading-snug">
                  {char.desc}
                </p>
              </div>
-           </div>
+          </div>
         </button>
       {/each}
     </div>
