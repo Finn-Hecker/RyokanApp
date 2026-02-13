@@ -40,11 +40,12 @@ export async function startNewChat(character: any) {
     try {
         const newId = await invoke<string>('create_chat', {
             characterId: character.id.toString(),
-            characterName: character.name
+            characterName: character.name,
+            initialMessage: character.greeting
         });
         await loadAllConversations();
         activeChatId.set(newId);
-        currentMessages.set([]);
+        await loadMessages(newId);
     } catch (e) { console.error(e); }
 }
 

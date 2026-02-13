@@ -30,7 +30,7 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id TEXT PRIMARY KEY,
             conversation_id TEXT,
             role TEXT,
             content TEXT,

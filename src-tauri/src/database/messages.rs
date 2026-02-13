@@ -1,11 +1,12 @@
 use tauri::AppHandle;
 use rusqlite::{params};
 use serde::Serialize;
+use uuid::Uuid;
 use crate::database::get_connection;
 
 #[derive(Serialize)]
 pub struct DbMessage {
-    pub id: i64,
+    pub id: String,
     pub conversation_id: String,
     pub role: String,
     pub content: String,
@@ -34,10 +35,12 @@ pub fn get_messages(app: AppHandle, chat_id: String) -> Result<Vec<DbMessage>, S
 #[tauri::command]
 pub fn add_message(app: AppHandle, chat_id: String, role: String, content: String) -> Result<(), String> {
     let conn = crate::database::get_connection(&app)?;
+
+    let msg_id = Uuid::new_v4().to_string();
     
     conn.execute(
-        "INSERT INTO messages (conversation_id, role, content) VALUES (?1, ?2, ?3)",
-        rusqlite::params![chat_id, role, content],
+        "INSERT INTO messages (id, conversation_id, role, content) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![msg_id, chat_id, role, content],
     ).map_err(|e| e.to_string())?;
 
     if role == "user" {

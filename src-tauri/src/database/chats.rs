@@ -33,15 +33,26 @@ pub fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
 }
 
 #[tauri::command]
-pub fn create_chat(app: AppHandle, character_id: String, character_name: String) -> Result<String, String> {
-    let conn = get_connection(&app)?;
+pub fn create_chat(app: AppHandle, character_id: String, character_name: String, initial_message: String) -> Result<String, String> {
+    let mut conn = get_connection(&app)?;
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
     let new_id = Uuid::new_v4().to_string();
     let title = format!("Chat mit {}", character_name);
-    
-    conn.execute(
+
+    tx.execute(
         "INSERT INTO conversations (id, title, character_id) VALUES (?1, ?2, ?3)",
         params![new_id, title, character_id],
     ).map_err(|e| e.to_string())?;
+    
+    let msg_id = Uuid::new_v4().to_string();
+    tx.execute(
+        "INSERT INTO messages (id, conversation_id, role, content) VALUES (?1, ?2, ?3, ?4)",
+        params![msg_id, new_id, "assistant", initial_message],
+    ).map_err(|e| e.to_string())?;
+    
+    tx.commit().map_err(|e| e.to_string())?;
     
     Ok(new_id)
 }

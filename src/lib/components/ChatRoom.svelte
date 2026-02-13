@@ -4,7 +4,7 @@
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { tick, onMount, onDestroy } from 'svelte';
   
-  import { currentMessages, addMessage } from '$lib/stores/chatStore';
+  import { currentMessages, addMessage, loadMessages, activeChatId } from '$lib/stores/chatStore';
   import ChatMessage from './ChatMessage.svelte';
 
   import * as m from '$lib/paraglide/messages';
@@ -27,8 +27,14 @@
   let rawStreamBuffer = "";
   let isThinkingPhase = false;
   let streamingText = "";
+  
+  let lastMsgCount = 0;
+  let lastFirstMsgId = "";
 
   onMount(async () => {
+    if ($activeChatId) {
+      await loadMessages($activeChatId);
+    }
     unlisten = await listen<{token: string}>('ai-token', (event) => {
       const token = event.payload.token;
       
@@ -40,7 +46,7 @@
         streamingText = rawStreamBuffer;
       }
 
-      if (autoscroll) smoothScroll();
+      if (autoscroll) scrollToBottom();
     });
   });
 
@@ -71,11 +77,40 @@
     senderName: msg.role === 'user' ? m.chat_sender_you() : ($activeCharacter?.name || m.chat_sender_ai())
   }));
 
-  async function smoothScroll() {
+  $: if (displayMessages && chatContainer) {
+      handleAutoScroll();
+  }
+
+  async function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
     await tick();
     if (chatContainer) {
-      chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
+      chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior });
     }
+  }
+
+  async function handleAutoScroll() {
+      await tick();
+      if (!chatContainer) return;
+
+      const count = displayMessages.length;
+      
+      if (count === 0) {
+        lastFirstMsgId = "";
+        lastMsgCount = 0;
+        return;
+      }
+
+      const currentFirstId = displayMessages[0].id;
+
+      if (currentFirstId !== lastFirstMsgId) {
+          scrollToBottom('auto');
+      } 
+      else if (count > lastMsgCount && autoscroll) {
+          scrollToBottom('smooth');
+      }
+
+      lastMsgCount = count;
+      lastFirstMsgId = currentFirstId;
   }
 
   function handleScroll() {
@@ -96,7 +131,7 @@
     autoscroll = true;
 
     await addMessage('user', prompt);
-    smoothScroll();
+    scrollToBottom();
 
     let systemTemplate = $apiSettings.systemPrompt;
     if (!systemTemplate || systemTemplate.trim() === "") {
@@ -160,7 +195,7 @@
   <div 
     bind:this={chatContainer}
     on:scroll={handleScroll}
-    class="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 pt-4 scroll-smooth pb-4"
+    class="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 pt-4 pb-4"
   >
     {#each displayMessages as msg (msg.id)}
       <ChatMessage {msg} />
