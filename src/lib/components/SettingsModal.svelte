@@ -21,10 +21,7 @@
 
   const aiLanguages = [
     { code: "German", label: "Deutsch" },
-    { code: "English", label: "English" },
-    { code: "French", label: "Français" },
-    { code: "Japanese", label: "日本語" },
-    { code: "Spanish", label: "Español" }
+    { code: "English", label: "English" }
   ];
 
   function handleUiLanguageChange(event: CustomEvent<string>) {
