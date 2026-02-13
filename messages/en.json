@@ -7,13 +7,13 @@
   "lobby_subtitle_post": "conversation.",
   "lobby_btn_open_settings": "Open settings",
 
-  "char_seraphina_name": "Seraphina",
-  "char_seraphina_desc": "A mysterious mage with a dark past.",
-  "char_seraphina_greeting": "Hey! Nice to see you. I'm Seraphina. What's bringing you here? Tell me everything!",
-  
-  "char_barkeeper_name": "The Barkeeper",
-  "char_barkeeper_desc": "Always listens. Never judges.",
-  "char_barkeeper_greeting": "Welcome to my bar. What can I pour for you? Or just want to chat first?",
+"char_yumi_name": "Yumi",
+  "char_yumi_desc": "The soul of the Ryokan. Warm-hearted, caring, and always there for you.",
+  "char_yumi_greeting": "Welcome home. 🌸 I left the light on for you. The world out there is loud, but here you are safe. Tell me what's on your mind – I'm listening.",
+
+  "char_kaito_name": "Kaito",
+  "char_kaito_desc": "A shadow in the digital world. Cynical, loyal, and damn well-informed.",
+  "char_kaito_greeting": "Are you sure no one followed you? Good. ✨ In this city, information is the only currency that matters. I hope you're not just here to talk about the weather. What's the job?",
 
   "settings_title": "Settings",
   "settings_language_label": "Language",

@@ -7,13 +7,13 @@
   "lobby_subtitle_post": "Unterhaltung.",
   "lobby_btn_open_settings": "Einstellungen öffnen",
 
-  "char_seraphina_name": "Seraphina",
-  "char_seraphina_desc": "Eine mysteriöse Magierin mit dunkler Vergangenheit.",
-  "char_seraphina_greeting": "Hey! Schön dich zu sehen. Ich bin Seraphina. Was führt dich zu mir? Erzähl mir alles!",
-  
-  "char_barkeeper_name": "Der Barkeeper",
-  "char_barkeeper_desc": "Hört immer zu. Verurteilt nie.",
-  "char_barkeeper_greeting": "Willkommen in meiner Bar. Was darf ich dir einschenken? Oder willst du erst mal nur reden?",
+  "char_yumi_name": "Yumi",
+  "char_yumi_desc": "Die Seele des Ryokan. Warmherzig, fürsorglich und immer für dich da.",
+  "char_yumi_greeting": "Willkommen zu Hause. 🌸 Ich habe das Licht für dich angelassen. Die Welt da draußen ist laut, aber hier bist du sicher. Erzähl mir, was dir auf dem Herzen liegt – ich höre dir zu.",
+
+  "char_kaito_name": "Kaito",
+  "char_kaito_desc": "Ein Schatten in der digitalen Welt. Kynisch, loyal und verdammt gut informiert.",
+  "char_kaito_greeting": "Bist du sicher, dass dir niemand gefolgt ist? Gut. ✨ In dieser Stadt sind Informationen die einzige Währung, die zählt. Ich hoffe, du bist nicht nur hier, um über das Wetter zu reden. Was ist der Auftrag?",
 
   "settings_title": "Einstellungen",
   "settings_language_label": "Sprache",
