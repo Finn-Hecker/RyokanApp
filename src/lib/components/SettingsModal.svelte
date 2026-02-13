@@ -32,7 +32,7 @@
       $apiSettings.aiLanguage = event.detail;
   }
 
-  const DEFAULT_AI_LANGUAGE = "German";
+  const DEFAULT_AI_LANGUAGE = "English";
 
   const DEFAULT_PROMPT_TEMPLATE = `You are playing the role of {{char}}.
   {{desc}}.
