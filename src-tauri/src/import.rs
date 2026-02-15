@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::command;
 
+/// Extracted metadata from AI character cards, mapping to community formats (e.g., V2/V3).
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct CharacterMetadata {
     pub name: Option<String>,
@@ -17,6 +18,7 @@ pub struct CharacterMetadata {
     pub v3_spec: bool,
 }
 
+// Manually parses PNG chunks to avoid heavy image dependencies and ensure zero-lag extraction.
 fn extract_text_chunks_from_png(data: &[u8]) -> Vec<String> {
     let mut texts = Vec::new();
     
@@ -30,6 +32,7 @@ fn extract_text_chunks_from_png(data: &[u8]) -> Vec<String> {
         let chunk_type = &data[i+4..i+8];
         i += 8; 
         
+        // tEXt and iTXt chunks contain the actual JSON payloads in character cards.
         if chunk_type == b"tEXt" || chunk_type == b"iTXt" {
             if i + length <= data.len() {
                 let chunk_data = &data[i..i+length];
@@ -43,23 +46,24 @@ fn extract_text_chunks_from_png(data: &[u8]) -> Vec<String> {
     texts
 }
 
+/// Scans a raw PNG byte stream for hidden JSON metadata and maps it to the internal struct.
 #[command]
 pub async fn parse_character_card(image_data: Vec<u8>) -> Result<CharacterMetadata, String> {
-    
     let text_chunks = extract_text_chunks_from_png(&image_data);
 
     if text_chunks.is_empty() {
         return Err("No text data found in the PNG.".to_string());
     }
 
+    // Keywords used by V2/V3 character card standards to prefix the payload.
     let keywords = ["chara\0", "chara", "ccv3\0", "ccv3", "character", "data", "json", "persona"];
 
     for text in text_chunks {
         for keyword in keywords.iter() {
             if text.to_lowercase().starts_with(keyword) {
-                
                 let raw_data = text[keyword.len()..].trim_matches('\0');
 
+                // Older cards encode the JSON in Base64 within the text chunk.
                 let json_str = if let Ok(decoded) = general_purpose::STANDARD.decode(raw_data) {
                      String::from_utf8_lossy(&decoded).to_string()
                 } else {
@@ -78,10 +82,12 @@ pub async fn parse_character_card(image_data: Vec<u8>) -> Result<CharacterMetada
     Err("Data found, but format not recognized.".to_string())
 }
 
+// Maps JSON fields to CharacterMetadata, handling legacy and nested formats.
 fn map_json_to_metadata(json: &Value) -> Option<CharacterMetadata> {
     let mut meta = CharacterMetadata::default();
     let mut found_any = false;
 
+    // V2 cards often wrap the actual metadata inside a "data" object.
     let root = if let Some(data_obj) = json.get("data") {
         if data_obj.is_object() { data_obj } else { json }
     } else {
@@ -97,6 +103,7 @@ fn map_json_to_metadata(json: &Value) -> Option<CharacterMetadata> {
     if let Some(pers) = get_str("personality") { meta.personality = Some(pers); }
     if let Some(scen) = get_str("scenario") { meta.scenario = Some(scen); }
     
+    // Fallbacks for older formats that use different keys for the greeting.
     meta.first_mes = get_str("first_mes")
         .or_else(|| get_str("first_message"))
         .or_else(|| get_str("greeting"));
@@ -125,6 +132,7 @@ fn map_json_to_metadata(json: &Value) -> Option<CharacterMetadata> {
         meta.v3_spec = true;
     }
 
+    // Some creators put the system prompt entirely into the personality field.
     if meta.description.is_none() && meta.personality.is_some() {
         meta.description = meta.personality.clone();
     }

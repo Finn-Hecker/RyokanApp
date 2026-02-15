@@ -7,6 +7,8 @@ use base64::{engine::general_purpose, Engine as _};
 use image::imageops::FilterType;
 use webp::{Encoder, WebPMemory};
 
+/// Database representation of a character. 
+/// Avatar is stored as a raw WebP BLOB to minimize database footprint and RAM overhead.
 #[derive(Serialize)]
 pub struct DbCharacter {
     pub id: String,
@@ -25,6 +27,8 @@ pub struct DbCharacter {
     pub avatar: Option<Vec<u8>>,
 }
 
+/// Incoming payload from the frontend. 
+/// Arrays are received natively from Svelte and converted to JSON strings before SQLite insertion.
 #[derive(Deserialize)]
 pub struct CreateCharacterPayload {
     pub name: String,
@@ -42,6 +46,8 @@ pub struct CreateCharacterPayload {
     pub avatar: Option<String>,
 }
 
+// Converts a Base64 string from the frontend into a highly compressed WebP binary.
+// Caps dimensions at 2048x2048 to prevent OOM errors on mobile devices and reduce DB bloat.
 fn process_avatar(base64_img: &str) -> Result<Vec<u8>, String> {
     let clean_base64 = base64_img.split(',').last().unwrap_or(base64_img);
     let img_bytes = general_purpose::STANDARD.decode(clean_base64)
@@ -62,11 +68,14 @@ fn process_avatar(base64_img: &str) -> Result<Vec<u8>, String> {
         img.height()
     );
     
+    // 92.0 quality is the sweet spot between visual fidelity and aggressive file size reduction.
     let webp: WebPMemory = encoder.encode(92.0);
     
     Ok(webp.to_vec())
 }
 
+/// Retrieves all saved characters. 
+/// Yields avatars as raw bytes, allowing the frontend to stream them efficiently into Blob URLs.
 #[tauri::command]
 pub fn get_custom_characters(app: AppHandle) -> Result<Vec<DbCharacter>, String> {
     let conn = get_connection(&app)?;
@@ -100,6 +109,8 @@ pub fn get_custom_characters(app: AppHandle) -> Result<Vec<DbCharacter>, String>
     Ok(list)
 }
 
+/// Inserts a new character into the database.
+/// The image processing is offloaded to a background thread to prevent blocking the UI.
 #[tauri::command]
 pub fn create_character(app: AppHandle, payload: CreateCharacterPayload) -> Result<String, String> {
     let conn = get_connection(&app)?;
@@ -110,6 +121,7 @@ pub fn create_character(app: AppHandle, payload: CreateCharacterPayload) -> Resu
     let tags_json = serde_json::to_string(&payload.tags)
         .unwrap_or_else(|_| "[]".to_string());
 
+    // Insert the text metadata immediately so the UI can navigate back instantly.
     conn.execute(
         "INSERT INTO characters (id, name, desc, personality, scenario, greeting, alternate_greetings, mes_example, creator_notes, tags, v3_spec, initials, color, avatar) 
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, NULL)",
@@ -120,6 +132,7 @@ pub fn create_character(app: AppHandle, payload: CreateCharacterPayload) -> Resu
         ],
     ).map_err(|e| e.to_string())?;
 
+    // Process and update the avatar asynchronously in the background.
     if let Some(avatar_b64) = payload.avatar {
         if !avatar_b64.is_empty() {
             let app_clone = app.clone();

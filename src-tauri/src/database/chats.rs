@@ -4,6 +4,7 @@ use uuid::Uuid;
 use serde::Serialize;
 use crate::database::get_connection;
 
+/// Represents a chat session with an AI character in the database.
 #[derive(Serialize)]
 pub struct Conversation {
     pub id: String,
@@ -12,6 +13,7 @@ pub struct Conversation {
     pub created_at: String,
 }
 
+/// Retrieves all chat sessions, ordered by the most recently created.
 #[tauri::command]
 pub fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
     let conn = get_connection(&app)?;
@@ -32,6 +34,8 @@ pub fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
     Ok(list)
 }
 
+/// Initializes a new chat session and automatically inserts the character's opening message.
+/// Uses an SQLite transaction to guarantee that either both records are created, or neither is.
 #[tauri::command]
 pub fn create_chat(app: AppHandle, character_id: String, character_name: String, initial_message: String) -> Result<String, String> {
     let mut conn = get_connection(&app)?;
@@ -57,11 +61,14 @@ pub fn create_chat(app: AppHandle, character_id: String, character_name: String,
     Ok(new_id)
 }
 
+/// Deletes a conversation and all its associated messages.
+/// Wrapped in a transaction to enforce referential integrity and prevent orphaned messages.
 #[tauri::command]
 pub fn delete_chat(app: AppHandle, id: String) -> Result<(), String> {
     let mut conn = get_connection(&app)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     
+    // Explicitly delete messages first to avoid foreign key constraint violations
     tx.execute("DELETE FROM messages WHERE conversation_id = ?1", params![id]).map_err(|e| e.to_string())?;
     tx.execute("DELETE FROM conversations WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
     

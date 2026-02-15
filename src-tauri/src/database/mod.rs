@@ -9,6 +9,9 @@ pub mod characters;
 
 const DB_FILENAME: &str = "ryokan.db";
 
+/// Establishes a connection to the local SQLite database.
+/// Resolves the correct OS-specific application data directory via Tauri
+/// to ensure the database persists safely and avoids file permission issues.
 pub fn get_connection(app: &AppHandle) -> Result<Connection, String> {
     let app_dir = app.path().app_local_data_dir()
         .map_err(|e| e.to_string())?;
@@ -21,8 +24,11 @@ pub fn get_connection(app: &AppHandle) -> Result<Connection, String> {
     Connection::open(db_path).map_err(|e| e.to_string())
 }
 
+/// Initializes the database schema on app startup.
 pub fn init_db(app: &AppHandle) -> Result<(), String> {
     let conn = get_connection(app)?;
+
+    // Execute the entire schema creation in a single batch for performance.
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS conversations (
             id TEXT PRIMARY KEY,

@@ -7,11 +7,14 @@ use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Window};
 
+// Reusing a single HTTP client across the entire app lifecycle prevents connection 
+// exhaustion and takes advantage of internal connection pooling.
 static CLIENT: Lazy<reqwest::Client> = Lazy::new(reqwest::Client::new);
 
 mod database;
 mod import;
 
+/// OpenAI-compatible SSE (Server-Sent Events) streaming structs.
 #[derive(Deserialize)]
 struct StreamChunk {
     choices: Vec<Choice>,
@@ -27,17 +30,22 @@ struct Delta {
     content: Option<String>,
 }
 
+/// Payload received from the frontend to initiate an AI generation request.
 #[derive(Deserialize)]
 struct AiRequest {
     url: String,
     messages: Vec<serde_json::Value>,
 }
 
+/// Payload emitted back to the frontend containing the generated text.
 #[derive(Serialize, Clone)]
 struct TokenPayload {
     token: String,
 }
 
+/// Streams completions from an OpenAI-compatible API endpoint.
+/// Batches incoming tokens before emitting them to the frontend to prevent 
+/// overwhelming the Tauri IPC bridge and freezing the Svelte UI.
 #[tauri::command]
 async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), String> {
     let res = CLIENT
@@ -60,6 +68,9 @@ async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), String> {
     
     let mut token_batch = String::new();
     let mut last_emit = Instant::now();
+
+    // 25ms batching provides a smooth visual typing effect while drastically 
+    // reducing the number of expensive IPC calls to the WebView.
     let batch_delay = Duration::from_millis(25);
 
     while let Some(event_result) = stream.next().await {
@@ -80,6 +91,7 @@ async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), String> {
             }
         }
 
+        // Emit the batch only if enough time has passed
         if !token_batch.is_empty() && last_emit.elapsed() > batch_delay {
             let batch = std::mem::take(&mut token_batch);
             window.emit("ai-token", TokenPayload { token: batch }).map_err(|e| e.to_string())?;
@@ -87,6 +99,7 @@ async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), String> {
         }
     }
 
+    // Flush any remaining tokens after the stream finishes
     if !token_batch.is_empty() {
         window.emit("ai-token", TokenPayload { token: token_batch }).map_err(|e| e.to_string())?;
     }

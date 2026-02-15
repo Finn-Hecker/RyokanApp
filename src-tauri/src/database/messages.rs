@@ -4,6 +4,7 @@ use serde::Serialize;
 use uuid::Uuid;
 use crate::database::get_connection;
 
+/// Database representation of a single chat message within a conversation.
 #[derive(Serialize)]
 pub struct DbMessage {
     pub id: String,
@@ -12,6 +13,7 @@ pub struct DbMessage {
     pub content: String,
 }
 
+/// Retrieves the full, chronological message history for a specific conversation.
 #[tauri::command]
 pub fn get_messages(app: AppHandle, chat_id: String) -> Result<Vec<DbMessage>, String> {
     let conn = get_connection(&app)?;
@@ -32,6 +34,8 @@ pub fn get_messages(app: AppHandle, chat_id: String) -> Result<Vec<DbMessage>, S
     Ok(list)
 }
 
+/// Appends a new message to the chat log. 
+/// Automatically updates the conversation title based on the user's first input.
 #[tauri::command]
 pub fn add_message(app: AppHandle, chat_id: String, role: String, content: String) -> Result<(), String> {
     let conn = crate::database::get_connection(&app)?;
@@ -43,6 +47,8 @@ pub fn add_message(app: AppHandle, chat_id: String, role: String, content: Strin
         rusqlite::params![msg_id, chat_id, role, content],
     ).map_err(|e| e.to_string())?;
 
+    // Auto-titling logic: If this is the user's very first message in the chat, 
+    // we use a truncated snippet of it to replace the default placeholder title.
     if role == "user" {
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM messages WHERE conversation_id = ?1 AND role = 'user'",
