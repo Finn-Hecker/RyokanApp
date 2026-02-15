@@ -1,59 +1,145 @@
 use tauri::AppHandle;
 use rusqlite::params;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use crate::database::get_connection;
+use base64::{engine::general_purpose, Engine as _};
+use image::imageops::FilterType;
+use webp::{Encoder, WebPMemory};
 
 #[derive(Serialize)]
 pub struct DbCharacter {
     pub id: String,
     pub name: String,
     pub desc: String,
+    pub personality: String,
+    pub scenario: String,
     pub greeting: String,
+    pub alternate_greetings: String,
+    pub mes_example: String,
+    pub creator_notes: String, 
+    pub tags: String,
+    pub v3_spec: bool,
     pub initials: String,
     pub color: String,
+    pub avatar: Option<Vec<u8>>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateCharacterPayload {
+    pub name: String,
+    pub desc: String,
+    pub personality: String,
+    pub scenario: String,
+    pub greeting: String,
+    pub alternate_greetings: Vec<String>,
+    pub mes_example: String,
+    pub creator_notes: String,
+    pub tags: Vec<String>,
+    pub v3_spec: bool,
+    pub initials: String,
+    pub color: String,
+    pub avatar: Option<String>,
+}
+
+fn process_avatar(base64_img: &str) -> Result<Vec<u8>, String> {
+    let clean_base64 = base64_img.split(',').last().unwrap_or(base64_img);
+    let img_bytes = general_purpose::STANDARD.decode(clean_base64)
+        .map_err(|e| format!("Base64 error: {}", e))?;
+    
+    let mut img = image::load_from_memory(&img_bytes)
+        .map_err(|e| format!("Image loading error: {}", e))?;
+    
+    if img.width() > 2048 || img.height() > 2048 {
+        img = img.resize(2048, 2048, FilterType::Lanczos3);
+    }
+    
+    let rgba = img.to_rgba8();
+    
+    let encoder = Encoder::from_rgba(
+        rgba.as_raw(),
+        img.width(),
+        img.height()
+    );
+    
+    let webp: WebPMemory = encoder.encode(92.0);
+    
+    Ok(webp.to_vec())
 }
 
 #[tauri::command]
 pub fn get_custom_characters(app: AppHandle) -> Result<Vec<DbCharacter>, String> {
     let conn = get_connection(&app)?;
-    let mut stmt = conn.prepare("SELECT id, name, desc, greeting, initials, color FROM characters ORDER BY created_at DESC")
+    
+    let mut stmt = conn.prepare("SELECT id, name, desc, personality, scenario, greeting, alternate_greetings, mes_example, creator_notes, tags, v3_spec, initials, color, avatar FROM characters ORDER BY created_at DESC")
         .map_err(|e| e.to_string())?;
 
     let rows = stmt.query_map([], |row| {
+        let avatar_blob: Option<Vec<u8>> = row.get(13)?;
+
         Ok(DbCharacter {
             id: row.get(0)?,
             name: row.get(1)?,
             desc: row.get(2)?,
-            greeting: row.get(3)?,
-            initials: row.get(4)?,
-            color: row.get(5)?,
+            personality: row.get(3)?, 
+            scenario: row.get(4)?, 
+            greeting: row.get(5)?,
+            alternate_greetings: row.get(6)?,
+            mes_example: row.get(7)?, 
+            creator_notes: row.get(8)?, 
+            tags: row.get(9)?,
+            v3_spec: row.get(10)?,
+            initials: row.get(11)?,
+            color: row.get(12)?,
+            avatar: avatar_blob,
         })
     }).map_err(|e| e.to_string())?;
 
     let mut list = Vec::new();
-    for row in rows {
-        list.push(row.unwrap());
-    }
+    for row in rows { list.push(row.unwrap()); }
     Ok(list)
 }
 
 #[tauri::command]
-pub fn create_character(
-    app: AppHandle, 
-    name: String, 
-    desc: String, 
-    greeting: String, 
-    initials: String, 
-    color: String
-) -> Result<String, String> {
+pub fn create_character(app: AppHandle, payload: CreateCharacterPayload) -> Result<String, String> {
     let conn = get_connection(&app)?;
     let new_id = Uuid::new_v4().to_string();
 
+    let alt_greetings_json = serde_json::to_string(&payload.alternate_greetings)
+        .unwrap_or_else(|_| "[]".to_string());
+    let tags_json = serde_json::to_string(&payload.tags)
+        .unwrap_or_else(|_| "[]".to_string());
+
     conn.execute(
-        "INSERT INTO characters (id, name, desc, greeting, initials, color) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![new_id, name, desc, greeting, initials, color],
+        "INSERT INTO characters (id, name, desc, personality, scenario, greeting, alternate_greetings, mes_example, creator_notes, tags, v3_spec, initials, color, avatar) 
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, NULL)",
+        params![
+            new_id, payload.name, payload.desc, payload.personality, payload.scenario, 
+            payload.greeting, alt_greetings_json, payload.mes_example, payload.creator_notes, 
+            tags_json, payload.v3_spec, payload.initials, payload.color
+        ],
     ).map_err(|e| e.to_string())?;
+
+    if let Some(avatar_b64) = payload.avatar {
+        if !avatar_b64.is_empty() {
+            let app_clone = app.clone();
+            let id_clone = new_id.clone();
+            
+            std::thread::spawn(move || {
+                match process_avatar(&avatar_b64) {
+                    Ok(avatar_bytes) => {
+                        if let Ok(conn) = get_connection(&app_clone) {
+                            let _ = conn.execute(
+                                "UPDATE characters SET avatar = ?1 WHERE id = ?2",
+                                params![avatar_bytes, id_clone]
+                            );
+                        }
+                    }
+                    Err(e) => eprintln!("Avatar processing failed: {}", e)
+                }
+            });
+        }
+    }
 
     Ok(new_id)
 }

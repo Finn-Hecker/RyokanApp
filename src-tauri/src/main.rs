@@ -10,6 +10,7 @@ use tauri::{Emitter, Window};
 static CLIENT: Lazy<reqwest::Client> = Lazy::new(reqwest::Client::new);
 
 mod database;
+mod import;
 
 #[derive(Deserialize)]
 struct StreamChunk {
@@ -110,6 +111,7 @@ fn main() {
             database::settings::save_setting,
             database::characters::get_custom_characters,
             database::characters::create_character,
+            import::parse_character_card,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

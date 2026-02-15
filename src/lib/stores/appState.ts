@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 
-export const currentView = writable<'lobby' | 'chat'>('lobby');
+export const currentView = writable<'lobby' | 'chat' | 'create'>('lobby');
 
 export const activeCharacter = writable<any>(null);
 

@@ -1,14 +1,12 @@
 <script lang="ts">
   import { currentView, activeCharacter } from '$lib/stores/appState';
-  import { allCharacters, loadCharacters, createCharacter } from '$lib/stores/characterStore';
-  import CreateCharModal from './CreateCharModal.svelte';
+  import { allCharacters, loadCharacters } from '$lib/stores/characterStore';
   import { startNewChat } from '$lib/stores/chatStore';
   import SettingsModal from './SettingsModal.svelte';
   import * as m from '$lib/paraglide/messages';
   import { onMount } from 'svelte';
 
   let showSettings = false;
-  let showCreateModal = false
 
   onMount(async () => {
       await loadCharacters();
@@ -21,13 +19,7 @@
   }
 
   function onOpenCreate() {
-    showCreateModal = true;
-  }
-
-async function handleCreateNew(event: CustomEvent) {
-      const newCharData = event.detail;
-      await createCharacter(newCharData);
-      showCreateModal = false;
+    currentView.set('create');
   }
 </script>
 
@@ -63,8 +55,6 @@ async function handleCreateNew(event: CustomEvent) {
 
   <SettingsModal isOpen={showSettings} close={() => showSettings = false} />
 
-  <CreateCharModal isOpen={showCreateModal} close={() => showCreateModal = false} on:create={handleCreateNew} />
-
   <div class="max-w-5xl mx-auto mt-16">
     <header class="mb-12">
       <h1 class="text-4xl font-medium text-gray-100 mb-3 tracking-tight">{m.welcome_title()}</h1>
@@ -80,8 +70,16 @@ async function handleCreateNew(event: CustomEvent) {
           class="group w-full bg-ryokan-surface hover:bg-white/5 border border-white/5 hover:border-ryokan-accent/30 rounded-2xl p-4 transition-all duration-200 active:scale-[0.98] text-left"
         >
           <div class="flex items-center gap-4">
-             <div class="w-12 h-12 rounded-xl {char.color} shadow-lg flex items-center justify-center shrink-0 text-white font-bold text-lg group-hover:scale-105 transition-transform">
-               {char.initials}
+             <div class="w-12 h-12 rounded-xl {char.avatar ? '' : char.color} shadow-lg flex items-center justify-center shrink-0 text-white font-bold text-lg group-hover:scale-105 transition-transform overflow-hidden border border-white/10">
+               {#if char.avatarUrl}
+                <img 
+                  src={char.avatarUrl}  
+                  alt={char.name} 
+                  class="w-full h-full object-cover" 
+                />
+                {:else}
+                    {char.initials}
+                {/if}
              </div>
 
              <div class="flex-1 min-w-0">

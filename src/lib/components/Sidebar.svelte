@@ -88,10 +88,6 @@
               <div class="text-gray-600 text-[10px]">
                 {new Date(chat.created_at).toLocaleString(getLocale())}
               </div>
-              
-              <div class="text-ryokan-accent/60 text-[10px] font-bold uppercase tracking-widest italic">
-                {getCharacterName(chat.character_id)}
-              </div>
             </div>
           </div>
 

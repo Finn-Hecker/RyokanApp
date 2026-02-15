@@ -29,3 +29,6 @@ eventsource-stream = "0.2"
 futures = "0.3"
 rusqlite = { version = "0.31", features = ["bundled"] }
 uuid = { version = "1", features = ["v4", "fast-rng", "macro-diagnostics"] }
+base64 = "0.22"
+image = { version = "0.25.9", features = ["webp"] }
+webp = "0.3"

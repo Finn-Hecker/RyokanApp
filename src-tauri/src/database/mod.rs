@@ -46,9 +46,17 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             desc TEXT,
+            personality TEXT,
+            scenario TEXT,
             greeting TEXT,
+            alternate_greetings TEXT,
+            mes_example TEXT,
+            creator_notes TEXT,
+            tags TEXT,
+            v3_spec BOOLEAN,
             initials TEXT,
             color TEXT,
+            avatar BLOB,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );"
     ).map_err(|e| e.to_string())?;

@@ -1,7 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import { activeCharacter } from './appState';
-import { CHARACTERS } from '$lib/data/characters';
+import { allCharacters } from './characterStore';
 
 export interface Message {
     id?: number;
@@ -28,7 +28,6 @@ export const conversations = writable<Conversation[]>([]);
 export const currentMessages = writable<Message[]>([]);
 export const activeChatId = writable<string | null>(null);
 
-
 export async function loadAllConversations() {
     try {
         const result = await invoke<Conversation[]>('get_conversations');
@@ -38,11 +37,32 @@ export async function loadAllConversations() {
 
 export async function startNewChat(character: any) {
     try {
+        let allGreetings = [character.greeting];
+
+        if (character.alternate_greetings) {
+            try {
+                const altGreetings = typeof character.alternate_greetings === 'string' 
+                    ? JSON.parse(character.alternate_greetings) 
+                    : character.alternate_greetings;
+
+                if (Array.isArray(altGreetings) && altGreetings.length > 0) {
+                    const validAlts = altGreetings.filter(g => g.trim().length > 0);
+                    allGreetings.push(...validAlts);
+                }
+            } catch (e) {
+                console.warn("Could not parse alternative greetings:", e);
+            }
+        }
+
+        const randomIndex = Math.floor(Math.random() * allGreetings.length);
+        const selectedGreeting = allGreetings[randomIndex] || character.greeting;
+
         const newId = await invoke<string>('create_chat', {
             characterId: character.id.toString(),
             characterName: character.name,
-            initialMessage: character.greeting
+            initialMessage: selectedGreeting
         });
+        
         await loadAllConversations();
         activeChatId.set(newId);
         await loadMessages(newId);
@@ -56,10 +76,14 @@ export async function openHistoryChat(chatId: string) {
     const currentChat = allChats.find(c => c.id === chatId);
 
     if (currentChat && currentChat.character_id) {
-        const char = CHARACTERS.find(c => c.id.toString() === currentChat.character_id);
+        const chars = get(allCharacters);
+        const char = chars.find(c => c.id.toString() === currentChat.character_id);
+        
         if (char) {
             activeCharacter.set(char);
             console.log("Character synchronized:", char.name);
+        } else {
+            console.warn("Could not find a character for this chat.");
         }
     }
 }

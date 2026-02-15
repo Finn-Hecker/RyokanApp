@@ -16,32 +16,41 @@
 
   const uiLanguages = [
     { code: "de", label: "Deutsch" },
-    { code: "en", label: "English" }
+    { code: "en", label: "English" },
   ];
 
   const aiLanguages = [
     { code: "German", label: "Deutsch" },
-    { code: "English", label: "English" }
+    { code: "English", label: "English" },
   ];
 
   function handleUiLanguageChange(event: CustomEvent<string>) {
-      setLocale(event.detail as any);
+    setLocale(event.detail as any);
   }
-  
+
   function handleAiLanguageChange(event: CustomEvent<string>) {
-      $apiSettings.aiLanguage = event.detail;
+    $apiSettings.aiLanguage = event.detail;
   }
 
   const DEFAULT_AI_LANGUAGE = "English";
 
   const DEFAULT_PROMPT_TEMPLATE = `You are playing the role of {{char}}.
-  {{desc}}.
+  
+    Description:
+    {{desc}}
 
-  CRITICAL RULES:
-  1. Always answer in {{lang}}.
-  2. You are the character, NOT an AI assistant.
-  3. DO NOT output your internal thought process.
-  4. START DIRECTLY with the response.`;
+    Personality:
+    {{personality}}
+
+    Scenario:
+    {{scenario}}
+
+    Example Dialog:
+    {{mes_example}}
+
+    CRITICAL RULES:
+    1. Always answer in {{lang}}.
+    2. You are the character, NOT an AI assistant.`;
 
   const SETTINGS_MAP: Record<string, (value: string) => void> = {
     api_url: (v) => ($apiSettings.url = v),
@@ -94,15 +103,15 @@
 {#if isOpen}
   <div class="fixed inset-0 z-[60] flex items-center justify-center p-4">
     <!-- Overlay -->
-    <button 
+    <button
       on:click={close}
-      transition:fade 
+      transition:fade
       aria-label={m.settings_btn_save()}
       class="absolute inset-0 bg-black/80 backdrop-blur-sm cursor-default"
     ></button>
 
     <!-- Modal -->
-    <div 
+    <div
       transition:scale={{ start: 0.95, duration: 200 }}
       class="relative bg-ryokan-surface w-full max-w-md rounded-2xl border border-white/10 shadow-2xl p-6"
     >
@@ -111,35 +120,43 @@
       <div class="space-y-4">
         <!-- Language Select -->
         <div>
-          <label for="ui-language-select" class="text-sm text-gray-400 block mb-2">{m.settings_language_label()}</label>
-          <LanguageSelect 
+          <label
+            for="ui-language-select"
+            class="text-sm text-gray-400 block mb-2"
+            >{m.settings_language_label()}</label
+          >
+          <LanguageSelect
             id="ui-language-select"
             items={uiLanguages}
-            selectedCode={getLocale()} 
+            selectedCode={getLocale()}
             on:select={handleUiLanguageChange}
           />
         </div>
 
         <!-- API URL -->
         <div>
-          <label class="text-sm text-gray-400 block mb-2" for="api-url">{m.settings_api_url_label()}</label>
-          <input 
+          <label class="text-sm text-gray-400 block mb-2" for="api-url"
+            >{m.settings_api_url_label()}</label
+          >
+          <input
             id="api-url"
-            type="text" 
-            bind:value={$apiSettings.url} 
-            class="w-full bg-black/20 border border-white/10 rounded-lg p-3 text-sm text-gray-200 focus:border-ryokan-accent outline-none" 
+            type="text"
+            bind:value={$apiSettings.url}
+            class="w-full bg-black/20 border border-white/10 rounded-lg p-3 text-sm text-gray-200 focus:border-ryokan-accent outline-none"
           />
         </div>
 
         <!-- API Key -->
         <div>
-          <label class="text-sm text-gray-400 block mb-2" for="api-key">{m.settings_api_key_label()}</label>
-          <input 
+          <label class="text-sm text-gray-400 block mb-2" for="api-key"
+            >{m.settings_api_key_label()}</label
+          >
+          <input
             id="api-key"
-            type="password" 
-            bind:value={$apiSettings.apiKey} 
+            type="password"
+            bind:value={$apiSettings.apiKey}
             placeholder="sk-or-..."
-            class="w-full bg-black/20 border border-white/10 rounded-lg p-3 text-sm text-gray-200 focus:border-ryokan-accent outline-none" 
+            class="w-full bg-black/20 border border-white/10 rounded-lg p-3 text-sm text-gray-200 focus:border-ryokan-accent outline-none"
           />
         </div>
 
@@ -147,65 +164,55 @@
         <div class="pt-2 border-t border-white/5">
           <label class="flex items-center justify-between cursor-pointer group">
             <span class="flex flex-col">
-              <span class="text-sm text-gray-200">{m.settings_thinking_label()}</span>
-              <span class="text-xs text-gray-500">{m.settings_thinking_sub()}</span>
+              <span class="text-sm text-gray-200"
+                >{m.settings_thinking_label()}</span
+              >
+              <span class="text-xs text-gray-500"
+                >{m.settings_thinking_sub()}</span
+              >
             </span>
-            <input 
-              type="checkbox" 
-              bind:checked={$apiSettings.isThinkingModel} 
+            <input
+              type="checkbox"
+              bind:checked={$apiSettings.isThinkingModel}
               class="sr-only peer"
             />
-            <div class="relative w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-ryokan-accent"></div>
+            <div
+              class="relative w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-ryokan-accent"
+            ></div>
           </label>
         </div>
       </div>
 
       <!-- AI Language Selection -->
       <div class="pt-4 border-t border-white/5">
-          <label for="ai-language-select" class="text-sm text-gray-400 block mb-2">{m.settings_ai_lang_label()}</label>
-          <LanguageSelect 
-              id="ai-language-select"
-              items={aiLanguages}
-              selectedCode={$apiSettings.aiLanguage} 
-              on:select={handleAiLanguageChange}
-          />
-        </div>
+        <label for="ai-language-select" class="text-sm text-gray-400 block mb-2"
+          >{m.settings_ai_lang_label()}</label
+        >
+        <LanguageSelect
+          id="ai-language-select"
+          items={aiLanguages}
+          selectedCode={$apiSettings.aiLanguage}
+          on:select={handleAiLanguageChange}
+        />
+      </div>
 
-        <!-- Advanced Settings -->
-        <div class="pt-4 mt-4 border-t border-white/5">
-            <button 
-                on:click={() => showAdvanced = !showAdvanced}
-                class="flex items-center text-xs text-ryokan-accent hover:underline focus:outline-none"
-            >
-                {showAdvanced ? m.settings_advanced_hide() : m.settings_advanced_show()}
-            </button>
-        </div>
-
-        {#if showAdvanced}
-            <div transition:slide class="pt-4 space-y-2">
-                <div class="flex justify-between items-center">
-                    <span class="text-sm text-gray-400">{m.settings_prompt_label()}</span>
-                    <button on:click={resetPrompt} class="text-[10px] text-gray-500 hover:text-white">
-                        {m.settings_prompt_reset()}
-                    </button>
-                </div>
-                <p class="text-[10px] text-gray-500 mb-2">
-                    {m.settings_prompt_placeholders()}: <code>{`{{char}}`}</code>, <code>{`{{desc}}`}</code>, <code>{`{{lang}}`}</code>
-                </p>
-                <textarea 
-                    bind:value={$apiSettings.systemPrompt} 
-                    rows="8"
-                    placeholder={DEFAULT_PROMPT_TEMPLATE}
-                    class="w-full bg-black/20 border border-white/10 rounded-lg p-3 text-xs font-mono text-gray-300 focus:border-ryokan-accent outline-none resize-y"
-                ></textarea>
-            </div>
-        {/if}
+      <!-- Advanced Settings -->
+      <div class="pt-4 mt-4 border-t border-white/5">
+        <button
+          on:click={() => (showAdvanced = !showAdvanced)}
+          class="flex items-center text-xs text-ryokan-accent hover:underline focus:outline-none"
+        >
+          {showAdvanced
+            ? m.settings_advanced_hide()
+            : m.settings_advanced_show()}
+        </button>
+      </div>
 
       <!-- Save Button -->
       <div class="mt-8 flex justify-end">
-        <button 
+        <button
           on:click={saveAndClose}
-          class="bg-ryokan-accent text-ryokan-bg px-4 py-2 rounded-lg font-medium hover:opacity-90 transition" 
+          class="bg-ryokan-accent text-ryokan-bg px-4 py-2 rounded-lg font-medium hover:opacity-90 transition"
         >
           {m.settings_btn_save()}
         </button>

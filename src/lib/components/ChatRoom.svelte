@@ -10,13 +10,22 @@
   import * as m from '$lib/paraglide/messages';
 
   const FALLBACK_PROMPT = `You are playing the role of {{char}}.
-    {{desc}}.
+  
+    Description:
+    {{desc}}
+
+    Personality:
+    {{personality}}
+
+    Scenario:
+    {{scenario}}
+
+    Example Dialog:
+    {{mes_example}}
 
     CRITICAL RULES:
     1. Always answer in {{lang}}.
-    2. You are the character, NOT an AI assistant.
-    3. DO NOT output your internal thought process or instructions.
-    4. START DIRECTLY with the response.`;
+    2. You are the character, NOT an AI assistant.`;
 
   let inputText = "";
   let chatContainer: HTMLDivElement;
@@ -141,7 +150,10 @@
     const filledSystemPrompt = systemTemplate
         .replace(/\{\{char\}\}/g, $activeCharacter?.name || "Unknown")
         .replace(/\{\{desc\}\}/g, $activeCharacter?.desc || "")
-        .replace(/\{\{lang\}\}/g, $apiSettings.aiLanguage || "English");
+        .replace(/\{\{lang\}\}/g, $apiSettings.aiLanguage || "English")
+        .replace(/\{\{personality\}\}/g, $activeCharacter?.personality || "")
+        .replace(/\{\{scenario\}\}/g, $activeCharacter?.scenario || "")
+        .replace(/\{\{mes_example\}\}/g, $activeCharacter?.mes_example || "");
 
     const recentMessages = $currentMessages.slice(-10);
 
