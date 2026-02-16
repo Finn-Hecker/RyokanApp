@@ -38,6 +38,11 @@
   "chat_error_connection": "Verbindung unterbrochen.",
   "chat_sender_you": "Du",
   "chat_sender_ai": "KI",
+  "chat_aria_back": "Zurück",
+  "chat_error_title": "Verbindungsfehler",
+  "chat_error_your_message": "Deine Nachricht:",
+  "chat_error_retry": "Erneut versuchen",
+  "chat_error_cancel": "Abbrechen",
 
   "history_title": "Deine Reisen",
   "history_no_chats": "Noch keine Gespräche.",

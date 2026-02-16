@@ -38,6 +38,11 @@
   "chat_error_connection": "Connection lost.",
   "chat_sender_you": "You",
   "chat_sender_ai": "AI",
+  "chat_aria_back": "Back",
+  "chat_error_title": "Connection Error",
+  "chat_error_your_message": "Your message:",
+  "chat_error_retry": "Try again",
+  "chat_error_cancel": "Cancel",
 
   "history_title": "Your Journeys",
   "history_no_chats": "No conversations yet.",
