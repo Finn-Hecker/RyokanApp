@@ -37,16 +37,21 @@ export async function loadAllConversations() {
 
 export async function startNewChat(character: any) {
     try {
-        let allGreetings = [character.greeting];
+        let allGreetings = [];
+
+        if (character.greeting && character.greeting.trim().length > 0) {
+            allGreetings.push(character.greeting);
+        }
 
         if (character.alternate_greetings) {
             try {
                 const altGreetings = typeof character.alternate_greetings === 'string' 
                     ? JSON.parse(character.alternate_greetings) 
                     : character.alternate_greetings;
-
-                if (Array.isArray(altGreetings) && altGreetings.length > 0) {
-                    const validAlts = altGreetings.filter(g => g.trim().length > 0);
+                if (Array.isArray(altGreetings)) {
+                    const validAlts = altGreetings.filter(g => 
+                        typeof g === 'string' && g.trim().length > 0
+                    );
                     allGreetings.push(...validAlts);
                 }
             } catch (e) {
@@ -54,8 +59,10 @@ export async function startNewChat(character: any) {
             }
         }
 
-        const randomIndex = Math.floor(Math.random() * allGreetings.length);
-        const selectedGreeting = allGreetings[randomIndex] || character.greeting;
+        // Only send a message if one exists
+        const selectedGreeting = allGreetings.length > 0
+            ? allGreetings[Math.floor(Math.random() * allGreetings.length)]
+            : null;
 
         const newId = await invoke<string>('create_chat', {
             characterId: character.id.toString(),

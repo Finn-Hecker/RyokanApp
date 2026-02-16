@@ -37,7 +37,7 @@ pub fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
 /// Initializes a new chat session and automatically inserts the character's opening message.
 /// Uses an SQLite transaction to guarantee that either both records are created, or neither is.
 #[tauri::command]
-pub fn create_chat(app: AppHandle, character_id: String, character_name: String, initial_message: String) -> Result<String, String> {
+pub fn create_chat(app: AppHandle, character_id: String, character_name: String, initial_message: Option<String>) -> Result<String, String> {
     let mut conn = get_connection(&app)?;
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
@@ -50,11 +50,15 @@ pub fn create_chat(app: AppHandle, character_id: String, character_name: String,
         params![new_id, title, character_id],
     ).map_err(|e| e.to_string())?;
     
-    let msg_id = Uuid::new_v4().to_string();
-    tx.execute(
-        "INSERT INTO messages (id, conversation_id, role, content) VALUES (?1, ?2, ?3, ?4)",
-        params![msg_id, new_id, "assistant", initial_message],
-    ).map_err(|e| e.to_string())?;
+    if let Some(msg) = initial_message {
+        if !msg.trim().is_empty() {
+            let msg_id = Uuid::new_v4().to_string();
+            tx.execute(
+                "INSERT INTO messages (id, conversation_id, role, content) VALUES (?1, ?2, ?3, ?4)",
+                params![msg_id, new_id, "assistant", msg],
+            ).map_err(|e| e.to_string())?;
+        }
+    }
     
     tx.commit().map_err(|e| e.to_string())?;
     
