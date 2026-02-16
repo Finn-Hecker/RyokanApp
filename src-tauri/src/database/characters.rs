@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use crate::database::get_connection;
 use base64::{engine::general_purpose, Engine as _};
-use image::imageops::FilterType;
+use image::{ImageFormat};
 use webp::{Encoder, WebPMemory};
+use std::io::Cursor;
 
 /// Database representation of a character. 
 /// Avatar is stored as a raw WebP BLOB to minimize database footprint and RAM overhead.
@@ -53,25 +54,50 @@ fn process_avatar(base64_img: &str) -> Result<Vec<u8>, String> {
     let img_bytes = general_purpose::STANDARD.decode(clean_base64)
         .map_err(|e| format!("Base64 error: {}", e))?;
     
-    let mut img = image::load_from_memory(&img_bytes)
+    let original_size = img_bytes.len();
+    let format = image::guess_format(&img_bytes).unwrap_or(ImageFormat::Png);
+    let img = image::load_from_memory(&img_bytes)
         .map_err(|e| format!("Image loading error: {}", e))?;
     
-    if img.width() > 2048 || img.height() > 2048 {
-        img = img.resize(2048, 2048, FilterType::Lanczos3);
+    let needs_resize = img.width() > 2048 || img.height() > 2048;
+ 
+    if !needs_resize && matches!(format, ImageFormat::Jpeg | ImageFormat::WebP) {
+        return Ok(img_bytes);
     }
     
-    let rgba = img.to_rgba8();
+    // Resize only when absolutely necessary (avoids upscaling)
+    let resized = if needs_resize {
+        img.thumbnail(2048, 2048)
+    } else {
+        img
+    };
     
-    let encoder = Encoder::from_rgba(
-        rgba.as_raw(),
-        img.width(),
-        img.height()
-    );
+    // For JPEGs: Find the lowest quality that is acceptable
+    if format == ImageFormat::Jpeg {
+        for quality in [85, 80, 75, 60] {
+            let mut buf = Cursor::new(Vec::new());
+            let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, quality);
+            if enc.encode_image(&resized).is_ok() {
+                let result = buf.into_inner();
+                if result.len() < original_size {
+                    return Ok(result);
+                }
+            }
+        }
+    }
     
-    // 92.0 quality is the sweet spot between visual fidelity and aggressive file size reduction.
-    let webp: WebPMemory = encoder.encode(92.0);
+    // WebP as a fallback (for PNGs or if JPEG remains too large)
+    let rgba = resized.to_rgba8();
+    let webp: WebPMemory = Encoder::from_rgba(rgba.as_raw(), resized.width(), resized.height())
+        .encode(92.0);
+    let result = webp.to_vec();
     
-    Ok(webp.to_vec())
+    // Only return if smaller than original
+    if result.len() < original_size || !needs_resize {
+        Ok(result)
+    } else {
+        Ok(img_bytes)
+    }
 }
 
 /// Retrieves all saved characters. 

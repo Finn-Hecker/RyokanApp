@@ -17,7 +17,9 @@
   let isSaving = false;
   let avatarPreview: string | null = null;
   let isDragging = false;
-  let fileInput: HTMLInputElement;
+
+  let importInput: HTMLInputElement;
+  let avatarInput: HTMLInputElement;
 
   async function handleSave() {
     if (!name || !description) return;
@@ -46,14 +48,33 @@
     currentView.set('lobby');
   }
 
-async function handleFile(file: File) {
-      if (!file.type.includes('image')) return;
+  function onDrop(e: DragEvent) {
+    e.preventDefault();
+    isDragging = false;
+    if (e.dataTransfer?.files[0]) processImport(e.dataTransfer.files[0]);
+  }
+  
+  function addAltGreeting() {
+      alternate_greetings = [...alternate_greetings, ""];
+  }
+  
+  function removeAltGreeting(index: number) {
+      alternate_greetings = alternate_greetings.filter((_, i) => i !== index);
+  }
 
+  function processAvatar(file: File) {
+      if (!file.type.includes('image')) return;
       const reader = new FileReader();
       reader.onload = (e) => {
           avatarPreview = e.target?.result as string;
       };
       reader.readAsDataURL(file);
+  }
+
+  async function processImport(file: File) {
+      if (!file.type.includes('image')) return;
+      
+      processAvatar(file);
       
       try {
           const arrayBuffer = await file.arrayBuffer();
@@ -77,25 +98,6 @@ async function handleFile(file: File) {
       } catch (err) {
           console.warn("Import Info:", err);
       }
-  }
-
-  function onDrop(e: DragEvent) {
-    e.preventDefault();
-    isDragging = false;
-    if (e.dataTransfer?.files[0]) handleFile(e.dataTransfer.files[0]);
-  }
-
-  function onFileInputChange(e: Event) {
-    const input = e.target as HTMLInputElement;
-    if (input.files?.[0]) handleFile(input.files[0]);
-  }
-  
-  function addAltGreeting() {
-      alternate_greetings = [...alternate_greetings, ""];
-  }
-  
-  function removeAltGreeting(index: number) {
-      alternate_greetings = alternate_greetings.filter((_, i) => i !== index);
   }
 </script>
 
@@ -131,7 +133,7 @@ async function handleFile(file: File) {
     <div class="flex items-center gap-3">
     
         <button 
-            on:click={() => fileInput.click()}
+            on:click={() => importInput.click()}
             aria-label={m.create_page_aria_import()}
             class="p-2 text-ryokan-accent hover:bg-ryokan-accent/10 rounded-full transition-colors"
         >
@@ -151,11 +153,12 @@ async function handleFile(file: File) {
   <div class="flex-1 overflow-y-auto overflow-x-hidden">
     <div class="max-w-xl mx-auto p-4 md:p-8 space-y-8 pb-32">
         
-        <input type="file" bind:this={fileInput} on:change={onFileInputChange} accept="image/*" hidden />
+        <input type="file" bind:this={importInput} on:change={(e: any) => e.target.files?.[0] && processImport(e.target.files[0])} accept="image/png,image/webp" hidden />
+        <input type="file" bind:this={avatarInput} on:change={(e: any) => e.target.files?.[0] && processAvatar(e.target.files[0])} accept="image/*" hidden />
 
         <div class="flex flex-col items-center gap-4 py-4">
             <button 
-                on:click={() => fileInput.click()}
+                on:click={() => avatarInput.click()}
                 aria-label={m.create_page_aria_avatar()}
                 class="relative w-32 h-32 md:w-40 md:h-40 rounded-full bg-white/5 border border-white/10 overflow-hidden group hover:border-ryokan-accent transition-all active:scale-95 shadow-2xl"
             >
