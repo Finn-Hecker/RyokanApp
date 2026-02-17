@@ -6,26 +6,10 @@
   
   import { currentMessages, addMessage, loadMessages, activeChatId } from '$lib/stores/chatStore';
   import ChatMessage from './ChatMessage.svelte';
+  
+  import { buildSystemPrompt } from '$lib/utils/promptBuilder';
 
   import * as m from '$lib/paraglide/messages';
-
-  const FALLBACK_PROMPT = `You are playing the role of {{char}}.
-  
-    Description:
-    {{desc}}
-
-    Personality:
-    {{personality}}
-
-    Scenario:
-    {{scenario}}
-
-    Example Dialog:
-    {{mes_example}}
-
-    CRITICAL RULES:
-    1. Always answer in {{lang}}.
-    2. You are the character, NOT an AI assistant.`;
 
   let inputText = "";
   let chatContainer: HTMLDivElement;
@@ -95,7 +79,6 @@
       senderName: msg.role === 'user' ? m.chat_sender_you() : ($activeCharacter?.name || m.chat_sender_ai())
     }));
 
-    // Add temporary user message if showing
     if (showTempUserMessage && pendingUserMessage) {
       messages.push({
         id: 'temp-user',
@@ -167,29 +150,26 @@
     isThinkingPhase = false;
     autoscroll = true;
 
-    // Show user message temporarily in UI (not saved to DB yet)
     showTempUserMessage = true;
     scrollToBottom();
 
-    let systemTemplate = $apiSettings.systemPrompt;
-    if (!systemTemplate || systemTemplate.trim() === "") {
-        systemTemplate = FALLBACK_PROMPT;
-    }
-
-    const filledSystemPrompt = systemTemplate
-        .replace(/\{\{char\}\}/g, $activeCharacter?.name || "Unknown")
-        .replace(/\{\{desc\}\}/g, $activeCharacter?.desc || "")
-        .replace(/\{\{lang\}\}/g, $apiSettings.aiLanguage || "English")
-        .replace(/\{\{personality\}\}/g, $activeCharacter?.personality || "")
-        .replace(/\{\{scenario\}\}/g, $activeCharacter?.scenario || "")
-        .replace(/\{\{mes_example\}\}/g, $activeCharacter?.mes_example || "");
+    const systemPrompt = buildSystemPrompt({
+      charName: $activeCharacter?.name || 'Unknown',
+      desc: $activeCharacter?.desc,
+      personality: $activeCharacter?.personality,
+      scenario: $activeCharacter?.scenario,
+      example: $activeCharacter?.mes_example,
+      lang: $apiSettings.aiLanguage || 'English',
+      userName: 'User', // TODO: Get later from settings
+      modelType: 'ollama'
+    });
 
     const recentMessages = $currentMessages.slice(-10);
 
     const apiMessages = [
       {
         role: "system",
-        content: filledSystemPrompt 
+        content: systemPrompt 
       },
       ...recentMessages.map(msg => ({ 
           role: msg.role, 
@@ -200,6 +180,8 @@
         content: prompt
       }
     ];
+
+    console.log(apiMessages);
 
     try {
       await invoke("call_ai_api", { payload: { url: $apiSettings.url, messages: apiMessages } });
