@@ -29,3 +29,8 @@ export async function getSetting(key: string): Promise<string | null> {
   const found = all.find(s => s.key === key);
   return found ? found.value : null;
 }
+
+// Does NOT catch — throws the real Rust error string so the UI can display it directly.
+export async function fetchModels(url: string, apiKey: string): Promise<string[]> {
+  return await invoke<string[]>("fetch_models", { url, apiKey });
+}

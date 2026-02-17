@@ -29,6 +29,13 @@
   "settings_prompt_label": "System Prompt (World Info)",
   "settings_prompt_reset": "Auf Standard zurücksetzen",
   "settings_prompt_placeholders": "Platzhalter",
+  "settings_provider_label": "Anbieter",
+  "settings_model_label": "Modell",
+  "settings_model_loading": "Lädt…",
+  "settings_model_load_btn": "Modelle laden ↻",
+  "settings_model_empty_hint": "Klicke \"Modelle laden\" um verfügbare Modelle abzurufen",
+  "settings_model_error_no_models": "Server erreichbar, aber keine Modelle zurückgegeben.",
+  "settings_model_error_fetch": "Fehler: {error}",
 
   "chat_typing_indicator": "schreibt...",
 

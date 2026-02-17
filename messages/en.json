@@ -29,6 +29,13 @@
   "settings_prompt_label": "System Prompt (World Info)",
   "settings_prompt_reset": "Reset to Default",
   "settings_prompt_placeholders": "Placeholders",
+  "settings_provider_label": "Provider",
+  "settings_model_label": "Model",
+  "settings_model_loading": "Loading…",
+  "settings_model_load_btn": "Load models ↻",
+  "settings_model_empty_hint": "Click \"Load models\" to fetch available models",
+  "settings_model_error_no_models": "Server accessible, but no models returned.",
+  "settings_model_error_fetch": "Error: {error}",
 
   "chat_typing_indicator": "is typing...",
 

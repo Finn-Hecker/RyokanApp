@@ -186,7 +186,12 @@
     console.log(apiMessages);
 
     try {
-      await invoke("call_ai_api", { payload: { url: $apiSettings.url, messages: apiMessages } });
+      await invoke("call_ai_api", { payload: { 
+        url: $apiSettings.url, 
+        api_key: $apiSettings.apiKey,
+        model: $apiSettings.model,
+        messages: apiMessages 
+      } });
       if ($apiSettings.isThinkingModel) {
           processThinkingStream(true);
       } else {
