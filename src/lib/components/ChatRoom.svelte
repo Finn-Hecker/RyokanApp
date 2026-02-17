@@ -79,6 +79,7 @@
       senderName: msg.role === 'user' ? m.chat_sender_you() : ($activeCharacter?.name || m.chat_sender_ai())
     }));
 
+    // Add temporary user message if showing
     if (showTempUserMessage && pendingUserMessage) {
       messages.push({
         id: 'temp-user',
@@ -150,6 +151,7 @@
     isThinkingPhase = false;
     autoscroll = true;
 
+    // Show user message temporarily in UI (not saved to DB yet)
     showTempUserMessage = true;
     scrollToBottom();
 

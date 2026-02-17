@@ -1,5 +1,3 @@
-// src/lib/utils/promptBuilder.ts
-
 export type ModelType = 'claude' | 'gpt' | 'ollama' | 'openrouter';
 
 export interface PromptBuilderOptions {

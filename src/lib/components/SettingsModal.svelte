@@ -196,18 +196,6 @@
         />
       </div>
 
-      <!-- Advanced Settings -->
-      <div class="pt-4 mt-4 border-t border-white/5">
-        <button
-          on:click={() => (showAdvanced = !showAdvanced)}
-          class="flex items-center text-xs text-ryokan-accent hover:underline focus:outline-none"
-        >
-          {showAdvanced
-            ? m.settings_advanced_hide()
-            : m.settings_advanced_show()}
-        </button>
-      </div>
-
       <!-- Save Button -->
       <div class="mt-8 flex justify-end">
         <button
