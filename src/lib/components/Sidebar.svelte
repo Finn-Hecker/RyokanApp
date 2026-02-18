@@ -2,7 +2,6 @@
   import { fade, fly, scale } from 'svelte/transition';
   import { conversations, openHistoryChat, loadAllConversations, deleteConversation } from '$lib/stores/chatStore';
   import { currentView } from '$lib/stores/appState';
-  import { CHARACTERS } from '$lib/data/characters';
   
   import * as m from '$lib/paraglide/messages';
   import { getLocale } from '$lib/paraglide/runtime';
@@ -36,11 +35,6 @@
 
   function cancelDelete() {
     chatToDelete = null;
-  }
-
-  function getCharacterName(id: string | undefined) {
-    if (!id) return "";
-    return CHARACTERS.find(c => c.id.toString() === id)?.name || "";
   }
 </script>
 

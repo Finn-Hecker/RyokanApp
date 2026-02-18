@@ -18,6 +18,10 @@ export interface Character {
     isCustom?: boolean;
     avatar?: number[];
     avatarUrl?: string;
+    personality?: string;
+    scenario?: string;
+    mes_example?: string;
+    creator_notes?: string;
 }
 
 export const allCharacters = writable<Character[]>([...STATIC_CHARACTERS]);

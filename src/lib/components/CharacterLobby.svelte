@@ -65,35 +65,35 @@
 
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       {#each $allCharacters as char}
-        <button 
-          on:click={() => onSelectChar(char)}
-          class="group w-full bg-ryokan-surface hover:bg-white/5 border border-white/5 hover:border-ryokan-accent/30 rounded-2xl p-4 transition-all duration-200 active:scale-[0.98] text-left"
-        >
-          <div class="flex items-center gap-4">
-             <div class="w-12 h-12 rounded-xl {char.avatar ? '' : char.color} shadow-lg flex items-center justify-center shrink-0 text-white font-bold text-lg group-hover:scale-105 transition-transform overflow-hidden border border-white/10">
-               {#if char.avatarUrl}
-                <img 
-                  src={char.avatarUrl}  
-                  alt={char.name} 
-                  class="w-full h-full object-cover" 
-                />
-                {:else}
-                    {char.initials}
-                {/if}
-             </div>
+  <button
+    on:click={() => onSelectChar(char)}
+    class="group relative w-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-ryokan-accent/40 rounded-2xl overflow-hidden transition-all duration-200 active:scale-[0.98] text-left"
+  >
+    <div class="relative w-full aspect-[4/3] bg-white/5 overflow-hidden">
+      {#if char.avatarUrl}
+        <img
+          src={char.avatarUrl}
+          alt={char.name}
+          class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+        />
+        <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+      {:else}
+        <div class="w-full h-full {char.color} flex items-center justify-center text-white font-bold text-4xl opacity-80">
+          {char.initials}
+        </div>
+      {/if}
+    </div>
 
-             <div class="flex-1 min-w-0">
-               <h3 class="text-base font-semibold text-gray-200 truncate group-hover:text-ryokan-accent transition-colors">
-                 {char.name}
-               </h3>
-               
-               <p class="text-sm text-gray-500 mt-0.5 line-clamp-2 leading-snug">
-                 {char.desc}
-               </p>
-             </div>
-          </div>
-        </button>
-      {/each}
+    <div class="px-4 py-3">
+      <h3 class="text-sm font-semibold text-gray-100 truncate group-hover:text-ryokan-accent transition-colors">
+        {char.name}
+      </h3>
+      <p class="text-xs text-gray-500 mt-0.5 line-clamp-2 leading-snug">
+        {char.desc}
+      </p>
+    </div>
+  </button>
+{/each}
     </div>
   </div>
 </div>
