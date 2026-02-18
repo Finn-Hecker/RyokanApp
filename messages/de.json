@@ -42,6 +42,10 @@
   "settings_model_empty_hint": "Klicke \"Modelle laden\" um verfügbare Modelle abzurufen",
   "settings_model_error_no_models": "Server erreichbar, aber keine Modelle zurückgegeben.",
   "settings_model_error_fetch": "Fehler: {error}",
+  "settings_creativity_label": "Kreativität",
+  "settings_temp_precise": "Fokussiert",
+  "settings_temp_balanced": "Natürlich",
+  "settings_temp_creative": "Fantasievoll",
 
   "chat_typing_indicator": "schreibt...",
 

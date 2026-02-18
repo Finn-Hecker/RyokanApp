@@ -37,6 +37,7 @@ struct AiRequest {
     api_key: String,
     model: String,
     messages: Vec<serde_json::Value>,
+    temperature: f32,
 }
 
 /// Payload emitted back to the frontend containing the generated text.
@@ -98,7 +99,7 @@ async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), String> {
         .json(&serde_json::json!({
             "model": payload.model,
             "messages": payload.messages,
-            "temperature": 0.7,
+            "temperature": payload.temperature,
             "stream": true
         }));
 

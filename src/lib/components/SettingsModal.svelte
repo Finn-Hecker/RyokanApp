@@ -27,6 +27,12 @@
     { code: "English", label: "English" },
   ];
 
+  const TEMPERATURES = [
+    { label: m.settings_temp_precise(), value: 0.4 },
+    { label: m.settings_temp_balanced(), value: 0.8 },
+    { label: m.settings_temp_creative(), value: 1.0 }
+  ];
+
   // Model fetching state
   let availableModels: string[] = [];
   let modelsLoading = false;
@@ -82,6 +88,7 @@
     thinking_mode:(v) => ($apiSettings.isThinkingModel = v === "true"),
     ai_language:  (v) => ($apiSettings.aiLanguage = v),
     system_prompt:(v) => ($apiSettings.systemPrompt = v),
+    api_temperature: (v) => { const parsed = parseFloat(v); if (!isNaN(parsed)) { $apiSettings.temperature = parsed }}
   };
 
   onMount(loadSettings);
@@ -109,6 +116,7 @@
         saveSetting("thinking_mode", $apiSettings.isThinkingModel),
         saveSetting("ai_language",   $apiSettings.aiLanguage),
         saveSetting("system_prompt", $apiSettings.systemPrompt),
+        saveSetting("api_temperature", $apiSettings.temperature ?? 0.7),
       ]);
       console.info("[Settings] Saved successfully.");
       close();
@@ -148,6 +156,27 @@
             selectedCode={getLocale()}
             on:select={handleUiLanguageChange}
           />
+        </div>
+
+        <!-- Temperatur Selection -->
+        <div>
+          <span class="text-sm text-gray-400 block mb-2">
+            {m.settings_creativity_label()}
+          </span>
+
+          <div class="flex gap-2">
+            {#each TEMPERATURES as temp}
+              <button
+                on:click={() => $apiSettings.temperature = temp.value}
+                class="flex-1 py-2 px-3 rounded-lg text-sm font-medium border transition-all
+                  {$apiSettings.temperature === temp.value
+                    ? 'bg-ryokan-accent text-ryokan-bg border-ryokan-accent'
+                    : 'bg-black/20 text-gray-300 border-white/10 hover:border-white/30'}"
+              >
+                {temp.label}
+              </button>
+            {/each}
+          </div>
         </div>
 
         <!-- Provider Buttons -->
@@ -253,7 +282,6 @@
           </label>
         </div>
 
-      </div>
 
       <!-- AI Language -->
       <div class="pt-4 border-t border-white/5">
@@ -279,4 +307,5 @@
       </div>
     </div>
   </div>
+</div>
 {/if}

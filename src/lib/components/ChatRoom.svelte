@@ -190,7 +190,8 @@
         url: $apiSettings.url, 
         api_key: $apiSettings.apiKey,
         model: $apiSettings.model,
-        messages: apiMessages 
+        messages: apiMessages,
+        temperature: $apiSettings.temperature
       } });
       if ($apiSettings.isThinkingModel) {
           processThinkingStream(true);

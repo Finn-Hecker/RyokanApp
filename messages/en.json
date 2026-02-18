@@ -42,6 +42,10 @@
   "settings_model_empty_hint": "Click \"Load models\" to fetch available models",
   "settings_model_error_no_models": "Server accessible, but no models returned.",
   "settings_model_error_fetch": "Error: {error}",
+  "settings_creativity_label": "Creativity",
+  "settings_temp_precise": "Focused",
+  "settings_temp_balanced": "Balanced",
+  "settings_temp_creative": "Creative",
 
   "chat_typing_indicator": "is typing...",
 

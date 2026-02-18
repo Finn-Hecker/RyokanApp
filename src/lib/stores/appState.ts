@@ -11,6 +11,7 @@ export interface ApiSettings {
   isThinkingModel: boolean;
   aiLanguage: string;
   systemPrompt: string;
+  temperature: number;
 }
 
 export const apiSettings = writable<ApiSettings>({
@@ -19,5 +20,6 @@ export const apiSettings = writable<ApiSettings>({
   model: "",
   isThinkingModel: false,
   aiLanguage: "German", 
-  systemPrompt: ""
+  systemPrompt: "",
+  temperature: 0.8
 });

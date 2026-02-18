@@ -14,7 +14,7 @@ export async function getAllSettings(): Promise<SettingRow[]> {
   }
 }
 
-export async function saveSetting(key: string, value: string | boolean) {
+export async function saveSetting(key: string, value: string | boolean | number) {
   try {
     const stringValue = String(value);
     await invoke("save_setting", { key, value: stringValue });
