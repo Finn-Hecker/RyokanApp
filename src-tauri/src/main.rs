@@ -13,6 +13,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             ai::call_ai_api,
             ai::fetch_models,
+            ai::stop_generation,
             database::chats::get_conversations,
             database::chats::create_chat,
             database::chats::delete_chat,

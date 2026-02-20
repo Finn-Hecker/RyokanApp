@@ -2,12 +2,26 @@ use futures::stream::StreamExt;
 use eventsource_stream::Eventsource;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Window};
+use tokio_util::sync::CancellationToken;
 
 // Reusing a single HTTP client across the entire app lifecycle prevents connection 
 // exhaustion and takes advantage of internal connection pooling.
 pub static CLIENT: Lazy<reqwest::Client> = Lazy::new(reqwest::Client::new);
+
+// Mutex allows swapping the token on each new request.
+static CANCEL_TOKEN: Lazy<Mutex<CancellationToken>> =
+    Lazy::new(|| Mutex::new(CancellationToken::new()));
+
+/// Called from the frontend to hard-stop the current stream.
+/// Cancels the active token, which makes the running select! arm resolve to None
+/// and drops the underlying TCP connection.
+#[tauri::command]
+pub fn stop_generation() {
+    CANCEL_TOKEN.lock().unwrap().cancel();
+}
 
 /// OpenAI-compatible SSE (Server-Sent Events) streaming structs.
 #[derive(Deserialize)]
@@ -87,8 +101,13 @@ pub async fn fetch_models(url: String, api_key: String) -> Result<Vec<String>, S
 /// Streams completions from an OpenAI-compatible API endpoint.
 /// Batches incoming tokens before emitting them to the frontend to prevent 
 /// overwhelming the Tauri IPC bridge and freezing the Svelte UI.
+/// Uses a CancellationToken so stop_generation() drops the TCP connection immediately.
 #[tauri::command]
 pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), String> {
+    // Replace the global token so stop_generation() targets this request.
+    let token = CancellationToken::new();
+    *CANCEL_TOKEN.lock().unwrap() = token.clone();
+
     let mut req = CLIENT
         .post(format!("{}/chat/completions", payload.url))
         .json(&serde_json::json!({
@@ -117,7 +136,17 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
     let mut last_emit = Instant::now();
     let batch_delay = Duration::from_millis(25);
 
-    while let Some(event_result) = stream.next().await {
+    loop {
+        // Cancelled arm resolves to None, breaking the loop and dropping the TCP socket.
+        let event_result = tokio::select! {
+            result = stream.next() => result,
+            _ = token.cancelled() => None,
+        };
+
+        let Some(event_result) = event_result else {
+            break;
+        };
+
         match event_result {
             Ok(event) => {
                 if event.data == "[DONE]" {
@@ -141,6 +170,7 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
         }
     }
 
+    // Flush whatever was buffered when the stream stopped (or was cancelled).
     if !token_batch.is_empty() {
         window.emit("ai-token", TokenPayload { token: token_batch }).map_err(|e| e.to_string())?;
     }

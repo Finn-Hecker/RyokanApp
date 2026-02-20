@@ -235,6 +235,10 @@
   }
 
   function goBack() { currentView.set("lobby"); }
+
+  async function stopGeneration() {
+    await invoke("stop_generation");
+  }
 </script>
 
 <div class="flex flex-col h-full font-sans overflow-hidden bg-ryokan-bg relative">
@@ -298,14 +302,24 @@
       ></textarea>
 
       <button
-        on:click={sendMessage}
-        disabled={isGenerating}
-        class="shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-ryokan-accent text-ryokan-bg hover:opacity-90 transition-all disabled:opacity-50"
+        on:click={isGenerating ? stopGeneration : sendMessage}
+        class="shrink-0 w-10 h-10 flex items-center justify-center rounded-full transition-all relative group
+          {isGenerating
+            ? 'bg-white/5 text-ryokan-accent/70 hover:bg-white/8 hover:text-ryokan-accent'
+            : 'bg-ryokan-accent text-ryokan-bg hover:opacity-90'}"
       >
         {#if isGenerating}
-          <div class="w-3 h-3 border-2 border-ryokan-bg border-t-transparent rounded-full animate-spin"></div>
+          <div class="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2.5 py-1 bg-ryokan-surface border border-white/10 rounded-lg text-xs text-ryokan-text whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none shadow-lg">
+            {m.chat_stop_generating()} 
+          </div>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="4" y="5" width="13" height="14" rx="2.5" ry="3"></rect>
+          </svg>
         {:else}
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
         {/if}
       </button>
     </div>

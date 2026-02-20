@@ -60,6 +60,7 @@
   "chat_error_your_message": "Deine Nachricht:",
   "chat_error_retry": "Erneut versuchen",
   "chat_error_cancel": "Abbrechen",
+  "chat_stop_generating": "Antwort stoppen",
 
   "history_title": "Deine Reisen",
   "history_no_chats": "Noch keine Gespräche.",

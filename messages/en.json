@@ -60,6 +60,7 @@
   "chat_error_your_message": "Your message:",
   "chat_error_retry": "Try again",
   "chat_error_cancel": "Cancel",
+  "chat_stop_generating": "Stop generating",
 
   "history_title": "Your Journeys",
   "history_no_chats": "No conversations yet.",
