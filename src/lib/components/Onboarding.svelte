@@ -71,19 +71,31 @@ async function loadModels() {
 
   let saving = false;
 
-  async function finish() {
+async function finish() {
     saving = true;
+    modelError = '';
+
     try {
-      setLocale(selectedLanguage === 'English' ? 'en' : 'de');
-      await saveSetting('aiLanguage',           selectedLanguage);
-      await saveSetting('url',                  apiUrl);
-      await saveSetting('apiKey',               apiKey);
-      await saveSetting('model',                selectedModel);
+      await saveSetting('aiLanguage', selectedLanguage);
+      await saveSetting('url', apiUrl);
+      await saveSetting('apiKey', apiKey);
+      await saveSetting('model', selectedModel);
       await saveSetting('onboarding_completed', 'true');
-      apiSettings.update(s => ({ ...s, aiLanguage: selectedLanguage, url: apiUrl, apiKey, model: selectedModel }));
+
+      setLocale(selectedLanguage === 'English' ? 'en' : 'de');
+      apiSettings.update(s => ({
+        ...s,
+        aiLanguage: selectedLanguage,
+        url: apiUrl,
+        apiKey: apiKey,
+        model: selectedModel
+      }));
+
       isOnboarding.set(false);
+
     } catch (error) {
       console.error('Failed to save settings:', error);
+      modelError = 'Database error while saving. Please try again.';
     } finally {
       saving = false;
     }
