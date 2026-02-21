@@ -6,7 +6,12 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Status](https://img.shields.io/badge/status-Alpha_v0.1-orange.svg)
 
+<p align="center">
+  <img width="700" alt="RyokanApp Interface" src="https://github.com/user-attachments/assets/f93fb3e2-1c1c-47ce-a280-62f02e849bf2" />
+</p>
+
 ---
+
 
 ## ⚠️ Current State: Early Alpha (v0.1)
 
