@@ -4,6 +4,8 @@ export const currentView = writable<'lobby' | 'chat' | 'create'>('lobby');
 
 export const activeCharacter = writable<any>(null);
 
+export const isOnboarding = writable<boolean>(false);
+
 export interface ApiSettings {
   url: string;
   apiKey: string;
