@@ -25,13 +25,12 @@
         {@html cleanHtml}
       </div>
 
-      {#if (isLast && isGenerating) || !msg.text}
-        <span class="inline-flex items-center gap-[3px] ml-1 translate-y-[-1px]">
-          <span class="typing-dot"></span>
-          <span class="typing-dot" style="animation-delay: 0.18s"></span>
-          <span class="typing-dot" style="animation-delay: 0.36s"></span>
-        </span>
-      {/if}
+      <span class="inline-flex items-center gap-[3px] ml-1 translate-y-[-1px] transition-opacity duration-200
+        {(isLast && isGenerating) || !msg.text ? 'opacity-100' : 'opacity-0 pointer-events-none'}">
+        <span class="typing-dot"></span>
+        <span class="typing-dot" style="animation-delay: 0.18s"></span>
+        <span class="typing-dot" style="animation-delay: 0.36s"></span>
+      </span>
     </div>
   {/if}
 

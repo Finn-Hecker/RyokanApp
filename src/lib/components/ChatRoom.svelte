@@ -88,6 +88,15 @@
       });
     }
 
+    if (isGenerating && streamingText) {
+      messages.push({
+        id: 'temp-stream',
+        text: streamingText,
+        isUser: false,
+        senderName: $activeCharacter?.name || m.chat_sender_ai()
+      });
+    }
+
     displayMessages = messages;
   }
 
@@ -212,6 +221,8 @@
       isGenerating = false;
       streamingText = "";
       rawStreamBuffer = "";
+      await tick();
+      await scrollToBottom('auto');
     }
   }
 
@@ -281,39 +292,29 @@
     bind:this={chatContainer}
     on:scroll={handleScroll}
     class="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 pt-4 pb-4"
+    style="overflow-anchor: none;"
   >
     <div class="max-w-3xl mx-auto w-full">
-    {#each displayMessages as msg (msg.id)}
-      <ChatMessage {msg} />
+    {#each displayMessages as msg, i (i)}
+      <ChatMessage 
+        {msg}
+        isLast={i === displayMessages.length - 1}
+        isGenerating={isGenerating && i === displayMessages.length - 1}
+      />
     {/each}
 
-    {#if isGenerating}
-      
-      {#if isThinkingPhase}
-        <div class="flex items-start mb-6 animate-fade-in pl-4">
-           <div class="flex flex-col items-start">
-             <span class="text-[10px] text-gray-500 mb-1 uppercase tracking-wide">
-               {$activeCharacter?.name || m.chat_sender_ai()}
-             </span>
-             <div class="flex items-center space-x-3 text-gray-500 bg-white/5 px-4 py-2 rounded-xl border border-white/5 shadow-inner">
-                <span class="relative flex h-2.5 w-2.5">
-                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-ryokan-accent opacity-50"></span>
-                  <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-ryokan-accent/80"></span>
-                </span>
-                <span class="text-xs font-medium italic tracking-wide">{m.chat_thinking()}</span>
-             </div>
+    {#if isGenerating && isThinkingPhase}
+      <div class="flex items-start mb-6 animate-fade-in pl-4">
+         <div class="flex flex-col items-start">
+           <div class="flex items-center space-x-3 text-gray-500 bg-white/5 px-4 py-2 rounded-xl border border-white/5 shadow-inner">
+              <span class="relative flex h-2.5 w-2.5">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-ryokan-accent opacity-50"></span>
+                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-ryokan-accent/80"></span>
+              </span>
+              <span class="text-xs font-medium italic tracking-wide">{m.chat_thinking()}</span>
            </div>
-        </div>
-
-      {:else if streamingText}
-        <ChatMessage msg={{
-          id: 'streaming',
-          text: streamingText,
-          isUser: false,
-          senderName: $activeCharacter?.name || m.chat_sender_ai()
-        }} isLast={true} {isGenerating} />
-      {/if}
-
+         </div>
+      </div>
     {/if}
     </div>
   </div>
