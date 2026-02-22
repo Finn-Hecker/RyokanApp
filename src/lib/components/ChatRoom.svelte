@@ -79,7 +79,6 @@
       senderName: msg.role === 'user' ? m.chat_sender_you() : ($activeCharacter?.name || m.chat_sender_ai())
     }));
 
-    // Add temporary user message if showing
     if (showTempUserMessage && pendingUserMessage) {
       messages.push({
         id: 'temp-user',
@@ -151,7 +150,6 @@
     isThinkingPhase = false;
     autoscroll = true;
 
-    // Show user message temporarily in UI (not saved to DB yet)
     showTempUserMessage = true;
     scrollToBottom();
 
@@ -162,7 +160,7 @@
       scenario: $activeCharacter?.scenario,
       example: $activeCharacter?.mes_example,
       lang: $apiSettings.aiLanguage || 'English',
-      userName: 'User', // TODO: Get later from settings
+      userName: 'User',
       modelType: 'ollama'
     });
 
@@ -242,21 +240,49 @@
 </script>
 
 <div class="flex flex-col h-full font-sans overflow-hidden bg-ryokan-bg relative">
-  <div class="flex items-center pt-20 pb-4 px-6 shrink-0 z-10">
-    <button on:click={goBack} class="text-gray-500 hover:text-white mr-4 transition-colors" aria-label={m.chat_aria_back()}>
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+
+  <!-- Chat Header -->
+  <div class="flex items-center gap-4 px-5 py-4 shrink-0 border-b border-white/[0.06] bg-ryokan-bg/80 backdrop-blur-md z-10">
+    <!-- Back button -->
+    <button
+      on:click={goBack}
+      class="w-9 h-9 flex items-center justify-center rounded-full text-gray-500 hover:text-white hover:bg-white/8 transition-all shrink-0"
+      aria-label={m.chat_aria_back()}
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M19 12H5M12 19l-7-7 7-7"/>
+      </svg>
     </button>
-    <div>
-      <h2 class="text-lg font-medium text-gray-200">{$activeCharacter?.name}</h2>
-      <p class="text-xs text-ryokan-accent opacity-80">{m.chat_status_online()}</p>
+
+    <!-- Avatar -->
+    <div class="shrink-0 w-10 h-10 rounded-full overflow-hidden ring-2 ring-white/10">
+      {#if $activeCharacter?.avatarUrl}
+        <img
+          src={$activeCharacter.avatarUrl}
+          alt={$activeCharacter.name}
+          class="w-full h-full object-cover"
+        />
+      {:else}
+        <div class="w-full h-full {$activeCharacter?.color ?? 'bg-ryokan-surface'} flex items-center justify-center text-white font-bold text-base">
+          {$activeCharacter?.initials ?? ($activeCharacter?.name?.[0]?.toUpperCase() ?? '?')}
+        </div>
+      {/if}
+    </div>
+
+    <!-- Name + status -->
+    <div class="flex-1 min-w-0">
+      <h2 class="text-sm font-semibold text-gray-100 truncate leading-tight">{$activeCharacter?.name}</h2>
+      <p class="text-xs text-ryokan-accent opacity-80 leading-tight mt-0.5">{m.chat_status_online()}</p>
     </div>
   </div>
 
+  <!-- Messages -->
   <div 
     bind:this={chatContainer}
     on:scroll={handleScroll}
     class="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 pt-4 pb-4"
   >
+    <div class="max-w-3xl mx-auto w-full">
     {#each displayMessages as msg (msg.id)}
       <ChatMessage {msg} />
     {/each}
@@ -289,8 +315,10 @@
       {/if}
 
     {/if}
+    </div>
   </div>
 
+  <!-- Input -->
   <div class="p-4 sm:p-6 shrink-0">
     <div class="max-w-3xl mx-auto bg-ryokan-surface rounded-3xl flex items-end p-2 shadow-xl border border-white/5 focus-within:border-ryokan-accent/50 transition-colors">
       <textarea
@@ -330,7 +358,6 @@
 {#if showErrorModal}
   <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
     <div class="bg-ryokan-surface rounded-2xl shadow-2xl border border-red-500/20 max-w-md w-full p-6 animate-scale-in">
-      <!-- Header -->
       <div class="flex items-start mb-4">
         <div class="flex-shrink-0 w-10 h-10 bg-red-500/10 rounded-full flex items-center justify-center mr-3">
           <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -343,7 +370,6 @@
         </div>
       </div>
 
-      <!-- Message Preview -->
       {#if pendingUserMessage}
         <div class="mb-4 p-3 bg-white/5 rounded-lg border border-white/10">
           <p class="text-xs text-gray-500 mb-1 uppercase tracking-wide">{m.chat_error_your_message()}</p>
@@ -351,7 +377,6 @@
         </div>
       {/if}
 
-      <!-- Actions -->
       <div class="flex gap-3">
         <button
           on:click={retryLastMessage}

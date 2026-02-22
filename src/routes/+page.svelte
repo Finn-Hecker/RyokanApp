@@ -33,7 +33,7 @@
 {:else}
   <main class="h-screen w-screen flex flex-col bg-ryokan-bg text-gray-200 overflow-hidden relative">
     <Sidebar isOpen={isMenuOpen} close={() => isMenuOpen = false} />
-    {#if $currentView !== 'create'}
+    {#if $currentView !== 'create' && $currentView !== 'chat'}
       <header class="absolute top-0 left-0 right-0 p-4 z-10 flex items-center justify-between pointer-events-none">
         <button
           on:click={() => isMenuOpen = true}
