@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { currentView, isOnboarding, apiSettings } from '$lib/stores/appState';
   import CharacterLobby from '$lib/components/CharacterLobby.svelte';
-  import ChatRoom from '$lib/components/ChatRoom.svelte';
+  import ChatRoom from '$lib/components/chat/ChatRoom.svelte';
   import Sidebar from '$lib/components/Sidebar.svelte';
   import CreateCharPage from '$lib/components/CreateCharPage.svelte';
   import Onboarding from '$lib/components/Onboarding.svelte';

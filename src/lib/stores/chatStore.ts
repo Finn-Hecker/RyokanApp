@@ -4,7 +4,7 @@ import { activeCharacter } from './appState';
 import { allCharacters } from './characterStore';
 
 export interface Message {
-    id?: number;
+    id?: string;
     conversation_id: string;
     role: 'user' | 'assistant';
     content: string;
@@ -119,6 +119,24 @@ export async function addMessage(role: 'user' | 'assistant', content: string) {
     try {
         await invoke('add_message', { chatId, role, content });
         await loadMessages(chatId);
+    } catch (e) { console.error(e); }
+}
+
+// Updates the content of an existing message in the database.
+export async function updateMessage(id: string, content: string) {
+    const chatId = get(activeChatId);
+    try {
+        await invoke('update_message', { id, content });
+        if (chatId) await loadMessages(chatId);
+    } catch (e) { console.error(e); }
+}
+
+// Deletes a single message by ID, then reloads the message list.
+export async function deleteMessage(id: string) {
+    const chatId = get(activeChatId);
+    try {
+        await invoke('delete_message', { id });
+        if (chatId) await loadMessages(chatId);
     } catch (e) { console.error(e); }
 }
 

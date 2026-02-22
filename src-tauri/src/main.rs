@@ -19,6 +19,8 @@ fn main() {
             database::chats::delete_chat,
             database::messages::get_messages,
             database::messages::add_message,
+            database::messages::delete_message,
+            database::messages::update_message,
             database::settings::get_all_settings,
             database::settings::save_setting,
             database::characters::get_custom_characters,

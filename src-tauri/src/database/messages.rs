@@ -72,3 +72,27 @@ pub fn add_message(app: AppHandle, chat_id: String, role: String, content: Strin
     
     Ok(())
 }
+
+/// Updates the text content of an existing message.
+/// Used when the user manually edits an AI response inline.
+#[tauri::command]
+pub fn update_message(app: AppHandle, id: String, content: String) -> Result<(), String> {
+    let conn = get_connection(&app)?;
+    conn.execute(
+        "UPDATE messages SET content = ?1 WHERE id = ?2",
+        params![content, id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Deletes a single message by its ID.
+/// Used when retrying an AI response — the old response is removed before re-generating.
+#[tauri::command]
+pub fn delete_message(app: AppHandle, id: String) -> Result<(), String> {
+    let conn = get_connection(&app)?;
+    conn.execute(
+        "DELETE FROM messages WHERE id = ?1",
+        params![id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
