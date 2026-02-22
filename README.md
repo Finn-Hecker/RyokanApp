@@ -78,4 +78,4 @@ Contributions are welcome! Since this is an Alpha project, please open an issue 
 
 ## License
 
-MIT
+This project is licensed under the **GPL-3.0 License** - see the [LICENSE](LICENSE) file for details.
