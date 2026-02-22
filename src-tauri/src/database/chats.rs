@@ -34,6 +34,29 @@ pub fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
     Ok(list)
 }
 
+/// Retrieves a page of chat sessions. Only fetches `limit` rows starting at `offset`,
+/// so the frontend never holds more than one page worth of data at a time.
+#[tauri::command]
+pub fn get_conversations_page(app: AppHandle, limit: i64, offset: i64) -> Result<Vec<Conversation>, String> {
+    let conn = get_connection(&app)?;
+    let mut stmt = conn.prepare(
+        "SELECT id, title, character_id, created_at FROM conversations ORDER BY created_at DESC LIMIT ?1 OFFSET ?2"
+    ).map_err(|e| e.to_string())?;
+
+    let rows = stmt.query_map(params![limit, offset], |row| {
+        Ok(Conversation {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            character_id: row.get(2)?,
+            created_at: row.get(3)?,
+        })
+    }).map_err(|e| e.to_string())?;
+
+    let mut list = Vec::new();
+    for row in rows { list.push(row.unwrap()); }
+    Ok(list)
+}
+
 /// Initializes a new chat session and automatically inserts the character's opening message.
 /// Uses an SQLite transaction to guarantee that either both records are created, or neither is.
 #[tauri::command]

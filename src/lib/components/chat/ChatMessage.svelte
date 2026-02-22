@@ -184,7 +184,7 @@
   }
 
   /* ── Prose styles ─────────────────────────────────────────────────────── */
-  :global(.prose-custom p)            { margin-bottom: 0.8em; line-height: 1.75rem; }
+  :global(.prose-custom p)            { margin-bottom: 0.8em; line-height: 1.5rem; }
   :global(.prose-custom p:last-child) { margin-bottom: 0; }
   :global(.prose-custom strong)       { color: #f3f3f3; font-weight: 600; }
   :global(.prose-custom em)           { color: #a0a0a8; font-style: italic; }

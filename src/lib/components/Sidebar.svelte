@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fade, fly, scale } from 'svelte/transition';
-  import { conversations, openHistoryChat, loadAllConversations, deleteConversation } from '$lib/stores/chatStore';
+  import { conversations, openHistoryChat, loadAllConversations, loadMoreConversations, deleteConversation } from '$lib/stores/chatStore';
   import { currentView } from '$lib/stores/appState';
   
   import * as m from '$lib/paraglide/messages';
@@ -11,8 +11,35 @@
 
   let chatToDelete: string | null = null;
 
+  // Pagination state
+  let hasMore = true;      // becomes false when the backend returns an empty page
+  let isLoading = false;
+  let sentinel: HTMLDivElement;
+  let observer: IntersectionObserver;
+
   $: if (isOpen) {
+    hasMore = true;
     loadAllConversations();
+    // One tick delay so the sentinel is in the DOM before we observe it.
+    setTimeout(setupObserver, 0);
+  }
+
+  $: if (!isOpen && observer) {
+    observer.disconnect();
+  }
+
+  function setupObserver() {
+    if (observer) observer.disconnect();
+    if (!sentinel) return;
+
+    observer = new IntersectionObserver(async (entries) => {
+      if (!entries[0].isIntersecting || isLoading || !hasMore) return;
+      isLoading = true;
+      hasMore = await loadMoreConversations();
+      isLoading = false;
+    }, { threshold: 0.1 });
+
+    observer.observe(sentinel);
   }
 
   async function loadChat(id: string) {
@@ -99,6 +126,13 @@
           </button>
         </div>
       {/each}
+
+      <!-- Sentinel: watched by IntersectionObserver to trigger the next page load -->
+      <div bind:this={sentinel} class="py-2 text-center text-gray-600 text-xs h-8">
+        {#if isLoading}
+          <span>…</span>
+        {/if}
+      </div>
     </div>
   </aside>
 

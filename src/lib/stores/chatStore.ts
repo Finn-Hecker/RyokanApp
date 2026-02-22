@@ -28,11 +28,37 @@ export const conversations = writable<Conversation[]>([]);
 export const currentMessages = writable<Message[]>([]);
 export const activeChatId = writable<string | null>(null);
 
+const PAGE_SIZE = 15;
+
+/** Call when the sidebar opens. */
 export async function loadAllConversations() {
     try {
-        const result = await invoke<Conversation[]>('get_conversations');
+        const result = await invoke<Conversation[]>('get_conversations_page', {
+            limit: PAGE_SIZE,
+            offset: 0,
+        });
         conversations.set(result);
     } catch (e) { console.error(e); }
+}
+
+/** 
+ * Appends the next page to the existing list.
+ * Returns false when there are no more results to load. 
+ */
+export async function loadMoreConversations(): Promise<boolean> {
+    try {
+        const current = get(conversations);
+        const result = await invoke<Conversation[]>('get_conversations_page', {
+            limit: PAGE_SIZE,
+            offset: current.length,
+        });
+        if (result.length === 0) return false;
+        conversations.update(prev => [...prev, ...result]);
+        return result.length === PAGE_SIZE;
+    } catch (e) {
+        console.error(e);
+        return false;
+    }
 }
 
 export async function startNewChat(character: any) {
