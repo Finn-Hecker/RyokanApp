@@ -2,11 +2,11 @@
   import { currentView, activeCharacter } from '$lib/stores/appState';
   import { allCharacters, loadCharacters } from '$lib/stores/characterStore';
   import { startNewChat } from '$lib/stores/chatStore';
-  import SettingsModal from './SettingsModal.svelte';
+  import Sidebar from '$lib/components/Sidebar.svelte';
   import * as m from '$lib/paraglide/messages';
   import { onMount } from 'svelte';
 
-  let showSettings = false;
+  let isMenuOpen = false;
 
   onMount(async () => {
       await loadCharacters();
@@ -21,9 +21,29 @@
   function onOpenCreate() {
     currentView.set('create');
   }
+
+  function onOpenSettings() {
+    currentView.set('settings');
+  }
 </script>
 
 <div class="h-full overflow-y-auto p-8 pt-10 relative">
+
+  <Sidebar isOpen={isMenuOpen} close={() => isMenuOpen = false} />
+
+  <div class="absolute top-6 left-8">
+    <button
+      on:click={() => isMenuOpen = true}
+      aria-label={m.main_menu_label()}
+      class="w-10 h-10 flex items-center justify-center text-gray-500 hover:text-white transition bg-white/5 rounded-full hover:bg-white/10 border border-white/5 hover:border-ryokan-accent/30 active:scale-95"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="3" y1="12" x2="21" y2="12"/>
+        <line x1="3" y1="6" x2="21" y2="6"/>
+        <line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
+  </div>
   
 <div class="absolute top-6 right-8 flex items-center gap-3">
     
@@ -42,7 +62,7 @@
     </button>
 
     <button 
-      on:click={() => showSettings = true}
+      on:click={onOpenSettings}
       aria-label={m.lobby_btn_open_settings()}
       class="w-10 h-10 flex items-center justify-center text-gray-500 hover:text-white transition bg-white/5 rounded-full hover:bg-white/10 active:scale-95"
     >
@@ -52,8 +72,6 @@
       </svg>
     </button>
   </div>
-
-  <SettingsModal isOpen={showSettings} close={() => showSettings = false} />
 
   <div class="max-w-5xl mx-auto mt-16">
     <header class="mb-12">

@@ -1,10 +1,12 @@
 import { writable } from 'svelte/store';
 
-export const currentView = writable<'lobby' | 'chat' | 'create'>('lobby');
+export const currentView = writable<'lobby' | 'chat' | 'create' | 'settings'>('lobby');
 
 export const activeCharacter = writable<any>(null);
 
 export const isOnboarding = writable<boolean>(false);
+
+export const pendingUiLocale = writable<string>('');
 
 export interface ApiSettings {
   url: string;

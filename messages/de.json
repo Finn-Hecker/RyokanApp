@@ -46,6 +46,16 @@
   "settings_temp_precise": "Fokussiert",
   "settings_temp_balanced": "Natürlich",
   "settings_temp_creative": "Fantasievoll",
+  "settings_temp_hint_precise": "Präzise & faktisch",
+  "settings_temp_hint_balanced": "Ausgewogen",
+  "settings_temp_hint_creative": "Kreativ & frei",
+  "settings_nav_general": "Allgemein",
+  "settings_nav_api": "API",
+  "settings_section_language": "Sprache",
+  "settings_section_ai_behavior": "KI Verhalten",
+  "settings_section_api": "API Verbindung",
+  "settings_provider_badge_local": "Lokal",
+  "settings_provider_badge_cloud": "Cloud",
 
   "chat_typing_indicator": "schreibt...",
 
