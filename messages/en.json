@@ -48,7 +48,6 @@
   "settings_temp_creative": "Creative",
 
   "chat_typing_indicator": "is typing...",
-
   "chat_status_online": "Online",
   "chat_thinking": "thinking...",
   "chat_placeholder": "Type a message...",
@@ -61,6 +60,10 @@
   "chat_error_retry": "Try again",
   "chat_error_cancel": "Cancel",
   "chat_stop_generating": "Stop generating",
+  "chat_edit": "Edit",
+  "chat_retry": "Retry",
+  "chat_save": "Save",
+  "chat_cancel": "Cancel",
 
   "history_title": "Your Journeys",
   "history_no_chats": "No conversations yet.",
