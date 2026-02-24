@@ -4,7 +4,7 @@
   import { currentView } from '$lib/stores/appState';
   import * as m from '$lib/paraglide/messages';
   import { getLocale } from '$lib/paraglide/runtime';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
 
   export let isOpen: boolean;
   export let close: () => void;
@@ -18,30 +18,57 @@
 
   onMount(() => {
     if (alwaysVisible) {
-      loadAllConversations();
-      setTimeout(setupObserver, 0);
+      initializeChats();
     }
   });
 
+  onDestroy(() => {
+    if (observer) observer.disconnect();
+  });
+
   $: if (!alwaysVisible && isOpen) {
-    hasMore = true;
-    loadAllConversations();
-    setTimeout(setupObserver, 0);
+    initializeChats();
   }
 
   $: if (!alwaysVisible && !isOpen && observer) {
     observer.disconnect();
   }
 
+  async function initializeChats() {
+    if (isLoading) return;
+
+    if (observer) observer.disconnect();
+    
+    isLoading = true;
+    hasMore = true;
+
+    try {
+      await loadAllConversations();
+    } catch (error) {
+      console.error("[Sidebar] Error loading chats:", error);
+    } finally {
+      isLoading = false;
+      setTimeout(setupObserver, 0); 
+    }
+  }
+
   function setupObserver() {
     if (observer) observer.disconnect();
     if (!sentinel) return;
+
     observer = new IntersectionObserver(async (entries) => {
       if (!entries[0].isIntersecting || isLoading || !hasMore) return;
+      
       isLoading = true;
-      hasMore = await loadMoreConversations();
-      isLoading = false;
+      try {
+        hasMore = await loadMoreConversations();
+      } catch (error) {
+        console.error("[Sidebar] Error loading more chats:", error);
+      } finally {
+        isLoading = false;
+      }
     }, { threshold: 0.1 });
+
     observer.observe(sentinel);
   }
 

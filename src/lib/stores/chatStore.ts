@@ -121,15 +121,6 @@ export async function openHistoryChat(chatId: string) {
     }
 }
 
-export async function loadConversations() {
-    try {
-        const result = await invoke<Conversation[]>('get_conversations');
-        conversations.set(result);
-    } catch (e) {
-        console.error("Error loading chats:", e);
-    }
-}
-
 export async function loadMessages(chatId: string) {
     try {
         const result = await invoke<Message[]>('get_messages', { chatId });
