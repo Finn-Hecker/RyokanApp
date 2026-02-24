@@ -107,39 +107,41 @@
   }
 
   async function generate(prompt: string, saveUserMessage: boolean) {
-    isGenerating = true;
-    resetStreamState();
-    scrollToBottom();
+      isGenerating = true;
+      resetStreamState();
+      scrollToBottom();
+      
+      const messagesForApi = $currentMessages.slice(-10);
 
-    if (saveUserMessage) await addMessage('user', prompt);
+      if (saveUserMessage) await addMessage('user', prompt);
 
-    try {
-      const result = await runGeneration(
-        {
-          character: $activeCharacter,
-          apiSettings: $apiSettings,
-          recentMessages: $currentMessages.slice(-10),
-          userPrompt: saveUserMessage ? prompt : undefined,
-        },
-        {
-          onStreamUpdate:      (text) => { streamingText   = text; if (autoscroll) scrollToBottom(); },
-          onThinkingPhaseChange: (v)  => { isThinkingPhase = v; },
-        }
-      );
-
-      await addMessage('assistant', result);
-    } catch (err) {
-      console.error(err);
-      errorMessage   = m.chat_error_connection();
-      showErrorModal = true;
-    } finally {
-      isGenerating    = false;
-      streamingText   = '';
-      isThinkingPhase = false;
-      await tick();
-      await scrollToBottom('auto');
+      try {
+        const result = await runGeneration(
+          {
+            character: $activeCharacter,
+            apiSettings: $apiSettings,
+            recentMessages: messagesForApi,
+            userPrompt: saveUserMessage ? prompt : undefined,
+          },
+          {
+            onStreamUpdate:  
+              (text) => { streamingText = text; if (autoscroll) scrollToBottom(); },
+            onThinkingPhaseChange: (v)  => { isThinkingPhase = v; },
+          }
+        );
+        await addMessage('assistant', result);
+      } catch (err) {
+        console.error(err);
+        errorMessage   = m.chat_error_connection();
+        showErrorModal = true;
+      } finally {
+        isGenerating    = false;
+        streamingText   = '';
+        isThinkingPhase = false;
+        await tick();
+        await scrollToBottom('auto');
+      }
     }
-  }
 
   // ─── User actions ─────────────────────────────────────────────────────────
   async function sendMessage() {

@@ -96,7 +96,7 @@
 </script>
 
 {#if alwaysVisible}
-  <aside class="w-64 h-full bg-ryokan-surface border-r border-white/5 flex flex-col shrink-0">
+  <aside class="w-64 h-full border-r border-white/5 flex flex-col shrink-0">
     <div class="p-6 border-b border-white/5">
       <h2 class="text-lg font-medium text-ryokan-accent">{m.history_title()}</h2>
     </div>
@@ -152,7 +152,7 @@
 
   <aside
     transition:fly={{ x: -300, duration: 300 }}
-    class="fixed left-0 top-0 bottom-0 w-72 bg-ryokan-surface border-r border-white/5 shadow-2xl z-50 flex flex-col"
+    class="fixed left-0 top-0 bottom-0 w-72 border-r border-white/5 shadow-2xl z-50 flex flex-col"
   >
     <div class="p-6 border-b border-white/5 flex justify-between items-center">
       <h2 class="text-lg font-medium text-ryokan-accent">{m.history_title()}</h2>
