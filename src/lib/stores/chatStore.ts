@@ -15,6 +15,7 @@ export interface Conversation {
     title: string;
     character_id: string;
     created_at: string;
+    updated_at: string;
 }
 
 export interface DisplayMessage {
@@ -135,6 +136,8 @@ export async function addMessage(role: 'user' | 'assistant', content: string) {
 
     try {
         await invoke('add_message', { chatId, role, content });
+        // Reload conversations so the sidebar re-sorts by updated_at
+        await loadAllConversations();
         await loadMessages(chatId);
     } catch (e) { console.error(e); }
 }

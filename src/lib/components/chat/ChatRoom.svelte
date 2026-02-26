@@ -111,7 +111,7 @@
       resetStreamState();
       scrollToBottom();
       
-      const messagesForApi = $currentMessages.slice(-10);
+      const messagesForApi = $currentMessages.slice(-20);
 
       if (saveUserMessage) await addMessage('user', prompt);
 
@@ -201,7 +201,6 @@
     on:back={() => currentView.set('lobby')}
   />
 
-  <!-- Messages -->
   <div
     bind:this={chatContainer}
     on:scroll={handleScroll}
@@ -212,6 +211,7 @@
       {#each displayMessages as msg, i (msg.id)}
         <ChatMessage
           {msg}
+          character={$activeCharacter}
           isLast={i === displayMessages.length - 1}
           isGenerating={isGenerating && i === displayMessages.length - 1}
           canRetry={!isGenerating && msg.id === lastAiMsgId && msg.id !== firstAiMsgId}
@@ -222,7 +222,7 @@
       {/each}
 
       {#if isGenerating && isThinkingPhase}
-        <ThinkingIndicator />
+        <ThinkingIndicator character={$activeCharacter} />
       {/if}
     </div>
   </div>

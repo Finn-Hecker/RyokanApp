@@ -2,6 +2,7 @@
   import { apiSettings } from "$lib/stores/appState";
   import { fetchModels } from "$lib/db/settings";
   import * as m from "$lib/paraglide/messages";
+  import Button from '$lib/components/ui/Button.svelte';
 
   const PROVIDERS = [
     { label: "LM Studio",  url: "http://127.0.0.1:1234/v1",           badge: () => m.settings_provider_badge_local() },
@@ -114,7 +115,7 @@
     <div>
       <label class="settings-label" for="api-key">
         {m.settings_api_key_label()}
-        <span class="optional-badge">optional</span>
+        <span class="optional-badge">{m.settings_api_key_optional()}</span>
       </label>
       <input
         id="api-key"
@@ -133,14 +134,7 @@
         <label class="settings-label" for="model-select" style="margin-bottom:0">
           {m.settings_model_label()}
         </label>
-        <button
-          on:click={loadModels}
-          disabled={modelsLoading}
-          class="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full
-                 border border-white/[0.08] bg-white/[0.03] text-gray-400
-                 hover:bg-white/[0.07] hover:border-ryokan-accent/30 hover:text-ryokan-accent
-                 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
-        >
+        <Button variant="secondary" size="sm" disabled={modelsLoading} on:click={loadModels}>
           {#if modelsLoading}
             <span class="load-dot"></span>
             <span class="load-dot" style="animation-delay:.15s"></span>
@@ -152,7 +146,7 @@
             </svg>
             {m.settings_model_load_btn()}
           {/if}
-        </button>
+        </Button>
       </div>
 
       {#if availableModels.length > 0}

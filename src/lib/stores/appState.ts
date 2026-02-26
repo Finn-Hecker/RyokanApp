@@ -4,6 +4,8 @@ export const currentView = writable<'lobby' | 'chat' | 'create' | 'settings'>('l
 
 export const activeCharacter = writable<any>(null);
 
+export const editingCharacter = writable<any>(null);
+
 export const isOnboarding = writable<boolean>(false);
 
 export const pendingUiLocale = writable<string>('');

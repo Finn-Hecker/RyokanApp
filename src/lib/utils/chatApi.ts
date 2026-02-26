@@ -59,7 +59,7 @@ function buildApiMessages(
   });
 
   const history = recentMessages
-    .slice(-10)
+    .slice(-20)
     .map(msg => ({ role: msg.role, content: msg.content }));
 
   const messages: { role: string; content: string }[] = [

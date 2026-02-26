@@ -3,7 +3,7 @@
   import { currentView, isOnboarding, apiSettings } from '$lib/stores/appState';
   import CharacterLobby from '$lib/components/CharacterLobby.svelte';
   import ChatRoom from '$lib/components/chat/ChatRoom.svelte';
-  import CreateCharPage from '$lib/components/CreateCharPage.svelte';
+  import CharacterPage from '$lib/components/character/CharacterEditor.svelte';
   import SettingsPage from '$lib/components/settings/SettingsPage.svelte';
   import Onboarding from '$lib/components/Onboarding.svelte';
   import { getAllSettings } from '$lib/db/settings';
@@ -34,7 +34,7 @@
       {#if $currentView === 'lobby'}
         <CharacterLobby />
       {:else if $currentView === 'create'}
-        <CreateCharPage />
+        <CharacterPage />
       {:else if $currentView === 'settings'}
         <SettingsPage /> 
       {:else}

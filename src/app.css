@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ryokan-bg: #1c1c1e;
+  --color-ryokan-bg: #131314;
   --color-ryokan-surface: #2c2c2e;
+  --color-ryokan-sidebar: #1e1f20;
   --color-ryokan-accent: #d4b483;
   --color-ryokan-text: #e5e5ea;
 }

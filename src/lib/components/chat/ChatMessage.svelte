@@ -10,6 +10,8 @@
   export let isLast: boolean = false;
   export let canRetry: boolean = false;
   export let canEdit: boolean = false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export let character: any = null;
 
   const dispatch = createEventDispatcher<{
     retry: { msgId: string };
@@ -28,7 +30,7 @@
   let editHeight = 0;
 
   async function handleEditOpen() {
-    // Capture exact dimensions of the message before switching to edit mode
+    // Snapshot dimensions before entering edit mode so the textarea matches the message size.
     if (msgEl) {
       editWidth  = msgEl.offsetWidth;
       editHeight = msgEl.offsetHeight;
@@ -65,10 +67,21 @@
     </div>
 
   {:else}
-    <div class="relative group/message max-w-[90%] sm:max-w-[75%]">
+    <div class="flex items-start gap-2.5 max-w-[90%] sm:max-w-[80%]">
+
+      <div class="shrink-0 w-8 h-8 rounded-full overflow-hidden ring-1 ring-white/10 mt-0.5">
+        {#if character?.avatarUrl}
+          <img src={character.avatarUrl} alt={character.name} class="w-full h-full object-cover" />
+        {:else}
+          <div class="w-full h-full {character?.color ?? 'bg-ryokan-surface'} flex items-center justify-center text-white font-bold text-xs">
+            {character?.initials ?? (character?.name?.[0]?.toUpperCase() ?? 'A')}
+          </div>
+        {/if}
+      </div>
+
+    <div class="relative group/message flex-1">
 
       {#if editMode}
-        <!-- Flowing border wrapper — conic gradient rotates around the textarea -->
         <div
           class="edit-border-wrap rounded-xl p-[1.5px]"
           style="width: {editWidth}px;"
@@ -82,9 +95,8 @@
               style="height: {editHeight}px;"
             ></textarea>
 
-            <!-- Save / Cancel bar -->
             <div class="flex items-center justify-between px-3 pb-2.5">
-              <p class="text-[10px] text-gray-600">Ctrl+Enter · Esc</p>
+              <p class="text-[10px] text-gray-600">{m.chat_edit_shortcut()}</p>
               <div class="flex gap-2">
                 <button
                   on:click={handleEditCancel}
@@ -104,10 +116,9 @@
         </div>
 
       {:else}
-        <!-- Normal message — bind:this to capture size on edit -->
         <div
           bind:this={msgEl}
-          class="text-gray-300 text-sm leading-relaxed break-words prose-custom"
+          class="text-gray-300 text-sm leading-relaxed break-words prose-custom text-[1rem]"
         >
           {@html cleanHtml}
 
@@ -120,7 +131,6 @@
           {/if}
         </div>
 
-        <!-- Inline action icons -->
         {#if showActions}
           <div class="absolute top-full left-0 pt-1 flex items-center gap-2
             opacity-0 group-hover/message:opacity-100 transition-opacity duration-200">
@@ -156,6 +166,7 @@
       {/if}
 
     </div>
+    </div>
   {/if}
 
 </div>
@@ -188,7 +199,13 @@
   :global(.prose-custom p)            { margin-bottom: 0.8em; line-height: 1.5rem; }
   :global(.prose-custom p:last-child) { margin-bottom: 0; }
   :global(.prose-custom strong)       { color: #f3f3f3; font-weight: 600; }
-  :global(.prose-custom em)           { color: #a0a0a8; font-style: italic; }
+  :global(.prose-custom em) {
+    color: #7a7a8a;
+    font-style: italic;
+    font-size: 0.92em;
+  }
+  :global(.prose-custom em::before) { content: '['; color: #5a5a6a; font-style: normal; }
+  :global(.prose-custom em::after)  { content: ']'; color: #5a5a6a; font-style: normal; }
   :global(.prose-custom ul)           { list-style-type: disc; padding-left: 1.4em; margin-bottom: 0.5em; }
   :global(.prose-custom ol)           { list-style-type: decimal; padding-left: 1.4em; margin-bottom: 0.5em; }
   :global(.prose-custom li)           { margin-bottom: 0.25em; }

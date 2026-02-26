@@ -11,14 +11,16 @@ pub struct Conversation {
     pub title: String,
     pub character_id: Option<String>,
     pub created_at: String,
+    pub updated_at: String,
 }
 
-/// Retrieves all chat sessions, ordered by the most recently created.
+/// Retrieves all chat sessions, ordered by the most recently active.
 #[tauri::command]
 pub fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
     let conn = get_connection(&app)?;
-    let mut stmt = conn.prepare("SELECT id, title, character_id, created_at FROM conversations ORDER BY created_at DESC")
-        .map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(
+        "SELECT id, title, character_id, created_at, updated_at FROM conversations ORDER BY updated_at DESC"
+    ).map_err(|e| e.to_string())?;
     
     let rows = stmt.query_map([], |row| {
         Ok(Conversation {
@@ -26,6 +28,7 @@ pub fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
             title: row.get(1)?,
             character_id: row.get(2)?,
             created_at: row.get(3)?,
+            updated_at: row.get(4)?,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -34,13 +37,14 @@ pub fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
     Ok(list)
 }
 
-/// Retrieves a page of chat sessions. Only fetches `limit` rows starting at `offset`,
+/// Retrieves a page of chat sessions, ordered by the most recently active.
+/// Only fetches `limit` rows starting at `offset`,
 /// so the frontend never holds more than one page worth of data at a time.
 #[tauri::command]
 pub fn get_conversations_page(app: AppHandle, limit: i64, offset: i64) -> Result<Vec<Conversation>, String> {
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare(
-        "SELECT id, title, character_id, created_at FROM conversations ORDER BY created_at DESC LIMIT ?1 OFFSET ?2"
+        "SELECT id, title, character_id, created_at, updated_at FROM conversations ORDER BY updated_at DESC LIMIT ?1 OFFSET ?2"
     ).map_err(|e| e.to_string())?;
 
     let rows = stmt.query_map(params![limit, offset], |row| {
@@ -49,6 +53,7 @@ pub fn get_conversations_page(app: AppHandle, limit: i64, offset: i64) -> Result
             title: row.get(1)?,
             character_id: row.get(2)?,
             created_at: row.get(3)?,
+            updated_at: row.get(4)?,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -76,6 +81,7 @@ pub fn create_chat(app: AppHandle, character_id: String, character_name: String,
     if let Some(msg) = initial_message {
         if !msg.trim().is_empty() {
             let msg_id = Uuid::new_v4().to_string();
+            // The trigger will automatically update updated_at on the conversation.
             tx.execute(
                 "INSERT INTO messages (id, conversation_id, role, content) VALUES (?1, ?2, ?3, ?4)",
                 params![msg_id, new_id, "assistant", msg],

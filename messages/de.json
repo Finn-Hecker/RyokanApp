@@ -16,6 +16,10 @@
   "lobby_empty_search": "Kein Charakter gefunden für „{query}\"",
   "lobby_reset_search": "Suche zurücksetzen",
   "lobby_empty_state": "Noch keine Charaktere. Erstelle deinen ersten!",
+  "lobby_toggle_hide_hidden": "Versteckte Charaktere ausblenden",
+  "lobby_toggle_show_hidden": "Versteckte Charaktere anzeigen",
+  "lobby_aria_show_char": "Anzeigen",
+  "lobby_aria_hide_char": "Verstecken",
 
   "char_emma_name": "Emma",
   "char_emma_desc": "20-jährige Kunststudentin. Lebt von Iced Coffee und Chaos. Trägt Oversize-Pullis, hat K-Pop-Tick, ist chronisch zu spät.",
@@ -65,6 +69,7 @@
   "settings_section_api": "API Verbindung",
   "settings_provider_badge_local": "Lokal",
   "settings_provider_badge_cloud": "Cloud",
+  "settings_api_key_optional": "optional",
 
   "chat_typing_indicator": "schreibt...",
 
@@ -84,6 +89,7 @@
   "chat_retry": "Erneut versuchen",
   "chat_save": "Speichern",
   "chat_cancel": "Abbrechen",
+  "chat_edit_shortcut": "Strg+Enter",
 
   "history_title": "Deine Reisen",
   "history_no_chats": "Noch keine Gespräche.",
@@ -115,7 +121,7 @@
   "create_page_aria_avatar": "Avatar ändern",
   "create_page_drop_zone": "Datei hier ablegen",
   "create_page_title": "Neuer Charakter",
-  "create_page_btn_done": "Fertig",
+  "create_page_btn_done": "Speichern & Schließen",
   "create_page_alt_avatar": "Avatar",
   "create_page_avatar_hint": "Bearbeiten",
   "create_page_label_name": "Name",
@@ -134,5 +140,26 @@
   "create_page_label_scenario": "Szenario",
   "create_page_placeholder_scenario": "Kontext und Umgebung der aktuellen Unterhaltung.",
   "create_page_label_mes_example": "Dialog-Beispiele",
-  "create_page_placeholder_mes_example": "<User> Hallo\n<Charakter> Sei gegrüßt."
+  "create_page_placeholder_mes_example": "<User> Hallo\n<Charakter> Sei gegrüßt.",
+  "create_page_aria_more_options": "Weitere Optionen",
+  "create_page_import_card": "Charakterkarte importieren",
+  "create_page_export_card": "Charakterkarte exportieren",
+  "create_page_show_in_lobby": "In Lobby anzeigen",
+  "create_page_hide_from_lobby": "Aus Lobby ausblenden",
+  "create_page_delete": "Löschen",
+  "create_page_btn_save": "Speichern",
+
+  "danger_zone_actions": "Aktionen",
+  "danger_zone_hide_title": "Aus Lobby ausblenden",
+  "danger_zone_hide_desc": "Charakter bleibt erhalten, wird aber nicht in der Übersicht angezeigt",
+  "danger_zone_delete_title": "Charakter löschen",
+  "danger_zone_delete_desc": "Dauerhaft — alle zugehörigen Chats gehen verloren",
+  
+  "delete_confirm_title": "{name} löschen?",
+  "delete_confirm_desc": "Dieser Charakter wird dauerhaft gelöscht. Alle zugehörigen Chats gehen ebenfalls verloren. Diese Aktion kann nicht rückgängig gemacht werden.",
+  "delete_confirm_cancel": "Abbrechen",
+  "delete_confirm_delete": "Löschen",
+  
+  "toast_export_success": "Als PNG gespeichert",
+  "toast_export_failed": "Export fehlgeschlagen"
 }

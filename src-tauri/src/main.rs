@@ -3,6 +3,7 @@
 mod ai;
 mod database;
 mod import;
+mod export;
 
 fn main() {
     tauri::Builder::default()
@@ -26,7 +27,12 @@ fn main() {
             database::settings::save_setting,
             database::characters::get_custom_characters,
             database::characters::create_character,
+            database::characters::delete_character,
+            database::characters::update_character,
+            database::characters::set_character_hidden,
+            database::characters::get_hidden_character_ids,
             import::parse_character_card,
+            export::export_character_card,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

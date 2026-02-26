@@ -1,30 +1,26 @@
 <script lang="ts">
-  import { fade } from "svelte/transition";
   import { currentView, apiSettings, pendingUiLocale } from "$lib/stores/appState";
   import { getAllSettings, saveSetting } from "$lib/db/settings";
   import { onMount } from "svelte";
   import { get } from "svelte/store";
   import { setLocale } from "$lib/paraglide/runtime";
   import * as m from "$lib/paraglide/messages";
-
+  import PageWithNavSidebar from '$lib/components/layouts/PageWithNavSidebar.svelte';
   import ApiSection from "./ApiSection.svelte";
   import GeneralSection from "./GeneralSection.svelte";
+  import Button from '$lib/components/ui/Button.svelte';
 
   const NAV_ITEMS = [
-    { id: "general", label: () => m.settings_nav_general() },
-    { id: "api",     label: () => m.settings_nav_api() },
-  ] as const;
+    { id: "general", label: m.settings_nav_general() },
+    { id: "api",     label: m.settings_nav_api() },
+  ];
 
-  type SectionId = typeof NAV_ITEMS[number]["id"];
-  let activeSection: SectionId = "general";
-
+  let activeSection = "general";
   let isSaving = false;
-
-  let scrollContainer: HTMLElement;
   let sectionEls: Record<string, HTMLElement> = {};
 
   function scrollToSection(id: string) {
-    activeSection = id as SectionId;
+    activeSection = id;
     sectionEls[id]?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -78,126 +74,66 @@
   }
 </script>
 
-<div
-  class="h-full w-full flex overflow-hidden"
-  in:fade={{ duration: 200 }}
-  role="region"
-  aria-label={m.settings_title()}
+<PageWithNavSidebar
+  pageTitle={m.settings_title()}
+  navItems={NAV_ITEMS}
+  {activeSection}
+  onSectionClick={scrollToSection}
 >
+  <div slot="nav-header" let:mobile>
+    {#if !mobile}
+      <h2 class="text-lg font-medium text-ryokan-accent">{m.settings_title()}</h2>
+    {:else}
+      <Button variant="icon" ariaLabel={m.create_page_aria_back()} on:click={goBack}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </Button>
+    {/if}
+  </div>
 
-  <!-- Sidebar (desktop) -->
-  <nav
-    class="hidden md:flex flex-col w-52 shrink-0 border-r border-white/[0.06] pt-6 px-4 pb-8 gap-1"
-    aria-label="Settings navigation"
-  >
-    <!-- Back button -->
-    <button
-      on:click={goBack}
-      aria-label={m.create_page_aria_back()}
-      class="flex items-center justify-center w-10 h-10 mb-5
-             bg-white/5 hover:bg-white/10 border border-white/5
-             hover:border-ryokan-accent/30 text-gray-400 hover:text-white
-             transition-all rounded-full active:scale-95"
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+<div slot="actions" class="flex items-center gap-3">
+    
+    <Button variant="icon" ariaLabel={m.create_page_aria_back()} on:click={goBack}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-    </button>
+    </Button>
 
-    <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-600 px-3 mb-1">
-      {m.settings_title()}
-    </p>
+    <Button variant="secondary" disabled={isSaving} on:click={saveSettings}>
+      {#if isSaving}
+        <span class="save-spinner"></span>
+      {:else}
+        {m.settings_btn_save()}
+      {/if}
+    </Button>
+    
+  </div>
 
+  <div slot="mobile-nav">
     {#each NAV_ITEMS as item}
       <button
         on:click={() => scrollToSection(item.id)}
-        class="text-left px-3 py-2.5 rounded-xl text-sm transition-all
+        class="shrink-0 px-4 py-2 rounded-full text-xs font-semibold border transition-all
           {activeSection === item.id
-            ? 'bg-white/[0.07] text-white font-medium border border-white/[0.08]'
-            : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'}"
+            ? 'bg-white/[0.07] border-white/[0.08] text-white'
+            : 'bg-white/[0.03] border-white/[0.06] text-gray-500 hover:text-white hover:bg-white/[0.05]'}"
       >
-        {item.label()}
+        {item.label}
       </button>
     {/each}
-  </nav>
-
-  <!-- Main area -->
-  <div class="flex flex-col flex-1 min-w-0 overflow-hidden">
-
-    <!-- Top bar -->
-    <div class="flex items-center justify-between px-8 pt-6 pb-4 shrink-0">
-
-      <!-- Mobile-only back button -->
-      <button
-        on:click={goBack}
-        aria-label={m.create_page_aria_back()}
-        class="md:hidden flex items-center justify-center w-10 h-10
-               bg-white/5 hover:bg-white/10 border border-white/5
-               hover:border-ryokan-accent/30 text-gray-400 hover:text-white
-               transition-all rounded-full active:scale-95"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-          <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </button>
-
-      <!-- Desktop spacer -->
-      <div class="hidden md:block w-10" aria-hidden="true"></div>
-
-      <span class="text-sm font-medium text-gray-400 tracking-wide">
-        {m.settings_title()}
-      </span>
-
-      <!-- Save button -->
-      <button
-        on:click={saveSettings}
-        disabled={isSaving}
-        class="group flex items-center gap-2 h-10 px-4
-               border transition-all rounded-full active:scale-95
-               text-sm font-medium tracking-wide
-               disabled:opacity-50 disabled:cursor-not-allowed
-               bg-white/5 hover:bg-white/10 border-white/5 hover:border-ryokan-accent/30 text-gray-400 hover:text-white"
-      >
-        {#if isSaving}
-          <span class="save-spinner" aria-hidden="true"></span>
-        {:else}
-          {m.settings_btn_save()}
-        {/if}
-      </button>
-    </div>
-
-    <!-- Mobile section pills -->
-    <div class="md:hidden flex gap-2 px-4 pb-3 overflow-x-auto no-scrollbar shrink-0">
-      {#each NAV_ITEMS as item}
-        <button
-          on:click={() => scrollToSection(item.id)}
-          class="shrink-0 px-4 py-1.5 rounded-full text-xs font-semibold border transition-all
-            {activeSection === item.id
-              ? 'bg-white/[0.07] border-white/[0.12] text-white'
-              : 'bg-transparent border-white/[0.06] text-gray-500 hover:text-white'}"
-        >
-          {item.label()}
-        </button>
-      {/each}
-    </div>
-
-    <!-- Scrollable sections -->
-    <div bind:this={scrollContainer} class="flex-1 overflow-y-auto overflow-x-hidden">
-      <div class="max-w-xl mx-auto px-8 pb-32 space-y-10">
-
-        <div bind:this={sectionEls["general"]}>
-          <GeneralSection />
-        </div>
-
-        <div bind:this={sectionEls["api"]}>
-          <ApiSection />
-        </div>
-
-      </div>
-    </div>
-
   </div>
-</div>
+
+  <div class="max-w-xl mx-auto px-8 pb-32 space-y-10 pt-8">
+    <div bind:this={sectionEls["general"]}>
+      <GeneralSection />
+    </div>
+
+    <div bind:this={sectionEls["api"]}>
+      <ApiSection />
+    </div>
+  </div>
+</PageWithNavSidebar>
 
 <style>
   .save-spinner {
@@ -210,9 +146,7 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .no-scrollbar::-webkit-scrollbar { display: none; }
-  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
+  /* Shared styles for settings sections */
   :global(.settings-card) {
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid rgba(255, 255, 255, 0.06);
