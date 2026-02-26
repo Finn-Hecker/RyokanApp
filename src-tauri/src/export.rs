@@ -5,28 +5,31 @@ use base64::{engine::general_purpose, Engine as _};
 use image::ImageFormat;
 use std::io::Cursor;
 
+static CRC_TABLE: [u32; 256] = generate_crc32_table();
+
+const fn generate_crc32_table() -> [u32; 256] {
+    let mut table = [0u32; 256];
+    let mut i = 0;
+    while i < 256 {
+        let mut c = i as u32;
+        let mut j = 0;
+        while j < 8 {
+            if c & 1 != 0 { c = 0xedb88320 ^ (c >> 1); }
+            else { c >>= 1; }
+            j += 1;
+        }
+        table[i] = c;
+        i += 1;
+    }
+    table
+}
+
 /// CRC-32 per ISO 3309, as required by the PNG spec.
 fn png_crc32(data: &[u8]) -> u32 {
-    static TABLE: std::sync::OnceLock<[u32; 256]> = std::sync::OnceLock::new();
-    let table = TABLE.get_or_init(|| {
-        let mut t = [0u32; 256];
-        for n in 0u32..256 {
-            let mut c = n;
-            for _ in 0..8 {
-                if c & 1 != 0 {
-                    c = 0xedb88320 ^ (c >> 1);
-                } else {
-                    c >>= 1;
-                }
-            }
-            t[n as usize] = c;
-        }
-        t
-    });
     let mut crc = 0xffffffff_u32;
     for &byte in data {
         let idx = ((crc ^ byte as u32) & 0xff) as usize;
-        crc = table[idx] ^ (crc >> 8);
+        crc = CRC_TABLE[idx] ^ (crc >> 8);
     }
     crc ^ 0xffffffff
 }
