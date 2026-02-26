@@ -119,7 +119,7 @@
               {chat.title}
             </div>
             <div class="text-gray-600 text-[10px] mt-1">
-              {new Date(chat.created_at).toLocaleString(getLocale())}
+              {chat.formattedDate}
             </div>
           </div>
           <button
@@ -144,15 +144,13 @@
 {:else if isOpen}
   <button
     type="button"
-    transition:fade={{ duration: 200 }}
     aria-label={m.history_close_label()}
     on:click={close}
-    class="fixed inset-0 w-full h-full bg-black/60 z-40 backdrop-blur-sm cursor-pointer border-none"
+    class="fixed inset-0 w-full h-full bg-black/60 z-40 cursor-pointer border-none"
   ></button>
 
   <aside
-    transition:fly={{ x: -300, duration: 300 }}
-    class="fixed left-0 top-0 bottom-0 w-72 border-r border-white/5 shadow-2xl z-50 flex flex-col"
+    class="fixed left-0 top-0 bottom-0 w-72 border-r border-white/5 shadow-2xl z-50 flex flex-col bg-ryokan-sidebar"
   >
     <div class="p-6 border-b border-white/5 flex justify-between items-center">
       <h2 class="text-lg font-medium text-ryokan-accent">{m.history_title()}</h2>
@@ -204,13 +202,12 @@
   {#if chatToDelete}
     <div
       class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
-      transition:fade={{ duration: 150 }}
       role="dialog"
       aria-modal="true"
     >
       <div
         class="bg-ryokan-surface border border-white/10 p-6 rounded-xl shadow-2xl max-w-sm w-full"
-        transition:scale={{ duration: 200, start: 0.95 }}
+        transition:scale={{ duration: 150, start: 0.95 }}
       >
         <h3 class="text-lg font-semibold text-white mb-2">{m.modal_delete_title()}</h3>
         <p class="text-gray-400 text-sm mb-6 leading-relaxed">{m.modal_delete_body()}</p>

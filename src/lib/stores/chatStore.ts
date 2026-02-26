@@ -2,6 +2,7 @@ import { writable, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import { activeCharacter } from './appState';
 import { allCharacters } from './characterStore';
+import { getLocale } from '$lib/paraglide/runtime';
 
 export interface Message {
     id?: string;
@@ -16,6 +17,7 @@ export interface Conversation {
     character_id: string;
     created_at: string;
     updated_at: string;
+    formattedDate?: string;
 }
 
 export interface DisplayMessage {
@@ -29,6 +31,11 @@ export const conversations = writable<Conversation[]>([]);
 export const currentMessages = writable<Message[]>([]);
 export const activeChatId = writable<string | null>(null);
 
+const dateFormatter = new Intl.DateTimeFormat(getLocale(), {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+});
+
 const PAGE_SIZE = 15;
 
 /** Call when the sidebar opens. */
@@ -38,8 +45,17 @@ export async function loadAllConversations() {
             limit: PAGE_SIZE,
             offset: 0,
         });
-        conversations.set(result);
-    } catch (e) { console.error(e); }
+
+        const enhanced = result.map(chat => ({
+            ...chat,
+            formattedDate: dateFormatter.format(new Date(chat.created_at))
+        }));
+
+        conversations.set(enhanced);
+
+    } catch (e) {
+        console.error(e);
+    }
 }
 
 /** 

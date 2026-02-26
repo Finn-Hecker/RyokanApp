@@ -77,8 +77,12 @@
   maxContentWidth="max-w-7xl"
 >
   <!-- Slot: sidebar -->
-  <div slot="sidebar" class="h-full flex flex-col overflow-hidden">
-    <Sidebar isOpen={true} close={() => {}} alwaysVisible={true} />
+  <div slot="sidebar" let:isMobileSidebarOpen let:close class="h-full flex flex-col overflow-hidden">
+    <Sidebar 
+      isOpen={isMobileSidebarOpen} 
+      close={close} 
+      alwaysVisible={!isMobileSidebarOpen} 
+    />
   </div>
 
   <!-- Slot: header actions (create + settings buttons) -->

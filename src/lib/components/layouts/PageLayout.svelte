@@ -27,14 +27,13 @@
     {#if isMobileSidebarOpen}
       <button
         type="button"
-        transition:fade={{ duration: 200 }}
         aria-label="Close sidebar"
         on:click={() => isMobileSidebarOpen = false}
         class="lg:hidden fixed inset-0 w-full h-full bg-black/60 z-40 backdrop-blur-sm cursor-pointer"
       ></button>
       
       <aside
-        class="lg:hidden fixed left-0 top-0 bottom-0 w-72 border-r border-white/5 shadow-2xl z-50 flex flex-col"
+        class="lg:hidden fixed left-0 top-0 bottom-0 w-72 bg-ryokan-sidebar border-r border-white/5 shadow-2xl z-50 flex flex-col"
       >
         <slot name="sidebar" {isMobileSidebarOpen} close={() => isMobileSidebarOpen = false} />
       </aside>
