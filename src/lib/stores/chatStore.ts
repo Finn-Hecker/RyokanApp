@@ -69,8 +69,15 @@ export async function loadMoreConversations(): Promise<boolean> {
             limit: PAGE_SIZE,
             offset: current.length,
         });
+        
         if (result.length === 0) return false;
-        conversations.update(prev => [...prev, ...result]);
+
+        const enhanced = result.map(chat => ({
+            ...chat,
+            formattedDate: dateFormatter.format(new Date(chat.created_at))
+        }));
+
+        conversations.update(prev => [...prev, ...enhanced]);
         return result.length === PAGE_SIZE;
     } catch (e) {
         console.error(e);

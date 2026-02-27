@@ -1,23 +1,20 @@
 <script lang="ts">
-  // --- Stores ---
   import { currentView, activeCharacter, editingCharacter } from '$lib/stores/appState';
-  import { allCharacters, loadCharacters, hiddenCharacterIds, toggleHideCharacter } from '$lib/stores/characterStore';
+  import { allCharacters, loadCharacters, hiddenCharacterIds, toggleHideCharacter, loadHiddenIds } from '$lib/stores/characterStore';
   import { startNewChat } from '$lib/stores/chatStore';
 
-  // --- Components ---
   import Sidebar from '$lib/components/Sidebar.svelte';
   import PageLayout from '$lib/components/layouts/PageLayout.svelte';
   import Button from '$lib/components/ui/Button.svelte';
   import * as m from '$lib/paraglide/messages';
   import { onMount } from 'svelte';
 
-  // --- State ---
   let searchQuery = '';
   let viewMode: 'grid' | 'compact' | 'list' = 'grid';
   let showHidden = false;
 
-  // --- Lifecycle ---
   onMount(async () => {
+    await loadHiddenIds();
     await loadCharacters();
     const saved = localStorage.getItem('ryokan-view-mode');
     if (saved === 'grid' || saved === 'compact' || saved === 'list') {
@@ -25,7 +22,6 @@
     }
   });
 
-  // --- Handlers ---
   function setViewMode(mode: 'grid' | 'compact' | 'list') {
     viewMode = mode;
     localStorage.setItem('ryokan-view-mode', mode);
@@ -55,7 +51,6 @@
     toggleHideCharacter(char.id);
   }
 
-  // --- Derived ---
   // Filters by visibility and search query
   $: filtered = ($allCharacters ?? [])
     .filter(Boolean)

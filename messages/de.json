@@ -16,10 +16,10 @@
   "lobby_empty_search": "Kein Charakter gefunden für „{query}\"",
   "lobby_reset_search": "Suche zurücksetzen",
   "lobby_empty_state": "Noch keine Charaktere. Erstelle deinen ersten!",
-  "lobby_toggle_hide_hidden": "Versteckte Charaktere ausblenden",
-  "lobby_toggle_show_hidden": "Versteckte Charaktere anzeigen",
+  "lobby_toggle_hide_hidden": "Ausgeblendete Charaktere ausblenden",
+  "lobby_toggle_show_hidden": "Ausgeblendete Charaktere anzeigen",
   "lobby_aria_show_char": "Anzeigen",
-  "lobby_aria_hide_char": "Verstecken",
+  "lobby_aria_hide_char": "Ausblenden",
 
   "char_emma_name": "Emma",
   "char_emma_desc": "20-jährige Kunststudentin. Lebt von Iced Coffee und Chaos. Trägt Oversize-Pullis, hat K-Pop-Tick, ist chronisch zu spät.",
