@@ -83,12 +83,6 @@
   <div slot="nav-header" let:mobile>
     {#if !mobile}
       <h2 class="text-lg font-medium text-ryokan-accent">{m.settings_title()}</h2>
-    {:else}
-      <Button variant="icon" ariaLabel={m.create_page_aria_back()} on:click={goBack}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </Button>
     {/if}
   </div>
 

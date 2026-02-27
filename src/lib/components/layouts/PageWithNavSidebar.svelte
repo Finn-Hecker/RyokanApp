@@ -49,10 +49,6 @@
 
       <div class="hidden md:block"></div>
 
-      <span class="text-sm font-medium text-gray-400 tracking-wide md:hidden">
-        {pageTitle}
-      </span>
-
       <slot name="actions" />
     </div>
 

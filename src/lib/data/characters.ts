@@ -1,6 +1,6 @@
 import * as m from '$lib/paraglide/messages';
-import emmaAvatar from '$lib/assets/avatars/emma.png';
-import kaelenAvatar from '$lib/assets/avatars/kaelen.png';
+import emmaAvatar from '$lib/assets/avatars/emma.webp';
+import kaelenAvatar from '$lib/assets/avatars/kaelen.webp';
 
 export const CHARACTERS = [
   { 
