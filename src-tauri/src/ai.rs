@@ -47,6 +47,8 @@ pub(crate) struct AiRequest {
     model: String,
     messages: Vec<serde_json::Value>,
     temperature: f32,
+    max_tokens: Option<u32>,
+    presence_penalty: Option<f32>,
 }
 
 /// Payload emitted back to the frontend containing the generated text.
@@ -108,14 +110,23 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
     let token = CancellationToken::new();
     *CANCEL_TOKEN.lock().unwrap() = token.clone();
 
+    let mut body = serde_json::json!({
+        "model": payload.model,
+        "messages": payload.messages,
+        "temperature": payload.temperature,
+        "stream": true
+    });
+
+    if let Some(max_tokens) = payload.max_tokens {
+        body["max_tokens"] = serde_json::json!(max_tokens);
+    }
+    if let Some(penalty) = payload.presence_penalty {
+        body["repetition_penalty"] = serde_json::json!(penalty);
+    }
+
     let mut req = CLIENT
         .post(format!("{}/chat/completions", payload.url))
-        .json(&serde_json::json!({
-            "model": payload.model,
-            "messages": payload.messages,
-            "temperature": payload.temperature,
-            "stream": true
-        }));
+        .json(&body);
 
     if !payload.api_key.is_empty() {
         req = req.bearer_auth(&payload.api_key);
