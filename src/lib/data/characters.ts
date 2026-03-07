@@ -13,7 +13,8 @@ export const CHARACTERS = [
     color: "bg-amber-600",
     initials: "E",
     greeting: m.char_emma_greeting(),
-    avatarUrl: emmaAvatar
+    avatarUrl: emmaAvatar,
+    world_info_ids: ['wi-emma-campus'],
   },
   { 
     id: 2, 
@@ -25,6 +26,7 @@ export const CHARACTERS = [
     color: "bg-stone-700",
     initials: "K",
     greeting: m.char_kaelen_greeting(),
-    avatarUrl: kaelenAvatar
+    avatarUrl: kaelenAvatar,
+    world_info_ids: ['wi-kaelen-guild'],
   }
 ];
