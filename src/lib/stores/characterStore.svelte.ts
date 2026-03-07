@@ -1,4 +1,3 @@
-import { writable, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import { CHARACTERS as STATIC_CHARACTERS } from '$lib/data/characters';
 
@@ -24,16 +23,18 @@ export interface Character {
     creator_notes?: string;
     hidden?: boolean;
     alternate_greetings?: string[];
+    world_info_ids?: string[];
 }
 
-export const allCharacters = writable<Character[]>([...STATIC_CHARACTERS]);
-export const hiddenCharacterIds = writable<Set<string | number>>(new Set());
+export const characterState = $state({
+    allCharacters: [...STATIC_CHARACTERS] as Character[],
+    hiddenCharacterIds: new Set<string | number>()
+});
 
-/// Loads hidden character IDs from SQLite. Call once on app start.
 export async function loadHiddenIds() {
     try {
         const ids = await invoke<string[]>('get_hidden_character_ids');
-        hiddenCharacterIds.set(new Set(ids));
+        characterState.hiddenCharacterIds = new Set(ids);
     } catch (e) {
         console.error('Error loading hidden character ids:', e);
     }
@@ -52,14 +53,16 @@ export async function loadCharacters() {
                 ...c,
                 isCustom: true,
                 avatarUrl,
-                // alternate_greetings arrives as a JSON string from Rust
                 alternate_greetings: typeof c.alternate_greetings === 'string'
                     ? JSON.parse(c.alternate_greetings)
-                    : (c.alternate_greetings ?? [])
+                    : (c.alternate_greetings ?? []),
+                world_info_ids: Array.isArray(c.world_info_ids)
+                    ? c.world_info_ids
+                    : [],
             };
         });
 
-        allCharacters.set([...STATIC_CHARACTERS, ...customChars]);
+        characterState.allCharacters = [...STATIC_CHARACTERS, ...customChars];
 
     } catch (e) {
         console.error("Error loading characters:", e);
@@ -76,10 +79,15 @@ export async function createCharacter(charData: any) {
         initials: charData.initials,
         color: charData.color,
         isCustom: true,
-        avatarUrl: charData.avatar || undefined
+        avatarUrl: charData.avatar || undefined,
+        world_info_ids: charData.world_info_ids ?? [],
     };
 
-    allCharacters.update(chars => [...STATIC_CHARACTERS, tempChar, ...chars.slice(STATIC_CHARACTERS.length)]);
+    characterState.allCharacters = [
+        ...STATIC_CHARACTERS, 
+        tempChar, 
+        ...characterState.allCharacters.slice(STATIC_CHARACTERS.length)
+    ];
 
     try {
         const realId = await invoke<string>('create_character', {
@@ -96,23 +104,20 @@ export async function createCharacter(charData: any) {
                 avatar: charData.avatar || null,
                 v3_spec: charData.v3_spec || false,
                 initials: charData.initials,
-                color: charData.color
+                color: charData.color,
+                world_info_ids: charData.world_info_ids ?? [],
             }
         });
 
-        allCharacters.update(chars =>
-            chars.map(c => c.id === tempId
-                ? { ...c, id: realId }
-                : c
-            )
+        characterState.allCharacters = characterState.allCharacters.map(c => 
+            c.id === tempId ? { ...c, id: realId } : c
         );
 
-        // Reload after delay to pick up the async-processed avatar
-        setTimeout(() => loadCharacters(), 600);
+        setTimeout(() => loadCharacters(), 800);
 
     } catch (e) {
         console.error("Error creating character:", e);
-        allCharacters.update(chars => chars.filter(c => c.id !== tempId));
+        characterState.allCharacters = characterState.allCharacters.filter(c => c.id !== tempId);
         throw e;
     }
 }
@@ -134,19 +139,16 @@ export async function updateCharacter(id: string, charData: any) {
                 avatar: charData.avatar || null,
                 v3_spec: charData.v3_spec || false,
                 initials: charData.initials,
-                color: charData.color
+                color: charData.color,
+                world_info_ids: charData.world_info_ids ?? [],
             }
         });
 
-        allCharacters.update(chars =>
-            chars.map(c => c.id === id
-                ? { ...c, ...charData, id, isCustom: true }
-                : c
-            )
+        characterState.allCharacters = characterState.allCharacters.map(c =>
+            c.id === id ? { ...c, ...charData, id, isCustom: true } : c
         );
 
-        // Reload after delay to pick up the async-processed avatar
-        setTimeout(() => loadCharacters(), 600);
+        setTimeout(() => loadCharacters(), 800);
 
     } catch (e) {
         console.error("Error updating character:", e);
@@ -157,26 +159,29 @@ export async function updateCharacter(id: string, charData: any) {
 export async function deleteCharacter(id: string) {
     try {
         await invoke('delete_character', { id });
-        allCharacters.update(chars => chars.filter(c => c.id !== id));
-        // Rust cleans up the settings table — mirror that in the store
-        hiddenCharacterIds.update(set => { set.delete(id); return new Set(set); });
+        
+        characterState.allCharacters = characterState.allCharacters.filter(c => c.id !== id);
+        
+        const newSet = new Set(characterState.hiddenCharacterIds);
+        newSet.delete(id);
+        characterState.hiddenCharacterIds = newSet;
+        
     } catch (e) {
         console.error("Error deleting character:", e);
         throw e;
     }
 }
 
-/// Toggles the hidden state for a character. Persists to SQLite.
 export async function toggleHideCharacter(id: string | number): Promise<boolean> {
-    const current = get(hiddenCharacterIds);
-    const isNowHidden = !current.has(id);
+    const isNowHidden = !characterState.hiddenCharacterIds.has(id);
 
     try {
         await invoke('set_character_hidden', { id: String(id), hidden: isNowHidden });
-        hiddenCharacterIds.update(set => {
-            isNowHidden ? set.add(id) : set.delete(id);
-            return new Set(set);
-        });
+        
+        const newSet = new Set(characterState.hiddenCharacterIds);
+        isNowHidden ? newSet.add(id) : newSet.delete(id);
+        characterState.hiddenCharacterIds = newSet;
+        
     } catch (e) {
         console.error('Error toggling hidden state:', e);
         throw e;

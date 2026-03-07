@@ -1,7 +1,7 @@
-import { writable, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
-import { activeCharacter } from './appState';
-import { allCharacters } from './characterStore';
+import { appState } from './appState.svelte';
+import { characterState } from './characterStore.svelte';
+import { roleState } from './roleStore.svelte';
 import { getLocale } from '$lib/paraglide/runtime';
 
 export interface Message {
@@ -27,9 +27,12 @@ export interface DisplayMessage {
     senderName: string;
 }
 
-export const conversations = writable<Conversation[]>([]);
-export const currentMessages = writable<Message[]>([]);
-export const activeChatId = writable<string | null>(null);
+// Group all reactive state into a single object
+export const chatState = $state({
+    conversations: [] as Conversation[],
+    currentMessages: [] as Message[],
+    activeChatId: null as string | null
+});
 
 const dateFormatter = new Intl.DateTimeFormat(getLocale(), {
     dateStyle: 'medium',
@@ -51,23 +54,22 @@ export async function loadAllConversations() {
             formattedDate: dateFormatter.format(new Date(chat.created_at))
         }));
 
-        conversations.set(enhanced);
+        chatState.conversations = enhanced;
 
     } catch (e) {
         console.error(e);
     }
 }
 
-/** 
- * Appends the next page to the existing list.
+/** * Appends the next page to the existing list.
  * Returns false when there are no more results to load. 
  */
 export async function loadMoreConversations(): Promise<boolean> {
     try {
-        const current = get(conversations);
+        const currentLength = chatState.conversations.length;
         const result = await invoke<Conversation[]>('get_conversations_page', {
             limit: PAGE_SIZE,
-            offset: current.length,
+            offset: currentLength,
         });
         
         if (result.length === 0) return false;
@@ -77,7 +79,7 @@ export async function loadMoreConversations(): Promise<boolean> {
             formattedDate: dateFormatter.format(new Date(chat.created_at))
         }));
 
-        conversations.update(prev => [...prev, ...enhanced]);
+        chatState.conversations = [...chatState.conversations, ...enhanced];
         return result.length === PAGE_SIZE;
     } catch (e) {
         console.error(e);
@@ -109,9 +111,17 @@ export async function startNewChat(character: any) {
             }
         }
 
-        // Only send a message if one exists
-        const selectedGreeting = allGreetings.length > 0
+        const rawGreeting = allGreetings.length > 0
             ? allGreetings[Math.floor(Math.random() * allGreetings.length)]
+            : null;
+
+        const activeRole = roleState.allRoles.find(r => r.id === roleState.activeRoleId);
+        
+        const userName: string = activeRole?.name ?? (character as any).userName ?? 'User';
+        const selectedGreeting = rawGreeting
+            ? rawGreeting
+                .replace(/\{\{char\}\}/gi, character.name)
+                .replace(/\{\{user\}\}/gi, userName)
             : null;
 
         const newId = await invoke<string>('create_chat', {
@@ -121,7 +131,7 @@ export async function startNewChat(character: any) {
         });
         
         await loadAllConversations();
-        activeChatId.set(newId);
+        chatState.activeChatId = newId;
         await loadMessages(newId);
     } catch (e) { console.error(e); }
 }
@@ -129,15 +139,14 @@ export async function startNewChat(character: any) {
 export async function openHistoryChat(chatId: string) {
     await loadMessages(chatId);
 
-    const allChats = get(conversations);
-    const currentChat = allChats.find(c => c.id === chatId);
+    const currentChat = chatState.conversations.find(c => c.id === chatId);
 
     if (currentChat && currentChat.character_id) {
-        const chars = get(allCharacters);
+        const chars = characterState.allCharacters; 
         const char = chars.find(c => c.id.toString() === currentChat.character_id);
         
         if (char) {
-            activeCharacter.set(char);
+            appState.activeCharacter = char;
             console.log("Character synchronized:", char.name);
         } else {
             console.warn("Could not find a character for this chat.");
@@ -148,13 +157,13 @@ export async function openHistoryChat(chatId: string) {
 export async function loadMessages(chatId: string) {
     try {
         const result = await invoke<Message[]>('get_messages', { chatId });
-        currentMessages.set(result);
-        activeChatId.set(chatId);
+        chatState.currentMessages = result;
+        chatState.activeChatId = chatId;
     } catch (e) { console.error(e); }
 }
 
 export async function addMessage(role: 'user' | 'assistant', content: string) {
-    const chatId = get(activeChatId);
+    const chatId = chatState.activeChatId;
     if (!chatId) return;
 
     try {
@@ -167,7 +176,7 @@ export async function addMessage(role: 'user' | 'assistant', content: string) {
 
 // Updates the content of an existing message in the database.
 export async function updateMessage(id: string, content: string) {
-    const chatId = get(activeChatId);
+    const chatId = chatState.activeChatId;
     try {
         await invoke('update_message', { id, content });
         if (chatId) await loadMessages(chatId);
@@ -176,7 +185,7 @@ export async function updateMessage(id: string, content: string) {
 
 // Deletes a single message by ID, then reloads the message list.
 export async function deleteMessage(id: string) {
-    const chatId = get(activeChatId);
+    const chatId = chatState.activeChatId;
     try {
         await invoke('delete_message', { id });
         if (chatId) await loadMessages(chatId);
@@ -187,9 +196,9 @@ export async function deleteConversation(id: string) {
     try {
         await invoke('delete_chat', { id });
         await loadAllConversations();
-        if (get(activeChatId) === id) {
-            activeChatId.set(null);
-            currentMessages.set([]);
+        if (chatState.activeChatId === id) {
+            chatState.activeChatId = null;
+            chatState.currentMessages = [];
         }
     } catch (e) { console.error(e); }
 }
