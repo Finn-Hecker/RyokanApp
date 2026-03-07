@@ -1,20 +1,31 @@
 <script lang="ts">
-  import { fade, fly, scale } from 'svelte/transition';
-  import { conversations, openHistoryChat, loadAllConversations, loadMoreConversations, deleteConversation } from '$lib/stores/chatStore';
-  import { currentView } from '$lib/stores/appState';
+  import { scale } from 'svelte/transition';
+  import { chatState, openHistoryChat, loadAllConversations, loadMoreConversations, deleteConversation } from '$lib/stores/chatStore.svelte';
+  import { appState } from '$lib/stores/appState.svelte';
   import * as m from '$lib/paraglide/messages';
   import { getLocale } from '$lib/paraglide/runtime';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
 
-  export let isOpen: boolean;
-  export let close: () => void;
-  export let alwaysVisible: boolean = false;
+  let {
+    isOpen,
+    close,
+    alwaysVisible = false,
+    onRolesClick,
+    onWorldInfoClick
+  }: {
+    isOpen: boolean;
+    close: () => void;
+    alwaysVisible?: boolean;
+    onRolesClick?: () => void;
+    onWorldInfoClick?: () => void;
+  } = $props();
 
-  let chatToDelete: string | null = null;
-  let hasMore = true;
-  let isLoading = false;
-  let sentinel: HTMLDivElement;
-  let observer: IntersectionObserver;
+  let chatToDelete = $state<string | null>(null);
+  let hasMore = $state(true);
+  let isLoading = $state(false);
+  let sentinel = $state<HTMLDivElement | null>(null);
+  
+  let observer: IntersectionObserver | null = null;
 
   onMount(() => {
     if (alwaysVisible) {
@@ -26,13 +37,17 @@
     if (observer) observer.disconnect();
   });
 
-  $: if (!alwaysVisible && isOpen) {
-    initializeChats();
-  }
+  $effect(() => {
+    if (!alwaysVisible && isOpen) {
+      untrack(() => initializeChats());
+    }
+  });
 
-  $: if (!alwaysVisible && !isOpen && observer) {
-    observer.disconnect();
-  }
+  $effect(() => {
+    if (!alwaysVisible && !isOpen && observer) {
+      observer.disconnect();
+    }
+  });
 
   async function initializeChats() {
     if (isLoading) return;
@@ -48,14 +63,14 @@
       console.error("[Sidebar] Error loading chats:", error);
     } finally {
       isLoading = false;
-      setTimeout(setupObserver, 0); 
+      setTimeout(setupObserver, 0);
     }
   }
 
   function setupObserver() {
     if (observer) observer.disconnect();
     if (!sentinel) return;
-
+    
     observer = new IntersectionObserver(async (entries) => {
       if (!entries[0].isIntersecting || isLoading || !hasMore) return;
       
@@ -74,7 +89,7 @@
 
   async function loadChat(id: string) {
     await openHistoryChat(id);
-    currentView.set('chat');
+    appState.currentView = 'chat';
     if (!alwaysVisible) close();
   }
 
@@ -93,6 +108,20 @@
   function cancelDelete() {
     chatToDelete = null;
   }
+
+  function handleRolesClick() {
+    if (onRolesClick) { onRolesClick(); return; }
+    appState.listInitialTab = 'roles';
+    appState.currentView = 'list';
+    if (!alwaysVisible) close();
+  }
+
+  function handleWorldInfoClick() {
+    if (onWorldInfoClick) { onWorldInfoClick(); return; }
+    appState.listInitialTab = 'worldinfo';
+    appState.currentView = 'list';
+    if (!alwaysVisible) close();
+  }
 </script>
 
 {#if alwaysVisible}
@@ -101,17 +130,17 @@
       <h2 class="text-lg font-medium text-ryokan-accent">{m.history_title()}</h2>
     </div>
 
-    <div class="flex-1 overflow-y-auto p-4 space-y-2">
-      {#if $conversations.length === 0}
+    <div class="flex-1 overflow-y-auto p-4 space-y-2 min-h-0">
+      {#if chatState.conversations.length === 0}
         <p class="text-gray-600 text-sm text-center mt-10">{m.history_no_chats()}</p>
       {/if}
 
-      {#each $conversations as chat}
+      {#each chatState.conversations as chat}
         <div
           role="button"
           tabindex="0"
-          on:click={() => loadChat(chat.id)}
-          on:keydown={(e) => e.key === 'Enter' && loadChat(chat.id)}
+          onclick={() => loadChat(chat.id)}
+          onkeydown={(e) => e.key === 'Enter' && loadChat(chat.id)}
           class="relative w-full text-left p-3 rounded-lg hover:bg-white/5 group transition-all border border-transparent hover:border-white/5 cursor-pointer"
         >
           <div class="pr-8">
@@ -123,7 +152,7 @@
             </div>
           </div>
           <button
-            on:click={(e) => promptDelete(chat.id, e)}
+            onclick={(e) => promptDelete(chat.id, e)}
             class="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all hover:bg-white/10 rounded-md"
             aria-label={m.history_delete_label()}
           >
@@ -139,35 +168,70 @@
         {#if isLoading}<span>…</span>{/if}
       </div>
     </div>
+
+    <div class="p-3 border-t border-white/5 flex gap-2 shrink-0">
+      <button
+        onclick={handleRolesClick}
+        class="flex-1 flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl
+               bg-white/[0.03] hover:bg-white/[0.07]
+               border border-white/[0.06] hover:border-ryokan-accent/40
+               text-gray-500 hover:text-ryokan-accent
+               transition-all duration-200 active:scale-[0.97]"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        <span class="text-[10px] font-medium leading-none tracking-wide text-current opacity-70">{m.sidebar_roles()}</span>
+      </button>
+
+      <button
+        onclick={handleWorldInfoClick}
+        class="flex-1 flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl
+               bg-white/[0.03] hover:bg-white/[0.07]
+               border border-white/[0.06] hover:border-ryokan-accent/40
+               text-gray-500 hover:text-ryokan-accent
+               transition-all duration-200 active:scale-[0.97]"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="2" y1="12" x2="22" y2="12"/>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+        </svg>
+        <span class="text-[10px] font-medium leading-none tracking-wide text-current opacity-70">{m.sidebar_worldinfo()}</span>
+      </button>
+    </div>
   </aside>
 
 {:else if isOpen}
   <button
     type="button"
     aria-label={m.history_close_label()}
-    on:click={close}
+    onclick={close}
     class="fixed inset-0 w-full h-full bg-black/60 z-40 cursor-pointer border-none"
   ></button>
 
   <aside
     class="fixed left-0 top-0 bottom-0 w-72 border-r border-white/5 shadow-2xl z-50 flex flex-col bg-ryokan-sidebar"
   >
-    <div class="p-6 border-b border-white/5 flex justify-between items-center">
+    <div class="p-6 border-b border-white/5 flex justify-between items-center shrink-0">
       <h2 class="text-lg font-medium text-ryokan-accent">{m.history_title()}</h2>
-      <button on:click={close} aria-label={m.history_close_label()} class="text-gray-500 hover:text-white">✕</button>
+      <button onclick={close} aria-label={m.history_close_label()} class="text-gray-500 hover:text-white">✕</button>
     </div>
 
-    <div class="flex-1 overflow-y-auto p-4 space-y-2">
-      {#if $conversations.length === 0}
+    <div class="flex-1 overflow-y-auto p-4 space-y-2 min-h-0">
+      {#if chatState.conversations.length === 0}
         <p class="text-gray-600 text-sm text-center mt-10">{m.history_no_chats()}</p>
       {/if}
 
-      {#each $conversations as chat}
+      {#each chatState.conversations as chat}
         <div
           role="button"
           tabindex="0"
-          on:click={() => loadChat(chat.id)}
-          on:keydown={(e) => e.key === 'Enter' && loadChat(chat.id)}
+          onclick={() => loadChat(chat.id)}
+          onkeydown={(e) => e.key === 'Enter' && loadChat(chat.id)}
           class="relative w-full text-left p-3 rounded-lg hover:bg-white/5 group transition-all border border-transparent hover:border-white/5 cursor-pointer"
         >
           <div class="pr-8">
@@ -179,7 +243,7 @@
             </div>
           </div>
           <button
-            on:click={(e) => promptDelete(chat.id, e)}
+            onclick={(e) => promptDelete(chat.id, e)}
             class="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all hover:bg-white/10 rounded-md"
             aria-label={m.history_delete_label()}
             title={m.modal_btn_confirm()}
@@ -196,29 +260,65 @@
         {#if isLoading}<span>…</span>{/if}
       </div>
     </div>
+
+    <div class="p-3 border-t border-white/5 flex gap-2 shrink-0">
+      <button
+        onclick={handleRolesClick}
+        class="flex-1 flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl
+               bg-white/[0.03] hover:bg-white/[0.07]
+               border border-white/[0.06] hover:border-ryokan-accent/40
+               text-gray-500 hover:text-ryokan-accent
+               transition-all duration-200 active:scale-[0.97]"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        <span class="text-[10px] font-medium leading-none tracking-wide text-current opacity-70">{m.sidebar_roles()}</span>
+      </button>
+
+      <button
+        onclick={handleWorldInfoClick}
+        class="flex-1 flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl
+               bg-white/[0.03] hover:bg-white/[0.07]
+               border border-white/[0.06] hover:border-ryokan-accent/40
+               text-gray-500 hover:text-ryokan-accent
+               transition-all duration-200 active:scale-[0.97]"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="2" y1="12" x2="22" y2="12"/>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+        </svg>
+        <span class="text-[10px] font-medium leading-none tracking-wide text-current opacity-70">{m.sidebar_worldinfo()}</span>
+      </button>
+    </div>
   </aside>
 
-  {/if} 
-  {#if chatToDelete}
+{/if} 
+
+{#if chatToDelete}
+  <div
+    class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+    role="dialog"
+    aria-modal="true"
+  >
     <div
-      class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
+      class="bg-ryokan-surface border border-white/10 p-6 rounded-xl shadow-2xl max-w-sm w-full"
+      transition:scale={{ duration: 150, start: 0.95 }}
     >
-      <div
-        class="bg-ryokan-surface border border-white/10 p-6 rounded-xl shadow-2xl max-w-sm w-full"
-        transition:scale={{ duration: 150, start: 0.95 }}
-      >
-        <h3 class="text-lg font-semibold text-white mb-2">{m.modal_delete_title()}</h3>
-        <p class="text-gray-400 text-sm mb-6 leading-relaxed">{m.modal_delete_body()}</p>
-        <div class="flex justify-end space-x-3">
-          <button on:click={cancelDelete} class="px-4 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
-            {m.modal_btn_cancel()}
-          </button>
-          <button on:click={confirmDelete} class="px-4 py-2 text-sm bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 border border-red-500/20 rounded-lg transition-colors font-medium">
-            {m.modal_btn_confirm()}
-          </button>
-        </div>
+      <h3 class="text-lg font-semibold text-white mb-2">{m.modal_delete_title()}</h3>
+      <p class="text-gray-400 text-sm mb-6 leading-relaxed">{m.modal_delete_body()}</p>
+      <div class="flex justify-end space-x-3">
+        <button onclick={cancelDelete} class="px-4 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+          {m.modal_btn_cancel()}
+        </button>
+        <button onclick={confirmDelete} class="px-4 py-2 text-sm bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 border border-red-500/20 rounded-lg transition-colors font-medium">
+          {m.modal_btn_confirm()}
+        </button>
       </div>
     </div>
-  {/if}
+  </div>
+{/if}
