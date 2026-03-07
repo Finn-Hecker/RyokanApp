@@ -1,7 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
-import { buildSystemPrompt } from '$lib/utils/promptBuilder';
-import type { ApiSettings } from '$lib/stores/appState';
-import type { Message } from '$lib/stores/chatStore';
+import { buildSystemPrompt, buildWiString } from '$lib/utils/promptBuilder';
+import { worldInfoState } from '$lib/stores/worldInfoStore.svelte';
+import type { ApiSettings } from '$lib/stores/appState.svelte';
+import type { Message } from '$lib/stores/chatStore.svelte';
 
 export interface GenerationCallbacks {
   onStreamUpdate: (text: string) => void;
@@ -15,11 +16,17 @@ export interface GenerationOptions {
     personality?: string;
     scenario?: string;
     mes_example?: string;
+    world_info_ids?: string[];
   } | null;
   apiSettings: ApiSettings;
   recentMessages: Message[];
   /** Include a new user prompt at the end (normal send). Omit for retry. */
   userPrompt?: string;
+  role?: {
+    name?: string;
+    bio?: string;
+    pronouns?: string;
+  } | null;
 }
 
 /** Pure function — strips thinking tags and returns the visible response text. */
@@ -45,7 +52,7 @@ export function processThinkingOutput(raw: string, isFinished: boolean): {
 function buildApiMessages(
   options: GenerationOptions
 ): { role: string; content: string }[] {
-  const { character, apiSettings, recentMessages, userPrompt } = options;
+  const { character, apiSettings, recentMessages, userPrompt, role } = options;
 
   const systemPrompt = buildSystemPrompt({
     charName: character?.name || 'Unknown',
@@ -54,8 +61,24 @@ function buildApiMessages(
     scenario: character?.scenario,
     example: character?.mes_example,
     lang: apiSettings.aiLanguage || 'English',
-    userName: 'User',
+    userName: role?.name || 'User',
+    userBio: role?.bio,
+    userPronouns: role?.pronouns,
     modelType: 'ollama',
+    wiBefore: buildWiString(
+      worldInfoState.allWorldInfos
+        .filter(wi => (character?.world_info_ids ?? []).includes(wi.id))
+        .flatMap(wi => wi.entries),
+      'before',
+      recentMessages.slice(-10).map(m => m.content).join(' '),
+    ),
+    wiAfter: buildWiString(
+      worldInfoState.allWorldInfos
+        .filter(wi => (character?.world_info_ids ?? []).includes(wi.id))
+        .flatMap(wi => wi.entries),
+      'after',
+      recentMessages.slice(-10).map(m => m.content).join(' '),
+    ),
   });
 
   const history = recentMessages
@@ -112,6 +135,8 @@ export async function runGeneration(
         model: apiSettings.model,
         messages,
         temperature: apiSettings.temperature,
+        max_tokens: apiSettings.maxTokens,
+        presence_penalty: apiSettings.presencePenalty,
       },
     });
 
