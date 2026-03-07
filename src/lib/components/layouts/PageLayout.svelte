@@ -1,13 +1,28 @@
 <script lang="ts">
-  import { fade } from 'svelte/transition';
+  import { fade, fly } from 'svelte/transition';
+  import type { Snippet } from 'svelte';
   
-  export let pageTitle: string;
-  export let showSidebar = false;
-  export let sidebarWidth = "w-64";
-  export let maxContentWidth = "max-w-7xl";
-  export let contentPadding = "px-8";
+  let {
+    pageTitle,
+    showSidebar = false,
+    sidebarWidth = "w-64",
+    maxContentWidth = "max-w-7xl",
+    contentPadding = "px-8",
+    children,
+    sidebar,
+    header
+  }: {
+    pageTitle: string;
+    showSidebar?: boolean;
+    sidebarWidth?: string;
+    maxContentWidth?: string;
+    contentPadding?: string;
+    children?: Snippet;
+    sidebar?: Snippet<[{ isMobileSidebarOpen: boolean; close: () => void }]>;
+    header?: Snippet;
+  } = $props();
 
-  let isMobileSidebarOpen = false;
+  let isMobileSidebarOpen = $state(false);
 </script>
 
 <div 
@@ -16,11 +31,10 @@
   role="region"
   aria-label={pageTitle}
 >
-  
   {#if showSidebar}
     <div class="hidden lg:flex shrink-0 bg-ryokan-sidebar">
       <aside class="{sidebarWidth} h-full border-r border-white/5 flex flex-col shrink-0">
-        <slot name="sidebar" />
+        {@render sidebar?.({ isMobileSidebarOpen: false, close: () => {} })}
       </aside>
     </div>
 
@@ -28,14 +42,15 @@
       <button
         type="button"
         aria-label="Close sidebar"
-        on:click={() => isMobileSidebarOpen = false}
-        class="lg:hidden fixed inset-0 w-full h-full bg-black/60 z-40 backdrop-blur-sm cursor-pointer"
+        onclick={() => isMobileSidebarOpen = false}
+        class="lg:hidden fixed w-full h-full z-40 cursor-pointer"
       ></button>
       
       <aside
+        transition:fly={{ x: -500, duration: 200 }}
         class="lg:hidden fixed left-0 top-0 bottom-0 w-72 bg-ryokan-sidebar border-r border-white/5 shadow-2xl z-50 flex flex-col"
       >
-        <slot name="sidebar" {isMobileSidebarOpen} close={() => isMobileSidebarOpen = false} />
+        {@render sidebar?.({ isMobileSidebarOpen, close: () => isMobileSidebarOpen = false })}
       </aside>
     {/if}
   {/if}
@@ -46,7 +61,7 @@
       <div class="flex items-center justify-between pt-6 mb-6">
         {#if showSidebar}
           <button
-            on:click={() => isMobileSidebarOpen = true}
+            onclick={() => isMobileSidebarOpen = true}
             aria-label="Open menu"
             class="lg:hidden w-10 h-10 flex items-center justify-center text-gray-500 hover:text-white transition bg-white/5 rounded-full hover:bg-white/10 border border-white/5 hover:border-ryokan-accent/30 active:scale-95"
           >
@@ -56,15 +71,15 @@
               <line x1="3" y1="18" x2="21" y2="18"/>
             </svg>
           </button>
-          <div class="hidden lg:block" ></div>
+          <div class="hidden lg:block"></div>
         {:else}
           <div></div>
         {/if}
 
-        <slot name="header" />
+        {@render header?.()}
       </div>
 
-      <slot />
+      {@render children?.()}
 
       <div class="h-8"></div>
     </div>
