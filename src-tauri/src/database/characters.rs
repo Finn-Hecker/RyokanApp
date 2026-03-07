@@ -26,6 +26,7 @@ pub struct DbCharacter {
     pub initials: String,
     pub color: String,
     pub avatar: Option<Vec<u8>>,
+    pub world_info_ids: Vec<String>,
 }
 
 /// Incoming payload from the frontend.
@@ -45,6 +46,7 @@ pub struct CreateCharacterPayload {
     pub initials: String,
     pub color: String,
     pub avatar: Option<String>,
+    pub world_info_ids: Option<Vec<String>>,
 }
 
 /// Decodes a Base64 image from the frontend, resizes it if it exceeds 2048×2048,
@@ -101,26 +103,33 @@ fn process_avatar(base64_img: &str) -> Result<Vec<u8>, String> {
 pub fn get_custom_characters(app: AppHandle) -> Result<Vec<DbCharacter>, String> {
     let conn = get_connection(&app)?;
 
-    let mut stmt = conn.prepare("SELECT id, name, desc, personality, scenario, greeting, alternate_greetings, mes_example, creator_notes, tags, v3_spec, initials, color, avatar FROM characters ORDER BY created_at DESC")
-        .map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(
+        "SELECT id, name, desc, personality, scenario, greeting,
+                alternate_greetings, mes_example, creator_notes, tags,
+                v3_spec, initials, color, world_info_ids, avatar
+         FROM characters ORDER BY created_at DESC"
+    ).map_err(|e| e.to_string())?;
 
     let rows = stmt.query_map([], |row| {
-        let avatar_blob: Option<Vec<u8>> = row.get(13)?;
+        let avatar_blob: Option<Vec<u8>> = row.get(14)?;
 
         Ok(DbCharacter {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            desc: row.get(2)?,
-            personality: row.get(3)?,
-            scenario: row.get(4)?,
-            greeting: row.get(5)?,
+            id:                 row.get(0)?,
+            name:               row.get(1)?,
+            desc:               row.get(2)?,
+            personality:        row.get(3)?,
+            scenario:           row.get(4)?,
+            greeting:           row.get(5)?,
             alternate_greetings: row.get(6)?,
-            mes_example: row.get(7)?,
-            creator_notes: row.get(8)?,
-            tags: row.get(9)?,
-            v3_spec: row.get(10)?,
-            initials: row.get(11)?,
-            color: row.get(12)?,
+            mes_example:        row.get(7)?,
+            creator_notes:      row.get(8)?,
+            tags:               row.get(9)?,
+            v3_spec:            row.get(10)?,
+            initials:           row.get(11)?,
+            color:              row.get(12)?,
+            world_info_ids: serde_json::from_str(
+                &row.get::<_, Option<String>>(13)?.unwrap_or_default()
+            ).unwrap_or_default(),
             avatar: avatar_blob,
         })
     }).map_err(|e| e.to_string())?;
@@ -140,14 +149,31 @@ pub fn create_character(app: AppHandle, payload: CreateCharacterPayload) -> Resu
         .unwrap_or_else(|_| "[]".to_string());
     let tags_json = serde_json::to_string(&payload.tags)
         .unwrap_or_else(|_| "[]".to_string());
+    let world_info_ids_json = serde_json::to_string(
+        &payload.world_info_ids.unwrap_or_default()
+    ).unwrap_or_else(|_| "[]".to_string());
 
     conn.execute(
-        "INSERT INTO characters (id, name, desc, personality, scenario, greeting, alternate_greetings, mes_example, creator_notes, tags, v3_spec, initials, color, avatar) 
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, NULL)",
+        "INSERT INTO characters
+            (id, name, desc, personality, scenario, greeting,
+             alternate_greetings, mes_example, creator_notes, tags,
+             v3_spec, initials, color, avatar, world_info_ids)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, NULL, ?14)",
         params![
-            new_id, payload.name, payload.desc, payload.personality, payload.scenario,
-            payload.greeting, alt_greetings_json, payload.mes_example, payload.creator_notes,
-            tags_json, payload.v3_spec, payload.initials, payload.color
+            new_id,
+            payload.name,
+            payload.desc,
+            payload.personality,
+            payload.scenario,
+            payload.greeting,
+            alt_greetings_json,
+            payload.mes_example,
+            payload.creator_notes,
+            tags_json,
+            payload.v3_spec,
+            payload.initials,
+            payload.color,
+            world_info_ids_json,
         ],
     ).map_err(|e| e.to_string())?;
 
@@ -185,18 +211,32 @@ pub fn update_character(app: AppHandle, id: String, payload: CreateCharacterPayl
         .unwrap_or_else(|_| "[]".to_string());
     let tags_json = serde_json::to_string(&payload.tags)
         .unwrap_or_else(|_| "[]".to_string());
+    let world_info_ids_json = serde_json::to_string(
+        &payload.world_info_ids.unwrap_or_default()
+    ).unwrap_or_else(|_| "[]".to_string());
 
     conn.execute(
-        "UPDATE characters SET 
-            name = ?1, desc = ?2, personality = ?3, scenario = ?4, greeting = ?5,
-            alternate_greetings = ?6, mes_example = ?7, creator_notes = ?8,
-            tags = ?9, v3_spec = ?10, initials = ?11, color = ?12
-         WHERE id = ?13",
+        "UPDATE characters SET
+            name = ?1, desc = ?2, personality = ?3, scenario = ?4,
+            greeting = ?5, alternate_greetings = ?6, mes_example = ?7,
+            creator_notes = ?8, tags = ?9, v3_spec = ?10,
+            initials = ?11, color = ?12, world_info_ids = ?13
+         WHERE id = ?14",
         params![
-            payload.name, payload.desc, payload.personality, payload.scenario,
-            payload.greeting, alt_greetings_json, payload.mes_example, payload.creator_notes,
-            tags_json, payload.v3_spec, payload.initials, payload.color,
-            id
+            payload.name,
+            payload.desc,
+            payload.personality,
+            payload.scenario,
+            payload.greeting,
+            alt_greetings_json,
+            payload.mes_example,
+            payload.creator_notes,
+            tags_json,
+            payload.v3_spec,
+            payload.initials,
+            payload.color,
+            world_info_ids_json,
+            id,
         ],
     ).map_err(|e| e.to_string())?;
 

@@ -6,6 +6,8 @@ pub mod chats;
 pub mod messages;
 pub mod settings;
 pub mod characters;
+pub mod world_info;
+pub mod roles;
 
 const DB_FILENAME: &str = "ryokan.db";
 
@@ -84,7 +86,24 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             initials TEXT,
             color TEXT,
             avatar BLOB,
+            world_info_ids TEXT NOT NULL DEFAULT '[]',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS roles (
+            id       TEXT PRIMARY KEY,
+            name     TEXT NOT NULL,
+            bio      TEXT NOT NULL DEFAULT '',
+            pronouns TEXT NOT NULL DEFAULT '',
+            avatar   BLOB,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS world_infos (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            entries     TEXT NOT NULL DEFAULT '[]',
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
         );
     "#;
 

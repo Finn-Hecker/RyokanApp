@@ -57,7 +57,16 @@ pub fn add_message(app: AppHandle, chat_id: String, role: String, content: Strin
         ).map_err(|e| e.to_string())?;
 
         if count == 1 {
-            let mut title = content.clone();
+            let display_content = if content.starts_with("[OOC: ") {
+                content
+                    .trim_start_matches("[OOC: ")
+                    .trim_end_matches(']')
+                    .to_string()
+            } else {
+                content.clone()
+            };
+
+            let mut title = display_content;
             if title.len() > 30 {
                 title.truncate(27);
                 title.push_str("...");
