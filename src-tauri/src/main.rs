@@ -31,8 +31,16 @@ fn main() {
             database::characters::update_character,
             database::characters::set_character_hidden,
             database::characters::get_hidden_character_ids,
+            database::roles::get_roles,
+            database::roles::create_role,
+            database::roles::update_role,
+            database::roles::delete_role,
             import::parse_character_card,
             export::export_character_card,
+            database::world_info::get_world_infos,
+            database::world_info::create_world_info,
+            database::world_info::update_world_info,
+            database::world_info::delete_world_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
