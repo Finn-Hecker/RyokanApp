@@ -3,7 +3,7 @@
 > Built with Rust, Tauri v2, and Svelte.
 
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
-![Status](https://img.shields.io/badge/status-Beta_v0.2-green.svg)
+![Status](https://img.shields.io/badge/status-Alpha_v0.2-green.svg)
 
 <table>
   <tr>
@@ -14,31 +14,31 @@
     <td><img width="400" alt="RyokanApp Settings" src="https://github.com/user-attachments/assets/bbc2349a-b583-4944-8d03-129508419523" /></td>
     <td><img width="400" alt="RyokanApp ListView" src="https://github.com/user-attachments/assets/75a78093-6ec3-4408-ad61-d5dee3bfe87a" /></td>
   </tr>
+  <tr>
+    <td><img width="400" alt="RyokanApp Editor" src="https://github.com/user-attachments/assets/7d8fa647-6ba4-49a8-a2f8-a0ab4fbab1c8" /></td>
+    <td><img width="400" alt="RyokanApp Sidebar" src="https://github.com/user-attachments/assets/78680d4a-b6b5-4f04-98af-b62a2e2e64d2" /></td>
+  </tr>
 </table>
 
-## What's new in v0.2
+## Core Features
 
-- **Director Mode (Regie):** Step outside the story at any time to guide the narrative without breaking immersion. No other frontend has this as a dedicated feature.
-- **Lorebooks & World Info:** Full support for world-building entries with keyword triggers and position control.
-- **Persona System:** Define who *you* are in the story, name, pronouns, bio.
-- **Svelte 5 Migration:** Fully migrated to Svelte 5 Runes for better performance.
-- **Settings overhaul:** Simplified AI behavior settings (Creativity, Response Length, Repetition) with no more raw sliders. Power User toggle for advanced controls.
-- **Edit & Retry:** Edit any previous message and regenerate the response from that point.
-- **Bug fixes & UI polish**
-
-## What works in v0.2
-
-- **BYOK & Local Models:** Connect to LM Studio or enter your OpenRouter API key.
-- **Character Creation (V3 Support):** Full V3 card import/export with alternate greetings, personality, scenario and example dialog.
-- **Director Mode:** Guide the story out-of-character without breaking immersion.
-- **Lorebooks:** Keyword-triggered world info injected automatically into context.
-- **Persona:** Define your own role in the story.
-- **Bilingual:** Full EN/DE support from day one.
-- **Local Privacy:** SQLite, nothing leaves your machine.
+- **Director Mode:** Step outside the story at any time to guide the narrative or the AI without breaking immersion. No clunky OOC brackets needed.
+- **Clean UI:** A modern, distraction-free interface, fully migrated to Svelte 5 Runes for top performance. 
+- **Ready-to-Play Content:** Includes pre-installed, multi-lingual standard characters bundled with matching World Info. They automatically adapt to your chosen language (EN/DE), allowing you to jump straight into a story without any setup.
+- **Simplified Settings:** Control AI behavior (Creativity, Length, Repetition) via simple presets. A Power User toggle is available for those who still want raw slider controls.
+- **BYOK & Local Models:** Connect seamlessly to LM Studio for local models, or enter your OpenRouter API key for cloud generation.
+- **V3 Character Support:** Full character card import/export, including alternate greetings, personality traits, scenarios, and example dialogs.
+- **Lorebooks & World Info:** Full support for world-building entries with keyword triggers and position control, injected automatically into the context.
+- **Persona System:** Define exactly who *you* are in the story (name, pronouns, background).
+- **Edit & Retry:** Easily edit any previous message and regenerate the response from that specific point.
+- **Local Privacy First:** All chats, characters, and settings are stored locally via SQLite. Nothing leaves your machine.
+- **Native Bilingual:** Full, consistent English and German support from day one.
 
 ## The Vision
 
-The current landscape of AI roleplay frontends is cluttered with hundreds of technical sliders and settings. RyokanApp takes a different approach: **Atmosphere and Immersion**. Designed to feel less like a complex chat terminal and more like a dynamic Visual Novel engine, driven entirely by your local LLM or any compatible API.
+The current landscape of AI roleplay frontends is often cluttered with hundreds of technical sliders, terminal-like interfaces, and overwhelming settings. RyokanApp takes a different approach: **Atmosphere and Immersion**. 
+
+Designed to be a **clean, distraction-free chat experience**, it strips away the complexity so you can focus entirely on the story and the characters. Driven entirely by your local LLM or any compatible API, Ryokan is built for those who want plug-and-play roleplay without sacrificing powerful features under the hood.
 
 ## Tech Stack
 
@@ -73,11 +73,6 @@ The current landscape of AI roleplay frontends is cluttered with hundreds of tec
 ```bash
    npm run tauri dev
 ```
-
-## Roadmap
-
-- [ ] Ollama support
-- [ ] Memory summarization
 
 ## Contributing
 
