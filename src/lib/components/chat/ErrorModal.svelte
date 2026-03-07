@@ -1,11 +1,17 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import * as m from '$lib/paraglide/messages';
 
-  export let message: string = '';
-  export let pendingMessage: string = '';
-
-  const dispatch = createEventDispatcher<{ retry: void; close: void }>();
+  let {
+    message = '',
+    pendingMessage = '',
+    onRetry,
+    onClose
+  }: {
+    message?: string;
+    pendingMessage?: string;
+    onRetry?: () => void;
+    onClose?: () => void;
+  } = $props();
 </script>
 
 <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
@@ -32,7 +38,7 @@
 
     <div class="flex gap-3">
       <button
-        on:click={() => dispatch('retry')}
+        onclick={() => onRetry?.()}
         class="flex-1 bg-ryokan-accent text-ryokan-bg px-4 py-2.5 rounded-xl font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -42,7 +48,7 @@
         {m.chat_error_retry()}
       </button>
       <button
-        on:click={() => dispatch('close')}
+        onclick={() => onClose?.()}
         class="px-4 py-2.5 rounded-xl font-medium text-gray-400 hover:text-gray-200 hover:bg-white/5 transition-all"
       >
         {m.chat_error_cancel()}

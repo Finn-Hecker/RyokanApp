@@ -1,51 +1,62 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
-  import { currentView, activeCharacter, apiSettings } from '$lib/stores/appState';
-  import { tick, onMount } from 'svelte';
-
-  import {
-    currentMessages, addMessage, loadMessages,
-    activeChatId, updateMessage, deleteMessage
-  } from '$lib/stores/chatStore';
-
+  import { appState } from '$lib/stores/appState.svelte';
+  import { tick, onMount, onDestroy } from 'svelte';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { roleState } from '$lib/stores/roleStore.svelte';
+  import { chatState, addMessage, loadMessages, updateMessage, deleteMessage} from '$lib/stores/chatStore.svelte';
   import { runGeneration } from '$lib/utils/chatApi';
   import * as m from '$lib/paraglide/messages';
-
-  import ChatHeader        from './ChatHeader.svelte';
-  import ChatInput         from './ChatInput.svelte';
-  import ChatMessage       from './ChatMessage.svelte';
+  import ChatHeader from './ChatHeader.svelte';
+  import ChatInput from './ChatInput.svelte';
+  import ChatMessage from './ChatMessage.svelte';
   import ThinkingIndicator from './ThinkingIndicator.svelte';
-  import ErrorModal        from './ErrorModal.svelte';
+  import ErrorModal from './ErrorModal.svelte';
 
-  // ─── State ────────────────────────────────────────────────────────────────
-  let inputText        = '';
-  let chatContainer: HTMLDivElement;
-  let autoscroll       = true;
-  let isGenerating     = false;
-  let isThinkingPhase  = false;
-  let streamingText    = '';
+  let inputText = $state('');
+  let isOOC = $state(false);
+  let chatContainer = $state<HTMLDivElement | null>(null);
+  let autoscroll = $state(true);
+  let isProgrammaticScroll = $state(false);
+  let isGenerating = $state(false);
+  let isThinkingPhase = $state(false);
+  let streamingText = $state('');
+  let lastMsgCount = $state(0);
+  let lastFirstMsgId = $state('');
+  let showErrorModal = $state(false);
+  let errorMessage = $state('');
+  let pendingUserMessage = $state('');
 
-  let lastMsgCount     = 0;
-  let lastFirstMsgId   = '';
+  let activeRole = $derived(
+    roleState.allRoles.find(p => p.id === roleState.activeRoleId) ?? null
+  );
 
-  let showErrorModal      = false;
-  let errorMessage        = '';
-  let pendingUserMessage  = '';
+  let unlistenClose: (() => void) | undefined;
 
-  // ─── Lifecycle ────────────────────────────────────────────────────────────
   onMount(async () => {
-    if ($activeChatId) await loadMessages($activeChatId);
+    if (chatState.activeChatId) await loadMessages(chatState.activeChatId);
+
+    const win = getCurrentWindow();
+    unlistenClose = await win.onCloseRequested(async (event) => {
+      event.preventDefault();
+      await invoke('stop_generation');
+      await win.destroy();
+    });
   });
 
-  // ─── Derived display messages ─────────────────────────────────────────────
-  $: displayMessages = (() => {
-    const msgs = $currentMessages.map(msg => ({
+  onDestroy(() => {
+    if (isGenerating) invoke('stop_generation');
+    unlistenClose?.();
+  });
+
+  let displayMessages = $derived((() => {
+    const msgs = chatState.currentMessages.map(msg => ({
       id: msg.id?.toString() || Math.random().toString(),
       text: msg.content,
       isUser: msg.role === 'user',
       senderName: msg.role === 'user'
         ? m.chat_sender_you()
-        : ($activeCharacter?.name || m.chat_sender_ai()),
+        : (appState.activeCharacter?.name || m.chat_sender_ai()),
     }));
 
     if (isGenerating && !isThinkingPhase) {
@@ -53,29 +64,35 @@
         id: 'temp-stream',
         text: streamingText,
         isUser: false,
-        senderName: $activeCharacter?.name || m.chat_sender_ai(),
+        senderName: appState.activeCharacter?.name || m.chat_sender_ai(),
       });
     }
 
     return msgs;
-  })();
+  })());
 
-  $: firstAiMsgId = displayMessages.find(m => !m.isUser)?.id ?? null;
+  let firstAiMsgId = $derived(displayMessages.find(m => !m.isUser)?.id ?? null);
 
-  $: lastAiMsgId = (() => {
+  let lastAiMsgId = $derived((() => {
     for (let i = displayMessages.length - 1; i >= 0; i--) {
       const msg = displayMessages[i];
       if (!msg.isUser && msg.id !== 'temp-stream') return msg.id;
     }
     return null;
-  })();
+  })());
 
-  $: if (displayMessages && chatContainer) handleAutoScroll();
+  $effect(() => {
+    if (displayMessages && chatContainer) {
+      handleAutoScroll();
+    }
+  });
 
-  // ─── Scroll helpers ───────────────────────────────────────────────────────
   async function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
     await tick();
-    chatContainer?.scrollTo({ top: chatContainer.scrollHeight, behavior });
+    if (!chatContainer) return;
+    isProgrammaticScroll = true;
+    chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior });
+    setTimeout(() => { isProgrammaticScroll = false; }, 100);
   }
 
   async function handleAutoScroll() {
@@ -94,75 +111,82 @@
   }
 
   function handleScroll() {
-    if (!chatContainer) return;
+    if (!chatContainer || isProgrammaticScroll) return;
     const { scrollTop, scrollHeight, clientHeight } = chatContainer;
     autoscroll = scrollHeight - scrollTop - clientHeight <= 50;
   }
 
-  // ─── Generation ───────────────────────────────────────────────────────────
   function resetStreamState() {
-    streamingText   = '';
+    streamingText = '';
     isThinkingPhase = false;
-    autoscroll      = true;
   }
 
   async function generate(prompt: string, saveUserMessage: boolean) {
-      isGenerating = true;
-      resetStreamState();
-      scrollToBottom();
-      
-      const messagesForApi = $currentMessages.slice(-20);
+    isGenerating = true;
+    resetStreamState();
+    if (autoscroll) scrollToBottom();
 
-      if (saveUserMessage) await addMessage('user', prompt);
+    const messagesForApi = chatState.currentMessages.slice(-20);
 
-      try {
-        const result = await runGeneration(
-          {
-            character: $activeCharacter,
-            apiSettings: $apiSettings,
-            recentMessages: messagesForApi,
-            userPrompt: saveUserMessage ? prompt : undefined,
-          },
-          {
-            onStreamUpdate:  
-              (text) => { streamingText = text; if (autoscroll) scrollToBottom(); },
-            onThinkingPhaseChange: (v)  => { isThinkingPhase = v; },
-          }
-        );
-        await addMessage('assistant', result);
-      } catch (err) {
-        console.error(err);
-        errorMessage   = m.chat_error_connection();
-        showErrorModal = true;
-      } finally {
-        isGenerating    = false;
-        streamingText   = '';
-        isThinkingPhase = false;
-        await tick();
-        await scrollToBottom('auto');
-      }
+    if (saveUserMessage) await addMessage('user', prompt);
+    try {
+      const result = await runGeneration(
+        {
+          character: appState.activeCharacter,
+          apiSettings: appState.apiSettings,
+          recentMessages: messagesForApi,
+          userPrompt: saveUserMessage ? prompt : undefined,
+          role: activeRole ? {
+            name: activeRole.name,
+            bio: activeRole.bio,
+            pronouns: activeRole.pronouns
+          } : null,
+        },
+        {
+          onStreamUpdate:
+            (text) => { streamingText = text; if (autoscroll) scrollToBottom(); },
+          onThinkingPhaseChange: (v) => { isThinkingPhase = v; },
+        }
+      );
+      await addMessage('assistant', result);
+    } catch (err) {
+      console.error(err);
+      errorMessage = m.chat_error_connection();
+      showErrorModal = true;
+    } finally {
+      isGenerating = false;
+      streamingText = '';
+      isThinkingPhase = false;
+      await tick();
+      if (autoscroll) await scrollToBottom('auto');
     }
+  }
 
-  // ─── User actions ─────────────────────────────────────────────────────────
   async function sendMessage() {
     if (!inputText.trim() || isGenerating) return;
-    const prompt  = inputText;
-    inputText     = '';
+    const rawPrompt = inputText;
+    inputText = '';
+
+    const prompt = isOOC ? `[OOC: ${rawPrompt}]` : rawPrompt;
+    isOOC = false;
+
     pendingUserMessage = prompt;
+    autoscroll = true;
     await generate(prompt, true);
   }
 
-  async function handleRetry(event: CustomEvent<{ msgId: string }>) {
+  async function handleRetry({ msgId }: { msgId: string }) {
     if (isGenerating) return;
-
-    const { msgId } = event.detail;
-    const msgs = $currentMessages;
-    const idx  = msgs.findIndex(m => m.id?.toString() === msgId);
+    const msgs = chatState.currentMessages;
+    const idx = msgs.findIndex(m => m.id?.toString() === msgId);
     if (idx < 0) return;
 
     let precedingUserMsg: typeof msgs[0] | null = null;
     for (let i = idx - 1; i >= 0; i--) {
-      if (msgs[i].role === 'user') { precedingUserMsg = msgs[i]; break; }
+      if (msgs[i].role === 'user') {
+        precedingUserMsg = msgs[i];
+        break;
+      }
     }
     if (!precedingUserMsg) return;
 
@@ -171,8 +195,8 @@
     await generate(precedingUserMsg.content, false);
   }
 
-  async function handleEditSave(event: CustomEvent<{ msgId: string; newContent: string }>) {
-    await updateMessage(event.detail.msgId, event.detail.newContent);
+  async function handleEditSave({ msgId, newContent }: { msgId: string; newContent: string }) {
+    await updateMessage(msgId, newContent);
   }
 
   async function retryAfterError() {
@@ -183,7 +207,7 @@
   async function closeErrorModal() {
     showErrorModal = false;
     if (pendingUserMessage) {
-      const lastUserMsg = [...$currentMessages].reverse().find(m => m.role === 'user');
+      const lastUserMsg = [...chatState.currentMessages].reverse().find(m => m.role === 'user');
       if (lastUserMsg?.id) await deleteMessage(lastUserMsg.id);
     }
     pendingUserMessage = '';
@@ -194,16 +218,20 @@
   }
 </script>
 
-<div class="flex flex-col h-full font-sans overflow-hidden bg-ryokan-bg relative">
+<div class="flex flex-col h-full overflow-hidden bg-ryokan-bg relative">
 
   <ChatHeader
-    character={$activeCharacter}
-    on:back={() => currentView.set('lobby')}
+    character={appState.activeCharacter}
+    isTyping={isGenerating}
+    onBack={() => {
+      appState.activeCharacter = null; 
+      appState.currentView = 'lobby';
+    }}
   />
 
   <div
     bind:this={chatContainer}
-    on:scroll={handleScroll}
+    onscroll={handleScroll}
     class="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 pt-4 pb-4"
     style="overflow-anchor: none;"
   >
@@ -211,27 +239,28 @@
       {#each displayMessages as msg, i (msg.id)}
         <ChatMessage
           {msg}
-          character={$activeCharacter}
+          character={appState.activeCharacter}
           isLast={i === displayMessages.length - 1}
           isGenerating={isGenerating && i === displayMessages.length - 1}
           canRetry={!isGenerating && msg.id === lastAiMsgId && msg.id !== firstAiMsgId}
           canEdit={!msg.isUser && msg.id !== 'temp-stream' && msg.id !== firstAiMsgId}
-          on:retry={handleRetry}
-          on:editSave={handleEditSave}
+          onRetry={handleRetry}
+          onEditSave={handleEditSave}
         />
       {/each}
 
       {#if isGenerating && isThinkingPhase}
-        <ThinkingIndicator character={$activeCharacter} />
+        <ThinkingIndicator character={appState.activeCharacter} />
       {/if}
     </div>
   </div>
 
   <ChatInput
     bind:value={inputText}
+    bind:isOOC
     {isGenerating}
-    on:send={sendMessage}
-    on:stop={stopGeneration}
+    onSend={sendMessage}
+    onStop={stopGeneration}
   />
 
 </div>
@@ -240,7 +269,7 @@
   <ErrorModal
     message={errorMessage}
     pendingMessage={pendingUserMessage}
-    on:retry={retryAfterError}
-    on:close={closeErrorModal}
+    onRetry={retryAfterError}
+    onClose={closeErrorModal}
   />
 {/if}
