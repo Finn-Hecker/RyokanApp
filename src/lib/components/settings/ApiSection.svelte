@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { apiSettings } from "$lib/stores/appState";
-  import { fetchModels } from "$lib/db/settings";
+  import { appState } from "$lib/stores/appState.svelte";
+  import { fetchModels } from "$lib/utils/settings";
   import * as m from "$lib/paraglide/messages";
   import Button from '$lib/components/ui/Button.svelte';
 
@@ -13,11 +13,11 @@
   let modelsLoading = false;
   let modelsError = "";
 
-  $: activeProvider = PROVIDERS.find(p => p.url === $apiSettings.url) ?? null;
+  $: activeProvider = PROVIDERS.find(p => p.url === appState.apiSettings.url) ?? null;
 
   export function selectProvider(url: string) {
-    $apiSettings.url = url;
-    $apiSettings.model = "";
+    appState.apiSettings.url = url;
+    appState.apiSettings.model = "";
     availableModels = [];
     modelsError = "";
   }
@@ -27,13 +27,13 @@
     modelsError = "";
     availableModels = [];
     try {
-      const models = await fetchModels($apiSettings.url, $apiSettings.apiKey);
+      const models = await fetchModels(appState.apiSettings.url, appState.apiSettings.apiKey);
       if (models.length === 0) {
         modelsError = m.settings_model_error_no_models();
       } else {
         availableModels = models;
-        if (!availableModels.includes($apiSettings.model)) {
-          $apiSettings.model = availableModels[0];
+        if (!availableModels.includes(appState.apiSettings.model)) {
+          appState.apiSettings.model = availableModels[0];
         }
       }
     } catch (e: any) {
@@ -47,12 +47,10 @@
   <span class="settings-section-title">{m.settings_section_api()}</span>
   <div class="settings-card space-y-4">
 
-    <!-- Provider quickselect -->
     <div>
       <span class="settings-label">{m.settings_provider_label()}</span>
       <div class="grid grid-cols-2 gap-2">
 
-        <!-- LM Studio -->
         <button
           on:click={() => selectProvider(PROVIDERS[0].url)}
           class="flex items-center gap-3 px-3 py-3 rounded-xl border transition-all duration-150 active:scale-[0.97]
@@ -60,7 +58,7 @@
               ? 'bg-white/[0.07] border-ryokan-accent/40 text-white'
               : 'bg-white/[0.02] border-white/[0.06] text-gray-400 hover:border-white/[0.12] hover:text-gray-200'}"
         >
-          <!-- Laptop / local icon -->
+
           <svg class="shrink-0 {activeProvider?.url === PROVIDERS[0].url ? 'text-ryokan-accent' : 'text-gray-600'}"
                width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <rect x="2" y="4" width="20" height="13" rx="2"/>
@@ -73,7 +71,6 @@
           </div>
         </button>
 
-        <!-- OpenRouter -->
         <button
           on:click={() => selectProvider(PROVIDERS[1].url)}
           class="flex items-center gap-3 px-3 py-3 rounded-xl border transition-all duration-150 active:scale-[0.97]
@@ -81,7 +78,6 @@
               ? 'bg-white/[0.07] border-ryokan-accent/40 text-white'
               : 'bg-white/[0.02] border-white/[0.06] text-gray-400 hover:border-white/[0.12] hover:text-gray-200'}"
         >
-          <!-- Cloud icon -->
           <svg class="shrink-0 {activeProvider?.url === PROVIDERS[1].url ? 'text-ryokan-accent' : 'text-gray-600'}"
                width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z" stroke-linecap="round" stroke-linejoin="round"/>
@@ -97,21 +93,19 @@
 
     <div class="settings-divider"></div>
 
-    <!-- API URL -->
     <div>
       <label class="settings-label" for="api-url">{m.settings_api_url_label()}</label>
       <input
         id="api-url"
         type="text"
-        bind:value={$apiSettings.url}
-        on:change={() => { availableModels = []; $apiSettings.model = ""; modelsError = ""; }}
+        bind:value={appState.apiSettings.url}
+        on:change={() => { availableModels = []; appState.apiSettings.model = ""; modelsError = ""; }}
         class="settings-input"
       />
     </div>
 
     <div class="settings-divider"></div>
 
-    <!-- API Key -->
     <div>
       <label class="settings-label" for="api-key">
         {m.settings_api_key_label()}
@@ -120,7 +114,7 @@
       <input
         id="api-key"
         type="password"
-        bind:value={$apiSettings.apiKey}
+        bind:value={appState.apiSettings.apiKey}
         placeholder="sk-or-..."
         class="settings-input"
       />
@@ -128,13 +122,12 @@
 
     <div class="settings-divider"></div>
 
-    <!-- Model -->
     <div>
       <div class="flex items-center justify-between mb-2">
         <label class="settings-label" for="model-select" style="margin-bottom:0">
           {m.settings_model_label()}
         </label>
-        <Button variant="secondary" size="sm" disabled={modelsLoading} on:click={loadModels}>
+        <Button variant="secondary" size="sm" disabled={modelsLoading} onclick={loadModels}>
           {#if modelsLoading}
             <span class="load-dot"></span>
             <span class="load-dot" style="animation-delay:.15s"></span>
@@ -150,7 +143,7 @@
       </div>
 
       {#if availableModels.length > 0}
-        <select id="model-select" bind:value={$apiSettings.model} class="settings-input select-chevron">
+        <select id="model-select" bind:value={appState.apiSettings.model} class="settings-input select-chevron">
           {#each availableModels as modelId}
             <option value={modelId}>{modelId}</option>
           {/each}
@@ -159,8 +152,8 @@
         <div class="settings-input cursor-default {modelsError ? 'error-state' : 'empty-state'}">
           {#if modelsError}
             {modelsError}
-          {:else if $apiSettings.model}
-            {$apiSettings.model}
+          {:else if appState.apiSettings.model}
+            {appState.apiSettings.model}
           {:else}
             {m.settings_model_empty_hint()}
           {/if}
@@ -188,10 +181,23 @@
 
   .select-chevron {
     appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235a5a5e' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a8a8e' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 12px center;
     padding-right: 36px;
+    color-scheme: dark;
+  }
+
+  .select-chevron option {
+    background-color: #1c1c1e;
+    color: #e5e5ea;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  .select-chevron option:checked,
+  .select-chevron option:hover {
+    background-color: #2c2c2e;
+    color: #d4b483;
   }
 
   .empty-state { color: #3a3a3c; }
