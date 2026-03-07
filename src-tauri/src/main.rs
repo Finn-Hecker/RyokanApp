@@ -3,6 +3,7 @@
 mod ai;
 mod database;
 mod import;
+mod export;
 
 fn main() {
     tauri::Builder::default()
@@ -17,13 +18,29 @@ fn main() {
             database::chats::get_conversations,
             database::chats::create_chat,
             database::chats::delete_chat,
+            database::chats::get_conversations_page,
             database::messages::get_messages,
             database::messages::add_message,
+            database::messages::delete_message,
+            database::messages::update_message,
             database::settings::get_all_settings,
             database::settings::save_setting,
             database::characters::get_custom_characters,
             database::characters::create_character,
+            database::characters::delete_character,
+            database::characters::update_character,
+            database::characters::set_character_hidden,
+            database::characters::get_hidden_character_ids,
+            database::roles::get_roles,
+            database::roles::create_role,
+            database::roles::update_role,
+            database::roles::delete_role,
             import::parse_character_card,
+            export::export_character_card,
+            database::world_info::get_world_infos,
+            database::world_info::create_world_info,
+            database::world_info::update_world_info,
+            database::world_info::delete_world_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

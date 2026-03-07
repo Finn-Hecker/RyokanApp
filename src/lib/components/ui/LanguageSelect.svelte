@@ -1,43 +1,31 @@
 <script lang="ts">
   import { scale } from "svelte/transition";
-  import { onMount, createEventDispatcher } from "svelte";
 
-  export let items: { code: string; label: string }[] = [];
-  export let selectedCode: string = "";
-  
-  export let className: string = "min-w-[140px]";
+  let {
+    items = [],
+    selectedCode = "",
+    className = "min-w-[140px]",
+    id = "",
+    onSelect
+  }: {
+    items?: { code: string; label: string }[];
+    selectedCode?: string;
+    className?: string;
+    id?: string;
+    onSelect?: (code: string) => void;
+  } = $props();
 
-  export let id: string = "";
+  let open = $state(false);
+  let rootEl = $state<HTMLDivElement | null>(null);
 
-  const dispatch = createEventDispatcher();
-  let open = false;
-  let rootEl: HTMLDivElement;
+  let selectedLabel = $derived(items.find(l => l.code === selectedCode)?.label || selectedCode);
 
   function toggle() { open = !open; }
 
   function selectLang(code: string) {
-    dispatch("select", code);
+    onSelect?.(code);
     open = false;
   }
-
-  function handleClickOutside(e: MouseEvent) {
-    if (rootEl && !rootEl.contains(e.target as Node)) open = false;
-  }
-
-  function handleKey(e: KeyboardEvent) {
-    if (e.key === "Escape") open = false;
-  }
-
-  onMount(() => {
-    window.addEventListener("click", handleClickOutside);
-    window.addEventListener("keydown", handleKey);
-    return () => {
-      window.removeEventListener("click", handleClickOutside);
-      window.removeEventListener("keydown", handleKey);
-    };
-  });
-
-  $: selectedLabel = items.find(l => l.code === selectedCode)?.label || selectedCode;
 </script>
 
 <div class="relative w-full {className}" bind:this={rootEl}>
@@ -46,7 +34,7 @@
     type="button"
     aria-haspopup="listbox"
     aria-expanded={open}
-    on:click={toggle}
+    onclick={toggle}
     class="w-full flex items-center justify-between border px-3 py-3 text-sm text-gray-200 transition-all duration-200 backdrop-blur-md
     {open 
       ? 'bg-ryokan-surface border-white/10 border-b-transparent rounded-t-lg rounded-b-none' 
@@ -72,7 +60,7 @@
       {#each items as item}
         <button
           type="button"
-          on:click={() => selectLang(item.code)}
+          onclick={() => selectLang(item.code)}
           class="w-full text-left px-3 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition flex justify-between items-center group"
         >
           <span>{item.label}</span>
