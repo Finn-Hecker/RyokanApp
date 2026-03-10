@@ -19,6 +19,7 @@
 
   const presets = [
     { label: 'LM Studio',  url: 'http://127.0.0.1:1234/v1',       needsKey: false },
+    { label: 'llama.cpp',  url: 'http://127.0.0.1:8080/v1',       needsKey: false },
     { label: 'OpenRouter', url: 'https://openrouter.ai/api/v1',    needsKey: true  },
   ];
 
@@ -233,7 +234,7 @@
               {#if modelError}
                 {modelError}
               {:else}
-                No models found — is LM Studio running?
+                No models found - is your local API server running?
               {/if}
             </p>
           {/if}
