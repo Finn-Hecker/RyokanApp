@@ -57,7 +57,7 @@
 
     <div>
       <span class="settings-label">{m.settings_provider_label()}</span>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
         {#each PROVIDERS as provider}
           <button
             on:click={() => selectProvider(provider.url)}
