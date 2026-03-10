@@ -26,7 +26,7 @@
 - **Clean UI:** A modern, distraction-free interface, fully migrated to Svelte 5 Runes for top performance. 
 - **Ready-to-Play Content:** Includes pre-installed, multi-lingual standard characters bundled with matching World Info. They automatically adapt to your chosen language (EN/DE), allowing you to jump straight into a story without any setup.
 - **Simplified Settings:** Control AI behavior (Creativity, Length, Repetition) via simple presets. A Power User toggle is available for those who still want raw slider controls.
-- **BYOK & Local Models:** Connect seamlessly to LM Studio for local models, or enter your OpenRouter API key for cloud generation.
+- **BYOK & Local Models:** Connect seamlessly to LM Studio, llama.cpp, or any OpenAI-compatible endpoint for local models, or enter your OpenRouter API key for cloud generation.
 - **V3 Character Support:** Full character card import/export, including alternate greetings, personality traits, scenarios, and example dialogs.
 - **Lorebooks & World Info:** Full support for world-building entries with keyword triggers and position control, injected automatically into the context.
 - **Persona System:** Define exactly who *you* are in the story (name, pronouns, background).
@@ -54,7 +54,7 @@ Designed to be a **clean, distraction-free chat experience**, it strips away the
 ### Prerequisites
 - Node.js (v18+)
 - Rust (latest stable)
-- LM Studio running locally on port `1234`, or a valid OpenRouter API key.
+- A local OpenAI-compatible server (for example LM Studio on `1234` or llama.cpp on `8080`) or a valid OpenRouter API key.
 
 ### Installation
 

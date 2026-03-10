@@ -4,9 +4,17 @@
   import * as m from "$lib/paraglide/messages";
   import Button from '$lib/components/ui/Button.svelte';
 
-  const PROVIDERS = [
-    { label: "LM Studio",  url: "http://127.0.0.1:1234/v1",           badge: () => m.settings_provider_badge_local() },
-    { label: "OpenRouter", url: "https://openrouter.ai/api/v1",        badge: () => m.settings_provider_badge_cloud() },
+  type Provider = {
+    label: string;
+    url: string;
+    badge: () => string;
+    icon: 'desktop' | 'cloud' | 'terminal';
+  };
+
+  const PROVIDERS: Provider[] = [
+    { label: "LM Studio",  url: "http://127.0.0.1:1234/v1",    badge: () => m.settings_provider_badge_local(), icon: 'desktop' },
+    { label: "llama.cpp",  url: "http://127.0.0.1:8080/v1",    badge: () => m.settings_provider_badge_local(), icon: 'terminal' },
+    { label: "OpenRouter", url: "https://openrouter.ai/api/v1", badge: () => m.settings_provider_badge_cloud(), icon: 'cloud' },
   ];
 
   let availableModels: string[] = [];
@@ -49,45 +57,41 @@
 
     <div>
       <span class="settings-label">{m.settings_provider_label()}</span>
-      <div class="grid grid-cols-2 gap-2">
-
-        <button
-          on:click={() => selectProvider(PROVIDERS[0].url)}
-          class="flex items-center gap-3 px-3 py-3 rounded-xl border transition-all duration-150 active:scale-[0.97]
-            {activeProvider?.url === PROVIDERS[0].url
-              ? 'bg-white/[0.07] border-ryokan-accent/40 text-white'
-              : 'bg-white/[0.02] border-white/[0.06] text-gray-400 hover:border-white/[0.12] hover:text-gray-200'}"
-        >
-
-          <svg class="shrink-0 {activeProvider?.url === PROVIDERS[0].url ? 'text-ryokan-accent' : 'text-gray-600'}"
-               width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-            <rect x="2" y="4" width="20" height="13" rx="2"/>
-            <path d="M1 20h22" stroke-linecap="round"/>
-            <circle cx="12" cy="17" r="0.8" fill="currentColor"/>
-          </svg>
-          <div class="text-left">
-            <div class="text-sm font-semibold">{PROVIDERS[0].label}</div>
-            <div class="text-[10px] opacity-50 uppercase tracking-wider">{PROVIDERS[0].badge()}</div>
-          </div>
-        </button>
-
-        <button
-          on:click={() => selectProvider(PROVIDERS[1].url)}
-          class="flex items-center gap-3 px-3 py-3 rounded-xl border transition-all duration-150 active:scale-[0.97]
-            {activeProvider?.url === PROVIDERS[1].url
-              ? 'bg-white/[0.07] border-ryokan-accent/40 text-white'
-              : 'bg-white/[0.02] border-white/[0.06] text-gray-400 hover:border-white/[0.12] hover:text-gray-200'}"
-        >
-          <svg class="shrink-0 {activeProvider?.url === PROVIDERS[1].url ? 'text-ryokan-accent' : 'text-gray-600'}"
-               width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-            <path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <div class="text-left">
-            <div class="text-sm font-semibold">{PROVIDERS[1].label}</div>
-            <div class="text-[10px] opacity-50 uppercase tracking-wider">{PROVIDERS[1].badge()}</div>
-          </div>
-        </button>
-
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {#each PROVIDERS as provider}
+          <button
+            on:click={() => selectProvider(provider.url)}
+            class="flex items-center gap-3 px-3 py-3 rounded-xl border transition-all duration-150 active:scale-[0.97]
+              {activeProvider?.url === provider.url
+                ? 'bg-white/[0.07] border-ryokan-accent/40 text-white'
+                : 'bg-white/[0.02] border-white/[0.06] text-gray-400 hover:border-white/[0.12] hover:text-gray-200'}"
+          >
+            {#if provider.icon === 'desktop'}
+              <svg class="shrink-0 {activeProvider?.url === provider.url ? 'text-ryokan-accent' : 'text-gray-600'}"
+                   width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <rect x="2" y="4" width="20" height="13" rx="2"/>
+                <path d="M1 20h22" stroke-linecap="round"/>
+                <circle cx="12" cy="17" r="0.8" fill="currentColor"/>
+              </svg>
+            {:else if provider.icon === 'cloud'}
+              <svg class="shrink-0 {activeProvider?.url === provider.url ? 'text-ryokan-accent' : 'text-gray-600'}"
+                   width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            {:else}
+              <svg class="shrink-0 {activeProvider?.url === provider.url ? 'text-ryokan-accent' : 'text-gray-600'}"
+                   width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <path d="M3 5h18v14H3z" />
+                <path d="M7 9l-2 3 2 3" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M17 9l2 3-2 3" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            {/if}
+            <div class="text-left">
+              <div class="text-sm font-semibold">{provider.label}</div>
+              <div class="text-[10px] opacity-50 uppercase tracking-wider">{provider.badge()}</div>
+            </div>
+          </button>
+        {/each}
       </div>
     </div>
 
