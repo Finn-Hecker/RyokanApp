@@ -71,7 +71,7 @@
         {/if}
       </div>
       {#if powerUser}
-        <div in:fade={{ duration: 250, delay: 50 }} out:fade={{ duration: 0 }}>
+        <div in:fade={{ duration: 250, delay: 30 }}>
           <input
             type="range" min="0" max="2" step="0.01"
             bind:value={appState.apiSettings.temperature}
@@ -81,7 +81,7 @@
           <div class="slider-bounds"><span>{m.settings_slider_precise()}</span><span>{m.settings_slider_creative()}</span></div>
         </div>
       {:else}
-        <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 50 }} out:fade={{ duration: 0 }}>
+        <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 30 }}>
           {#each TEMPERATURES as temp}
             <button
               on:click={() => (appState.apiSettings.temperature = temp.value)}
@@ -105,7 +105,7 @@
         {/if}
       </div>
       {#if powerUser}
-        <div in:fade={{ duration: 250, delay: 50 }} out:fade={{ duration: 0 }}>
+        <div in:fade={{ duration: 250, delay: 30 }}>
           <input
             type="range" min="50" max="4000" step="10"
             value={appState.apiSettings.maxTokens ?? 300}
@@ -116,7 +116,7 @@
           <div class="slider-bounds"><span>{m.settings_slider_short()}</span><span>{m.settings_slider_long()}</span></div>
         </div>
       {:else}
-        <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 50 }} out:fade={{ duration: 0 }}>
+        <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 30 }}>
           {#each MAX_TOKENS_PRESETS as preset}
             <button
               on:click={() => (appState.apiSettings.maxTokens = preset.value)}
@@ -140,7 +140,7 @@
         {/if}
       </div>
       {#if powerUser}
-        <div in:fade={{ duration: 250, delay: 50 }} out:fade={{ duration: 0 }}>
+        <div in:fade={{ duration: 250, delay: 30 }}>
           <input
             type="range" min="0.8" max="2.0" step="0.01"
             value={appState.apiSettings.presencePenalty ?? 1.12}
@@ -151,7 +151,7 @@
           <div class="slider-bounds"><span>{m.settings_slider_tolerant()}</span><span>{m.settings_slider_strict()}</span></div>
         </div>
       {:else}
-        <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 50 }} out:fade={{ duration: 0 }}>
+        <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 30 }}>
           {#each PENALTY_PRESETS as preset}
             <button
               on:click={() => (appState.apiSettings.presencePenalty = preset.value)}
