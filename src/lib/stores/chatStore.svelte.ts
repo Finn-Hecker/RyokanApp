@@ -9,6 +9,8 @@ export interface Message {
     conversation_id: string;
     role: 'user' | 'assistant';
     content: string;
+    swipe_variants: string[];
+    swipe_index: number;
 }
 
 export interface Conversation {
@@ -25,9 +27,10 @@ export interface DisplayMessage {
     text: string;
     isUser: boolean;
     senderName: string;
+    swipeVariants: string[];
+    swipeIndex: number;
 }
 
-// Group all reactive state into a single object
 export const chatState = $state({
     conversations: [] as Conversation[],
     currentMessages: [] as Message[],
@@ -41,29 +44,21 @@ const dateFormatter = new Intl.DateTimeFormat(getLocale(), {
 
 const PAGE_SIZE = 15;
 
-/** Call when the sidebar opens. */
 export async function loadAllConversations() {
     try {
         const result = await invoke<Conversation[]>('get_conversations_page', {
             limit: PAGE_SIZE,
             offset: 0,
         });
-
-        const enhanced = result.map(chat => ({
+        chatState.conversations = result.map(chat => ({
             ...chat,
             formattedDate: dateFormatter.format(new Date(chat.created_at))
         }));
-
-        chatState.conversations = enhanced;
-
     } catch (e) {
         console.error(e);
     }
 }
 
-/** * Appends the next page to the existing list.
- * Returns false when there are no more results to load. 
- */
 export async function loadMoreConversations(): Promise<boolean> {
     try {
         const currentLength = chatState.conversations.length;
@@ -71,15 +66,14 @@ export async function loadMoreConversations(): Promise<boolean> {
             limit: PAGE_SIZE,
             offset: currentLength,
         });
-        
         if (result.length === 0) return false;
-
-        const enhanced = result.map(chat => ({
-            ...chat,
-            formattedDate: dateFormatter.format(new Date(chat.created_at))
-        }));
-
-        chatState.conversations = [...chatState.conversations, ...enhanced];
+        chatState.conversations = [
+            ...chatState.conversations,
+            ...result.map(chat => ({
+                ...chat,
+                formattedDate: dateFormatter.format(new Date(chat.created_at))
+            }))
+        ];
         return result.length === PAGE_SIZE;
     } catch (e) {
         console.error(e);
@@ -89,47 +83,39 @@ export async function loadMoreConversations(): Promise<boolean> {
 
 export async function startNewChat(character: any) {
     try {
-        let allGreetings = [];
-
+        let allGreetings: string[] = [];
         if (character.greeting && character.greeting.trim().length > 0) {
             allGreetings.push(character.greeting);
         }
-
         if (character.alternate_greetings) {
             try {
-                const altGreetings = typeof character.alternate_greetings === 'string' 
-                    ? JSON.parse(character.alternate_greetings) 
+                const altGreetings = typeof character.alternate_greetings === 'string'
+                    ? JSON.parse(character.alternate_greetings)
                     : character.alternate_greetings;
                 if (Array.isArray(altGreetings)) {
-                    const validAlts = altGreetings.filter(g => 
-                        typeof g === 'string' && g.trim().length > 0
-                    );
-                    allGreetings.push(...validAlts);
+                    allGreetings.push(...altGreetings.filter((g: unknown) =>
+                        typeof g === 'string' && (g as string).trim().length > 0
+                    ));
                 }
             } catch (e) {
                 console.warn("Could not parse alternative greetings:", e);
             }
         }
-
         const rawGreeting = allGreetings.length > 0
             ? allGreetings[Math.floor(Math.random() * allGreetings.length)]
             : null;
-
         const activeRole = roleState.allRoles.find(r => r.id === roleState.activeRoleId);
-        
         const userName: string = activeRole?.name ?? (character as any).userName ?? 'User';
         const selectedGreeting = rawGreeting
             ? rawGreeting
                 .replace(/\{\{char\}\}/gi, character.name)
                 .replace(/\{\{user\}\}/gi, userName)
             : null;
-
         const newId = await invoke<string>('create_chat', {
             characterId: character.id.toString(),
             characterName: character.name,
             initialMessage: selectedGreeting
         });
-        
         await loadAllConversations();
         chatState.activeChatId = newId;
         await loadMessages(newId);
@@ -138,16 +124,13 @@ export async function startNewChat(character: any) {
 
 export async function openHistoryChat(chatId: string) {
     await loadMessages(chatId);
-
     const currentChat = chatState.conversations.find(c => c.id === chatId);
-
-    if (currentChat && currentChat.character_id) {
-        const chars = characterState.allCharacters; 
-        const char = chars.find(c => c.id.toString() === currentChat.character_id);
-        
+    if (currentChat?.character_id) {
+        const char = characterState.allCharacters.find(
+            c => c.id.toString() === currentChat.character_id
+        );
         if (char) {
             appState.activeCharacter = char;
-            console.log("Character synchronized:", char.name);
         } else {
             console.warn("Could not find a character for this chat.");
         }
@@ -156,8 +139,14 @@ export async function openHistoryChat(chatId: string) {
 
 export async function loadMessages(chatId: string) {
     try {
-        const result = await invoke<Message[]>('get_messages', { chatId });
-        chatState.currentMessages = result;
+        const result = await invoke<any[]>('get_messages', { chatId });
+        chatState.currentMessages = result.map(row => ({
+            ...row,
+            swipe_variants: typeof row.swipe_variants === 'string'
+                ? JSON.parse(row.swipe_variants)
+                : (row.swipe_variants ?? [row.content]),
+            swipe_index: row.swipe_index ?? 0,
+        }));
         chatState.activeChatId = chatId;
     } catch (e) { console.error(e); }
 }
@@ -165,16 +154,33 @@ export async function loadMessages(chatId: string) {
 export async function addMessage(role: 'user' | 'assistant', content: string) {
     const chatId = chatState.activeChatId;
     if (!chatId) return;
-
     try {
         await invoke('add_message', { chatId, role, content });
-        // Reload conversations so the sidebar re-sorts by updated_at
         await loadAllConversations();
         await loadMessages(chatId);
     } catch (e) { console.error(e); }
 }
 
-// Updates the content of an existing message in the database.
+export async function addSwipeVariant(messageId: string, content: string): Promise<void> {
+    const chatId = chatState.activeChatId;
+    try {
+        await invoke('add_swipe_variant', { messageId, content });
+        if (chatId) await loadMessages(chatId);
+    } catch (e) { console.error(e); }
+}
+
+export async function setSwipeIndex(messageId: string, index: number): Promise<void> {
+    const msg = chatState.currentMessages.find(m => m.id === messageId);
+    if (msg) {
+        const clamped = Math.max(0, Math.min(index, msg.swipe_variants.length - 1));
+        msg.swipe_index = clamped;
+        msg.content = msg.swipe_variants[clamped];
+    }
+    try {
+        await invoke('set_swipe_index', { messageId, index });
+    } catch (e) { console.error(e); }
+}
+
 export async function updateMessage(id: string, content: string) {
     const chatId = chatState.activeChatId;
     try {
@@ -183,7 +189,6 @@ export async function updateMessage(id: string, content: string) {
     } catch (e) { console.error(e); }
 }
 
-// Deletes a single message by ID, then reloads the message list.
 export async function deleteMessage(id: string) {
     const chatId = chatState.activeChatId;
     try {

@@ -54,6 +54,8 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             conversation_id TEXT,
             role TEXT,
             content TEXT,
+            swipe_variants TEXT NOT NULL DEFAULT '[]',
+            swipe_index INTEGER NOT NULL DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
         );
