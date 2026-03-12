@@ -10,13 +10,13 @@
     label: string;
     url: string;
     badge: () => string;
-    icon: 'desktop' | 'cloud' | 'terminal';
+    icon: 'desktop' | 'cloud' | 'terminal' | 'ollama';
   };
 
   const PROVIDERS: Provider[] = [
     { label: "LM Studio",  url: "http://127.0.0.1:1234/v1",    badge: () => m.settings_provider_badge_local(), icon: 'desktop' },
     { label: "llama.cpp",  url: "http://127.0.0.1:8080/v1",    badge: () => m.settings_provider_badge_local(), icon: 'terminal' },
-    { label: "Ollama",     url: "http://127.0.0.1:11434/v1",   badge: () => m.settings_provider_badge_local(), icon: 'terminal' },
+    { label: "Ollama",     url: "http://127.0.0.1:11434/v1",   badge: () => m.settings_provider_badge_local(), icon: 'ollama' },
     { label: "OpenRouter", url: "https://openrouter.ai/api/v1", badge: () => m.settings_provider_badge_cloud(), icon: 'cloud' },
   ];
 
@@ -76,6 +76,18 @@
             {:else if provider.icon === 'cloud'}
               <svg class="provider-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            {:else if provider.icon === 'ollama'}
+              <svg class="provider-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M8 8 L6 3 L9.5 6"/>
+                <path d="M16 8 L18 3 L14.5 6"/>
+                <path d="M7 10 C7 6.5 9 5 12 5 C15 5 17 6.5 17 10 C17 13.5 15.5 15 12 15 C8.5 15 7 13.5 7 10Z"/>
+                <circle cx="10" cy="10" r="1" fill="currentColor" stroke="none"/>
+                <circle cx="14" cy="10" r="1" fill="currentColor" stroke="none"/>
+                <path d="M10.5 12.5 Q12 13.5 13.5 12.5"/>
+                <path d="M10 15 L9.5 19 M14 15 L14.5 19"/>
+                <path d="M9.5 19 Q12 20 14.5 19"/>
               </svg>
             {:else}
               <svg class="provider-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">

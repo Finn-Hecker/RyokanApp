@@ -38,16 +38,26 @@ export function buildSystemPrompt({
 
   const rp = (text: string) => replacePlaceholders(text, charName, userName);
 
+  const userIdentityParts = [
+    userName && userName !== 'User' ? userName : null,
+    userPronouns ? `(${userPronouns})` : null,
+  ].filter(Boolean);
+  const userIdentityLine = userIdentityParts.length > 0
+    ? userIdentityParts.join(' ')
+    : userName;
+
   let prompt = '';
+
   if (wiBefore?.trim()) {
     prompt += formatSection('world_info_before', rp(wiBefore.trim()), modelType) + '\n\n';
   }
 
   prompt += `You are ${charName}. Reply in ${lang}.
-Stay fully in character. The user has an active role — you must perceive and react to it consistently throughout the entire conversation.
-If a message is prefixed with [OOC:], this is a director's instruction — a meta-command to shape the story. Do NOT respond to it as ${charName}. Instead, silently incorporate the instruction into your next in-character response as if it naturally happened in the scene. Step outside the roleplay briefly to address it naturally, then seamlessly return to character in your next response.`;
+You are speaking with ${userIdentityLine}. React to them as ${charName} naturally would throughout the entire conversation.
+Stay fully in character. The user has an active role — you must perceive and react to it consistently.
+If a message is prefixed with [OOC:], treat it as a director's instruction. Do NOT respond as ${charName}. Silently incorporate it into your next in-character response, then seamlessly return to character.`;
 
-  const sections = [];
+  const sections: Array<{ label: string; content: string }> = [];
   if (desc?.trim())        sections.push({ label: 'description',    content: rp(desc.trim()) });
   if (personality?.trim()) sections.push({ label: 'personality',    content: rp(personality.trim()) });
   if (scenario?.trim())    sections.push({ label: 'scenario',       content: rp(scenario.trim()) });
@@ -61,16 +71,10 @@ If a message is prefixed with [OOC:], this is a director's instruction — a met
     prompt += '\n\n' + formatSection('world_info_after', rp(wiAfter.trim()), modelType);
   }
 
-  const roleParts: string[] = [];
-  if (userName && userName !== 'User') roleParts.push(`Name: ${userName}`);
-  if (userPronouns) roleParts.push(`Pronouns: ${userPronouns}`);
-  if (userBio?.trim()) roleParts.push(`Bio: ${rp(userBio.trim())}`);
-
-  if (roleParts.length > 0) {
-    const roleContent = roleParts.join('\n')
-      + `\n\nThis is an active part of the scene. React to this person as ${charName} naturally would.`
-      + ` Their name is meta — only use it in-character if it has been introduced in roleplay.`;
-    prompt += '\n\n' + formatSection('user_role', roleContent, modelType);
+  if (userBio?.trim()) {
+    const bioContent = rp(userBio.trim())
+      + `\n\nOnly address them by name in-character if it has been introduced in the roleplay.`;
+    prompt += '\n\n' + formatSection('user_role', bioContent, modelType);
   }
 
   return prompt;
