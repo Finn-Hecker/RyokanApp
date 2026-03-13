@@ -26,7 +26,7 @@
     needsKey: boolean;
     tab: ProviderTab;
     keyPlaceholder?: string;
-    icon: 'desktop' | 'ollama' | 'terminal' | 'kobold' | 'openrouter' | 'openai' | 'grok';
+    icon: 'desktop' | 'ollama' | 'terminal' | 'kobold' | 'openrouter' | 'openai' | 'grok' | 'custom';
   };
 
   const presets: Preset[] = [
@@ -37,6 +37,7 @@
     { label: 'OpenRouter', url: 'https://openrouter.ai/api/v1', needsKey: true,  tab: 'cloud', icon: 'openrouter', keyPlaceholder: 'sk-or-...' },
     { label: 'OpenAI',     url: 'https://api.openai.com/v1',   needsKey: true,  tab: 'cloud', icon: 'openai',     keyPlaceholder: 'sk-...'    },
     { label: 'Grok',       url: 'https://api.x.ai/v1',         needsKey: true,  tab: 'cloud', icon: 'grok',       keyPlaceholder: 'xai-...'   },
+    { label: 'Custom',     url: '',                             needsKey: false, tab: 'cloud', icon: 'custom' },
   ];
 
   let activeTab    = $state<ProviderTab>('local');
@@ -47,6 +48,7 @@
   const needsKey        = $derived(!!currentPreset?.needsKey);
   const keyPlaceholder  = $derived(currentPreset?.keyPlaceholder ?? 'sk-...');
   const canFinish       = $derived(!!selectedModel && !saving);
+  const isCustom        = $derived(activePreset === 'Custom');
 
   function switchTab(tab: ProviderTab) {
     activeTab = tab;
@@ -68,7 +70,7 @@
     models        = [];
     selectedModel = '';
     modelError    = '';
-    if (!preset.needsKey) await loadModels();
+    if (!preset.needsKey && preset.label !== 'Custom') await loadModels();
   }
 
   async function loadModels() {
@@ -108,10 +110,10 @@
     modelError = '';
 
     try {
-      await saveSetting('aiLanguage', selectedLanguage);
-      await saveSetting('url', apiUrl);
-      await saveSetting('apiKey', apiKey);
-      await saveSetting('model', selectedModel);
+      await saveSetting('ai_language', selectedLanguage);
+      await saveSetting('api_url', apiUrl);
+      await saveSetting('api_key', apiKey);
+      await saveSetting('api_model', selectedModel);
       await saveSetting('onboarding_completed', 'true');
 
       setLocale(selectedLanguage === 'English' ? 'en' : 'de');
@@ -218,7 +220,7 @@
           {/each}
         </div>
 
-        <div class="grid gap-2" class:grid-cols-4={activeTab === 'local'} class:grid-cols-3={activeTab === 'cloud'}>
+        <div class="grid grid-cols-4 gap-2">
           {#each filteredPresets as preset (preset.url)}
             <button
               type="button"
@@ -257,6 +259,11 @@
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
                     <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
                   </svg>
+                {:else if preset.icon === 'custom'}
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" stroke-linecap="round"/>
+                  </svg>
                 {/if}
               </span>
 
@@ -270,7 +277,40 @@
         </div>
       </div>
 
-      {#if activePreset && needsKey}
+      {#if isCustom}
+        <div class="space-y-2" in:fly={{ y: 8, duration: 200 }}>
+          <div class="rounded-xl bg-white/[0.04] border border-white/[0.08] overflow-hidden">
+            <input
+              type="url"
+              bind:value={apiUrl}
+              placeholder="https://your-api.example.com/v1"
+              class="w-full px-3.5 py-2.5 bg-transparent text-white text-[13px] placeholder-white/20 focus:outline-none"
+            />
+          </div>
+          <div class="flex gap-2">
+            <div class="flex-1 rounded-xl bg-white/[0.04] border border-white/[0.08] overflow-hidden">
+              <input
+                type="password"
+                bind:value={apiKey}
+                placeholder="API Key (optional)"
+                class="w-full px-3.5 py-2.5 bg-transparent text-white text-[13px] placeholder-white/20 focus:outline-none"
+              />
+            </div>
+            <button
+              type="button"
+              onclick={loadModels}
+              disabled={loadingModels || !apiUrl}
+              class="
+                px-4 py-2.5 rounded-xl border border-ryokan-accent/30 text-ryokan-accent
+                text-[13px] font-medium hover:bg-ryokan-accent/8 active:scale-[0.97]
+                disabled:opacity-25 transition-all whitespace-nowrap
+              "
+            >
+              {loadingModels ? '…' : 'Connect'}
+            </button>
+          </div>
+        </div>
+      {:else if activePreset && needsKey}
         <div class="space-y-2.5" in:fly={{ y: 8, duration: 200 }}>
           <div class="flex gap-2">
             <div class="flex-1 rounded-xl bg-white/[0.04] border border-white/[0.08] overflow-hidden">
