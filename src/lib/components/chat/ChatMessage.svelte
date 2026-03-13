@@ -398,7 +398,7 @@
     display: inline-block;
     width: 10px;
     height: 10px;
-    background-color: var(--bg-ryokan-accent);
+    background-color: #d4b483;
     opacity: 0.25;
     animation: pulseTriangle 1.2s ease-in-out infinite;
     flex-shrink: 0;
