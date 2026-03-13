@@ -68,6 +68,7 @@
   "settings_provider_badge_local": "Local",
   "settings_provider_badge_cloud": "Cloud",
   "settings_api_key_optional": "optional",
+  "settings_api_custom_provider_label": "Custom",
   "settings_tokens_label": "Response Length",
   "settings_tokens_preset_chat": "Chat",
   "settings_tokens_preset_chat_hint": "~100–150 Tokens",
