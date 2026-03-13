@@ -4,13 +4,13 @@
   export let character: any = null;
 </script>
 
-<div class="flex items-start gap-2.5 mb-6 animate-fade-in">
+<div class="flex items-start gap-5 mb-6 animate-fade-in">
 
-  <div class="shrink-0 w-8 h-8 rounded-full overflow-hidden ring-1 ring-white/10 mt-0.5">
+  <div class="shrink-0 w-10 h-10 rounded-xl overflow-hidden ring-1 ring-ryokan-accent/20 mt-1 shadow-md">
     {#if character?.avatarUrl}
       <img src={character.avatarUrl} alt={character.name} class="w-full h-full object-cover" />
     {:else}
-      <div class="w-full h-full {character?.color ?? 'bg-ryokan-surface'} flex items-center justify-center text-white font-bold text-xs">
+      <div class="w-full h-full {character?.color ?? 'bg-ryokan-surface'} flex items-center justify-center text-white font-bold text-sm">
         {character?.initials ?? (character?.name?.[0]?.toUpperCase() ?? 'A')}
       </div>
     {/if}
