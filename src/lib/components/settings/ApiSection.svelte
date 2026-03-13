@@ -34,7 +34,7 @@
     return url.includes('127.0.0.1') || url.includes('localhost') ? 'local' : 'cloud';
   }
 
-  let activeTab     = $state<ProviderTab>(getTabForUrl(appState.apiSettings.url));
+  let activeTab     = $derived<ProviderTab>(getTabForUrl(appState.apiSettings.url));
   let availableModels = $state<string[]>([]);
   let modelsLoading   = $state(false);
   let modelsError     = $state("");
@@ -44,7 +44,6 @@
   const keyPlaceholder    = $derived(activeProvider?.keyPlaceholder ?? "sk-...");
 
   function switchTab(tab: ProviderTab) {
-    activeTab = tab;
     if (activeProvider?.tab !== tab) {
       const first = PROVIDERS.find(p => p.tab === tab);
       if (first) selectProvider(first.url);
