@@ -164,10 +164,11 @@
           {@html cleanHtml}
 
           {#if showDots}
-            <span class="inline-flex items-center gap-[3px] ml-1 translate-y-[-1px]">
-              <span class="typing-dot"></span>
-              <span class="typing-dot" style="animation-delay: 0.18s"></span>
-              <span class="typing-dot" style="animation-delay: 0.36s"></span>
+            <span class="inline-flex items-end ml-1.5 translate-y-[-1px]">
+              <span class="pulse-tri pulse-tri--down"></span>
+              <span class="pulse-tri pulse-tri--up"   style="animation-delay: 0.16s"></span>
+              <span class="pulse-tri pulse-tri--down" style="animation-delay: 0.32s"></span>
+              <span class="pulse-tri pulse-tri--up"   style="animation-delay: 0.48s"></span>
             </span>
           {/if}
         </div>
@@ -393,17 +394,26 @@
   :global(.prose-custom strong)       { color: #ffffff; font-weight: 600; }
   :global(.prose-custom em)           { color: #a39887; font-style: italic; }
 
-  :global(.typing-dot) {
+  :global(.pulse-tri) {
     display: inline-block;
-    width: 4px; height: 4px;
-    border-radius: 50%;
-    background-color: #d4b483;
-    opacity: 0.3;
-    animation: typingDot 1.1s ease-in-out infinite;
+    width: 10px;
+    height: 10px;
+    background-color: var(--bg-ryokan-accent);
+    opacity: 0.25;
+    animation: pulseTriangle 1.2s ease-in-out infinite;
+    flex-shrink: 0;
   }
 
-  @keyframes typingDot {
+  :global(.pulse-tri--down) {
+    clip-path: polygon(0% 0%, 100% 0%, 50% 100%);
+  }
+
+  :global(.pulse-tri--up) {
+    clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+  }
+
+  @keyframes pulseTriangle {
     0%, 100% { opacity: 0.2; transform: translateY(0); }
-    50%       { opacity: 0.9; transform: translateY(-3px); }
+    50%       { opacity: 0.95; transform: translateY(-4px); }
   }
 </style>
