@@ -94,6 +94,16 @@ function buildApiMessages(
     messages.push({ role: 'user', content: userPrompt });
   }
 
+  // Some model templates (e.g. Qwen via LM Studio) require the first
+  // non-system turn to be a user message. If the history starts with an
+  // assistant greeting, inject a silent placeholder so the Jinja template
+  // doesn't throw "No user query found in messages."
+  const firstNonSystem = messages.find(m => m.role !== 'system');
+  if (firstNonSystem?.role === 'assistant') {
+    const systemIndex = messages.findLastIndex(m => m.role === 'system');
+    messages.splice(systemIndex + 1, 0, { role: 'user', content: '[Start Roleplay]' });
+  }
+
   return messages;
 }
 
