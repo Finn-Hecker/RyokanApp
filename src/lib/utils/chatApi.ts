@@ -1,166 +1,184 @@
 import { invoke } from '@tauri-apps/api/core';
 import { buildSystemPrompt, buildWiString } from '$lib/utils/promptBuilder';
 import { worldInfoState } from '$lib/stores/worldInfoStore.svelte';
+import { chatState } from '$lib/stores/chatStore.svelte';
 import type { ApiSettings } from '$lib/stores/appState.svelte';
 import type { Message } from '$lib/stores/chatStore.svelte';
 
 export interface GenerationCallbacks {
-  onStreamUpdate: (text: string) => void;
-  onThinkingPhaseChange: (isThinking: boolean) => void;
+    onStreamUpdate:        (text: string) => void;
+    onThinkingPhaseChange: (isThinking: boolean) => void;
 }
 
 export interface GenerationOptions {
-  character: {
-    name?: string;
-    desc?: string;
-    personality?: string;
-    scenario?: string;
-    mes_example?: string;
-    world_info_ids?: string[];
-  } | null;
-  apiSettings: ApiSettings;
-  recentMessages: Message[];
-  /** Include a new user prompt at the end (normal send). Omit for retry. */
-  userPrompt?: string;
-  role?: {
-    name?: string;
-    bio?: string;
-    pronouns?: string;
-  } | null;
+    character: {
+        name?:           string;
+        desc?:           string;
+        personality?:    string;
+        scenario?:       string;
+        mes_example?:    string;
+        world_info_ids?: string[];
+    } | null;
+    apiSettings:    ApiSettings;
+    recentMessages: Message[];
+    /** Include a new user prompt at the end (normal send). Omit for retry. */
+    userPrompt?:    string;
+    role?: {
+        name?:     string;
+        bio?:      string;
+        pronouns?: string;
+    } | null;
 }
 
 /** Pure function — strips thinking tags and returns the visible response text. */
 export function processThinkingOutput(raw: string, isFinished: boolean): {
-  text: string;
-  isThinking: boolean;
+    text:       string;
+    isThinking: boolean;
 } {
-  const thinkEnd = '</think>';
-
-  if (raw.includes(thinkEnd)) {
-    const parts = raw.split(thinkEnd);
-    return { text: parts[parts.length - 1].trimStart(), isThinking: false };
-  }
-
-  if (isFinished) {
-    return { text: raw, isThinking: false };
-  }
-
-  return { text: '', isThinking: true };
-}
-
-/** Builds the messages array sent to the AI API. */
-function buildApiMessages(
-  options: GenerationOptions
-): { role: string; content: string }[] {
-  const { character, apiSettings, recentMessages, userPrompt, role } = options;
-
-  const systemPrompt = buildSystemPrompt({
-    charName: character?.name || 'Unknown',
-    desc: character?.desc,
-    personality: character?.personality,
-    scenario: character?.scenario,
-    example: character?.mes_example,
-    lang: apiSettings.aiLanguage || 'English',
-    userName: role?.name || 'User',
-    userBio: role?.bio,
-    userPronouns: role?.pronouns,
-    modelType: 'ollama',
-    wiBefore: buildWiString(
-      worldInfoState.allWorldInfos
-        .filter(wi => (character?.world_info_ids ?? []).includes(wi.id))
-        .flatMap(wi => wi.entries),
-      'before',
-      recentMessages.slice(-10).map(m => m.content).join(' '),
-    ),
-    wiAfter: buildWiString(
-      worldInfoState.allWorldInfos
-        .filter(wi => (character?.world_info_ids ?? []).includes(wi.id))
-        .flatMap(wi => wi.entries),
-      'after',
-      recentMessages.slice(-10).map(m => m.content).join(' '),
-    ),
-  });
-
-  const history = recentMessages
-    .slice(-20)
-    .map(msg => ({ role: msg.role, content: msg.content }));
-
-  const messages: { role: string; content: string }[] = [
-    { role: 'system', content: systemPrompt },
-    ...history,
-  ];
-
-  if (userPrompt) {
-    messages.push({ role: 'user', content: userPrompt });
-  }
-
-  // Some model templates (e.g. Qwen via LM Studio) require the first
-  // non-system turn to be a user message. If the history starts with an
-  // assistant greeting, inject a silent placeholder so the Jinja template
-  // doesn't throw "No user query found in messages."
-  const firstNonSystem = messages.find(m => m.role !== 'system');
-  if (firstNonSystem?.role === 'assistant') {
-    const systemIndex = messages.findLastIndex(m => m.role === 'system');
-    messages.splice(systemIndex + 1, 0, { role: 'user', content: '[Start Roleplay]' });
-  }
-
-  return messages;
+    const thinkEnd = '</think>';
+    if (raw.includes(thinkEnd)) {
+        const parts = raw.split(thinkEnd);
+        return { text: parts[parts.length - 1].trimStart(), isThinking: false };
+    }
+    if (isFinished) return { text: raw, isThinking: false };
+    return { text: '', isThinking: true };
 }
 
 /**
- * Calls the AI API via Tauri invoke and returns the raw streamed text.
- * Streaming updates are forwarded via `callbacks` so the component can
- * update its reactive state in real-time.
+ * Builds the message array for the AI API using the Soft Summary approach.
+ *
+ * Layout:
+ *   [0]  system prompt (with optional summary appended at the end)
+ *   [1…] messages newer than lastSummarizedMessageId
+ *
+ * The summary is merged into the single system message instead of being a
+ * separate system turn — multiple consecutive system messages break the Jinja
+ * template of many models (e.g. Qwen via LM Studio).
+ *
+ * checkAndSummarizeIfNeeded() must be called (and awaited) before this so
+ * summaryMeta is already up-to-date for this turn.
  */
-export async function runGeneration(
-  options: GenerationOptions,
-  callbacks: GenerationCallbacks
-): Promise<string> {
-  const { apiSettings } = options;
-  const messages = buildApiMessages(options);
+export function buildApiMessages(options: GenerationOptions): { role: string; content: string }[] {
+    const { character, apiSettings, recentMessages, userPrompt, role } = options;
 
-  console.log(messages);
-
-  let rawBuffer = '';
-
-  // Subscribe to streaming tokens before invoking
-  const { listen } = await import('@tauri-apps/api/event');
-  const unlisten = await listen<{ token: string }>('ai-token', (event) => {
-    rawBuffer += event.payload.token;
-
-    if (apiSettings.isThinkingModel) {
-      const { text, isThinking } = processThinkingOutput(rawBuffer, false);
-      callbacks.onThinkingPhaseChange(isThinking);
-      callbacks.onStreamUpdate(text);
-    } else {
-      callbacks.onStreamUpdate(rawBuffer);
-    }
-  });
-
-  try {
-    await invoke('call_ai_api', {
-      payload: {
-        url: apiSettings.url,
-        api_key: apiSettings.apiKey,
-        model: apiSettings.model,
-        messages,
-        temperature: apiSettings.temperature,
-        max_tokens: apiSettings.maxTokens,
-        presence_penalty: apiSettings.presencePenalty,
-      },
+    const baseSystemPrompt = buildSystemPrompt({
+        charName:     character?.name || 'Unknown',
+        desc:         character?.desc,
+        personality:  character?.personality,
+        scenario:     character?.scenario,
+        example:      character?.mes_example,
+        lang:         apiSettings.aiLanguage || 'English',
+        userName:     role?.name || 'User',
+        userBio:      role?.bio,
+        userPronouns: role?.pronouns,
+        modelType:    'ollama',
+        wiBefore: buildWiString(
+            worldInfoState.allWorldInfos
+                .filter(wi => (character?.world_info_ids ?? []).includes(wi.id))
+                .flatMap(wi => wi.entries),
+            'before',
+            recentMessages.slice(-10).map(m => m.content).join(' '),
+        ),
+        wiAfter: buildWiString(
+            worldInfoState.allWorldInfos
+                .filter(wi => (character?.world_info_ids ?? []).includes(wi.id))
+                .flatMap(wi => wi.entries),
+            'after',
+            recentMessages.slice(-10).map(m => m.content).join(' '),
+        ),
     });
 
-    // Finalise thinking-model output
-    if (apiSettings.isThinkingModel) {
-      const { text } = processThinkingOutput(rawBuffer, true);
-      callbacks.onThinkingPhaseChange(false);
-      callbacks.onStreamUpdate(text);
-      return text || rawBuffer;
+    const { currentSummary, lastSummarizedMessageId } = chatState.summaryMeta;
+
+    // Append the rolling summary to the single system message instead of
+    // injecting a second system turn — avoids "No user query found" errors
+    // from models that expect exactly one system message (Qwen, Mistral, …).
+    const fullSystemContent = currentSummary
+        ? `${baseSystemPrompt}\n\n[Previous conversation summary:\n${currentSummary}]`
+        : baseSystemPrompt;
+
+    // Only send messages that haven't been compressed into the summary yet.
+    const lastSumIdx  = lastSummarizedMessageId
+        ? recentMessages.findIndex(m => m.id === lastSummarizedMessageId)
+        : -1;
+    const newMessages = recentMessages.slice(lastSumIdx + 1);
+
+    const messages: { role: string; content: string }[] = [
+        { role: 'system', content: fullSystemContent },
+    ];
+
+    messages.push(...newMessages.map(msg => ({ role: msg.role, content: msg.content })));
+
+    if (userPrompt) {
+        messages.push({ role: 'user', content: userPrompt });
     }
 
-    callbacks.onStreamUpdate(rawBuffer);
-    return rawBuffer;
-  } finally {
-    unlisten();
-  }
+    // Some model templates (e.g. Qwen via LM Studio) require the first
+    // non-system turn to be a user message.
+    const firstNonSystem = messages.find(m => m.role !== 'system');
+    if (firstNonSystem?.role === 'assistant') {
+        const systemIndex = messages.findLastIndex(m => m.role === 'system');
+        messages.splice(systemIndex + 1, 0, { role: 'user', content: '[Start Roleplay]' });
+    }
+
+    return messages;
+}
+
+/**
+ * Calls the AI API and streams the response.
+ *
+ * Important: call checkAndSummarizeIfNeeded() and await it BEFORE calling
+ * this function. The two invoke('call_ai_api') calls must never overlap —
+ * both share the Tauri 'ai-token' SSE channel.
+ */
+export async function runGeneration(
+    options:   GenerationOptions,
+    callbacks: GenerationCallbacks,
+): Promise<string> {
+    const { apiSettings } = options;
+
+    const messages = buildApiMessages(options);
+
+    console.log('[runGeneration] messages:', messages);
+
+    let rawBuffer = '';
+
+    const { listen } = await import('@tauri-apps/api/event');
+    const unlisten = await listen<{ token: string }>('ai-token', (event) => {
+        rawBuffer += event.payload.token;
+
+        if (apiSettings.isThinkingModel) {
+            const { text, isThinking } = processThinkingOutput(rawBuffer, false);
+            callbacks.onThinkingPhaseChange(isThinking);
+            callbacks.onStreamUpdate(text);
+        } else {
+            callbacks.onStreamUpdate(rawBuffer);
+        }
+    });
+
+    try {
+        await invoke('call_ai_api', {
+            payload: {
+                url:              apiSettings.url,
+                api_key:          apiSettings.apiKey,
+                model:            apiSettings.model,
+                messages,
+                temperature:      apiSettings.temperature,
+                max_tokens:       apiSettings.maxTokens,
+                presence_penalty: apiSettings.presencePenalty,
+            },
+        });
+
+        if (apiSettings.isThinkingModel) {
+            const { text } = processThinkingOutput(rawBuffer, true);
+            callbacks.onThinkingPhaseChange(false);
+            callbacks.onStreamUpdate(text);
+            return text || rawBuffer;
+        }
+
+        callbacks.onStreamUpdate(rawBuffer);
+        return rawBuffer;
+    } finally {
+        unlisten();
+    }
 }

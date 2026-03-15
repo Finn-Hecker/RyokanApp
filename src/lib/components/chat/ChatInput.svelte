@@ -3,14 +3,18 @@
 
   let {
     isGenerating = false,
+    isSummarizing = false,
     value = $bindable(''),
     isOOC = $bindable(false),
+    placeholder = undefined,
     onSend,
     onStop
   }: {
     isGenerating?: boolean;
+    isSummarizing?: boolean;
     value?: string;
     isOOC?: boolean;
+    placeholder?: string;
     onSend?: () => void;
     onStop?: () => void;
   } = $props();
@@ -53,9 +57,11 @@
   <div class="max-w-3xl mx-auto">
 
     <div class="rounded-[20px] transition-all duration-500 ease-out p-px
-      {isOOC
-        ? 'bg-gradient-to-b from-ryokan-accent/40 to-ryokan-accent/5'
-        : 'bg-white/6'}"
+      {isSummarizing
+        ? 'bg-white/[0.035]'
+        : isOOC
+          ? 'bg-gradient-to-b from-ryokan-accent/40 to-ryokan-accent/5'
+          : 'bg-white/6'}"
     >
       <div class="flex flex-col rounded-[19px] transition-all duration-500 ease-out overflow-hidden bg-ryokan-sidebar custom-chat-shadow">
 
@@ -64,12 +70,17 @@
           bind:value
           onkeydown={handleKeydown}
           oninput={handleInput}
-          placeholder={isOOC ? m.chat_input_placeholder_ooc() : m.chat_placeholder()}
+          maxlength="4000"
+          placeholder={isSummarizing
+            ? m.chat_summarizing_memories()
+            : placeholder ?? (isOOC ? m.chat_input_placeholder_ooc() : m.chat_placeholder())}
           rows="1"
           class="w-full bg-transparent px-5 pt-4 pb-2 outline-none resize-none text-[15px] leading-relaxed placeholder:select-none
             {isOOC
               ? 'text-ryokan-text placeholder-ryokan-accent/60 italic'
-              : 'text-ryokan-text placeholder-[#44444c]'}"
+              : isSummarizing
+                ? 'text-ryokan-text placeholder-ryokan-accent/35 italic'
+                : 'text-ryokan-text placeholder-[#44444c]'}"
           style="
             min-height: 60px;
             max-height: 400px;

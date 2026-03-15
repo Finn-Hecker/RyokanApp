@@ -38,6 +38,7 @@
     api_temperature:      (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.temperature = n; },
     api_max_tokens:       (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.maxTokens = n; },
     api_presence_penalty: (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.presencePenalty = n; },
+    api_context_limit:    (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.contextLimit = n; },
     settings_power_user:  (v) => { powerUser = v === "true"; },
   };
 
@@ -50,6 +51,7 @@
       if (!appState.apiSettings.aiLanguage) appState.apiSettings.aiLanguage = DEFAULT_AI_LANGUAGE;
       if (appState.apiSettings.maxTokens == null) appState.apiSettings.maxTokens = 300;
       if (appState.apiSettings.presencePenalty == null) appState.apiSettings.presencePenalty = 1.1;
+      if (appState.apiSettings.contextLimit == null) appState.apiSettings.contextLimit = 4096;
     } catch (err) {
       console.error("[Settings] Failed to load:", err);
     }
@@ -68,6 +70,7 @@
         saveSetting("api_temperature",      appState.apiSettings.temperature ?? 0.7),
         saveSetting("api_max_tokens",       appState.apiSettings.maxTokens ?? 300),
         saveSetting("api_presence_penalty", appState.apiSettings.presencePenalty ?? 1.1),
+        saveSetting("api_context_limit",    appState.apiSettings.contextLimit ?? 4096),
         saveSetting("settings_power_user",  powerUser),
       ]);
       const locale = appState.pendingUiLocale;

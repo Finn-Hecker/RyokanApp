@@ -8,6 +8,7 @@ export interface ApiSettings {
   temperature: number;
   maxTokens: number;
   presencePenalty: number;
+  contextLimit: number;
 }
 
 export const appState = $state({
@@ -27,5 +28,6 @@ export const appState = $state({
     temperature: 0.8,
     maxTokens: 300,
     presencePenalty: 1.12,
+    contextLimit: 4096,
   } as ApiSettings
 });

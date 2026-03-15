@@ -164,11 +164,10 @@
           {@html cleanHtml}
 
           {#if showDots}
-            <span class="inline-flex items-end ml-1.5 translate-y-[-1px]">
-              <span class="pulse-tri pulse-tri--down"></span>
-              <span class="pulse-tri pulse-tri--up"   style="animation-delay: 0.16s"></span>
-              <span class="pulse-tri pulse-tri--down" style="animation-delay: 0.32s"></span>
-              <span class="pulse-tri pulse-tri--up"   style="animation-delay: 0.48s"></span>
+            <span class="breathe-dots" aria-label="Generiert…" role="status">
+              <span class="breathe-dot"></span>
+              <span class="breathe-dot" style="animation-delay: 0.22s"></span>
+              <span class="breathe-dot" style="animation-delay: 0.44s"></span>
             </span>
           {/if}
         </div>
@@ -394,26 +393,28 @@
   :global(.prose-custom strong)       { color: #ffffff; font-weight: 600; }
   :global(.prose-custom em)           { color: #a39887; font-style: italic; }
 
-  :global(.pulse-tri) {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    background-color: #d4b483;
-    opacity: 0.25;
-    animation: pulseTriangle 1.2s ease-in-out infinite;
+  :global(.breathe-dots) {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 8px;
+    vertical-align: middle;
+    position: relative;
+    top: -1px;
+  }
+
+  :global(.breathe-dot) {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(212, 180, 131, 0.28);
+    animation: breathe 1.5s ease-in-out infinite;
     flex-shrink: 0;
+    will-change: transform, background;
   }
 
-  :global(.pulse-tri--down) {
-    clip-path: polygon(0% 0%, 100% 0%, 50% 100%);
-  }
-
-  :global(.pulse-tri--up) {
-    clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
-  }
-
-  @keyframes pulseTriangle {
-    0%, 100% { opacity: 0.2; transform: translateY(0); }
-    50%       { opacity: 0.95; transform: translateY(-4px); }
+  @keyframes breathe {
+    0%, 100% { background: rgba(212, 180, 131, 0.22); transform: scale(1); }
+    50%       { background: rgba(212, 180, 131, 1);    transform: scale(1.28); }
   }
 </style>

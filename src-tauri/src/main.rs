@@ -4,6 +4,7 @@ mod ai;
 mod database;
 mod import;
 mod export;
+mod tokenizer;
 
 fn main() {
     tauri::Builder::default()
@@ -38,6 +39,7 @@ fn main() {
             database::roles::update_role,
             database::roles::delete_role,
             import::parse_character_card,
+            tokenizer::count_tokens,
             export::export_character_card,
             database::world_info::get_world_infos,
             database::world_info::create_world_info,

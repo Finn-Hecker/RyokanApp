@@ -34,3 +34,4 @@ image = { version = "0.25.9", features = ["webp"] }
 webp = "0.3"
 tokio = { version = "1", features = ["macros", "rt"] }
 tokio-util = { version = "0.7", features = ["rt"] }
+tokenizers = "0.22.2"

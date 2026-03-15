@@ -33,6 +33,15 @@
   let modelsLoading   = $state(false);
   let modelsError     = $state("");
 
+  const CONTEXT_STEPS = [
+    { label: "4K",   value: 4096   },
+    { label: "8K",   value: 8192   },
+    { label: "16K",  value: 16384  },
+    { label: "32K",  value: 32768  },
+    { label: "64K",  value: 65536  },
+    { label: "128K", value: 131072 },
+  ];
+
   const activeProvider = $derived(
     PROVIDERS.find(p => p.url === appState.apiSettings.url) ?? null
   );
@@ -240,7 +249,7 @@
           {/each}
         </select>
       {:else}
-        <div class="settings-input cursor-default {modelsError ? 'error-state' : 'empty-state'}">
+        <div class="settings-input cursor-default h-[42px] max-h-[42px] overflow-hidden whitespace-nowrap {modelsError ? 'error-state' : 'empty-state'}">
           {#if modelsError}
             {modelsError}
           {:else if appState.apiSettings.model}
@@ -252,7 +261,39 @@
       {/if}
     </div>
 
-  </div>
+<div class="settings-divider"></div>
+
+    <div class="ctx-row">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 0;">
+        <span class="settings-label whitespace-nowrap" style="margin-bottom:0">{m.settings_context_label()}</span>
+        
+        <div class="ryokan-tooltip-wrapper">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          <div class="ryokan-tooltip-text">
+            {m.settings_context_tooltip_p1()}<br><br>
+            {m.settings_context_tooltip_p2()}<br><br>
+            <span class="tooltip-hint">{m.settings_context_tooltip_hint()}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="ctx-chips">
+        {#each CONTEXT_STEPS as step}
+          <button
+            type="button"
+            class="ctx-chip {(appState.apiSettings.contextLimit ?? 4096) === step.value ? 'ctx-chip--active' : ''}"
+            onclick={() => { appState.apiSettings.contextLimit = step.value; }}
+            title={m.settings_context_words_hint({ count: Math.round(step.value * 0.75).toLocaleString() })}
+          >{step.label}</button>
+        {/each}
+      </div>
+    </div>
+
+    </div>
 </section>
 
 <style>
@@ -362,4 +403,108 @@
 
   .load-dot { display: inline-block; width: 4px; height: 4px; border-radius: 50%; background: currentColor; animation: bounce 0.8s ease-in-out infinite; }
   @keyframes bounce { 0%, 100% { transform: translateY(0); opacity: 0.4; } 50% { transform: translateY(-3px); opacity: 1; } }
+
+  .ctx-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .ctx-chips {
+    display: flex;
+    gap: 4px;
+    background: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 3px;
+  }
+  .ctx-chip {
+    padding: 5px 10px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #5a5a5e;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+  .ctx-chip:hover:not(.ctx-chip--active) {
+    color: #a0a0a6;
+    background: rgba(255,255,255,0.03);
+  }
+  .ctx-chip--active {
+    background: rgba(255,255,255,0.07);
+    border-color: rgba(212,180,131,0.35);
+    color: #d4b483;
+  }
+  .ryokan-tooltip-wrapper {
+  position: relative;
+  display: inline-flex;
+  cursor: help;
+}
+
+.ryokan-tooltip-wrapper svg {
+  transition: stroke 0.2s ease;
+}
+.ryokan-tooltip-wrapper:hover svg {
+  stroke: #d4b483;
+}
+
+.ryokan-tooltip-text {
+  visibility: hidden;
+  opacity: 0;
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  width: 230px;
+  background: #1c1c1e;
+  color: #a1a1aa;
+  border: 1px solid rgba(212, 180, 131, 0.15);
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  font-weight: 400;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
+  z-index: 50;
+  pointer-events: none;
+  line-height: 1.5;
+}
+
+.ryokan-tooltip-text::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: rgba(212, 180, 131, 0.15);
+}
+.ryokan-tooltip-text::before {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 1px;
+  border: 5px solid transparent;
+  border-top-color: #1c1c1e;
+  z-index: 1;
+}
+
+.ryokan-tooltip-wrapper:hover .ryokan-tooltip-text {
+  visibility: visible;
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.tooltip-hint {
+  color: #d4b483;
+  font-weight: 500;
+}
 </style>

@@ -31,10 +31,29 @@ export interface DisplayMessage {
     swipeIndex: number;
 }
 
+/**
+ * Soft-summary metadata for the active chat session.
+ * Lives purely in memory — the DB is never mutated by the summarizer.
+ *
+ * currentSummary:           The rolling narrative built up from all
+ *                           compressed segments so far.
+ * lastSummarizedMessageId:  ID of the last message that was folded into
+ *                           currentSummary. buildApiMessages uses this to
+ *                           know which messages are "new" vs already covered.
+ */
+export interface SummaryMeta {
+    currentSummary:          string | null;
+    lastSummarizedMessageId: string | null;
+}
+
 export const chatState = $state({
-    conversations: [] as Conversation[],
+    conversations:   [] as Conversation[],
     currentMessages: [] as Message[],
-    activeChatId: null as string | null
+    activeChatId:    null as string | null,
+    summaryMeta: {
+        currentSummary:          null,
+        lastSummarizedMessageId: null,
+    } as SummaryMeta,
 });
 
 const dateFormatter = new Intl.DateTimeFormat(getLocale(), {
@@ -117,7 +136,6 @@ export async function startNewChat(character: any) {
             initialMessage: selectedGreeting
         });
         await loadAllConversations();
-        chatState.activeChatId = newId;
         await loadMessages(newId);
     } catch (e) { console.error(e); }
 }
@@ -138,6 +156,15 @@ export async function openHistoryChat(chatId: string) {
 }
 
 export async function loadMessages(chatId: string) {
+    // Reset summary meta when the user switches to a different conversation.
+    // Reloading messages for the *same* chat (e.g. after addMessage) keeps
+    // the existing summary so it isn't lost between turns.
+    if (chatState.activeChatId !== chatId) {
+        chatState.summaryMeta = {
+            currentSummary:          null,
+            lastSummarizedMessageId: null,
+        };
+    }
     try {
         const result = await invoke<any[]>('get_messages', { chatId });
         chatState.currentMessages = result.map(row => ({
@@ -202,8 +229,12 @@ export async function deleteConversation(id: string) {
         await invoke('delete_chat', { id });
         await loadAllConversations();
         if (chatState.activeChatId === id) {
-            chatState.activeChatId = null;
+            chatState.activeChatId    = null;
             chatState.currentMessages = [];
+            chatState.summaryMeta = {
+                currentSummary:          null,
+                lastSummarizedMessageId: null,
+            };
         }
     } catch (e) { console.error(e); }
 }

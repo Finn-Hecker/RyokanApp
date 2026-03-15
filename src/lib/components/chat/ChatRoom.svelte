@@ -6,6 +6,7 @@
   import { roleState } from '$lib/stores/roleStore.svelte';
   import { chatState, addMessage, addSwipeVariant, loadMessages, updateMessage, deleteMessage, setSwipeIndex } from '$lib/stores/chatStore.svelte';
   import { runGeneration } from '$lib/utils/chatApi';
+  import { summaryState, checkAndSummarizeIfNeeded } from '$lib/utils/rollingSummary.svelte';
   import * as m from '$lib/paraglide/messages';
   import ChatHeader from './ChatHeader.svelte';
   import ChatInput from './ChatInput.svelte';
@@ -27,6 +28,8 @@
   let errorMessage = $state('');
   let pendingUserMessage = $state('');
   let retryingMsgId = $state<string | null>(null);
+
+  let isBlocked = $derived(isGenerating || summaryState.isSummarizing);
 
   let activeRole = $derived(
     roleState.allRoles.find(p => p.id === roleState.activeRoleId) ?? null
@@ -54,14 +57,12 @@
   });
 
   function handleArrowKey(e: KeyboardEvent) {
-    // Don't intercept while typing in an input/textarea or while generating
     const tag = (e.target as HTMLElement)?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || isGenerating) return;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || isBlocked) return;
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
 
     e.preventDefault();
 
-    // Act on the last real AI message (skip first greeting)
     const firstAiMsg = chatState.currentMessages.find(msg => msg.role === 'assistant');
     const lastAiMsg  = [...chatState.currentMessages].reverse().find(msg => msg.role === 'assistant');
 
@@ -84,7 +85,6 @@
 
   let displayMessages = $derived((() => {
     const msgs = chatState.currentMessages.map(msg => {
-      // During retry: live-replace the retried message's text with the stream
       const isBeingRetried = isGenerating && retryingMsgId !== null && msg.id?.toString() === retryingMsgId;
       return {
         id: msg.id?.toString() || Math.random().toString(),
@@ -98,7 +98,6 @@
       };
     });
 
-    // Normal (non-retry) generation: append a live temp message
     if (isGenerating && !isThinkingPhase && !retryingMsgId) {
       msgs.push({
         id: 'temp-stream',
@@ -168,22 +167,27 @@
     resetStreamState();
     if (autoscroll) scrollToBottom();
 
-    const messagesForApi = chatState.currentMessages.slice(-20);
-
     if (saveUserMessage) await addMessage('user', prompt);
+
+    const generationOptions = {
+      character:      appState.activeCharacter,
+      apiSettings:    appState.apiSettings,
+      recentMessages: chatState.currentMessages,
+      userPrompt:     undefined as string | undefined,
+      role: activeRole ? {
+        name:      activeRole.name,
+        bio:       activeRole.bio,
+        pronouns:  activeRole.pronouns
+      } : null,
+    };
+
+    await checkAndSummarizeIfNeeded(chatState.currentMessages, generationOptions);
+
+    generationOptions.recentMessages = chatState.currentMessages;
+
     try {
       const result = await runGeneration(
-        {
-          character: appState.activeCharacter,
-          apiSettings: appState.apiSettings,
-          recentMessages: messagesForApi,
-          userPrompt: saveUserMessage ? prompt : undefined,
-          role: activeRole ? {
-            name: activeRole.name,
-            bio: activeRole.bio,
-            pronouns: activeRole.pronouns
-          } : null,
-        },
+        generationOptions,
         {
           onStreamUpdate:
             (text) => { streamingText = text; if (autoscroll) scrollToBottom(); },
@@ -205,7 +209,7 @@
   }
 
   async function sendMessage() {
-    if (!inputText.trim() || isGenerating) return;
+    if (!inputText.trim() || isBlocked) return;
     const rawPrompt = inputText;
     inputText = '';
 
@@ -218,7 +222,7 @@
   }
 
   async function handleRetry({ msgId }: { msgId: string }) {
-    if (isGenerating) return;
+    if (isBlocked) return;
 
     const msgs = chatState.currentMessages;
     const idx = msgs.findIndex(msg => msg.id?.toString() === msgId);
@@ -324,13 +328,14 @@
             (retryingMsgId !== null && msg.id === retryingMsgId) ||
             (retryingMsgId === null && i === displayMessages.length - 1)
           )}
-          canSwipe={!isGenerating && !msg.isUser && msg.id === lastAiMsgId && msg.id !== firstAiMsgId}
-          canRetry={!isGenerating && !msg.isUser && msg.id === lastAiMsgId && msg.id !== firstAiMsgId}
+          canSwipe={!isBlocked && !msg.isUser && msg.id === lastAiMsgId && msg.id !== firstAiMsgId}
+          canRetry={!isBlocked && !msg.isUser && msg.id === lastAiMsgId && msg.id !== firstAiMsgId}
           canEdit={!msg.isUser && msg.id !== 'temp-stream' && msg.id !== firstAiMsgId}
           onRetry={handleRetry}
           onEditSave={handleEditSave}
         />
       {/each}
+
 
       {#if isGenerating && isThinkingPhase}
         <ThinkingIndicator character={appState.activeCharacter} />
@@ -341,7 +346,8 @@
   <ChatInput
     bind:value={inputText}
     bind:isOOC
-    {isGenerating}
+    isGenerating={isBlocked}
+    isSummarizing={summaryState.isSummarizing}
     onSend={sendMessage}
     onStop={stopGeneration}
   />

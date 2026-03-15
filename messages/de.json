@@ -91,6 +91,11 @@
   "settings_slider_strict": "Streng (2.0)",
   "settings_power_user_title": "Power-User-Modus: Buttons werden zu Slidern",
   "settings_power_user_label": "Power User",
+  "settings_context_label": "Kontextfenster",
+  "settings_context_tooltip_p1": "Wie viel Chatverlauf die KI gleichzeitig verarbeitet.",
+  "settings_context_tooltip_p2": "Zu hohe Werte können Fehler verursachen, wenn das Limit deines Modells überschritten wird. Bei lokalen Modellen steigt außerdem der RAM-Verbrauch stark an.",
+  "settings_context_tooltip_hint": "Für die meisten Gespräche reichen 4K – 8K.",
+  "settings_context_words_hint": "~ {count} Wörter",
 
   "chat_typing_indicator": "schreibt...",
 
@@ -117,6 +122,7 @@
   "chat_input_placeholder_ooc": "Regieanweisung...",
   "chat_input_ooc_title_active": "Regiemodus beenden",
   "chat_input_ooc_title_inactive": "Regiemodus starten",
+  "chat_summarizing_memories": "Erinnerungen werden sortiert…",
 
   "history_title": "Deine Reisen",
   "history_no_chats": "Noch keine Gespräche.",
