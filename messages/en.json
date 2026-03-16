@@ -96,6 +96,22 @@
   "settings_context_tooltip_p2": "Values that are too high can cause errors if your model's limit is exceeded. For local models, RAM usage also increases significantly.",
   "settings_context_tooltip_hint": "4K – 8K is sufficient for most conversations.",
   "settings_context_words_hint": "~ {count} words",
+  "settings_creativity_tooltip_p1": "Controls how predictable the AI's responses are.",
+  "settings_creativity_tooltip_p2a": "Focused → ideal for code, translations & hard facts.",
+  "settings_creativity_tooltip_p2b": "Imaginative → ideal for creative writing & brainstorming.",
+  "settings_creativity_tooltip_hint": "Higher creativity also increases the risk of hallucinations.",
+
+  "settings_tokens_tooltip_p1": "Sets a hard limit on the maximum response length.",
+  "settings_tokens_tooltip_p2": "This doesn't force the AI to write long texts – it just prevents it from cutting off mid-sentence.",
+  "settings_tokens_tooltip_hint": "For most chats, 'Chat' or 'Paragraph' is plenty.",
+
+  "settings_penalty_tooltip_p1": "Prevents the AI from repeating the same phrases over and over.",
+  "settings_penalty_tooltip_warn": "Warning: Too strict = common words get avoided, making text sound clunky.",
+  "settings_penalty_tooltip_hint": "'Normal' is the best balance for most use cases.",
+
+  "settings_thinking_budget_tooltip_p1": "Gives the AI an invisible notepad to work through complex logic or code in the background before answering.",
+  "settings_thinking_budget_tooltip_p2": "Higher budget = smarter, but slower responses.",
+  "settings_thinking_budget_tooltip_hint": "Only useful when a Thinking-capable model is active.",
   "settings_thinking_budget_label": "Thinking Time",
   "settings_thinking_budget_fast": "Short",
   "settings_thinking_budget_fast_hint": "up to 1000 Tokens",

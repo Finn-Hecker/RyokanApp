@@ -96,6 +96,22 @@
   "settings_context_tooltip_p2": "Zu hohe Werte können Fehler verursachen, wenn das Limit deines Modells überschritten wird. Bei lokalen Modellen steigt außerdem der RAM-Verbrauch stark an.",
   "settings_context_tooltip_hint": "Für die meisten Gespräche reichen 4K – 8K.",
   "settings_context_words_hint": "~ {count} Wörter",
+  "settings_creativity_tooltip_p1": "Steuert, wie vorhersehbar die KI antwortet.",
+  "settings_creativity_tooltip_p2a": "Fokussiert → ideal für Code, Übersetzungen & Fakten.",
+  "settings_creativity_tooltip_p2b": "Fantasievoll → ideal für kreatives Schreiben & Brainstorming.",
+  "settings_creativity_tooltip_hint": "Höhere Kreativität steigert auch das Risiko von Halluzinationen.",
+
+  "settings_tokens_tooltip_p1": "Setzt ein Limit für die maximale Antwortlänge.",
+  "settings_tokens_tooltip_p2": "Das zwingt die KI nicht zu langen Texten – es verhindert nur, dass sie mitten im Satz abbricht.",
+  "settings_tokens_tooltip_hint": "Für normale Chats reicht 'Chat' oder 'Absatz' völlig aus.",
+
+  "settings_penalty_tooltip_p1": "Verhindert, dass die KI dieselben Phrasen ständig wiederholt.",
+  "settings_penalty_tooltip_warn": "Warnung: Zu streng = normale Wörter werden gemieden, Text klingt holprig.",
+  "settings_penalty_tooltip_hint": "'Normal' ist für die meisten Fälle der beste Kompromiss.",
+
+  "settings_thinking_budget_tooltip_p1": "Gibt der KI einen unsichtbaren Notizblock, um komplexe Logik oder Code im Hintergrund zu lösen, bevor sie antwortet.",
+  "settings_thinking_budget_tooltip_p2": "Höhere Denkzeit = schlauere, aber langsamere Antworten.",
+  "settings_thinking_budget_tooltip_hint": "Nur sinnvoll bei einem aktiven Thinking-Modell.",
   "settings_thinking_budget_label": "Denkzeit",
   "settings_thinking_budget_fast": "Kurz",
   "settings_thinking_budget_fast_hint": "bis 1000 Tokens",
