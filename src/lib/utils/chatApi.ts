@@ -157,6 +157,10 @@ export async function runGeneration(
     });
 
     try {
+        const effectiveMaxTokens = apiSettings.isThinkingModel
+            ? apiSettings.maxTokens + (apiSettings.thinkingBudget ?? 2500)
+            : apiSettings.maxTokens;
+
         await invoke('call_ai_api', {
             payload: {
                 url:              apiSettings.url,
@@ -164,7 +168,7 @@ export async function runGeneration(
                 model:            apiSettings.model,
                 messages,
                 temperature:      apiSettings.temperature,
-                max_tokens:       apiSettings.maxTokens,
+                max_tokens:       effectiveMaxTokens,
                 presence_penalty: apiSettings.presencePenalty,
             },
         });

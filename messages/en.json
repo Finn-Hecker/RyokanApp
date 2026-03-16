@@ -96,6 +96,13 @@
   "settings_context_tooltip_p2": "Values that are too high can cause errors if your model's limit is exceeded. For local models, RAM usage also increases significantly.",
   "settings_context_tooltip_hint": "4K – 8K is sufficient for most conversations.",
   "settings_context_words_hint": "~ {count} words",
+  "settings_thinking_budget_label": "Thinking Time",
+  "settings_thinking_budget_fast": "Short",
+  "settings_thinking_budget_fast_hint": "up to 1000 Tokens",
+  "settings_thinking_budget_balanced": "Standard",
+  "settings_thinking_budget_balanced_hint": "up to 2500 Tokens",
+  "settings_thinking_budget_deep": "Extended",
+  "settings_thinking_budget_deep_hint": "up to 5000 Tokens",
 
   "chat_typing_indicator": "is typing...",
   "chat_status_online": "Online",

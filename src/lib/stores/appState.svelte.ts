@@ -9,6 +9,7 @@ export interface ApiSettings {
   maxTokens: number;
   presencePenalty: number;
   contextLimit: number;
+  thinkingBudget: number;
 }
 
 export const appState = $state({
@@ -26,6 +27,7 @@ export const appState = $state({
     aiLanguage: "German",
     systemPrompt: "",
     temperature: 0.8,
+    thinkingBudget: 2500,
     maxTokens: 300,
     presencePenalty: 1.12,
     contextLimit: 4096,

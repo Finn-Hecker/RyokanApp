@@ -31,6 +31,12 @@
     { label: m.settings_tokens_preset_novel(),  value: 800,  hint: m.settings_tokens_preset_novel_hint() },
   ];
 
+  $: THINKING_BUDGET_PRESETS = [
+    { label: m.settings_thinking_budget_fast(),     value: 1000, hint: m.settings_thinking_budget_fast_hint() },
+    { label: m.settings_thinking_budget_balanced(), value: 2500, hint: m.settings_thinking_budget_balanced_hint() },
+    { label: m.settings_thinking_budget_deep(),     value: 5000, hint: m.settings_thinking_budget_deep_hint() },
+  ];
+
   $: PENALTY_PRESETS = [
     { label: m.settings_penalty_preset_tolerant(), value: 1.0,  hint: m.settings_penalty_preset_tolerant_hint() },
     { label: m.settings_penalty_preset_normal(),   value: 1.12, hint: m.settings_penalty_preset_normal_hint() },
@@ -55,6 +61,9 @@
   }
   function clampPenalty(v: number) {
     return Math.max(0.8, Math.min(2.0, Math.round(v * 100) / 100));
+  }
+  function clampThinkingBudget(v: number) {
+    return Math.max(500, Math.min(10000, Math.round(v / 100) * 100));
   }
 </script>
 
@@ -173,16 +182,54 @@
       tabindex="0"
       on:click={() => (appState.apiSettings.isThinkingModel = !appState.apiSettings.isThinkingModel)}
       on:keydown={(e) => (e.key === " " || e.key === "Enter") && (appState.apiSettings.isThinkingModel = !appState.apiSettings.isThinkingModel)}
-      class="flex items-center justify-between gap-4 cursor-pointer group select-none"
+      class="thinking-toggle-row"
     >
-      <div class="flex flex-col gap-0.5">
-        <span class="text-sm text-gray-200">{m.settings_thinking_label()}</span>
-        <span class="text-xs text-gray-600 leading-relaxed">{m.settings_thinking_sub()}</span>
+      <div class="thinking-toggle-text">
+        <span class="thinking-toggle-label">{m.settings_thinking_label()}</span>
+        <span class="thinking-toggle-sub">{m.settings_thinking_sub()}</span>
       </div>
       <div class="toggle-track" class:toggle-track--on={appState.apiSettings.isThinkingModel}>
         <div class="toggle-thumb" class:toggle-thumb--on={appState.apiSettings.isThinkingModel}></div>
       </div>
     </div>
+
+    {#if appState.apiSettings.isThinkingModel}
+      <div in:fade={{ duration: 250, delay: 30 }}>
+        <div class="settings-divider"></div>
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <span class="settings-label" style="margin-bottom:0">{m.settings_thinking_budget_label()}</span>
+            {#if powerUser}
+              <span class="power-value">{appState.apiSettings.thinkingBudget ?? 2500} Tokens</span>
+            {/if}
+          </div>
+          {#if powerUser}
+            <div in:fade={{ duration: 250, delay: 30 }}>
+              <input
+                type="range" min="500" max="10000" step="100"
+                value={appState.apiSettings.thinkingBudget ?? 2500}
+                on:input={(e) => { appState.apiSettings.thinkingBudget = clampThinkingBudget(+e.currentTarget.value); }}
+                class="power-slider"
+                aria-label={m.settings_thinking_budget_label()}
+              />
+              <div class="slider-bounds"><span>500</span><span>10 000</span></div>
+            </div>
+          {:else}
+            <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 30 }}>
+              {#each THINKING_BUDGET_PRESETS as preset}
+                <button
+                  on:click={() => (appState.apiSettings.thinkingBudget = preset.value)}
+                  class="preset-btn {(appState.apiSettings.thinkingBudget ?? 2500) === preset.value ? 'preset-btn--active' : ''}"
+                >
+                  <span class="preset-label">{preset.label}</span>
+                  <span class="preset-hint">{preset.hint}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </div>
+    {/if}
 
   </div>
 </section>
@@ -331,5 +378,40 @@
   .toggle-thumb--on {
     transform: translateX(20px);
     background: #d4b483;
+  }
+
+  .thinking-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    cursor: pointer;
+    user-select: none;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.02);
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .thinking-toggle-row:hover {
+    background: rgba(255,255,255,0.04);
+    border-color: rgba(255,255,255,0.10);
+  }
+  .thinking-toggle-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .thinking-toggle-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #d1d1d6;
+    line-height: 1.3;
+  }
+  .thinking-toggle-sub {
+    font-size: 11px;
+    color: #d4b483;
+    opacity: 0.7;
+    line-height: 1.4;
   }
 </style>

@@ -76,8 +76,12 @@ console.debug('[RollingSummary] probeMessages count=%d, contents:',
     probeMessages.length, 
     probeMessages.map(m => `${m.role}(${m.content.length}chars)`)
 );
+    const baseMaxTokens    = appState.apiSettings?.maxTokens ?? 300;
+    const thinkingBudget   = appState.apiSettings?.isThinkingModel
+        ? (appState.apiSettings?.thinkingBudget ?? 2500)
+        : 0;
     const fixedTokens     = await countMessagesTokens(probeMessages);
-    const responseReserve = (appState.apiSettings?.maxTokens ?? 300) + RESPONSE_RESERVE_EXTRA;
+    const responseReserve  = baseMaxTokens + thinkingBudget + RESPONSE_RESERVE_EXTRA;
     const budget          = contextLimit - responseReserve - fixedTokens;
 
     console.debug(
@@ -247,7 +251,9 @@ export async function checkAndSummarizeIfNeeded(
 
     if (!needsCompression) {
         const contextLimit     = appState.apiSettings?.contextLimit ?? DEFAULT_CONTEXT_LIMIT;
-        const responseReserve2 = (appState.apiSettings?.maxTokens ?? 300) + RESPONSE_RESERVE_EXTRA;
+        const responseReserve2 = (appState.apiSettings?.maxTokens ?? 300)
+            + (appState.apiSettings?.isThinkingModel ? (appState.apiSettings?.thinkingBudget ?? 2500) : 0)
+            + RESPONSE_RESERVE_EXTRA;
         const totalFixed       = (contextLimit - responseReserve2) - middleBudget;
         const totalUsed        = totalFixed + middleTokens;
         if (totalUsed / contextLimit > 0.9) {

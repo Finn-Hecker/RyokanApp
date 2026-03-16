@@ -96,6 +96,13 @@
   "settings_context_tooltip_p2": "Zu hohe Werte können Fehler verursachen, wenn das Limit deines Modells überschritten wird. Bei lokalen Modellen steigt außerdem der RAM-Verbrauch stark an.",
   "settings_context_tooltip_hint": "Für die meisten Gespräche reichen 4K – 8K.",
   "settings_context_words_hint": "~ {count} Wörter",
+  "settings_thinking_budget_label": "Denkzeit",
+  "settings_thinking_budget_fast": "Kurz",
+  "settings_thinking_budget_fast_hint": "bis 1000 Tokens",
+  "settings_thinking_budget_balanced": "Normal",
+  "settings_thinking_budget_balanced_hint": "bis 2500 Tokens",
+  "settings_thinking_budget_deep": "Ausgiebig",
+  "settings_thinking_budget_deep_hint": "bis 5000 Tokens",
 
   "chat_typing_indicator": "schreibt...",
 
