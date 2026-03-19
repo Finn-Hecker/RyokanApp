@@ -19,6 +19,8 @@ fn main() {
             database::chats::get_conversations,
             database::chats::create_chat,
             database::chats::delete_chat,
+            database::chats::rename_chat,
+            database::chats::toggle_pin_chat,
             database::chats::get_conversations_page,
             database::messages::get_messages,
             database::messages::add_message,

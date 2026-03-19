@@ -270,6 +270,13 @@
   
   "sidebar_roles": "Rollen",
   "sidebar_worldinfo": "Weltinfo",
+  "sidebar_aria_confirm_rename": "Umbenennen bestätigen",
+  "sidebar_title_pinned": "Angeheftet",
+  "sidebar_aria_options": "Optionen",
+  "sidebar_action_unpin": "Loslösen",
+  "sidebar_action_pin": "Anpinnen",
+  "sidebar_action_rename": "Umbenennen",
+  "sidebar_action_delete": "Löschen",
 
   "wi_picker_label": "Welt Info",
   "wi_picker_active_count": "{count} aktiv",

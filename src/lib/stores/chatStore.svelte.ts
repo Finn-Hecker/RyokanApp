@@ -19,6 +19,7 @@ export interface Conversation {
     character_id: string;
     created_at: string;
     updated_at: string;
+    is_pinned: boolean;
     formattedDate?: string;
 }
 
@@ -34,12 +35,6 @@ export interface DisplayMessage {
 /**
  * Soft-summary metadata for the active chat session.
  * Lives purely in memory — the DB is never mutated by the summarizer.
- *
- * currentSummary:           The rolling narrative built up from all
- *                           compressed segments so far.
- * lastSummarizedMessageId:  ID of the last message that was folded into
- *                           currentSummary. buildApiMessages uses this to
- *                           know which messages are "new" vs already covered.
  */
 export interface SummaryMeta {
     currentSummary:          string | null;
@@ -156,9 +151,6 @@ export async function openHistoryChat(chatId: string) {
 }
 
 export async function loadMessages(chatId: string) {
-    // Reset summary meta when the user switches to a different conversation.
-    // Reloading messages for the *same* chat (e.g. after addMessage) keeps
-    // the existing summary so it isn't lost between turns.
     if (chatState.activeChatId !== chatId) {
         chatState.summaryMeta = {
             currentSummary:          null,
@@ -221,6 +213,20 @@ export async function deleteMessage(id: string) {
     try {
         await invoke('delete_message', { id });
         if (chatId) await loadMessages(chatId);
+    } catch (e) { console.error(e); }
+}
+
+export async function renameConversation(id: string, title: string) {
+    try {
+        await invoke('rename_chat', { id, title });
+        await loadAllConversations();
+    } catch (e) { console.error(e); }
+}
+
+export async function togglePinConversation(id: string) {
+    try {
+        await invoke('toggle_pin_chat', { id });
+        await loadAllConversations();
     } catch (e) { console.error(e); }
 }
 

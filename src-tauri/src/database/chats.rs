@@ -12,6 +12,7 @@ pub struct Conversation {
     pub character_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub is_pinned: bool,
 }
 
 /// Retrieves all chat sessions, ordered by the most recently active.
@@ -19,7 +20,9 @@ pub struct Conversation {
 pub fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare(
-        "SELECT id, title, character_id, created_at, updated_at FROM conversations ORDER BY updated_at DESC"
+        "SELECT id, title, character_id, created_at, updated_at, is_pinned
+         FROM conversations
+         ORDER BY is_pinned DESC, updated_at DESC"
     ).map_err(|e| e.to_string())?;
     
     let rows = stmt.query_map([], |row| {
@@ -29,6 +32,7 @@ pub fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
             character_id: row.get(2)?,
             created_at: row.get(3)?,
             updated_at: row.get(4)?,
+            is_pinned: row.get::<_, i64>(5)? != 0,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -37,14 +41,15 @@ pub fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
     Ok(list)
 }
 
-/// Retrieves a page of chat sessions, ordered by the most recently active.
-/// Only fetches `limit` rows starting at `offset`,
-/// so the frontend never holds more than one page worth of data at a time.
+/// Retrieves a page of chat sessions, ordered by pinned first, then most recently active.
 #[tauri::command]
 pub fn get_conversations_page(app: AppHandle, limit: i64, offset: i64) -> Result<Vec<Conversation>, String> {
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare(
-        "SELECT id, title, character_id, created_at, updated_at FROM conversations ORDER BY updated_at DESC LIMIT ?1 OFFSET ?2"
+        "SELECT id, title, character_id, created_at, updated_at, is_pinned
+         FROM conversations
+         ORDER BY is_pinned DESC, updated_at DESC
+         LIMIT ?1 OFFSET ?2"
     ).map_err(|e| e.to_string())?;
 
     let rows = stmt.query_map(params![limit, offset], |row| {
@@ -54,6 +59,7 @@ pub fn get_conversations_page(app: AppHandle, limit: i64, offset: i64) -> Result
             character_id: row.get(2)?,
             created_at: row.get(3)?,
             updated_at: row.get(4)?,
+            is_pinned: row.get::<_, i64>(5)? != 0,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -92,6 +98,34 @@ pub fn create_chat(app: AppHandle, character_id: String, character_name: String,
     tx.commit().map_err(|e| e.to_string())?;
     
     Ok(new_id)
+}
+
+/// Renames an existing conversation.
+#[tauri::command]
+pub fn rename_chat(app: AppHandle, id: String, title: String) -> Result<(), String> {
+    let conn = get_connection(&app)?;
+    conn.execute(
+        "UPDATE conversations SET title = ?1 WHERE id = ?2",
+        params![title.trim(), id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Toggles the pinned state of a conversation.
+#[tauri::command]
+pub fn toggle_pin_chat(app: AppHandle, id: String) -> Result<bool, String> {
+    let conn = get_connection(&app)?;
+    // Flip the current value and return the new state.
+    conn.execute(
+        "UPDATE conversations SET is_pinned = CASE WHEN is_pinned = 1 THEN 0 ELSE 1 END WHERE id = ?1",
+        params![id],
+    ).map_err(|e| e.to_string())?;
+    let new_val: i64 = conn.query_row(
+        "SELECT is_pinned FROM conversations WHERE id = ?1",
+        params![id],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+    Ok(new_val != 0)
 }
 
 /// Deletes a conversation and all its associated messages.

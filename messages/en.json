@@ -269,6 +269,13 @@
 
   "sidebar_roles": "Roles",
   "sidebar_worldinfo": "World Info",
+  "sidebar_aria_confirm_rename": "Confirm rename",
+  "sidebar_title_pinned": "Pinned",
+  "sidebar_aria_options": "Options",
+  "sidebar_action_unpin": "Unpin",
+  "sidebar_action_pin": "Pin",
+  "sidebar_action_rename": "Rename",
+  "sidebar_action_delete": "Delete",
 
   "wi_picker_label": "World Info",
   "wi_picker_active_count": "{count} active",

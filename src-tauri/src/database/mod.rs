@@ -35,6 +35,7 @@ pub fn get_connection(app: &AppHandle) -> Result<Connection, String> {
 }
 
 /// Initializes the database schema on app startup.
+/// Also runs lightweight migrations (e.g. adding new columns to existing tables).
 pub fn init_db(app: &AppHandle) -> Result<(), String> {
     let conn = get_connection(app)?;
 
@@ -44,7 +45,8 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             title TEXT,
             character_id TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            is_pinned INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at DESC);
@@ -111,6 +113,12 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
 
     conn.execute_batch(schema)
         .map_err(|e| format!("Failed to initialize database schema: {}", e))?;
+
+    // ── Migration: add is_pinned to existing databases that pre-date this column ──
+    // We use a try-ignore pattern to stay compatible with older SQLite versions.
+    let _ = conn.execute_batch(
+        "ALTER TABLE conversations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;"
+    );
 
     Ok(())
 }
