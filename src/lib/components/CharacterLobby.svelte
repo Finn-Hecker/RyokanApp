@@ -64,6 +64,10 @@
     ));
 
   let hasHidden = $derived((characterState.allCharacters ?? []).some((c: any) => characterState.hiddenCharacterIds.has(c.id)));
+
+  function resolveDesc(char: any): string {
+    return char.desc?.replace(/\{\{char\}\}/g, char.name) ?? '';
+  }
 </script>
 
 {#snippet sidebar({ isMobileSidebarOpen, close }: { isMobileSidebarOpen: boolean, close: () => void })}
@@ -203,7 +207,7 @@
           </div>
           <div class="relative z-10 px-4 py-3 pointer-events-none">
             <h3 class="text-sm font-semibold text-gray-100 truncate group-hover:text-ryokan-accent transition-colors">{char.name}</h3>
-            <p class="text-xs text-gray-500 mt-0.5 line-clamp-2 leading-snug">{char.desc}</p>
+            <p class="text-xs text-gray-500 mt-0.5 line-clamp-2 leading-snug">{resolveDesc(char)}</p>
           </div>
         </div>
       {/each}
@@ -272,7 +276,7 @@
             </div>
             <div class="flex-1 min-w-0">
               <h3 class="text-sm font-semibold text-gray-100 truncate group-hover:text-ryokan-accent transition-colors">{char.name}</h3>
-              <p class="text-xs text-gray-500 truncate">{char.desc}</p>
+              <p class="text-xs text-gray-500 truncate">{resolveDesc(char)}</p>
             </div>
             <div class="pointer-events-auto transition-opacity duration-150 shrink-0 {showHidden && characterState.hiddenCharacterIds.has(char.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}">
               {#if !char.isCustom}
