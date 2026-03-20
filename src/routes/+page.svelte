@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { appState } from '$lib/stores/appState.svelte';
-  import CharacterLobby from '$lib/components/CharacterLobby.svelte';
+  import CharacterLobby from '$lib/components/lobby/CharacterLobby.svelte';
   import ChatRoom from '$lib/components/chat/ChatRoom.svelte';
   import Creator from '$lib/components/editor/Editor.svelte';
   import SettingsPage from '$lib/components/settings/SettingsPage.svelte';
