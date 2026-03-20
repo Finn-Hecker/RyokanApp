@@ -20,6 +20,13 @@
   "lobby_toggle_show_hidden": "Show hidden characters",
   "lobby_aria_show_char": "Show",
   "lobby_aria_hide_char": "Hide",
+  "lobby_action_pin": "Pin",
+  "lobby_action_unpin": "Unpin",
+  "lobby_action_show": "Show",
+  "lobby_action_hide": "Hide",
+  "lobby_action_delete": "Delete",
+  "lobby_aria_options": "Options",
+  "lobby_aria_character_options": "Character options",
 
   "char_emma_name": "Emma",
   "char_emma_desc": "20-year-old art student. Runs on iced coffee and chaos. Wears oversized sweaters, has a K-pop obsession, chronically late.",

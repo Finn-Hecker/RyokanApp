@@ -36,6 +36,8 @@ fn main() {
             database::characters::update_character,
             database::characters::set_character_hidden,
             database::characters::get_hidden_character_ids,
+            database::characters::get_pinned_character_ids,
+            database::characters::set_character_pinned,
             database::roles::get_roles,
             database::roles::create_role,
             database::roles::update_role,

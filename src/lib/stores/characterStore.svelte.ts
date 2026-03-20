@@ -27,8 +27,9 @@ export interface Character {
 }
 
 export const characterState = $state({
-    allCharacters: [...STATIC_CHARACTERS] as Character[],
-    hiddenCharacterIds: new Set<string | number>()
+    allCharacters: [] as Character[],
+    hiddenCharacterIds: new Set<string | number>(),
+    pinnedCharacterIds: new Set<string | number>(),
 });
 
 export async function loadHiddenIds() {
@@ -37,6 +38,15 @@ export async function loadHiddenIds() {
         characterState.hiddenCharacterIds = new Set(ids.map(String));
     } catch (e) {
         console.error('Error loading hidden character ids:', e);
+    }
+}
+
+export async function loadPinnedIds() {
+    try {
+        const ids = await invoke<string[]>('get_pinned_character_ids');
+        characterState.pinnedCharacterIds = new Set(ids.map(String));
+    } catch (e) {
+        console.error('Error loading pinned character ids:', e);
     }
 }
 
@@ -62,7 +72,7 @@ export async function loadCharacters() {
             };
         });
 
-        characterState.allCharacters = [...STATIC_CHARACTERS, ...customChars];
+        characterState.allCharacters = [...customChars, ...STATIC_CHARACTERS];
 
     } catch (e) {
         console.error("Error loading characters:", e);
@@ -84,9 +94,9 @@ export async function createCharacter(charData: any) {
     };
 
     characterState.allCharacters = [
-        ...STATIC_CHARACTERS, 
-        tempChar, 
-        ...characterState.allCharacters.slice(STATIC_CHARACTERS.length)
+        tempChar,
+        ...characterState.allCharacters.filter(c => c.isCustom),
+        ...STATIC_CHARACTERS
     ];
 
     try {
@@ -162,9 +172,13 @@ export async function deleteCharacter(id: string) {
         
         characterState.allCharacters = characterState.allCharacters.filter(c => c.id !== id);
         
-        const newSet = new Set(characterState.hiddenCharacterIds);
-        newSet.delete(id);
-        characterState.hiddenCharacterIds = newSet;
+        const newHidden = new Set(characterState.hiddenCharacterIds);
+        newHidden.delete(id);
+        characterState.hiddenCharacterIds = newHidden;
+
+        const newPinned = new Set(characterState.pinnedCharacterIds);
+        newPinned.delete(id);
+        characterState.pinnedCharacterIds = newPinned;
         
     } catch (e) {
         console.error("Error deleting character:", e);
@@ -188,4 +202,22 @@ export async function toggleHideCharacter(id: string | number): Promise<boolean>
     }
 
     return isNowHidden;
+}
+
+export async function togglePinCharacter(id: string | number): Promise<boolean> {
+    const normalizedId = String(id);
+    const isNowPinned = !characterState.pinnedCharacterIds.has(normalizedId);
+
+    try {
+        await invoke('set_character_pinned', { id: normalizedId, pinned: isNowPinned });
+
+        const newSet = new Set(characterState.pinnedCharacterIds);
+        isNowPinned ? newSet.add(normalizedId) : newSet.delete(normalizedId);
+        characterState.pinnedCharacterIds = newSet;
+    } catch (e) {
+        console.error('Error toggling pinned state:', e);
+        throw e;
+    }
+
+    return isNowPinned;
 }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { appState } from '$lib/stores/appState.svelte';
-  import { characterState, loadCharacters, toggleHideCharacter, loadHiddenIds } from '$lib/stores/characterStore.svelte';
+  import { characterState, loadCharacters, toggleHideCharacter, togglePinCharacter, deleteCharacter, loadHiddenIds, loadPinnedIds } from '$lib/stores/characterStore.svelte';
   import { startNewChat } from '$lib/stores/chatStore.svelte';
   import { loadRoles } from '$lib/stores/roleStore.svelte';
   import { onMount } from 'svelte';
@@ -16,13 +16,17 @@
   import CharacterCompactView from './CharacterCompactView.svelte';
   import CharacterListView from './CharacterListView.svelte';
   import LobbyEmptyState from './LobbyEmptyState.svelte';
+  import DeleteConfirmModal from './DeleteConfirmModal.svelte';
 
   let searchQuery = $state('');
   let viewMode = $state<'grid' | 'compact' | 'list'>('grid');
   let showHidden = $state(false);
 
+  let deleteTarget = $state<{ id: string; name: string } | null>(null);
+
   onMount(async () => {
     await loadHiddenIds();
+    await loadPinnedIds();
     await loadCharacters();
     await loadRoles();
     const saved = localStorage.getItem('ryokan-view-mode');
@@ -57,6 +61,27 @@
     toggleHideCharacter(char.id);
   }
 
+  function onTogglePin(e: MouseEvent, char: any) {
+    e.stopPropagation();
+    togglePinCharacter(char.id);
+  }
+
+  function onDeleteChar(e: MouseEvent, char: any) {
+    e.stopPropagation();
+    deleteTarget = { id: String(char.id), name: char.name };
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    try {
+      await deleteCharacter(deleteTarget.id);
+    } catch (err) {
+      console.error('Delete failed:', err);
+    } finally {
+      deleteTarget = null;
+    }
+  }
+
   function resolveDesc(char: any): string {
     return char.desc?.replace(/\{\{char\}\}/g, char.name) ?? '';
   }
@@ -70,6 +95,13 @@
         c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         c.desc?.toLowerCase().includes(searchQuery.toLowerCase())
       )
+      .sort((a: any, b: any) => {
+        const aPinned = characterState.pinnedCharacterIds.has(String(a.id));
+        const bPinned = characterState.pinnedCharacterIds.has(String(b.id));
+        if (aPinned && !bPinned) return -1;
+        if (!aPinned && bPinned) return 1;
+        return 0;
+      })
   );
 
   let hasHidden = $derived(
@@ -123,7 +155,9 @@
       {showHidden}
       onSelect={onSelectChar}
       onEdit={onEditChar}
+      onDelete={onDeleteChar}
       {onToggleHide}
+      {onTogglePin}
       {resolveDesc}
     />
   {:else if viewMode === 'compact'}
@@ -132,7 +166,9 @@
       {showHidden}
       onSelect={onSelectChar}
       onEdit={onEditChar}
+      onDelete={onDeleteChar}
       {onToggleHide}
+      {onTogglePin}
     />
   {:else if viewMode === 'list'}
     <CharacterListView
@@ -140,7 +176,9 @@
       {showHidden}
       onSelect={onSelectChar}
       onEdit={onEditChar}
+      onDelete={onDeleteChar}
       {onToggleHide}
+      {onTogglePin}
       {resolveDesc}
     />
   {/if}
@@ -149,3 +187,11 @@
     <LobbyEmptyState {searchQuery} onResetSearch={() => (searchQuery = '')} />
   {/if}
 </PageLayout>
+
+{#if deleteTarget}
+  <DeleteConfirmModal
+    charName={deleteTarget.name}
+    onConfirm={confirmDelete}
+    onCancel={() => (deleteTarget = null)}
+  />
+{/if}

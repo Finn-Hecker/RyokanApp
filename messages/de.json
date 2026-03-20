@@ -20,6 +20,13 @@
   "lobby_toggle_show_hidden": "Ausgeblendete Charaktere anzeigen",
   "lobby_aria_show_char": "Anzeigen",
   "lobby_aria_hide_char": "Ausblenden",
+  "lobby_action_pin": "Anpinnen",
+  "lobby_action_unpin": "Loslösen",
+  "lobby_action_show": "Einblenden",
+  "lobby_action_hide": "Ausblenden",
+  "lobby_action_delete": "Löschen",
+  "lobby_aria_options": "Optionen",
+  "lobby_aria_character_options": "Charakter-Optionen",
 
   "char_emma_name": "Emma",
   "char_emma_desc": "20-jährige Kunststudentin. Lebt von Iced Coffee und Chaos. Trägt Oversize-Pullis, hat K-Pop-Tick, ist chronisch zu spät.",

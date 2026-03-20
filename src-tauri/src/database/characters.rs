@@ -266,7 +266,7 @@ pub fn update_character(app: AppHandle, id: String, payload: CreateCharacterPayl
 }
 
 /// Permanently deletes a character. Associated chats are removed via ON DELETE CASCADE.
-/// Also cleans up the character's ID from the hidden_character_ids setting.
+/// Also cleans up the character's ID from the hidden_character_ids and pinned_character_ids settings.
 #[tauri::command]
 pub fn delete_character(app: AppHandle, id: String) -> Result<(), String> {
     let conn = get_connection(&app)?;
@@ -274,6 +274,7 @@ pub fn delete_character(app: AppHandle, id: String) -> Result<(), String> {
     conn.execute("DELETE FROM characters WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
 
+    // Clean up from hidden list
     let raw: Option<String> = conn
         .query_row(
             "SELECT value FROM settings WHERE key = 'hidden_character_ids'",
@@ -288,6 +289,25 @@ pub fn delete_character(app: AppHandle, id: String) -> Result<(), String> {
         let updated = serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string());
         conn.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES ('hidden_character_ids', ?1)",
+            params![updated],
+        ).map_err(|e| e.to_string())?;
+    }
+
+    // Clean up from pinned list
+    let raw_pinned: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'pinned_character_ids'",
+            [],
+            |row| row.get(0),
+        )
+        .ok();
+
+    if let Some(json) = raw_pinned {
+        let mut ids: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
+        ids.retain(|x| x != &id);
+        let updated = serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string());
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('pinned_character_ids', ?1)",
             params![updated],
         ).map_err(|e| e.to_string())?;
     }
@@ -342,6 +362,59 @@ pub fn set_character_hidden(app: AppHandle, id: String, hidden: bool) -> Result<
     let updated = serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string());
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('hidden_character_ids', ?1)",
+        params![updated],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Returns all pinned character IDs. Applies to both custom and static characters.
+#[tauri::command]
+pub fn get_pinned_character_ids(app: AppHandle) -> Result<Vec<String>, String> {
+    let conn = get_connection(&app)?;
+
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'pinned_character_ids'",
+            [],
+            |row| row.get(0),
+        )
+        .ok();
+
+    match raw {
+        Some(json) => serde_json::from_str(&json).map_err(|e| e.to_string()),
+        None => Ok(vec![]),
+    }
+}
+
+/// Pins or unpins a character by updating the pinned_character_ids list in settings.
+#[tauri::command]
+pub fn set_character_pinned(app: AppHandle, id: String, pinned: bool) -> Result<(), String> {
+    let conn = get_connection(&app)?;
+
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'pinned_character_ids'",
+            [],
+            |row| row.get(0),
+        )
+        .ok();
+
+    let mut ids: Vec<String> = raw
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default();
+
+    if pinned {
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    } else {
+        ids.retain(|x| x != &id);
+    }
+
+    let updated = serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string());
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('pinned_character_ids', ?1)",
         params![updated],
     ).map_err(|e| e.to_string())?;
 
