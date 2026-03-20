@@ -21,7 +21,7 @@
 
 <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:1rem;">
   {#each characters as char (char.id)}
-    <div class="group relative w-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-ryokan-accent/40 rounded-2xl overflow-hidden transition-all duration-200 active:scale-[0.98] {showHidden && characterState.hiddenCharacterIds.has(char.id) ? 'opacity-40' : ''}">
+    <div class="group relative w-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-ryokan-accent/40 rounded-2xl overflow-hidden transition-all duration-200 active:scale-[0.98] {showHidden && characterState.hiddenCharacterIds.has(String(char.id)) ? 'opacity-40' : ''}">
       <button onclick={() => onSelect(char)} aria-label={m.lobby_aria_start_chat()} class="absolute inset-0 z-0 w-full h-full cursor-pointer"></button>
 
       <div class="relative z-10 w-full aspect-[3/4] bg-white/5 overflow-hidden pointer-events-none">
@@ -32,15 +32,15 @@
           <div class="w-full h-full {char.color} flex items-center justify-center text-white font-bold text-4xl opacity-80">{char.initials}</div>
         {/if}
 
-        <div class="absolute top-2.5 right-2.5 z-20 pointer-events-auto transition-all duration-200 {showHidden && characterState.hiddenCharacterIds.has(char.id) ? 'opacity-100 translate-y-0' : 'opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0'}">
+        <div class="absolute top-2.5 right-2.5 z-20 pointer-events-auto transition-all duration-200 {showHidden && characterState.hiddenCharacterIds.has(String(char.id)) ? 'opacity-100 translate-y-0' : 'opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0'}">
           {#if !char.isCustom}
             <button
               onclick={(e) => onToggleHide(e, char)}
-              aria-label={characterState.hiddenCharacterIds.has(char.id) ? m.lobby_aria_show_char() : m.lobby_aria_hide_char()}
-              title={characterState.hiddenCharacterIds.has(char.id) ? m.lobby_aria_show_char() : m.lobby_aria_hide_char()}
+              aria-label={characterState.hiddenCharacterIds.has(String(char.id)) ? m.lobby_aria_show_char() : m.lobby_aria_hide_char()}
+              title={characterState.hiddenCharacterIds.has(String(char.id)) ? m.lobby_aria_show_char() : m.lobby_aria_hide_char()}
               class="w-8 h-8 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/70 backdrop-blur-md border border-white/10 hover:border-white/25 text-gray-300 hover:text-white transition-all duration-150 active:scale-90"
             >
-              {#if characterState.hiddenCharacterIds.has(char.id)}
+              {#if characterState.hiddenCharacterIds.has(String(char.id))}
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
                   <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>

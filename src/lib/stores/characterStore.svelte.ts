@@ -34,7 +34,7 @@ export const characterState = $state({
 export async function loadHiddenIds() {
     try {
         const ids = await invoke<string[]>('get_hidden_character_ids');
-        characterState.hiddenCharacterIds = new Set(ids);
+        characterState.hiddenCharacterIds = new Set(ids.map(String));
     } catch (e) {
         console.error('Error loading hidden character ids:', e);
     }
@@ -173,15 +173,15 @@ export async function deleteCharacter(id: string) {
 }
 
 export async function toggleHideCharacter(id: string | number): Promise<boolean> {
-    const isNowHidden = !characterState.hiddenCharacterIds.has(id);
+    const normalizedId = String(id);
+    const isNowHidden = !characterState.hiddenCharacterIds.has(normalizedId);
 
     try {
-        await invoke('set_character_hidden', { id: String(id), hidden: isNowHidden });
+        await invoke('set_character_hidden', { id: normalizedId, hidden: isNowHidden });
         
         const newSet = new Set(characterState.hiddenCharacterIds);
-        isNowHidden ? newSet.add(id) : newSet.delete(id);
+        isNowHidden ? newSet.add(normalizedId) : newSet.delete(normalizedId);
         characterState.hiddenCharacterIds = newSet;
-        
     } catch (e) {
         console.error('Error toggling hidden state:', e);
         throw e;

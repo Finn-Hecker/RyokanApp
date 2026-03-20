@@ -64,7 +64,7 @@
   let filtered = $derived(
     (characterState.allCharacters ?? [])
       .filter(Boolean)
-      .filter((c: any) => showHidden || !characterState.hiddenCharacterIds.has(c.id))
+      .filter((c: any) => showHidden || !characterState.hiddenCharacterIds.has(String(c.id)))
       .filter((c: any) =>
         searchQuery.trim() === '' ||
         c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -73,7 +73,7 @@
   );
 
   let hasHidden = $derived(
-    (characterState.allCharacters ?? []).some((c: any) => characterState.hiddenCharacterIds.has(c.id))
+    (characterState.allCharacters ?? []).some((c: any) => characterState.hiddenCharacterIds.has(String(c.id)))
   );
 </script>
 
