@@ -82,7 +82,7 @@ Full, consistent **English and German** support from day one.
 ### Installation
 ```bash
 # 1. Clone the repo
-git clone [https://github.com/Finn-Hecker/RyokanApp.git](https://github.com/Finn-Hecker/RyokanApp.git)
+git clone https://github.com/Finn-Hecker/RyokanApp.git
 cd RyokanApp
 
 # 2. Install dependencies (tokenizers are set up automatically)
