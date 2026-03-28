@@ -98,14 +98,66 @@
 <div class="flex {msg.isUser ? 'justify-end mb-6' : 'justify-start mb-8'}">
 
 {#if msg.isUser}
-  <div class="max-w-[75%] sm:max-w-[65%]">
-    <div class="px-5 py-3.5 rounded-2xl rounded-tr-sm
-      {isOocMsg
-        ? 'bg-ryokan-accent/[0.07] border border-ryokan-accent/25 text-ryokan-accent italic'
-        : 'bg-[#1e1e22] border border-white/[0.04] text-gray-200'}
-      text-[15px] leading-relaxed break-words shadow-sm transition-colors">
-      {displayText}
-    </div>
+  <div class="max-w-[75%] sm:max-w-[65%] group/usermsg">
+    {#if editMode}
+      <div class="user-edit-wrap rounded-2xl rounded-tr-sm p-[1.5px]">
+        <div class="rounded-[14px] rounded-tr-[3px] bg-ryokan-bg overflow-hidden">
+          <textarea
+            bind:value={editValue}
+            onkeydown={handleEditKeydown}
+            class="w-full min-w-[220px] bg-transparent text-gray-200 text-[15px] leading-relaxed
+                   resize-none outline-none px-5 py-3.5 block"
+            rows={Math.max(2, editValue.split('\n').length)}
+          ></textarea>
+          <div class="flex items-center justify-between px-4 pb-3">
+            <p class="text-[10px] text-gray-600">{m.chat_edit_shortcut()}</p>
+            <div class="flex gap-2">
+              <button
+                onclick={handleEditCancel}
+                class="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] rounded-xl transition-all duration-150"
+              >
+                {m.chat_cancel()}
+              </button>
+              <button
+                onclick={handleEditSave}
+                class="px-3 py-1.5 text-xs bg-ryokan-accent/90 hover:bg-ryokan-accent text-ryokan-bg font-medium rounded-xl transition-all duration-150"
+              >
+                {m.chat_save()}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    {:else}
+      <div class="relative">
+        <div class="px-5 py-3.5 rounded-2xl rounded-tr-sm
+          {isOocMsg
+            ? 'bg-ryokan-accent/[0.07] border border-ryokan-accent/25 text-ryokan-accent italic'
+            : 'bg-[#1e1e22] border border-white/[0.04] text-gray-200'}
+          text-[15px] leading-relaxed break-words shadow-sm transition-colors">
+          {displayText}
+        </div>
+        {#if canEdit && !isGenerating}
+          <div class="user-ctrl-bar
+            opacity-0 group-hover/usermsg:opacity-100
+            translate-y-0.5 group-hover/usermsg:translate-y-0
+            transition-all duration-200 ease-out pointer-events-none group-hover/usermsg:pointer-events-auto">
+            <button
+              class="ctrl-btn ctrl-btn--label"
+              onclick={handleEditOpen}
+              aria-label={m.chat_edit()}
+              title={m.chat_edit()}
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+              <span>{m.chat_edit()}</span>
+            </button>
+          </div>
+        {/if}
+      </div>
+    {/if}
   </div>
 
 {:else}
@@ -381,6 +433,37 @@
     background: rgba(255, 255, 255, 0.10);
     margin: 0 3px;
     flex-shrink: 0;
+  }
+
+  .user-edit-wrap {
+    background: conic-gradient(
+      from var(--border-angle),
+      transparent 60%,
+      #d4b483 80%,
+      #f0d49a 90%,
+      #d4b483 95%,
+      transparent 100%
+    );
+    animation: border-spin 2.4s linear infinite;
+  }
+
+  .user-ctrl-bar {
+    position: absolute;
+    bottom: -32px;
+    right: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    padding: 3px;
+    background: rgba(18, 18, 22, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    box-shadow:
+      0 4px 16px rgba(0, 0, 0, 0.45),
+      0 1px 3px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(10px);
+    white-space: nowrap;
   }
 
   :global(.prose-custom) {

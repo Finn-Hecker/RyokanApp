@@ -279,7 +279,28 @@
   }
 
   async function handleEditSave({ msgId, newContent }: { msgId: string; newContent: string }) {
-    await updateMessage(msgId, newContent);
+    const msgs = chatState.currentMessages;
+    const idx  = msgs.findIndex(msg => msg.id?.toString() === msgId);
+    if (idx < 0) return;
+
+    const editedMsg = msgs[idx];
+
+    if (editedMsg.role === 'user') {
+      await updateMessage(msgId, newContent);
+
+      // Delete every message that came after it (the AI reply and any further turns)
+      const toDelete = msgs.slice(idx + 1);
+      for (const msg of toDelete) {
+        if (msg.id) await deleteMessage(msg.id);
+      }
+
+      // history is already up-to-date in chatState after the deletes
+      autoscroll = true;
+      pendingUserMessage = newContent;
+      await generate(newContent, false);
+    } else {
+      await updateMessage(msgId, newContent);
+    }
   }
 
   async function retryAfterError() {
@@ -330,7 +351,11 @@
           )}
           canSwipe={!isBlocked && !msg.isUser && msg.id === lastAiMsgId && msg.id !== firstAiMsgId}
           canRetry={!isBlocked && !msg.isUser && msg.id === lastAiMsgId && msg.id !== firstAiMsgId}
-          canEdit={!msg.isUser && msg.id !== 'temp-stream' && msg.id !== firstAiMsgId}
+          canEdit={!isBlocked && msg.id !== 'temp-stream' && (
+            msg.isUser
+              ? true
+              : msg.id !== firstAiMsgId
+          )}
           onRetry={handleRetry}
           onEditSave={handleEditSave}
         />
