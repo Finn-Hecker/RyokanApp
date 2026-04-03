@@ -30,18 +30,86 @@ export interface GenerationOptions {
     } | null;
 }
 
-/** Pure function — strips thinking tags and returns the visible response text. */
+/**
+ * Pure function — strips thinking/channel tags and returns the visible
+ * response text.
+ *
+ * Handles two tag families:
+ *   • <think>…</think>        (reasoning models)
+ *   • <|channel>…<channel|>   (channel-style inner monologue)
+ *
+ * For each family the same three cases are handled:
+ *   (a) Complete block present  → everything inside is stripped
+ *   (b) Only closing tag found  → keep only what comes after it
+ *   (c) Only opening tag found  → keep only what comes before it
+ *       (stream was cut off mid-block)
+ */
 export function processThinkingOutput(raw: string, isFinished: boolean): {
     text:       string;
     isThinking: boolean;
 } {
+    // <think>…</think> 
     const thinkEnd = '</think>';
     if (raw.includes(thinkEnd)) {
         const parts = raw.split(thinkEnd);
-        return { text: parts[parts.length - 1].trimStart(), isThinking: false };
+        const afterThink = parts[parts.length - 1].trimStart();
+
+        // <|channel>…<channel|> within the visible part
+        return { text: stripChannelTags(afterThink, isFinished), isThinking: false };
     }
-    if (isFinished) return { text: raw, isThinking: false };
-    return { text: '', isThinking: true };
+
+    // Still inside a <think> block (no closing tag yet)
+    if (raw.includes('<think>')) {
+        if (isFinished) {
+            // Stream ended without </think> discard the orphaned block
+            const before = raw.slice(0, raw.indexOf('<think>')).trimStart();
+            return { text: stripChannelTags(before, isFinished), isThinking: false };
+        }
+        return { text: '', isThinking: true };
+    }
+
+    // No <think> tags at all. check for <|channel> only
+    const text = stripChannelTags(raw, isFinished);
+
+    if (isFinished) return { text, isThinking: false };
+
+    // Still streaming: if we're inside a channel block signal thinking
+    if (raw.includes('<|channel>') && !raw.includes('<channel|>')) {
+        return { text: '', isThinking: true };
+    }
+
+    return { text, isThinking: false };
+}
+
+/**
+ * Strips <|channel>…<channel|> blocks from a string.
+ *
+ * (a) Complete blocks          → removed entirely
+ * (b) Orphaned <channel|>      → keep only what comes after
+ * (c) Orphaned <|channel>      → keep only what comes before
+ */
+function stripChannelTags(content: string, isFinished: boolean): string {
+    if (!content) return content;
+
+    // (a) Complete blocks
+    let result = content.replace(/<\|channel>[\s\S]*?<channel\|>/g, '');
+
+    // (b) Orphaned closing tag
+    const closeIdx = result.indexOf('<channel|>');
+    if (closeIdx !== -1) {
+        result = result.slice(closeIdx + '<channel|>'.length);
+    }
+
+    // (c) Orphaned opening tag (only strip when stream is finished; while
+    //     streaming the closing tag may still be on its way)
+    if (isFinished) {
+        const openIdx = result.indexOf('<|channel>');
+        if (openIdx !== -1) {
+            result = result.slice(0, openIdx);
+        }
+    }
+
+    return result.trimStart();
 }
 
 /**

@@ -102,6 +102,8 @@ export const summaryState = $state({ isSummarizing: false });
  *  (a) <think>…</think>actual text   → full block stripped
  *  (b) …thoughts…</think>actual text → orphaned closing tag (no opening tag)
  *  (c) <think>…                      → orphaned opening tag (stream truncated)
+ *
+ * The same three-case logic is applied to <|channel>…<channel|> blocks.
  */
 function stripThinkingContent(content: string): string {
     if (!content) return content;
@@ -117,6 +119,19 @@ function stripThinkingContent(content: string): string {
     if (openIdx !== -1) {
         result = result.slice(0, openIdx);
     }
+    // (a) Complete <|channel>…<channel|> blocks
+    result = result.replace(/<\|channel>[\s\S]*?<channel\|>/gi, '');
+    // (b) Orphaned <channel|> keep only what comes after
+    const channelCloseIdx = result.indexOf('<channel|>');
+    if (channelCloseIdx !== -1) {
+        result = result.slice(channelCloseIdx + '<channel|>'.length);
+    }
+    // (c) Orphaned <|channel> keep only what comes before
+    const channelOpenIdx = result.indexOf('<|channel>');
+    if (channelOpenIdx !== -1) {
+        result = result.slice(0, channelOpenIdx);
+    }
+
     return result.trimStart();
 }
 
@@ -187,7 +202,7 @@ async function generateSummary(
     // processThinkingOutput handles the </think> split; stripThinkingContent
     // catches the remaining cases (full <think>…</think> blocks, or a truncated
     // stream where </think> never arrived and processThinkingOutput returns the
-    // raw buffer verbatim).
+    // raw buffer verbatim). It also strips <|channel>…<channel|> blocks.
     const { text: processed } = processThinkingOutput(rawBuffer.trim(), true);
     const result = stripThinkingContent(processed);
     if (!result) {
