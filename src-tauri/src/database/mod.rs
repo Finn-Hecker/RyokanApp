@@ -120,5 +120,14 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
         "ALTER TABLE conversations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;"
     );
 
+    // ── Migration: add rolling-summary columns ──
+    // These store the in-memory summaryMeta persistently so it survives restarts.
+    let _ = conn.execute_batch(
+        "ALTER TABLE conversations ADD COLUMN summary_text TEXT;"
+    );
+    let _ = conn.execute_batch(
+        "ALTER TABLE conversations ADD COLUMN summary_last_message_id TEXT;"
+    );
+
     Ok(())
 }

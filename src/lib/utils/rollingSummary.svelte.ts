@@ -327,6 +327,17 @@ export async function checkAndSummarizeIfNeeded(
             lastSummarizedMessageId: lastCompressedId,
         };
 
+        // Persist to DB so the summary survives app restarts.
+        try {
+            await invoke('save_summary_meta', {
+                chatId:                  chatState.activeChatId,
+                summary:                 newSummary,
+                lastSummarizedMessageId: lastCompressedId,
+            });
+        } catch (persistErr) {
+            console.error('[RollingSummary] Failed to persist summary to DB.', persistErr);
+        }
+
         console.debug(
             '[RollingSummary] Compressed %d messages (tail=%d). ' +
             'Summary ~%d tokens. Remaining middle budget ~%d tokens.',

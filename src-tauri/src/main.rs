@@ -22,6 +22,8 @@ fn main() {
             database::chats::rename_chat,
             database::chats::toggle_pin_chat,
             database::chats::get_conversations_page,
+            database::chats::save_summary_meta,
+            database::chats::get_summary_meta,
             database::messages::get_messages,
             database::messages::add_message,
             database::messages::delete_message,

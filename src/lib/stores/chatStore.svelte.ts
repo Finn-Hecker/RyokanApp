@@ -152,10 +152,21 @@ export async function openHistoryChat(chatId: string) {
 
 export async function loadMessages(chatId: string) {
     if (chatState.activeChatId !== chatId) {
-        chatState.summaryMeta = {
-            currentSummary:          null,
-            lastSummarizedMessageId: null,
-        };
+        // Restore persisted summary instead of always wiping it.
+        try {
+            const meta = await invoke<{ summary: string | null; last_id: string | null }>(
+                'get_summary_meta', { chatId }
+            );
+            chatState.summaryMeta = {
+                currentSummary:          meta.summary,
+                lastSummarizedMessageId: meta.last_id,
+            };
+        } catch {
+            chatState.summaryMeta = {
+                currentSummary:          null,
+                lastSummarizedMessageId: null,
+            };
+        }
     }
     try {
         const result = await invoke<any[]>('get_messages', { chatId });
@@ -237,7 +248,7 @@ export async function deleteConversation(id: string) {
         if (chatState.activeChatId === id) {
             chatState.activeChatId    = null;
             chatState.currentMessages = [];
-            chatState.summaryMeta = {
+            chatState.summaryMeta     = {
                 currentSummary:          null,
                 lastSummarizedMessageId: null,
             };

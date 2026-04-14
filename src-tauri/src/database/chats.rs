@@ -142,3 +142,44 @@ pub fn delete_chat(app: AppHandle, id: String) -> Result<(), String> {
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
+
+/// Persists the rolling-summary metadata for a conversation so it survives app restarts.
+/// Called by the frontend after every successful compression pass.
+#[tauri::command]
+pub fn save_summary_meta(
+    app: AppHandle,
+    chat_id: String,
+    summary: Option<String>,
+    last_summarized_message_id: Option<String>,
+) -> Result<(), String> {
+    let conn = get_connection(&app)?;
+    conn.execute(
+        "UPDATE conversations
+         SET summary_text = ?1, summary_last_message_id = ?2
+         WHERE id = ?3",
+        params![summary, last_summarized_message_id, chat_id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Loads the persisted rolling-summary metadata for a conversation.
+/// Returns null fields when no summary has been generated yet.
+#[derive(Serialize)]
+pub struct SummaryMeta {
+    pub summary: Option<String>,
+    pub last_id: Option<String>,
+}
+
+#[tauri::command]
+pub fn get_summary_meta(app: AppHandle, chat_id: String) -> Result<SummaryMeta, String> {
+    let conn = get_connection(&app)?;
+    let result = conn.query_row(
+        "SELECT summary_text, summary_last_message_id FROM conversations WHERE id = ?1",
+        params![chat_id],
+        |row| Ok(SummaryMeta {
+            summary: row.get(0)?,
+            last_id: row.get(1)?,
+        }),
+    ).map_err(|e| e.to_string())?;
+    Ok(result)
+}

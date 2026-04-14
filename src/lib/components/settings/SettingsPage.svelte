@@ -52,6 +52,20 @@
       if (appState.apiSettings.maxTokens == null) appState.apiSettings.maxTokens = 300;
       if (appState.apiSettings.presencePenalty == null) appState.apiSettings.presencePenalty = 1.1;
       if (appState.apiSettings.contextLimit == null) appState.apiSettings.contextLimit = 4096;
+
+      console.log("[Settings] Loaded values:", {
+        url:             appState.apiSettings.url,
+        apiKey:          appState.apiSettings.apiKey,
+        model:           appState.apiSettings.model,
+        isThinkingModel: appState.apiSettings.isThinkingModel,
+        aiLanguage:      appState.apiSettings.aiLanguage,
+        systemPrompt:    appState.apiSettings.systemPrompt,
+        temperature:     appState.apiSettings.temperature,
+        maxTokens:       appState.apiSettings.maxTokens,
+        presencePenalty: appState.apiSettings.presencePenalty,
+        contextLimit:    appState.apiSettings.contextLimit,
+        powerUser,
+      });
     } catch (err) {
       console.error("[Settings] Failed to load:", err);
     }
