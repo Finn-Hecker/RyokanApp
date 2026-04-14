@@ -18,6 +18,9 @@ const TAIL_COUNT = 4;
 /** Re-compress the rolling summary if it grows beyond this limit. */
 const MAX_SUMMARY_TOKENS = 800;
 
+const SUMMARY_OUTPUT_TOKENS = 800;
+const THINKING_OVERHEAD     = 2000;
+
 // Token estimation
 
 const encoder = new TextEncoder();
@@ -191,7 +194,9 @@ async function generateSummary(
                 model:            apiSettings.model,
                 messages:         summarizeMessages,
                 temperature:      0.3,
-                max_tokens:       MAX_SUMMARY_TOKENS,
+                max_tokens:       apiSettings.isThinkingModel
+                    ? SUMMARY_OUTPUT_TOKENS + THINKING_OVERHEAD
+                    : SUMMARY_OUTPUT_TOKENS,
                 presence_penalty: 0,
             },
         });
@@ -199,12 +204,23 @@ async function generateSummary(
         unlisten();
     }
 
+    console.debug('[RollingSummary] rawBuffer length=%d, preview:', 
+        rawBuffer.length, 
+        rawBuffer.slice(0, 200)
+    );
+
+
     // processThinkingOutput handles the </think> split; stripThinkingContent
     // catches the remaining cases (full <think>…</think> blocks, or a truncated
     // stream where </think> never arrived and processThinkingOutput returns the
     // raw buffer verbatim). It also strips <|channel>…<channel|> blocks.
     const { text: processed } = processThinkingOutput(rawBuffer.trim(), true);
+
+    console.debug('[RollingSummary] after processThinkingOutput:', processed.slice(0, 200));
+
     const result = stripThinkingContent(processed);
+
+    console.debug('[RollingSummary] after stripThinking:', result.slice(0, 200));
     if (!result) {
         console.warn('[RollingSummary] Empty summary returned.');
         throw new Error('Summary generation returned empty.');
