@@ -123,6 +123,14 @@
     return null;
   })());
 
+  let lastUserMsgId = $derived((() => {
+    for (let i = displayMessages.length - 1; i >= 0; i--) {
+      const msg = displayMessages[i];
+      if (msg.isUser) return msg.id;
+    }
+    return null;
+  })());
+
   $effect(() => {
     if (displayMessages && chatContainer) {
       handleAutoScroll();
@@ -405,7 +413,7 @@
           canRetry={!isBlocked && !msg.isUser && msg.id === lastAiMsgId && msg.id !== firstAiMsgId}
           canEdit={!isBlocked && msg.id !== 'temp-stream' && (
             msg.isUser
-              ? true
+              ? msg.id === lastUserMsgId
               : msg.id !== firstAiMsgId
           )}
           onRetry={handleRetry}
