@@ -30,6 +30,7 @@ fn main() {
             database::messages::update_message,
             database::messages::add_swipe_variant,
             database::messages::set_swipe_index,
+            database::messages::get_messages_page,
             database::settings::get_all_settings,
             database::settings::save_setting,
             database::characters::get_custom_characters,

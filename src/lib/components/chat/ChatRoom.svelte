@@ -4,7 +4,7 @@
   import { tick, onMount, onDestroy } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { roleState } from '$lib/stores/roleStore.svelte';
-  import { chatState, addMessage, addSwipeVariant, loadMessages, updateMessage, deleteMessage, setSwipeIndex } from '$lib/stores/chatStore.svelte';
+  import { chatState, addMessage, addSwipeVariant, loadMessages, updateMessage, deleteMessage, setSwipeIndex, loadMoreMessages } from '$lib/stores/chatStore.svelte';
   import { runGeneration } from '$lib/utils/chatApi';
   import { summaryState, checkAndSummarizeIfNeeded } from '$lib/utils/rollingSummary.svelte';
   import * as m from '$lib/paraglide/messages';
@@ -28,6 +28,7 @@
   let errorMessage = $state('');
   let pendingUserMessage = $state('');
   let retryingMsgId = $state<string | null>(null);
+  let isLoadingMore = $state(false);
 
   let isBlocked = $derived(isGenerating || summaryState.isSummarizing);
 
@@ -141,20 +142,58 @@
     if (!chatContainer) return;
 
     const count = displayMessages.length;
-    if (count === 0) { lastFirstMsgId = ''; lastMsgCount = 0; return; }
+    if (count === 0) { 
+      lastFirstMsgId = ''; 
+      lastMsgCount = 0; 
+      return; 
+    }
 
     const currentFirstId = displayMessages[0].id;
-    if (currentFirstId !== lastFirstMsgId) scrollToBottom('auto');
-    else if (count > lastMsgCount && autoscroll) scrollToBottom('smooth');
+    const currentLastId = displayMessages[count - 1].id;
+
+    // CASE 1: The chat was just loaded (initial switch)
+    // We check whether the activeChatId changed or if we don't have any previous message state
+    if (lastFirstMsgId === '') {
+      scrollToBottom('auto');
+    } 
+    // CASE 2: A NEW message was added at the bottom
+    else if (count > lastMsgCount && autoscroll) {
+      // We no longer rely on firstId comparison here, instead we trust 'autoscroll'
+      // which is calculated in handleScroll() (user is near the bottom)
+      scrollToBottom('smooth');
+    }
 
     lastMsgCount = count;
     lastFirstMsgId = currentFirstId;
   }
 
-  function handleScroll() {
+  async function handleScroll() {
     if (!chatContainer || isProgrammaticScroll) return;
     const { scrollTop, scrollHeight, clientHeight } = chatContainer;
     autoscroll = scrollHeight - scrollTop - clientHeight <= 50;
+
+    // INFINITE SCROLL: Load more when we're near the top (< 100px)
+    if (scrollTop < 100 && chatState.hasMoreMessages && !isLoadingMore) {
+      isLoadingMore = true;
+      
+      // Store the exact height and scroll position BEFORE loading
+      const oldScrollHeight = scrollHeight;
+      const oldScrollTop = scrollTop;
+
+      await loadMoreMessages();
+      
+      // Important: wait until Svelte has rendered the new messages into the DOM
+      await tick();
+
+      if (chatContainer) {
+        // Calculate the difference between old and new height and adjust
+        // the scroll position by that amount so the view stays stable
+        const newScrollHeight = chatContainer.scrollHeight;
+        chatContainer.scrollTop = oldScrollTop + (newScrollHeight - oldScrollHeight);
+      }
+      
+      isLoadingMore = false;
+    }
   }
 
   function resetStreamState() {
@@ -328,6 +367,9 @@
     character={appState.activeCharacter}
     isTyping={isGenerating}
     onBack={() => {
+      chatState.activeChatId = null;
+      chatState.currentMessages = [];
+      chatState.hasMoreMessages = false;
       appState.activeCharacter = null;
       appState.currentView = 'lobby';
     }}
@@ -340,6 +382,16 @@
     style="overflow-anchor: none;"
   >
     <div class="max-w-3xl mx-auto w-full">
+      {#if isLoadingMore}
+        <div class="flex justify-center py-6 opacity-70">
+          <span class="breathe-dots" aria-label="Lade ältere Nachrichten…">
+            <span class="breathe-dot"></span>
+            <span class="breathe-dot" style="animation-delay: 0.22s"></span>
+            <span class="breathe-dot" style="animation-delay: 0.44s"></span>
+          </span>
+        </div>
+      {/if}
+
       {#each displayMessages as msg, i (msg.id)}
         <ChatMessage
           {msg}

@@ -45,6 +45,7 @@ export const chatState = $state({
     conversations:   [] as Conversation[],
     currentMessages: [] as Message[],
     activeChatId:    null as string | null,
+    hasMoreMessages: false,
     summaryMeta: {
         currentSummary:          null,
         lastSummarizedMessageId: null,
@@ -152,7 +153,10 @@ export async function openHistoryChat(chatId: string) {
 
 export async function loadMessages(chatId: string) {
     if (chatState.activeChatId !== chatId) {
-        // Restore persisted summary instead of always wiping it.
+        // Chat was switched: clear local history to avoid flickering
+        chatState.currentMessages = [];
+        chatState.hasMoreMessages = false;
+        
         try {
             const meta = await invoke<{ summary: string | null; last_id: string | null }>(
                 'get_summary_meta', { chatId }
@@ -162,14 +166,21 @@ export async function loadMessages(chatId: string) {
                 lastSummarizedMessageId: meta.last_id,
             };
         } catch {
-            chatState.summaryMeta = {
-                currentSummary:          null,
-                lastSummarizedMessageId: null,
-            };
+            chatState.summaryMeta = { currentSummary: null, lastSummarizedMessageId: null };
         }
     }
+    
     try {
-        const result = await invoke<any[]>('get_messages', { chatId });
+        // Smart limit: If we're still in the same chat (e.g. after sending a message),
+        // we don't want to suddenly collapse the history back to 25.
+        // Instead, request the currently loaded amount + 1 (for the new message).
+        const limit = chatState.activeChatId === chatId && chatState.currentMessages.length >= 25
+            ? chatState.currentMessages.length + 1
+            : 25;
+
+        // Use your get_messages_page function from the backend
+        const result = await invoke<any[]>('get_messages_page', { chatId, limit, offset: 0 });
+        
         chatState.currentMessages = result.map(row => ({
             ...row,
             swipe_variants: typeof row.swipe_variants === 'string'
@@ -178,6 +189,41 @@ export async function loadMessages(chatId: string) {
             swipe_index: row.swipe_index ?? 0,
         }));
         chatState.activeChatId = chatId;
+        
+        // If we hit the limit exactly, there are probably more messages available
+        chatState.hasMoreMessages = result.length === limit;
+    } catch (e) { console.error(e); }
+}
+
+// Triggered when the user scrolls up
+export async function loadMoreMessages() {
+    const chatId = chatState.activeChatId;
+    if (!chatId || !chatState.hasMoreMessages) return;
+
+    try {
+        const currentLength = chatState.currentMessages.length;
+        const result = await invoke<any[]>('get_messages_page', {
+            chatId,
+            limit: 25,
+            offset: currentLength,
+        });
+
+        if (result.length === 0) {
+            chatState.hasMoreMessages = false;
+            return;
+        }
+
+        const parsed = result.map(row => ({
+            ...row,
+            swipe_variants: typeof row.swipe_variants === 'string'
+                ? JSON.parse(row.swipe_variants)
+                : (row.swipe_variants ?? [row.content]),
+            swipe_index: row.swipe_index ?? 0,
+        }));
+
+        // Prepend older messages at the beginning
+        chatState.currentMessages = [...parsed, ...chatState.currentMessages];
+        chatState.hasMoreMessages = result.length === 25;
     } catch (e) { console.error(e); }
 }
 

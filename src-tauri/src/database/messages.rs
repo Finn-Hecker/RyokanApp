@@ -192,3 +192,36 @@ pub fn delete_message(app: AppHandle, id: String) -> Result<(), String> {
     ).map_err(|e| e.to_string())?;
     Ok(())
 }
+
+/// Fetches a specific page of messages (for infinite scroll).
+#[tauri::command]
+pub fn get_messages_page(app: AppHandle, chat_id: String, limit: i64, offset: i64) -> Result<Vec<DbMessage>, String> {
+    let conn = get_connection(&app)?;
+    
+    // Sort by newest first, use limit/offset to fetch the chunk
+    let mut stmt = conn.prepare(
+        "SELECT id, conversation_id, role, content, swipe_variants, swipe_index \
+         FROM messages WHERE conversation_id = ?1 \
+         ORDER BY created_at DESC \
+         LIMIT ?2 OFFSET ?3"
+    ).map_err(|e| e.to_string())?;
+
+    let rows = stmt.query_map(params![chat_id, limit, offset], |row| {
+        Ok(DbMessage {
+            id: row.get(0)?,
+            conversation_id: row.get(1)?,
+            role: row.get(2)?,
+            content: row.get(3)?,
+            swipe_variants: row.get(4)?,
+            swipe_index: row.get(5)?,
+        })
+    }).map_err(|e| e.to_string())?;
+
+    let mut list = Vec::new();
+    for row in rows { list.push(row.unwrap()); }
+    
+    // IMPORTANT: Reverse the list so the oldest messages in this chunk are at the top
+    list.reverse();
+    
+    Ok(list)
+}
