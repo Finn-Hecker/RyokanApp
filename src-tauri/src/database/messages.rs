@@ -78,9 +78,8 @@ pub fn add_message(app: AppHandle, chat_id: String, role: String, content: Strin
                 content.clone()
             };
 
-            let mut title = display_content;
-            if title.len() > 30 {
-                title.truncate(27);
+            let mut title: String = display_content.chars().take(27).collect();
+            if display_content.chars().count() > 27 {
                 title.push_str("...");
             }
 
