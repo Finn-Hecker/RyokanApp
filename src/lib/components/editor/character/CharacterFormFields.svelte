@@ -2,6 +2,8 @@
   import * as m from '$lib/paraglide/messages';
   import AltGreetings from './AltGreetings.svelte';
   import WorldInfoPicker from './WorldInfoPicker.svelte';
+  import TokenBadge from '$lib/components/TokenBadge.svelte';
+  import { countCoreCharacterTokens } from '$lib/utils/tokenCount';
 
   let {
     name = $bindable(''),
@@ -28,12 +30,26 @@
     onAltGreetingsAdd?: () => void;
     onAltGreetingsRemove?: (index: number) => void;
   } = $props();
+
+  let totalTokens = $derived(
+    countCoreCharacterTokens({ name, description, personality, scenario, greeting, mes_example })
+  );
 </script>
 
 <div class="space-y-4">
 
+  <div class="total-tokens-bar">
+    <span class="total-tokens-label">Gesamt-Kontext</span>
+    <TokenBadge
+      count={totalTokens}
+      />
+  </div>
+
   <div class="field-wrap">
-    <label for="character-name" class="field-label">{m.create_page_label_name()}</label>
+    <div class="field-label-row">
+      <label for="character-name" class="field-label">{m.create_page_label_name()}</label>
+      <TokenBadge text={name} />
+    </div>
     <input
       id="character-name"
       type="text"
@@ -44,7 +60,10 @@
   </div>
 
   <div class="field-wrap">
-    <label for="character-description" class="field-label">{m.create_page_label_desc()}</label>
+    <div class="field-label-row">
+      <label for="character-description" class="field-label">{m.create_page_label_desc()}</label>
+      <TokenBadge text={description} />
+    </div>
     <textarea
       id="character-description"
       bind:value={description}
@@ -55,7 +74,10 @@
   </div>
 
   <div class="field-wrap">
-    <label for="character-greeting" class="field-label">{m.create_page_label_greeting()}</label>
+    <div class="field-label-row">
+      <label for="character-greeting" class="field-label">{m.create_page_label_greeting()}</label>
+      <TokenBadge text={greeting} />
+    </div>
     <textarea
       id="character-greeting"
       bind:value={greeting}
@@ -77,7 +99,10 @@
   </div>
 
   <div class="field-wrap">
-    <label for="char-personality" class="field-label">{m.create_page_label_personality()}</label>
+    <div class="field-label-row">
+      <label for="char-personality" class="field-label">{m.create_page_label_personality()}</label>
+      <TokenBadge text={personality} />
+    </div>
     <textarea
       id="char-personality"
       bind:value={personality}
@@ -88,7 +113,10 @@
   </div>
 
   <div class="field-wrap">
-    <label for="char-scenario" class="field-label">{m.create_page_label_scenario()}</label>
+    <div class="field-label-row">
+      <label for="char-scenario" class="field-label">{m.create_page_label_scenario()}</label>
+      <TokenBadge text={scenario} />
+    </div>
     <textarea
       id="char-scenario"
       bind:value={scenario}
@@ -99,7 +127,10 @@
   </div>
 
   <div class="field-wrap">
-    <label for="char-mes-example" class="field-label">{m.create_page_label_mes_example()}</label>
+    <div class="field-label-row">
+      <label for="char-mes-example" class="field-label">{m.create_page_label_mes_example()}</label>
+      <TokenBadge text={mes_example} />
+    </div>
     <textarea
       id="char-mes-example"
       bind:value={mes_example}
@@ -138,7 +169,29 @@
     text-transform: uppercase;
     letter-spacing: 0.12em;
     color: #6b7280;
+  }
+
+  .field-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     padding: 10px 14px 0;
+  }
+
+  .total-tokens-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 4px;
+  }
+
+  .total-tokens-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: rgba(var(--accent-rgb, 167 139 250) / 0.6);
   }
 
   .field-input {

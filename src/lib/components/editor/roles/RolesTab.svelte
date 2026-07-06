@@ -2,6 +2,8 @@
   import * as m from '$lib/paraglide/messages';
   import { getLocale } from '$lib/paraglide/runtime';
   import AvatarPicker from '../character/AvatarPicker.svelte';
+  import TokenBadge from '$lib/components/TokenBadge.svelte';
+  import { countTokens } from '$lib/utils/tokenCount';
 
   let {
     name = $bindable(''),
@@ -27,6 +29,8 @@
     { value: 'they/them', label: m.role_pronoun_they() },
     { value: 'it/its',    label: m.role_pronoun_it() },
   ]);
+
+  let totalTokens = $derived(countTokens(name) + countTokens(description));
 </script>
 
 <AvatarPicker
@@ -36,8 +40,18 @@
 
 <div class="space-y-4">
 
+  <div class="total-tokens-bar">
+    <span class="total-tokens-label">Gesamt-Kontext</span>
+    <TokenBadge
+      count={totalTokens}
+    />
+  </div>
+
   <div class="field-wrap">
-    <label for="role-name" class="field-label">{m.role_label_name()}</label>
+    <div class="field-label-row">
+      <label for="role-name" class="field-label">{m.role_label_name()}</label>
+      <TokenBadge text={name} />
+    </div>
     <input
       id="role-name"
       type="text"
@@ -48,7 +62,10 @@
   </div>
 
   <div class="field-wrap">
-    <label for="role-description" class="field-label">{m.role_label_desc()}</label>
+    <div class="field-label-row">
+      <label for="role-description" class="field-label">{m.role_label_desc()}</label>
+      <TokenBadge text={description} />
+    </div>
     <textarea
       id="role-description"
       bind:value={description}
@@ -121,7 +138,29 @@
     text-transform: uppercase;
     letter-spacing: 0.12em;
     color: #6b7280;
+  }
+
+  .field-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     padding: 10px 14px 0;
+  }
+
+  .total-tokens-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 4px;
+  }
+
+  .total-tokens-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: rgba(var(--accent-rgb, 167 139 250) / 0.6);
   }
 
   .field-input {
