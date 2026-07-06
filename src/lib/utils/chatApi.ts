@@ -43,6 +43,12 @@ export interface GenerationOptions {
  *   (b) Only closing tag found  → keep only what comes after it
  *   (c) Only opening tag found  → keep only what comes before it
  *       (stream was cut off mid-block)
+ *
+ * NOTE: with the backend now splitting reasoning into a dedicated
+ * "ai-thinking-token" event (delta.reasoning_content), `raw` here will
+ * usually already be clean. This function remains as a fallback for
+ * backends/models that inline reasoning into the content stream instead
+ * (e.g. templates without reasoning_content support).
  */
 export function processThinkingOutput(raw: string, isFinished: boolean): {
     text:       string;
@@ -175,7 +181,10 @@ export function buildApiMessages(options: GenerationOptions): { role: string; co
         { role: 'system', content: fullSystemContent },
     ];
 
-    messages.push(...newMessages.map(msg => ({ role: msg.role, content: msg.content })));
+    messages.push(...newMessages.map(msg => ({
+        role: msg.role,
+        content: msg.role === 'assistant' ? stripThinkingContent(msg.content) : msg.content,
+    })));
 
     if (userPrompt) {
         messages.push({ role: 'user', content: userPrompt });
@@ -197,7 +206,7 @@ export function buildApiMessages(options: GenerationOptions): { role: string; co
  *
  * Important: call checkAndSummarizeIfNeeded() and await it BEFORE calling
  * this function. The two invoke('call_ai_api') calls must never overlap —
- * both share the Tauri 'ai-token' SSE channel.
+ * both share the Tauri 'ai-token' / 'ai-thinking-token' SSE channels.
  */
 export async function runGeneration(
     options:   GenerationOptions,
@@ -209,19 +218,30 @@ export async function runGeneration(
 
     console.log('[runGeneration] messages:', messages);
 
-    let rawBuffer = '';
+    let rawBuffer      = '';
+    let thinkingBuffer = '';
 
     const { listen } = await import('@tauri-apps/api/event');
-    const unlisten = await listen<{ token: string }>('ai-token', (event) => {
+
+    const unlistenToken = await listen<{ token: string }>('ai-token', (event) => {
         rawBuffer += event.payload.token;
 
         if (apiSettings.isThinkingModel) {
             const { text, isThinking } = processThinkingOutput(rawBuffer, false);
-            callbacks.onThinkingPhaseChange(isThinking);
+            // Tag-based detection is a fallback — once the dedicated reasoning
+            // channel below has fired, it's authoritative and takes precedence.
+            if (!thinkingBuffer) callbacks.onThinkingPhaseChange(isThinking);
             callbacks.onStreamUpdate(text);
         } else {
             callbacks.onStreamUpdate(rawBuffer);
         }
+    });
+
+    // Backend emits reasoning tokens (delta.reasoning_content) on their own
+    // event so the UI can know it's "thinking" without relying on tag-parsing.
+    const unlistenThinking = await listen<{ token: string }>('ai-thinking-token', (event) => {
+        thinkingBuffer += event.payload.token;
+        callbacks.onThinkingPhaseChange(true);
     });
 
     try {
@@ -231,19 +251,26 @@ export async function runGeneration(
 
         await invoke('call_ai_api', {
             payload: {
-                url:              apiSettings.url,
-                api_key:          apiSettings.apiKey,
-                model:            apiSettings.model,
+                url:                apiSettings.url,
+                api_key:            apiSettings.apiKey,
+                model:              apiSettings.model,
                 messages,
-                temperature:      apiSettings.temperature,
-                max_tokens:       effectiveMaxTokens,
-                presence_penalty: apiSettings.presencePenalty,
+                temperature:        apiSettings.temperature,
+                max_tokens:         effectiveMaxTokens,
+                presence_penalty:   apiSettings.presencePenalty,
+                top_p:              apiSettings.topP,
+                top_k:              apiSettings.topK,
+                min_p:              apiSettings.minP,
+                frequency_penalty:  apiSettings.frequencyPenalty,
+                is_thinking_model:  apiSettings.isThinkingModel,
+                thinking_budget:    apiSettings.isThinkingModel ? (apiSettings.thinkingBudget ?? 2500) : undefined,
             },
         });
 
+        callbacks.onThinkingPhaseChange(false);
+
         if (apiSettings.isThinkingModel) {
             const { text } = processThinkingOutput(rawBuffer, true);
-            callbacks.onThinkingPhaseChange(false);
             callbacks.onStreamUpdate(text);
             return text || rawBuffer;
         }
@@ -251,6 +278,37 @@ export async function runGeneration(
         callbacks.onStreamUpdate(rawBuffer);
         return rawBuffer;
     } finally {
-        unlisten();
+        unlistenToken();
+        unlistenThinking();
     }
+}
+
+export function stripThinkingContent(content: string): string {
+    if (!content) return content;
+    // (a) Complete <think>…</think> blocks
+    let result = content.replace(/<think>[\s\S]*?<\/think>/gi, '');
+    // (b) Orphaned </think> — keep only what comes after
+    const closeIdx = result.indexOf('</think>');
+    if (closeIdx !== -1) {
+        result = result.slice(closeIdx + '</think>'.length);
+    }
+    // (c) Orphaned <think> — keep only what comes before
+    const openIdx = result.indexOf('<think>');
+    if (openIdx !== -1) {
+        result = result.slice(0, openIdx);
+    }
+    // (a) Complete <|channel>…<channel|> blocks
+    result = result.replace(/<\|channel>[\s\S]*?<channel\|>/gi, '');
+    // (b) Orphaned <channel|> keep only what comes after
+    const channelCloseIdx = result.indexOf('<channel|>');
+    if (channelCloseIdx !== -1) {
+        result = result.slice(channelCloseIdx + '<channel|>'.length);
+    }
+    // (c) Orphaned <|channel> keep only what comes before
+    const channelOpenIdx = result.indexOf('<|channel>');
+    if (channelOpenIdx !== -1) {
+        result = result.slice(0, channelOpenIdx);
+    }
+
+    return result.trimStart();
 }

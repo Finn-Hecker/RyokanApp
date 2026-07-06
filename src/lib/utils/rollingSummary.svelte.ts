@@ -5,7 +5,7 @@ import { chatState } from '$lib/stores/chatStore.svelte';
 import type { Message } from '$lib/stores/chatStore.svelte';
 import { buildApiMessages } from '$lib/utils/chatApi';
 import type { GenerationOptions } from '$lib/utils/chatApi';
-import { processThinkingOutput } from '$lib/utils/chatApi';
+import { processThinkingOutput, stripThinkingContent } from '$lib/utils/chatApi';
 
 const DEFAULT_CONTEXT_LIMIT = 4096;
 
@@ -99,46 +99,6 @@ console.debug('[RollingSummary] probeMessages count=%d, contents:',
 export const summaryState = $state({ isSummarizing: false });
 
 /**
- * Strips thinking-model reasoning from any stored or generated text.
- *
- * Handles all three variants that models produce:
- *  (a) <think>…</think>actual text   → full block stripped
- *  (b) …thoughts…</think>actual text → orphaned closing tag (no opening tag)
- *  (c) <think>…                      → orphaned opening tag (stream truncated)
- *
- * The same three-case logic is applied to <|channel>…<channel|> blocks.
- */
-function stripThinkingContent(content: string): string {
-    if (!content) return content;
-    // (a) Complete <think>…</think> blocks
-    let result = content.replace(/<think>[\s\S]*?<\/think>/gi, '');
-    // (b) Orphaned </think> — keep only what comes after
-    const closeIdx = result.indexOf('</think>');
-    if (closeIdx !== -1) {
-        result = result.slice(closeIdx + '</think>'.length);
-    }
-    // (c) Orphaned <think> — keep only what comes before
-    const openIdx = result.indexOf('<think>');
-    if (openIdx !== -1) {
-        result = result.slice(0, openIdx);
-    }
-    // (a) Complete <|channel>…<channel|> blocks
-    result = result.replace(/<\|channel>[\s\S]*?<channel\|>/gi, '');
-    // (b) Orphaned <channel|> keep only what comes after
-    const channelCloseIdx = result.indexOf('<channel|>');
-    if (channelCloseIdx !== -1) {
-        result = result.slice(channelCloseIdx + '<channel|>'.length);
-    }
-    // (c) Orphaned <|channel> keep only what comes before
-    const channelOpenIdx = result.indexOf('<|channel>');
-    if (channelOpenIdx !== -1) {
-        result = result.slice(0, channelOpenIdx);
-    }
-
-    return result.trimStart();
-}
-
-/**
  * Calls the AI to condense messagesToCompress into a compact narrative.
  *
  * NOTE: role:'system' must not appear in the messages array — call_ai_api
@@ -185,23 +145,31 @@ async function generateSummary(
     const unlisten = await listen<{ token: string }>('ai-token', (event) => {
         rawBuffer += event.payload.token;
     });
+    // Summary generation ignores reasoning text entirely (only the final
+    // content matters here) but the listener still needs registering so the
+    // 'ai-thinking-token' event doesn't accumulate unhandled while thinking
+    // is enabled for this call.
+    const unlistenThinking = await listen<{ token: string }>('ai-thinking-token', () => {});
 
     try {
         await invoke('call_ai_api', {
             payload: {
-                url:              apiSettings.url,
-                api_key:          apiSettings.apiKey,
-                model:            apiSettings.model,
-                messages:         summarizeMessages,
-                temperature:      0.3,
-                max_tokens:       apiSettings.isThinkingModel
+                url:                apiSettings.url,
+                api_key:            apiSettings.apiKey,
+                model:              apiSettings.model,
+                messages:           summarizeMessages,
+                temperature:        0.3,
+                max_tokens:         apiSettings.isThinkingModel
                     ? SUMMARY_OUTPUT_TOKENS + THINKING_OVERHEAD
                     : SUMMARY_OUTPUT_TOKENS,
-                presence_penalty: 0,
+                presence_penalty:   0,
+                is_thinking_model:  apiSettings.isThinkingModel,
+                thinking_budget:    apiSettings.isThinkingModel ? THINKING_OVERHEAD : undefined,
             },
         });
     } finally {
         unlisten();
+        unlistenThinking();
     }
 
     console.debug('[RollingSummary] rawBuffer length=%d, preview:', 
@@ -214,6 +182,8 @@ async function generateSummary(
     // catches the remaining cases (full <think>…</think> blocks, or a truncated
     // stream where </think> never arrived and processThinkingOutput returns the
     // raw buffer verbatim). It also strips <|channel>…<channel|> blocks.
+    // With reasoning now split into its own event, rawBuffer here is usually
+    // already clean — both stay as a fallback for backends that don't split it.
     const { text: processed } = processThinkingOutput(rawBuffer.trim(), true);
 
     console.debug('[RollingSummary] after processThinkingOutput:', processed.slice(0, 200));
