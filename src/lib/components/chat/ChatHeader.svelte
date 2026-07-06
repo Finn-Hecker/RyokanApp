@@ -24,7 +24,7 @@
     </svg>
   </button>
 
-  <div class="avatar-wrap avatar-wrap--hide-mobile" style="--char-color: {character?.colorHex ?? '#6366f1'}">
+  <div class="avatar-wrap" style="--char-color: {character?.colorHex ?? '#6366f1'}">
     <div class="avatar-ring">
       {#if character?.avatarUrl}
         <img src={character.avatarUrl} alt={character?.name} class="avatar-img" />
@@ -96,9 +96,7 @@
   @media (max-width: 639px) {
     .chat-header {
       padding-top: calc(10px + env(safe-area-inset-top));
-    }
-    .avatar-wrap--hide-mobile {
-      display: none;
+      gap: 10px;
     }
   }
 
