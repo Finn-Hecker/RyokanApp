@@ -48,7 +48,7 @@
   );
 
   const activeTab = $derived<ProviderTab>(
-    customMode
+    appState.apiSettings.customMode
       ? 'cloud'
       : (activeProvider?.tab ?? (
           appState.apiSettings.url.includes('127.0.0.1') ||
@@ -58,20 +58,20 @@
 
   const filteredProviders = $derived(PROVIDERS.filter(p => p.tab === activeTab));
 
-  const showUrl = $derived(powerUser || customMode);
-  const showKey = $derived(powerUser || activeTab === 'cloud' || customMode);
+  const showUrl = $derived(powerUser || appState.apiSettings.customMode);
+  const showKey = $derived(powerUser || activeTab === 'cloud' || appState.apiSettings.customMode);
 
   const keyPlaceholder = $derived(activeProvider?.keyPlaceholder ?? "sk-...");
 
   function switchTab(tab: ProviderTab) {
     if (activeTab === tab) return;
-    customMode = false;
+    appState.apiSettings.customMode = false;
     const first = PROVIDERS.find(p => p.tab === tab);
     if (first) selectProvider(first);
   }
 
   function selectProvider(provider: Provider) {
-    customMode = false;
+    appState.apiSettings.customMode = false;
     appState.apiSettings.url   = provider.url;
     appState.apiSettings.model = "";
     availableModels = [];
@@ -79,7 +79,7 @@
   }
 
   function selectCustom() {
-    customMode = true;
+    appState.apiSettings.customMode = true;
     appState.apiSettings.url   = "";
     appState.apiSettings.model = "";
     availableModels = [];
@@ -173,7 +173,7 @@
         {/each}
 
         {#if activeTab === 'cloud'}
-          <button onclick={selectCustom} class="provider-btn {customMode ? 'provider-btn--active' : ''}">
+          <button onclick={selectCustom} class="provider-btn {appState.apiSettings.customMode ? 'provider-btn--active' : ''}">
             <svg class="provider-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <circle cx="12" cy="12" r="3"/>
               <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" stroke-linecap="round"/>
