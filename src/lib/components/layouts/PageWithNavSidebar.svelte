@@ -11,7 +11,8 @@
     navHeader,
     navFooter,
     actions,
-    mobileNav
+    mobileNav,
+    mobileFooter
   }: {
     pageTitle: string;
     navItems?: Array<{ id: string; label: string; icon?: string }>;
@@ -22,6 +23,7 @@
     navFooter?: Snippet;
     actions?: Snippet;
     mobileNav?: Snippet;
+    mobileFooter?: Snippet;
   } = $props();
 </script>
 
@@ -70,9 +72,15 @@
       {@render actions?.()}
     </div>
 
-    <div class="md:hidden flex gap-2 px-4 py-3 overflow-x-auto no-scrollbar shrink-0 border-b border-white/5">
+    <div class="md:hidden flex gap-2 px-4 py-3 overflow-x-auto no-scrollbar shrink-0 {mobileFooter ? '' : 'border-b border-white/5'}">
       {@render mobileNav?.()}
     </div>
+
+    {#if mobileFooter}
+      <div class="md:hidden px-4 pb-3 shrink-0 border-b border-white/5">
+        {@render mobileFooter()}
+      </div>
+    {/if}
 
     <div class="flex-1 overflow-y-auto overflow-x-hidden">
       {@render children?.()}
