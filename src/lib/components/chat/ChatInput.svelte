@@ -53,7 +53,7 @@
   }
 </script>
 
-<div class="p-4 sm:p-6 shrink-0 w-full relative z-10">
+<div class="px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-6 shrink-0 w-full relative z-10">
   <div class="max-w-3xl mx-auto">
 
     <div class="rounded-[20px] transition-all duration-500 ease-out p-px

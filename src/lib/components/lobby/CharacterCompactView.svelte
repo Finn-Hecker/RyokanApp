@@ -22,7 +22,7 @@
   } = $props();
 </script>
 
-<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:0.75rem;">
+<div class="grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:gap-3 md:[grid-template-columns:repeat(auto-fill,minmax(150px,1fr))]">
   {#each characters as char (char.id)}
     {@const isHidden = characterState.hiddenCharacterIds.has(String(char.id))}
     {@const isPinned = characterState.pinnedCharacterIds.has(String(char.id))}
@@ -49,7 +49,7 @@
         {/if}
       </div>
 
-      <div class="absolute top-1.5 right-1.5 z-20 pointer-events-auto transition-all duration-200 opacity-0 group-hover:opacity-100">
+      <div class="absolute top-1.5 right-1.5 z-20 pointer-events-auto transition-all duration-200 opacity-100 md:opacity-0 md:group-hover:opacity-100">
         <CharacterContextMenu
           {char} {isHidden} {isPinned}
           size="sm"

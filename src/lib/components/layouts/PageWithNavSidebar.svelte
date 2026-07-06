@@ -62,7 +62,7 @@
   </nav>
 
   <div class="flex flex-col flex-1 min-w-0 overflow-hidden">
-    <div class="flex items-center justify-between px-8 pt-6 pb-4">
+    <div class="flex items-center justify-between px-4 md:px-8 pt-[calc(1rem+env(safe-area-inset-top))] md:pt-6 pb-4">
       <div class="md:hidden flex items-center gap-3">
         {@render navHeader?.({ mobile: true })}
       </div>
@@ -70,7 +70,7 @@
       {@render actions?.()}
     </div>
 
-    <div class="md:hidden flex gap-2 px-8 py-3 overflow-x-auto no-scrollbar shrink-0 border-b border-white/5">
+    <div class="md:hidden flex gap-2 px-4 py-3 overflow-x-auto no-scrollbar shrink-0 border-b border-white/5">
       {@render mobileNav?.()}
     </div>
 

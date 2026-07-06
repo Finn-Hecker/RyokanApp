@@ -233,7 +233,7 @@
 
           {#if chat.is_pinned}
             <span
-              class="absolute inset-0 flex items-center justify-center text-ryokan-accent
+              class="hidden lg:flex absolute inset-0 items-center justify-center text-ryokan-accent
                      pointer-events-none transition-opacity duration-150
                      {openMenuId === chat.id ? 'opacity-0' : 'opacity-70 group-hover:opacity-0'}"
               title={m.sidebar_title_pinned()}
@@ -249,9 +249,7 @@
             class="absolute inset-0 flex flex-col items-center justify-center gap-[3.5px]
                    text-gray-500 hover:text-gray-300 hover:bg-white/10 rounded-md
                    transition-opacity duration-150
-                   {chat.is_pinned
-                     ? (openMenuId === chat.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')
-                     : (openMenuId === chat.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}"
+                   {openMenuId === chat.id ? 'opacity-100' : 'opacity-100 lg:opacity-0 lg:group-hover:opacity-100'}"
             aria-label={m.sidebar_aria_options()}
           >
             <span class="block w-[3.5px] h-[3.5px] rounded-full bg-current"></span>
@@ -371,7 +369,7 @@
   ></button>
 
   <aside class="fixed left-0 top-0 bottom-0 w-72 border-r border-white/5 shadow-2xl z-50 flex flex-col bg-ryokan-sidebar">
-    <div class="p-6 border-b border-white/5 flex justify-between items-center shrink-0">
+    <div class="p-6 pt-[calc(1.5rem+env(safe-area-inset-top))] border-b border-white/5 flex justify-between items-center shrink-0">
       <h2 class="text-lg font-medium text-ryokan-accent">{m.history_title()}</h2>
       <button onclick={close} aria-label={m.history_close_label()} class="text-gray-500 hover:text-white">✕</button>
     </div>

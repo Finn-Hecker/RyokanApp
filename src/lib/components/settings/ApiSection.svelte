@@ -328,8 +328,14 @@
 
   .provider-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 8px;
+  }
+
+  @media (min-width: 640px) {
+    .provider-grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
   }
 
   .provider-btn {
@@ -400,9 +406,17 @@
 
   .ctx-row {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  @media (min-width: 640px) {
+    .ctx-row {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
   }
   .ctx-chips {
     display: flex;
@@ -411,8 +425,10 @@
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 10px;
     padding: 3px;
+    overflow-x: auto;
   }
   .ctx-chip {
+    flex-shrink: 0;
     padding: 5px 10px;
     border-radius: 7px;
     border: 1px solid transparent;

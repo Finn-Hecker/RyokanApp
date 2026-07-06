@@ -140,9 +140,9 @@
   {sidebar}
   {header}
 >
-  <header class="mb-6">
-    <h1 class="text-4xl font-medium text-gray-100 mb-3 tracking-tight">{m.welcome_title()}</h1>
-    <p class="text-gray-500 text-lg">
+  <header class="mb-4 md:mb-6">
+    <h1 class="text-2xl sm:text-3xl md:text-4xl font-medium text-gray-100 mb-2 md:mb-3 tracking-tight">{m.welcome_title()}</h1>
+    <p class="text-gray-500 text-base md:text-lg">
       {m.lobby_subtitle_pre()} <span class="text-ryokan-accent">{m.lobby_subtitle_highlight()}</span> {m.lobby_subtitle_post()}
     </p>
   </header>

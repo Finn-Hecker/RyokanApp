@@ -73,7 +73,7 @@
     tabindex="-1"
     onclick={stopProp}
     onkeydown={stopProp}
-    class="absolute right-0 top-full mt-1.5 w-44 bg-[#16161f] border border-ryokan-accent/[0.22] rounded-xl z-30 py-1 overflow-hidden"
+    class="absolute right-0 top-full mt-1.5 w-44 max-w-[calc(100vw-2rem)] bg-[#16161f] border border-ryokan-accent/[0.22] rounded-xl z-30 py-1 overflow-hidden"
     style="box-shadow: 0 20px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(212,180,131,0.04) inset;"
   >
     {#if char.isCustom}

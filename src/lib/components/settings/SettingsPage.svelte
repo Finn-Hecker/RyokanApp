@@ -168,7 +168,7 @@
   {actions}
   {mobileNav}
 >
-  <div class="max-w-xl mx-auto px-8 pb-32 space-y-10 pt-8">
+  <div class="max-w-xl mx-auto px-4 md:px-8 pb-32 space-y-10 pt-8">
     <div bind:this={sectionEls["api"]}>
       <ApiSection {powerUser} />
     </div>

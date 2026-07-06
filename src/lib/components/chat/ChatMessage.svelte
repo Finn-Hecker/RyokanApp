@@ -139,9 +139,10 @@
         </div>
         {#if canEdit && !isGenerating}
           <div class="user-ctrl-bar
-            opacity-0 group-hover/usermsg:opacity-100
-            translate-y-0.5 group-hover/usermsg:translate-y-0
-            transition-all duration-200 ease-out pointer-events-none group-hover/usermsg:pointer-events-auto">
+            opacity-100 translate-y-0 pointer-events-auto
+            sm:opacity-0 sm:group-hover/usermsg:opacity-100
+            sm:translate-y-0.5 sm:group-hover/usermsg:translate-y-0
+            transition-all duration-200 ease-out sm:pointer-events-none sm:group-hover/usermsg:pointer-events-auto">
             <button
               class="ctrl-btn ctrl-btn--label"
               onclick={handleEditOpen}
@@ -163,7 +164,7 @@
 {:else}
   <div class="flex items-start gap-5 max-w-full sm:max-w-2xl lg:max-w-[720px]">
 
-    <div class="shrink-0 w-10 h-10 rounded-xl overflow-hidden ring-1 ring-ryokan-accent/20 mt-1 shadow-md">
+    <div class="hidden sm:block shrink-0 w-10 h-10 rounded-xl overflow-hidden ring-1 ring-ryokan-accent/20 mt-1 shadow-md">
       {#if character?.avatarUrl}
         <img src={character.avatarUrl} alt={character.name} class="w-full h-full object-cover select-none"/>
       {:else}
@@ -226,9 +227,10 @@
 
         {#if showControls}
           <div class="controls-bar
-            opacity-0 group-hover/message:opacity-100
-            translate-y-0.5 group-hover/message:translate-y-0
-            transition-all duration-200 ease-out pointer-events-none group-hover/message:pointer-events-auto">
+            opacity-100 translate-y-0 pointer-events-auto
+            sm:opacity-0 sm:group-hover/message:opacity-100
+            sm:translate-y-0.5 sm:group-hover/message:translate-y-0
+            transition-all duration-200 ease-out sm:pointer-events-none sm:group-hover/message:pointer-events-auto">
 
             {#if canSwipe}
               <button
