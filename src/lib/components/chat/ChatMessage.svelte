@@ -12,9 +12,12 @@
     canRetry = false,
     canEdit = false,
     canSwipe = false,
+    canCloneFrom = false,
+    cloneDisabled = false,
     character = null,
     onRetry,
-    onEditSave
+    onEditSave,
+    onCloneFrom
   }: {
     msg: DisplayMessage;
     isGenerating?: boolean;
@@ -22,9 +25,12 @@
     canRetry?: boolean;
     canEdit?: boolean;
     canSwipe?: boolean;
+    canCloneFrom?: boolean;
+    cloneDisabled?: boolean;
     character?: any;
     onRetry?: (data: { msgId: string }) => void;
     onEditSave?: (data: { msgId: string; newContent: string }) => void;
+    onCloneFrom?: (data: { msgId: string }) => void;
   } = $props();
 
   let editMode = $state(false);
@@ -32,6 +38,7 @@
   let msgEl = $state<HTMLDivElement | null>(null);
   let editWidth = $state(0);
   let editHeight = $state(0);
+  let isCloning = $state(false);
 
   // Swipe animation state — null means no animation (e.g. on mount or after streaming)
   let slideDir = $state<null | 'left' | 'right' | 'enter'>(null);
@@ -49,7 +56,7 @@
   let canGoLeft     = $derived(canSwipe && currentIndex > 0);
   let canGoRight    = $derived(canSwipe && currentIndex < totalVariants - 1);
 
-  let showControls  = $derived(canSwipe || (canEdit && !isGenerating));
+  let showControls  = $derived(canSwipe || (canEdit && !isGenerating) || (canCloneFrom && !isGenerating));
   let showDots      = $derived(isLast && isGenerating && !msg.text);
 
   async function navigateSwipe(direction: 'left' | 'right') {
@@ -92,6 +99,16 @@
   function handleEditKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleEditSave();
     if (e.key === 'Escape') handleEditCancel();
+  }
+
+  async function handleCloneFromHere() {
+    if (!msg.id || isCloning || cloneDisabled) return;
+    isCloning = true;
+    try {
+      await onCloneFrom?.({ msgId: msg.id });
+    } finally {
+      isCloning = false;
+    }
   }
 </script>
 
@@ -272,7 +289,7 @@
               {/if}
             {/if}
 
-            {#if canSwipe && canEdit && !isGenerating}
+            {#if canSwipe && (canEdit || canCloneFrom) && !isGenerating}
               <span class="ctrl-divider"></span>
             {/if}
 
@@ -288,6 +305,28 @@
                   <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                 </svg>
                 <span>{m.chat_edit()}</span>
+              </button>
+            {/if}
+
+            {#if canEdit && canCloneFrom && !isGenerating}
+              <span class="ctrl-divider"></span>
+            {/if}
+
+            {#if canCloneFrom && !isGenerating}
+              <button
+                class="ctrl-btn ctrl-btn--label"
+                disabled={isCloning || cloneDisabled}
+                onclick={handleCloneFromHere}
+                aria-label={m.chat_clone_from_here_label()}
+                title={m.chat_clone_from_here_title()}
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="6" y1="3" x2="6" y2="15"/>
+                  <circle cx="18" cy="6" r="3"/>
+                  <circle cx="6" cy="18" r="3"/>
+                  <path d="M18 9a9 9 0 0 1-9 9"/>
+                </svg>
+                <span>{isCloning ? m.chat_clone_from_here_loading() : m.chat_clone_from_here_label()}</span>
               </button>
             {/if}
 

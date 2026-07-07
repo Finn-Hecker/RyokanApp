@@ -4,7 +4,7 @@
   import { tick, onMount, onDestroy } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { roleState } from '$lib/stores/roleStore.svelte';
-  import { chatState, addMessage, addSwipeVariant, loadMessages, updateMessage, deleteMessage, setSwipeIndex, loadMoreMessages } from '$lib/stores/chatStore.svelte';
+  import { chatState, addMessage, addSwipeVariant, loadMessages, updateMessage, deleteMessage, setSwipeIndex, loadMoreMessages, cloneChatFromMessage } from '$lib/stores/chatStore.svelte';
   import { runGeneration } from '$lib/utils/chatApi';
   import { summaryState, checkAndSummarizeIfNeeded } from '$lib/utils/rollingSummary.svelte';
   import * as m from '$lib/paraglide/messages';
@@ -29,12 +29,20 @@
   let pendingUserMessage = $state('');
   let retryingMsgId = $state<string | null>(null);
   let isLoadingMore = $state(false);
+  let cloneCooldown = $state(false);
+  let cloneCooldownTimer: ReturnType<typeof setTimeout> | undefined;
 
   let isBlocked = $derived(isGenerating || summaryState.isSummarizing);
 
   let activeRole = $derived(
     roleState.allRoles.find(p => p.id === roleState.activeRoleId) ?? null
   );
+
+  // The active conversation's own record — used to show a "cloned chat" badge.
+  let activeConversation = $derived(
+    chatState.conversations.find(c => c.id === chatState.activeChatId) ?? null
+  );
+  let clonedFromTitle = $derived(activeConversation?.cloned_from_title ?? null);
 
   let unlistenClose: (() => void) | undefined;
 
@@ -55,6 +63,7 @@
     if (isGenerating) invoke('stop_generation');
     unlistenClose?.();
     window.removeEventListener('keydown', handleArrowKey);
+    if (cloneCooldownTimer) clearTimeout(cloneCooldownTimer);
   });
 
   function handleArrowKey(e: KeyboardEvent) {
@@ -350,6 +359,25 @@
     }
   }
 
+  async function handleCloneFromMessage({ msgId }: { msgId: string }) {
+    if (isBlocked || cloneCooldown) return;
+
+    cloneCooldown = true;
+    if (cloneCooldownTimer) clearTimeout(cloneCooldownTimer);
+    cloneCooldownTimer = setTimeout(() => { cloneCooldown = false; }, 5000);
+
+    const newChatId = await cloneChatFromMessage(msgId);
+    if (!newChatId) {
+      errorMessage = m.chat_clone_error();
+      showErrorModal = true;
+      return;
+    }
+
+    // Jump straight into the freshly cloned chat.
+    autoscroll = true;
+    await loadMessages(newChatId);
+  }
+
   async function retryAfterError() {
     showErrorModal = false;
     if (pendingUserMessage) await generate(pendingUserMessage, false);
@@ -374,6 +402,7 @@
   <ChatHeader
     character={appState.activeCharacter}
     isTyping={isGenerating}
+    {clonedFromTitle}
     onBack={() => {
       chatState.activeChatId = null;
       chatState.currentMessages = [];
@@ -416,8 +445,11 @@
               ? msg.id === lastUserMsgId
               : msg.id !== firstAiMsgId
           )}
+          canCloneFrom={!isBlocked && !msg.isUser && msg.id !== 'temp-stream'}
+          cloneDisabled={cloneCooldown}
           onRetry={handleRetry}
           onEditSave={handleEditSave}
+          onCloneFrom={handleCloneFromMessage}
         />
       {/each}
 

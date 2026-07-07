@@ -18,12 +18,15 @@ pub struct DbMessage {
 }
 
 /// Retrieves the full, chronological message history for a specific conversation.
+/// rowid is a tiebreaker for rows sharing the same created_at second (e.g.
+/// rapid inserts, or messages copied in bulk when cloning a chat) — it
+/// always reflects true insertion order.
 #[tauri::command]
 pub fn get_messages(app: AppHandle, chat_id: String) -> Result<Vec<DbMessage>, String> {
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare(
         "SELECT id, conversation_id, role, content, swipe_variants, swipe_index \
-         FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC"
+         FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC, rowid ASC"
     ).map_err(|e| e.to_string())?;
 
     let rows = stmt.query_map(params![chat_id], |row| {
@@ -198,11 +201,15 @@ pub fn delete_message(app: AppHandle, id: String) -> Result<(), String> {
 pub fn get_messages_page(app: AppHandle, chat_id: String, limit: i64, offset: i64) -> Result<Vec<DbMessage>, String> {
     let conn = get_connection(&app)?;
     
-    // Sort by newest first, use limit/offset to fetch the chunk
+    // Sort by newest first, use limit/offset to fetch the chunk.
+    // rowid is a tiebreaker for rows sharing the same created_at second — it
+    // always reflects true insertion order, unlike a timestamp with only
+    // second-level resolution (relevant e.g. right after cloning a chat,
+    // where many messages get inserted within the same second).
     let mut stmt = conn.prepare(
         "SELECT id, conversation_id, role, content, swipe_variants, swipe_index \
          FROM messages WHERE conversation_id = ?1 \
-         ORDER BY created_at DESC \
+         ORDER BY created_at DESC, rowid DESC \
          LIMIT ?2 OFFSET ?3"
     ).map_err(|e| e.to_string())?;
 

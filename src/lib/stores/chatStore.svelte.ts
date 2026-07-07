@@ -21,6 +21,10 @@ export interface Conversation {
     updated_at: string;
     is_pinned: boolean;
     formattedDate?: string;
+    /** Set if this chat was branched off another chat via "start new chat from here". */
+    cloned_from_id?: string | null;
+    /** Title of the source chat at the time it was cloned. */
+    cloned_from_title?: string | null;
 }
 
 export interface DisplayMessage {
@@ -148,6 +152,27 @@ export async function openHistoryChat(chatId: string) {
         } else {
             console.warn("Could not find a character for this chat.");
         }
+    }
+}
+
+/**
+ * Clones the currently active chat up to and including a specific AI
+ * message, creating a brand-new, independent conversation. The original
+ * chat is left untouched. Returns the new chat's id, or null on failure.
+ */
+export async function cloneChatFromMessage(messageId: string): Promise<string | null> {
+    const chatId = chatState.activeChatId;
+    if (!chatId) return null;
+    try {
+        const newChatId = await invoke<string>('clone_chat_from_message', {
+            chatId,
+            upToMessageId: messageId,
+        });
+        await loadAllConversations();
+        return newChatId;
+    } catch (e) {
+        console.error(e);
+        return null;
     }
 }
 

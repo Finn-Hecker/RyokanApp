@@ -46,7 +46,9 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             character_id TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            is_pinned INTEGER NOT NULL DEFAULT 0
+            is_pinned INTEGER NOT NULL DEFAULT 0,
+            cloned_from_id TEXT,
+            cloned_from_title TEXT
         );
 
         CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at DESC);
@@ -127,6 +129,16 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
     );
     let _ = conn.execute_batch(
         "ALTER TABLE conversations ADD COLUMN summary_last_message_id TEXT;"
+    );
+
+    // ── Migration: add "start new chat from here" clone-tracking columns ──
+    // cloned_from_id points at the source conversation; cloned_from_title is a
+    // snapshot of its title so the UI badge still works if that chat gets deleted.
+    let _ = conn.execute_batch(
+        "ALTER TABLE conversations ADD COLUMN cloned_from_id TEXT;"
+    );
+    let _ = conn.execute_batch(
+        "ALTER TABLE conversations ADD COLUMN cloned_from_title TEXT;"
     );
 
     Ok(())

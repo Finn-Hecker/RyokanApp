@@ -13,6 +13,12 @@ pub struct Conversation {
     pub created_at: String,
     pub updated_at: String,
     pub is_pinned: bool,
+    /// Set if this conversation was created via "start new chat from here" —
+    /// points at the conversation it was branched off of.
+    pub cloned_from_id: Option<String>,
+    /// Snapshot of the source conversation's title at clone time, so the
+    /// badge in the UI still works even if the source chat is later deleted.
+    pub cloned_from_title: Option<String>,
 }
 
 /// Retrieves all chat sessions, ordered by the most recently active.
@@ -20,7 +26,8 @@ pub struct Conversation {
 pub fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare(
-        "SELECT id, title, character_id, created_at, updated_at, is_pinned
+        "SELECT id, title, character_id, created_at, updated_at, is_pinned,
+                cloned_from_id, cloned_from_title
          FROM conversations
          ORDER BY is_pinned DESC, updated_at DESC"
     ).map_err(|e| e.to_string())?;
@@ -33,6 +40,8 @@ pub fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
             created_at: row.get(3)?,
             updated_at: row.get(4)?,
             is_pinned: row.get::<_, i64>(5)? != 0,
+            cloned_from_id: row.get(6)?,
+            cloned_from_title: row.get(7)?,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -46,7 +55,8 @@ pub fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
 pub fn get_conversations_page(app: AppHandle, limit: i64, offset: i64) -> Result<Vec<Conversation>, String> {
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare(
-        "SELECT id, title, character_id, created_at, updated_at, is_pinned
+        "SELECT id, title, character_id, created_at, updated_at, is_pinned,
+                cloned_from_id, cloned_from_title
          FROM conversations
          ORDER BY is_pinned DESC, updated_at DESC
          LIMIT ?1 OFFSET ?2"
@@ -60,6 +70,8 @@ pub fn get_conversations_page(app: AppHandle, limit: i64, offset: i64) -> Result
             created_at: row.get(3)?,
             updated_at: row.get(4)?,
             is_pinned: row.get::<_, i64>(5)? != 0,
+            cloned_from_id: row.get(6)?,
+            cloned_from_title: row.get(7)?,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -98,6 +110,76 @@ pub fn create_chat(app: AppHandle, character_id: String, character_name: String,
     tx.commit().map_err(|e| e.to_string())?;
     
     Ok(new_id)
+}
+
+/// Clones a conversation up to and including one specific message, creating a
+/// brand-new, independent chat that starts out with a full copy of the
+/// history so far. Used by the "start new chat from here" action on an AI
+/// message. Everything after the cut-off message is intentionally NOT
+/// copied, and the original conversation is left completely untouched.
+#[tauri::command]
+pub fn clone_chat_from_message(
+    app: AppHandle,
+    chat_id: String,
+    up_to_message_id: String,
+) -> Result<String, String> {
+    let mut conn = get_connection(&app)?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    // Snapshot of the source conversation (title + character).
+    let (source_title, character_id): (String, Option<String>) = tx.query_row(
+        "SELECT title, character_id FROM conversations WHERE id = ?1",
+        params![chat_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ).map_err(|e| e.to_string())?;
+
+    // All messages in chronological order, so we can cut at the right spot.
+    // rowid is a tiebreaker for messages sharing the same created_at second
+    // (e.g. rapid inserts) — it always reflects true insertion order.
+    let mut stmt = tx.prepare(
+        "SELECT id, role, content, swipe_variants, swipe_index
+         FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC, rowid ASC"
+    ).map_err(|e| e.to_string())?;
+
+    let all_messages: Vec<(String, String, String, String, i64)> = stmt
+        .query_map(params![chat_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+        }).map_err(|e| e.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|e| e.to_string())?;
+    drop(stmt);
+
+    let cut_idx = all_messages
+        .iter()
+        .position(|(id, ..)| *id == up_to_message_id)
+        .ok_or_else(|| "Nachricht wurde nicht gefunden.".to_string())?;
+    let messages_to_copy = &all_messages[..=cut_idx];
+
+    // Create the new conversation, remembering where it came from.
+    let new_chat_id = Uuid::new_v4().to_string();
+    let new_title = format!("🔗 {}", source_title);
+
+    tx.execute(
+        "INSERT INTO conversations (id, title, character_id, cloned_from_id, cloned_from_title)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![new_chat_id, new_title, character_id, chat_id, source_title],
+    ).map_err(|e| e.to_string())?;
+
+    // Copy every message up to the cut-off with fresh ids, preserving role,
+    // content and swipe history. Inserted in order so created_at / rowid
+    // ordering matches the original conversation.
+    for (_, role, content, swipe_variants, swipe_index) in messages_to_copy {
+        let new_msg_id = Uuid::new_v4().to_string();
+        tx.execute(
+            "INSERT INTO messages (id, conversation_id, role, content, swipe_variants, swipe_index)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![new_msg_id, new_chat_id, role, content, swipe_variants, swipe_index],
+        ).map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+
+    Ok(new_chat_id)
 }
 
 /// Renames an existing conversation.

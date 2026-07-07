@@ -4,10 +4,12 @@
   let {
     character = null,
     isTyping = false,
+    clonedFromTitle = null,
     onBack
   }: {
     character?: any;
     isTyping?: boolean;
+    clonedFromTitle?: string | null;
     onBack?: () => void;
   } = $props();
 
@@ -38,7 +40,23 @@
   </div>
 
   <div class="meta">
-    <h2 class="char-name">{character?.name ?? '—'}</h2>
+    <div class="name-row">
+      <h2 class="char-name">{character?.name ?? '—'}</h2>
+      {#if clonedFromTitle}
+        <span
+          class="clone-badge"
+          title={m.chat_cloned_badge_tooltip({ title: clonedFromTitle })}
+        >
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="6" y1="3" x2="6" y2="15"/>
+            <circle cx="18" cy="6" r="3"/>
+            <circle cx="6" cy="18" r="3"/>
+            <path d="M18 9a9 9 0 0 1-9 9"/>
+          </svg>
+          <span>{m.chat_cloned_badge()}</span>
+        </span>
+      {/if}
+    </div>
     <div class="status-row" aria-live="polite">
       {#if isTyping}
         <span class="status-text">{m.chat_typing_indicator()}</span>
@@ -184,6 +202,13 @@
     gap: 2px;
   }
 
+  .name-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+  }
+
   .char-name {
     font-size: 13.5px;
     font-weight: 600;
@@ -194,6 +219,29 @@
     line-height: 1.2;
     letter-spacing: -0.01em;
     margin: 0;
+  }
+
+  .clone-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(212, 180, 131, 0.12);
+    border: 1px solid rgba(212, 180, 131, 0.28);
+    color: #d4b483;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    cursor: default;
+  }
+
+  @media (max-width: 639px) {
+    .clone-badge span:last-child {
+      display: none;
+    }
   }
 
   .status-row {

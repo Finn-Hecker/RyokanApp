@@ -203,6 +203,12 @@
   "chat_input_ooc_title_active": "Regiemodus beenden",
   "chat_input_ooc_title_inactive": "Regiemodus starten",
   "chat_summarizing_memories": "Erinnerungen werden sortiert…",
+  "chat_clone_from_here_label": "Neuer Chat ab hier",
+  "chat_clone_from_here_title": "Ab hier neuen Chat starten",
+  "chat_clone_from_here_loading": "Wird geklont…",
+  "chat_cloned_badge": "Geklonter Chat",
+  "chat_cloned_badge_tooltip": "Geklont aus „{title}“",
+  "chat_clone_error": "Der Chat konnte nicht geklont werden. Bitte versuche es erneut.",
 
   "history_title": "Deine Reisen",
   "history_no_chats": "Noch keine Gespräche.",

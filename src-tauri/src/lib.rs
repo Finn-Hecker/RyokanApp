@@ -23,6 +23,7 @@ pub fn run() {
             database::chats::get_conversations_page,
             database::chats::save_summary_meta,
             database::chats::get_summary_meta,
+            database::chats::clone_chat_from_message,
             database::messages::get_messages,
             database::messages::add_message,
             database::messages::delete_message,

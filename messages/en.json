@@ -202,6 +202,12 @@
   "chat_input_ooc_title_active": "End director mode",
   "chat_input_ooc_title_inactive": "Start director mode",
   "chat_summarizing_memories": "Sorting memories…",
+  "chat_clone_from_here_label": "New chat from here",
+  "chat_clone_from_here_title": "Start a new chat from here",
+  "chat_clone_from_here_loading": "Cloning…",
+  "chat_cloned_badge": "Cloned chat",
+  "chat_cloned_badge_tooltip": "Cloned from \"{title}\"",
+  "chat_clone_error": "The chat could not be cloned. Please try again.",
 
   "history_title": "Your Journeys",
   "history_no_chats": "No conversations yet.",
