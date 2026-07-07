@@ -40,6 +40,10 @@
     api_max_tokens:       (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.maxTokens = n; },
     api_presence_penalty: (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.presencePenalty = n; },
     api_context_limit:    (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.contextLimit = n; },
+    api_top_p:             (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.topP = n; },
+    api_top_k:             (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.topK = n; },
+    api_min_p:              (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.minP = n; },
+    api_frequency_penalty: (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.frequencyPenalty = n; },
     settings_power_user:  (v) => { powerUser = v === "true"; },
   };
 
@@ -53,6 +57,10 @@
       if (appState.apiSettings.maxTokens == null) appState.apiSettings.maxTokens = 300;
       if (appState.apiSettings.presencePenalty == null) appState.apiSettings.presencePenalty = 1.1;
       if (appState.apiSettings.contextLimit == null) appState.apiSettings.contextLimit = 4096;
+      if (appState.apiSettings.topP == null) appState.apiSettings.topP = 0.9;
+      if (appState.apiSettings.topK == null) appState.apiSettings.topK = 40;
+      if (appState.apiSettings.minP == null) appState.apiSettings.minP = 0.05;
+      if (appState.apiSettings.frequencyPenalty == null) appState.apiSettings.frequencyPenalty = 0;
 
       console.log("[Settings] Loaded values:", {
         url:             appState.apiSettings.url,
@@ -65,6 +73,10 @@
         maxTokens:       appState.apiSettings.maxTokens,
         presencePenalty: appState.apiSettings.presencePenalty,
         contextLimit:    appState.apiSettings.contextLimit,
+        topP:            appState.apiSettings.topP,
+        topK:            appState.apiSettings.topK,
+        minP:            appState.apiSettings.minP,
+        frequencyPenalty: appState.apiSettings.frequencyPenalty,
         powerUser,
       });
     } catch (err) {
@@ -87,6 +99,10 @@
         saveSetting("api_max_tokens",       appState.apiSettings.maxTokens ?? 300),
         saveSetting("api_presence_penalty", appState.apiSettings.presencePenalty ?? 1.1),
         saveSetting("api_context_limit",    appState.apiSettings.contextLimit ?? 4096),
+        saveSetting("api_top_p",             appState.apiSettings.topP ?? 0.9),
+        saveSetting("api_top_k",             appState.apiSettings.topK ?? 40),
+        saveSetting("api_min_p",             appState.apiSettings.minP ?? 0.05),
+        saveSetting("api_frequency_penalty", appState.apiSettings.frequencyPenalty ?? 0),
         saveSetting("settings_power_user",  powerUser),
       ]);
       const locale = appState.pendingUiLocale;

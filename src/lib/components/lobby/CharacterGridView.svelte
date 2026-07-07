@@ -24,7 +24,7 @@
   } = $props();
 </script>
 
-<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4 md:[grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]">
+<div class="grid grid-cols-1 gap-3 sm:grid-cols-3 md:gap-4 md:[grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]">
   {#each characters as char (char.id)}
     {@const isHidden = characterState.hiddenCharacterIds.has(String(char.id))}
     {@const isPinned = characterState.pinnedCharacterIds.has(String(char.id))}

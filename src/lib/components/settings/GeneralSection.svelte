@@ -44,6 +44,30 @@
     { label: m.settings_penalty_preset_strict(),   value: 1.25, hint: m.settings_penalty_preset_strict_hint() },
   ];
 
+  $: TOP_P_PRESETS = [
+    { label: m.settings_topp_preset_focused(),  value: 0.5, hint: m.settings_topp_preset_focused_hint() },
+    { label: m.settings_topp_preset_balanced(), value: 0.9, hint: m.settings_topp_preset_balanced_hint() },
+    { label: m.settings_topp_preset_diverse(),  value: 1.0, hint: m.settings_topp_preset_diverse_hint() },
+  ];
+
+  $: TOP_K_PRESETS = [
+    { label: m.settings_topk_preset_narrow(),   value: 20, hint: m.settings_topk_preset_narrow_hint() },
+    { label: m.settings_topk_preset_balanced(), value: 40, hint: m.settings_topk_preset_balanced_hint() },
+    { label: m.settings_topk_preset_wide(),     value: 80, hint: m.settings_topk_preset_wide_hint() },
+  ];
+
+  $: MIN_P_PRESETS = [
+    { label: m.settings_minp_preset_off(),  value: 0,    hint: m.settings_minp_preset_off_hint() },
+    { label: m.settings_minp_preset_low(),  value: 0.05, hint: m.settings_minp_preset_low_hint() },
+    { label: m.settings_minp_preset_high(), value: 0.1,  hint: m.settings_minp_preset_high_hint() },
+  ];
+
+  $: FREQ_PENALTY_PRESETS = [
+    { label: m.settings_freqpenalty_preset_off(),    value: 0,   hint: m.settings_freqpenalty_preset_off_hint() },
+    { label: m.settings_freqpenalty_preset_light(),  value: 0.3, hint: m.settings_freqpenalty_preset_light_hint() },
+    { label: m.settings_freqpenalty_preset_strong(), value: 0.6, hint: m.settings_freqpenalty_preset_strong_hint() },
+  ];
+
   function closestPreset(presets: {value: number}[], current: number): number | null {
     const match = presets.find(p => Math.abs(p.value - current) < 0.001);
     return match ? match.value : null;
@@ -65,6 +89,18 @@
   }
   function clampThinkingBudget(v: number) {
     return Math.max(500, Math.min(10000, Math.round(v / 100) * 100));
+  }
+  function clampTopP(v: number) {
+    return Math.max(0, Math.min(1, Math.round(v * 100) / 100));
+  }
+  function clampTopK(v: number) {
+    return Math.max(0, Math.min(200, Math.round(v)));
+  }
+  function clampMinP(v: number) {
+    return Math.max(0, Math.min(0.5, Math.round(v * 100) / 100));
+  }
+  function clampFreqPenalty(v: number) {
+    return Math.max(0, Math.min(2, Math.round(v * 100) / 100));
   }
 </script>
 
@@ -261,6 +297,175 @@
       </div>
     {/if}
 
+    <div class="settings-divider"></div>
+    <span class="sampling-subheading">{m.settings_section_sampling_advanced()}</span>
+
+    <div>
+      <div class="flex items-center justify-between mb-2">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="settings-label" style="margin-bottom:0">{m.settings_topp_label()}</span>
+          <Tooltip>
+            {m.settings_topp_tooltip_p1()}<br><br>
+            {m.settings_topp_tooltip_p2()}<br><br>
+            <span class="tooltip-hint">{m.settings_topp_tooltip_hint()}</span>
+          </Tooltip>
+        </div>
+        {#if powerUser}
+          <span class="power-value">{(appState.apiSettings.topP ?? 0.9).toFixed(2)}</span>
+        {/if}
+      </div>
+      {#if powerUser}
+        <div in:fade={{ duration: 250, delay: 30 }}>
+          <input
+            type="range" min="0" max="1" step="0.01"
+            value={appState.apiSettings.topP ?? 0.9}
+            on:input={(e) => { appState.apiSettings.topP = clampTopP(+e.currentTarget.value); }}
+            class="power-slider"
+            aria-label={m.settings_topp_label()}
+          />
+          <div class="slider-bounds"><span>{m.settings_slider_focused()}</span><span>{m.settings_slider_diverse()}</span></div>
+        </div>
+      {:else}
+        <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 30 }}>
+          {#each TOP_P_PRESETS as preset}
+            <button
+              on:click={() => (appState.apiSettings.topP = preset.value)}
+              class="preset-btn {closestPreset(TOP_P_PRESETS, appState.apiSettings.topP ?? 0.9) === preset.value ? 'preset-btn--active' : ''}"
+            >
+              <span class="preset-label">{preset.label}</span>
+              <span class="preset-hint">{preset.hint}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
+    <div class="settings-divider"></div>
+
+    <div>
+      <div class="flex items-center justify-between mb-2">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="settings-label" style="margin-bottom:0">{m.settings_topk_label()}</span>
+          <Tooltip>
+            {m.settings_topk_tooltip_p1()}<br><br>
+            {m.settings_topk_tooltip_p2()}<br><br>
+            <span class="tooltip-hint">{m.settings_topk_tooltip_hint()}</span>
+          </Tooltip>
+        </div>
+        {#if powerUser}
+          <span class="power-value">{appState.apiSettings.topK ?? 40}</span>
+        {/if}
+      </div>
+      {#if powerUser}
+        <div in:fade={{ duration: 250, delay: 30 }}>
+          <input
+            type="range" min="0" max="200" step="1"
+            value={appState.apiSettings.topK ?? 40}
+            on:input={(e) => { appState.apiSettings.topK = clampTopK(+e.currentTarget.value); }}
+            class="power-slider"
+            aria-label={m.settings_topk_label()}
+          />
+          <div class="slider-bounds"><span>{m.settings_slider_narrow()}</span><span>{m.settings_slider_wide()}</span></div>
+        </div>
+      {:else}
+        <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 30 }}>
+          {#each TOP_K_PRESETS as preset}
+            <button
+              on:click={() => (appState.apiSettings.topK = preset.value)}
+              class="preset-btn {closestPreset(TOP_K_PRESETS, appState.apiSettings.topK ?? 40) === preset.value ? 'preset-btn--active' : ''}"
+            >
+              <span class="preset-label">{preset.label}</span>
+              <span class="preset-hint">{preset.hint}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
+    <div class="settings-divider"></div>
+
+    <div>
+      <div class="flex items-center justify-between mb-2">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="settings-label" style="margin-bottom:0">{m.settings_minp_label()}</span>
+          <Tooltip>
+            {m.settings_minp_tooltip_p1()}<br><br>
+            {m.settings_minp_tooltip_p2()}<br><br>
+            <span class="tooltip-hint">{m.settings_minp_tooltip_hint()}</span>
+          </Tooltip>
+        </div>
+        {#if powerUser}
+          <span class="power-value">{(appState.apiSettings.minP ?? 0.05).toFixed(2)}</span>
+        {/if}
+      </div>
+      {#if powerUser}
+        <div in:fade={{ duration: 250, delay: 30 }}>
+          <input
+            type="range" min="0" max="0.5" step="0.01"
+            value={appState.apiSettings.minP ?? 0.05}
+            on:input={(e) => { appState.apiSettings.minP = clampMinP(+e.currentTarget.value); }}
+            class="power-slider"
+            aria-label={m.settings_minp_label()}
+          />
+          <div class="slider-bounds"><span>{m.settings_slider_off()}</span><span>{m.settings_slider_strict()}</span></div>
+        </div>
+      {:else}
+        <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 30 }}>
+          {#each MIN_P_PRESETS as preset}
+            <button
+              on:click={() => (appState.apiSettings.minP = preset.value)}
+              class="preset-btn {closestPreset(MIN_P_PRESETS, appState.apiSettings.minP ?? 0.05) === preset.value ? 'preset-btn--active' : ''}"
+            >
+              <span class="preset-label">{preset.label}</span>
+              <span class="preset-hint">{preset.hint}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
+    <div class="settings-divider"></div>
+
+    <div>
+      <div class="flex items-center justify-between mb-2">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="settings-label" style="margin-bottom:0">{m.settings_freqpenalty_label()}</span>
+          <Tooltip>
+            {m.settings_freqpenalty_tooltip_p1()}<br><br>
+            {m.settings_freqpenalty_tooltip_p2()}<br><br>
+            <span class="tooltip-hint">{m.settings_freqpenalty_tooltip_hint()}</span>
+          </Tooltip>
+        </div>
+        {#if powerUser}
+          <span class="power-value">{(appState.apiSettings.frequencyPenalty ?? 0).toFixed(2)}</span>
+        {/if}
+      </div>
+      {#if powerUser}
+        <div in:fade={{ duration: 250, delay: 30 }}>
+          <input
+            type="range" min="0" max="2" step="0.01"
+            value={appState.apiSettings.frequencyPenalty ?? 0}
+            on:input={(e) => { appState.apiSettings.frequencyPenalty = clampFreqPenalty(+e.currentTarget.value); }}
+            class="power-slider"
+            aria-label={m.settings_freqpenalty_label()}
+          />
+          <div class="slider-bounds"><span>{m.settings_slider_off()}</span><span>{m.settings_slider_strict()}</span></div>
+        </div>
+      {:else}
+        <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 30 }}>
+          {#each FREQ_PENALTY_PRESETS as preset}
+            <button
+              on:click={() => (appState.apiSettings.frequencyPenalty = preset.value)}
+              class="preset-btn {closestPreset(FREQ_PENALTY_PRESETS, appState.apiSettings.frequencyPenalty ?? 0) === preset.value ? 'preset-btn--active' : ''}"
+            >
+              <span class="preset-label">{preset.label}</span>
+              <span class="preset-hint">{preset.hint}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
   </div>
 </section>
 {/if}
@@ -332,6 +537,16 @@
     line-height: 1.3;
   }
   .preset-btn--active .preset-hint { opacity: 0.65; }
+
+  .sampling-subheading {
+    display: block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #48484a;
+    margin: -4px 0 2px;
+  }
 
   .power-value {
     font-size: 11px;
