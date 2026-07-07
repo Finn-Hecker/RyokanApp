@@ -265,7 +265,7 @@
     <div class="settings-divider"></div>
 
     <div class="ctx-row">
-      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 0;">
+      <div class="ctx-row-head">
         <span class="settings-label whitespace-nowrap" style="margin-bottom:0">{m.settings_context_label()}</span>
 
         <Tooltip>
@@ -273,6 +273,11 @@
           {m.settings_context_tooltip_p2()}<br><br>
           <span class="tooltip-hint">{m.settings_context_tooltip_hint()}</span>
         </Tooltip>
+
+        <span class="ctx-current">
+          {CONTEXT_STEPS.find(s => s.value === (appState.apiSettings.contextLimit ?? 4096))?.label
+            ?? `${appState.apiSettings.contextLimit ?? 4096}`}
+        </span>
       </div>
 
       <div class="ctx-chips">
@@ -410,44 +415,55 @@
     align-items: stretch;
     gap: 10px;
   }
-  @media (min-width: 640px) {
-    .ctx-row {
-      flex-direction: row;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
+  .ctx-row-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ctx-current {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 700;
+    color: #d4b483;
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .ctx-chips {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+  @media (min-width: 420px) {
+    .ctx-chips {
+      grid-template-columns: repeat(6, 1fr);
     }
   }
-  .ctx-chips {
-    display: flex;
-    gap: 4px;
-    background: rgba(0,0,0,0.2);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 10px;
-    padding: 3px;
-    overflow-x: auto;
-  }
   .ctx-chip {
-    flex-shrink: 0;
-    padding: 5px 10px;
-    border-radius: 7px;
-    border: 1px solid transparent;
-    background: transparent;
-    color: #5a5a5e;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
+    width: 100%;
+    padding: 9px 4px;
+    border-radius: 9px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.02);
+    color: #6b6b6e;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-align: center;
     cursor: pointer;
     transition: all 0.15s ease;
     white-space: nowrap;
   }
   .ctx-chip:hover:not(.ctx-chip--active) {
-    color: #a0a0a6;
-    background: rgba(255,255,255,0.03);
+    color: #d1d1d6;
+    border-color: rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.04);
   }
+  .ctx-chip:active { transform: scale(0.97); }
   .ctx-chip--active {
     background: rgba(255,255,255,0.07);
-    border-color: rgba(212,180,131,0.35);
+    border-color: rgba(212,180,131,0.4);
     color: #d4b483;
   }
 </style>

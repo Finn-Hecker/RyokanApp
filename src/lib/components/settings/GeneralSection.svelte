@@ -297,8 +297,11 @@
       </div>
     {/if}
 
-    <div class="settings-divider"></div>
-    <span class="sampling-subheading">{m.settings_section_sampling_advanced()}</span>
+    <div class="sampling-divider" role="separator">
+      <span class="sampling-divider-line"></span>
+      <span class="sampling-subheading">{m.settings_section_sampling_advanced()}</span>
+      <span class="sampling-divider-line"></span>
+    </div>
 
     <div>
       <div class="flex items-center justify-between mb-2">
@@ -538,14 +541,26 @@
   }
   .preset-btn--active .preset-hint { opacity: 0.65; }
 
+  .sampling-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 6px 0 2px;
+  }
+  .sampling-divider-line {
+    flex: 1;
+    height: 1px;
+    background: rgba(255,255,255,0.07);
+  }
   .sampling-subheading {
-    display: block;
+    flex-shrink: 0;
     font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: #48484a;
-    margin: -4px 0 2px;
+    color: #6b6b6e;
+    white-space: nowrap;
+    margin: 10px 00px 15px 0px;
   }
 
   .power-value {
