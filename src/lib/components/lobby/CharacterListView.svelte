@@ -22,15 +22,33 @@
     onTogglePin: (e: MouseEvent, char: any) => void;
     resolveDesc: (char: any) => string;
   } = $props();
+
+  // Tracks which row is currently being pressed. Driven by pointer events on
+  // the row's own "select" button only, so pressing the context menu button
+  // (which sits above it and intercepts its own clicks) never triggers this.
+  let pressedId = $state<string | null>(null);
+
+  function clearPress(id: string) {
+    if (pressedId === id) pressedId = null;
+  }
 </script>
 
 <div class="flex flex-col gap-2">
   {#each characters as char (char.id)}
     {@const isHidden = characterState.hiddenCharacterIds.has(String(char.id))}
     {@const isPinned = characterState.pinnedCharacterIds.has(String(char.id))}
+    {@const isPressed = pressedId === String(char.id)}
 
-    <div class="group relative w-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-ryokan-accent/40 rounded-xl overflow-visible transition-all duration-200 active:scale-[0.995] {showHidden && isHidden ? 'opacity-40' : ''}">
-      <button onclick={() => onSelect(char)} aria-label={m.lobby_aria_start_chat()} class="absolute inset-0 z-0 w-full h-full cursor-pointer rounded-xl"></button>
+    <div class="group relative w-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-ryokan-accent/40 rounded-xl overflow-visible transition-all duration-200 {isPressed ? 'scale-[0.995]' : ''} {showHidden && isHidden ? 'opacity-40' : ''}">
+      <button
+        onclick={() => onSelect(char)}
+        onpointerdown={() => (pressedId = String(char.id))}
+        onpointerup={() => clearPress(String(char.id))}
+        onpointercancel={() => clearPress(String(char.id))}
+        onpointerleave={() => clearPress(String(char.id))}
+        aria-label={m.lobby_aria_start_chat()}
+        class="absolute inset-0 z-0 w-full h-full cursor-pointer rounded-xl touch-manipulation select-none [-webkit-tap-highlight-color:transparent]"
+      ></button>
 
       <div class="relative z-10 flex items-center gap-4 px-4 py-3 pr-12 md:pr-4 pointer-events-none">
         <div class="relative w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-white/5">
