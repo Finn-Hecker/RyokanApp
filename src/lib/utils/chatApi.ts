@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { buildSystemPrompt, buildWiString } from '$lib/utils/promptBuilder';
+import { buildSystemPrompt, buildWiString, buildWorldInfoBlock } from '$lib/utils/promptBuilder';
 import { worldInfoState } from '$lib/stores/worldInfoStore.svelte';
 import { chatState } from '$lib/stores/chatStore.svelte';
 import type { ApiSettings } from '$lib/stores/appState.svelte';
@@ -157,20 +157,6 @@ export function stripThinkingContent(content: string): string {
     return result.trimStart();
 }
 
-/**
- * Builds the message array for the AI API using the Soft Summary approach.
- *
- * Layout:
- *   [0]  system prompt (with optional summary appended at the end)
- *   [1…] messages newer than lastSummarizedMessageId
- *
- * The summary is merged into the single system message instead of being a
- * separate system turn — multiple consecutive system messages break the
- * Jinja template of many models (e.g. Qwen via LM Studio).
- *
- * checkAndSummarizeIfNeeded() must be called (and awaited) before this so
- * summaryMeta is already up-to-date for this turn.
- */
 export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
     const { character, apiSettings, recentMessages, userPrompt, role } = options;
 
@@ -178,21 +164,29 @@ export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
     const relevantEntries = worldInfoState.allWorldInfos
         .filter(wi => worldInfoIds.includes(wi.id))
         .flatMap(wi => wi.entries);
-    const recentContext = recentMessages.slice(-10).map(m => m.content).join(' ');
+    const recentContext = [
+        ...recentMessages.slice(-10).map(m =>
+            m.role === 'assistant' ? stripThinkingContent(m.content) : m.content
+        ),
+        userPrompt ?? '',
+    ].join(' ');
 
+    const charName = character?.name || 'Unknown';
+    const userName = role?.name || 'User';
+
+    // Static block: core instructions + character card + user role.
+    // No world info here — see the layout note above.
     const baseSystemPrompt = buildSystemPrompt({
-        charName:     character?.name || 'Unknown',
+        charName,
         desc:         character?.desc,
         personality:  character?.personality,
         scenario:     character?.scenario,
         example:      character?.mes_example,
         lang:         apiSettings.aiLanguage || 'English',
-        userName:     role?.name || 'User',
+        userName,
         userBio:      role?.bio,
         userPronouns: role?.pronouns,
         modelType:    'ollama',
-        wiBefore:     buildWiString(relevantEntries, 'before', recentContext),
-        wiAfter:      buildWiString(relevantEntries, 'after', recentContext),
     });
 
     const { currentSummary, lastSummarizedMessageId } = chatState.summaryMeta;
@@ -229,6 +223,30 @@ export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
     if (firstNonSystem?.role === 'assistant') {
         const systemIndex = messages.findLastIndex(m => m.role === 'system');
         messages.splice(systemIndex + 1, 0, { role: 'user', content: START_ROLEPLAY_MARKER });
+    }
+
+    // World info: computed last, attached only to the current turn (see
+    // layout note above) instead of the cached system message.
+    const worldInfoBlock = buildWorldInfoBlock(
+        buildWiString(relevantEntries, 'before', recentContext),
+        buildWiString(relevantEntries, 'after',  recentContext),
+        charName,
+        userName,
+        'ollama',
+    );
+
+    if (worldInfoBlock) {
+        const lastUserIdx = messages.findLastIndex(m => m.role === 'user');
+        if (lastUserIdx !== -1) {
+            messages[lastUserIdx] = {
+                ...messages[lastUserIdx],
+                content: `${worldInfoBlock}\n\n${messages[lastUserIdx].content}`,
+            };
+        } else {
+            // No user turn to attach to (shouldn't normally happen) — fall
+            // back to a standalone message so the info isn't silently lost.
+            messages.push({ role: 'user', content: worldInfoBlock });
+        }
     }
 
     return messages;
