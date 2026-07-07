@@ -30,6 +30,48 @@ export interface GenerationOptions {
     } | null;
 }
 
+type ChatRole = 'system' | 'user' | 'assistant';
+export interface ChatMessage {
+    role:    ChatRole;
+    content: string;
+}
+
+const START_ROLEPLAY_MARKER = '[Start Roleplay]';
+const DEFAULT_THINKING_BUDGET = 2500;
+
+/**
+ * Escapes a string for safe use inside a RegExp.
+ */
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Removes a tag-delimited block from content. Handles three cases:
+ * complete blocks, an orphaned closing tag (keep text after it), and an
+ * orphaned opening tag (keep text before it).
+ */
+function stripTagBlock(content: string, openTag: string, closeTag: string): string {
+    if (!content || !content.includes(openTag.charAt(0))) return content;
+
+    let result = content.replace(
+        new RegExp(`${escapeRegExp(openTag)}[\\s\\S]*?${escapeRegExp(closeTag)}`, 'gi'),
+        '',
+    );
+
+    const closeIdx = result.indexOf(closeTag);
+    if (closeIdx !== -1) {
+        result = result.slice(closeIdx + closeTag.length);
+    }
+
+    const openIdx = result.indexOf(openTag);
+    if (openIdx !== -1) {
+        result = result.slice(0, openIdx);
+    }
+
+    return result;
+}
+
 /**
  * Pure function — strips thinking/channel tags and returns the visible
  * response text.
@@ -38,48 +80,36 @@ export interface GenerationOptions {
  *   • <think>…</think>        (reasoning models)
  *   • <|channel>…<channel|>   (channel-style inner monologue)
  *
- * For each family the same three cases are handled:
- *   (a) Complete block present  → everything inside is stripped
- *   (b) Only closing tag found  → keep only what comes after it
- *   (c) Only opening tag found  → keep only what comes before it
- *       (stream was cut off mid-block)
- *
  * NOTE: with the backend now splitting reasoning into a dedicated
  * "ai-thinking-token" event (delta.reasoning_content), `raw` here will
  * usually already be clean. This function remains as a fallback for
- * backends/models that inline reasoning into the content stream instead
- * (e.g. templates without reasoning_content support).
+ * backends/models that inline reasoning into the content stream instead.
  */
 export function processThinkingOutput(raw: string, isFinished: boolean): {
     text:       string;
     isThinking: boolean;
 } {
-    // <think>…</think> 
     const thinkEnd = '</think>';
     if (raw.includes(thinkEnd)) {
         const parts = raw.split(thinkEnd);
         const afterThink = parts[parts.length - 1].trimStart();
-
-        // <|channel>…<channel|> within the visible part
         return { text: stripChannelTags(afterThink, isFinished), isThinking: false };
     }
 
     // Still inside a <think> block (no closing tag yet)
     if (raw.includes('<think>')) {
         if (isFinished) {
-            // Stream ended without </think> discard the orphaned block
+            // Stream ended without </think> — discard the orphaned block
             const before = raw.slice(0, raw.indexOf('<think>')).trimStart();
             return { text: stripChannelTags(before, isFinished), isThinking: false };
         }
         return { text: '', isThinking: true };
     }
 
-    // No <think> tags at all. check for <|channel> only
     const text = stripChannelTags(raw, isFinished);
 
     if (isFinished) return { text, isThinking: false };
 
-    // Still streaming: if we're inside a channel block signal thinking
     if (raw.includes('<|channel>') && !raw.includes('<channel|>')) {
         return { text: '', isThinking: true };
     }
@@ -88,26 +118,24 @@ export function processThinkingOutput(raw: string, isFinished: boolean): {
 }
 
 /**
- * Strips <|channel>…<channel|> blocks from a string.
- *
- * (a) Complete blocks          → removed entirely
- * (b) Orphaned <channel|>      → keep only what comes after
- * (c) Orphaned <|channel>      → keep only what comes before
+ * Strips <|channel>…<channel|> blocks from a string. While streaming, an
+ * orphaned opening tag is left untouched since the closing tag may still
+ * be on its way.
  */
 function stripChannelTags(content: string, isFinished: boolean): string {
-    if (!content) return content;
+    if (!content || !content.includes('<')) return content;
 
-    // (a) Complete blocks
+    // Complete blocks
     let result = content.replace(/<\|channel>[\s\S]*?<channel\|>/g, '');
 
-    // (b) Orphaned closing tag
+    // Orphaned closing tag — keep only what comes after
     const closeIdx = result.indexOf('<channel|>');
     if (closeIdx !== -1) {
         result = result.slice(closeIdx + '<channel|>'.length);
     }
 
-    // (c) Orphaned opening tag (only strip when stream is finished; while
-    //     streaming the closing tag may still be on its way)
+    // Orphaned opening tag — only strip once the stream is finished, since
+    // the closing tag may still be on its way while still streaming
     if (isFinished) {
         const openIdx = result.indexOf('<|channel>');
         if (openIdx !== -1) {
@@ -119,6 +147,17 @@ function stripChannelTags(content: string, isFinished: boolean): string {
 }
 
 /**
+ * Removes <think>…</think> and <|channel>…<channel|> blocks from a
+ * finalized message (used when feeding assistant history back to the API).
+ */
+export function stripThinkingContent(content: string): string {
+    if (!content) return content;
+    let result = stripTagBlock(content, '<think>', '</think>');
+    result = stripTagBlock(result, '<|channel>', '<channel|>');
+    return result.trimStart();
+}
+
+/**
  * Builds the message array for the AI API using the Soft Summary approach.
  *
  * Layout:
@@ -126,14 +165,20 @@ function stripChannelTags(content: string, isFinished: boolean): string {
  *   [1…] messages newer than lastSummarizedMessageId
  *
  * The summary is merged into the single system message instead of being a
- * separate system turn — multiple consecutive system messages break the Jinja
- * template of many models (e.g. Qwen via LM Studio).
+ * separate system turn — multiple consecutive system messages break the
+ * Jinja template of many models (e.g. Qwen via LM Studio).
  *
  * checkAndSummarizeIfNeeded() must be called (and awaited) before this so
  * summaryMeta is already up-to-date for this turn.
  */
-export function buildApiMessages(options: GenerationOptions): { role: string; content: string }[] {
+export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
     const { character, apiSettings, recentMessages, userPrompt, role } = options;
+
+    const worldInfoIds = character?.world_info_ids ?? [];
+    const relevantEntries = worldInfoState.allWorldInfos
+        .filter(wi => worldInfoIds.includes(wi.id))
+        .flatMap(wi => wi.entries);
+    const recentContext = recentMessages.slice(-10).map(m => m.content).join(' ');
 
     const baseSystemPrompt = buildSystemPrompt({
         charName:     character?.name || 'Unknown',
@@ -146,20 +191,8 @@ export function buildApiMessages(options: GenerationOptions): { role: string; co
         userBio:      role?.bio,
         userPronouns: role?.pronouns,
         modelType:    'ollama',
-        wiBefore: buildWiString(
-            worldInfoState.allWorldInfos
-                .filter(wi => (character?.world_info_ids ?? []).includes(wi.id))
-                .flatMap(wi => wi.entries),
-            'before',
-            recentMessages.slice(-10).map(m => m.content).join(' '),
-        ),
-        wiAfter: buildWiString(
-            worldInfoState.allWorldInfos
-                .filter(wi => (character?.world_info_ids ?? []).includes(wi.id))
-                .flatMap(wi => wi.entries),
-            'after',
-            recentMessages.slice(-10).map(m => m.content).join(' '),
-        ),
+        wiBefore:     buildWiString(relevantEntries, 'before', recentContext),
+        wiAfter:      buildWiString(relevantEntries, 'after', recentContext),
     });
 
     const { currentSummary, lastSummarizedMessageId } = chatState.summaryMeta;
@@ -177,12 +210,12 @@ export function buildApiMessages(options: GenerationOptions): { role: string; co
         : -1;
     const newMessages = recentMessages.slice(lastSumIdx + 1);
 
-    const messages: { role: string; content: string }[] = [
+    const messages: ChatMessage[] = [
         { role: 'system', content: fullSystemContent },
     ];
 
     messages.push(...newMessages.map(msg => ({
-        role: msg.role,
+        role:    msg.role as ChatRole,
         content: msg.role === 'assistant' ? stripThinkingContent(msg.content) : msg.content,
     })));
 
@@ -195,7 +228,7 @@ export function buildApiMessages(options: GenerationOptions): { role: string; co
     const firstNonSystem = messages.find(m => m.role !== 'system');
     if (firstNonSystem?.role === 'assistant') {
         const systemIndex = messages.findLastIndex(m => m.role === 'system');
-        messages.splice(systemIndex + 1, 0, { role: 'user', content: '[Start Roleplay]' });
+        messages.splice(systemIndex + 1, 0, { role: 'user', content: START_ROLEPLAY_MARKER });
     }
 
     return messages;
@@ -216,8 +249,6 @@ export async function runGeneration(
 
     const messages = buildApiMessages(options);
 
-    console.log('[runGeneration] messages:', messages);
-
     let rawBuffer      = '';
     let thinkingBuffer = '';
 
@@ -228,8 +259,8 @@ export async function runGeneration(
 
         if (apiSettings.isThinkingModel) {
             const { text, isThinking } = processThinkingOutput(rawBuffer, false);
-            // Tag-based detection is a fallback — once the dedicated reasoning
-            // channel below has fired, it's authoritative and takes precedence.
+            // Tag-based detection is a fallback — once the dedicated
+            // reasoning channel below has fired, it takes precedence.
             if (!thinkingBuffer) callbacks.onThinkingPhaseChange(isThinking);
             callbacks.onStreamUpdate(text);
         } else {
@@ -245,8 +276,9 @@ export async function runGeneration(
     });
 
     try {
+        const thinkingBudget = apiSettings.thinkingBudget ?? DEFAULT_THINKING_BUDGET;
         const effectiveMaxTokens = apiSettings.isThinkingModel
-            ? apiSettings.maxTokens + (apiSettings.thinkingBudget ?? 2500)
+            ? apiSettings.maxTokens + thinkingBudget
             : apiSettings.maxTokens;
 
         await invoke('call_ai_api', {
@@ -263,11 +295,9 @@ export async function runGeneration(
                 min_p:              apiSettings.minP,
                 frequency_penalty:  apiSettings.frequencyPenalty,
                 is_thinking_model:  apiSettings.isThinkingModel,
-                thinking_budget:    apiSettings.isThinkingModel ? (apiSettings.thinkingBudget ?? 2500) : undefined,
+                thinking_budget:    apiSettings.isThinkingModel ? thinkingBudget : undefined,
             },
         });
-
-        callbacks.onThinkingPhaseChange(false);
 
         if (apiSettings.isThinkingModel) {
             const { text } = processThinkingOutput(rawBuffer, true);
@@ -278,37 +308,10 @@ export async function runGeneration(
         callbacks.onStreamUpdate(rawBuffer);
         return rawBuffer;
     } finally {
+        // Always cleared, even on error — otherwise the UI can get stuck
+        // showing a "thinking" state after a failed request.
+        callbacks.onThinkingPhaseChange(false);
         unlistenToken();
         unlistenThinking();
     }
-}
-
-export function stripThinkingContent(content: string): string {
-    if (!content) return content;
-    // (a) Complete <think>…</think> blocks
-    let result = content.replace(/<think>[\s\S]*?<\/think>/gi, '');
-    // (b) Orphaned </think> — keep only what comes after
-    const closeIdx = result.indexOf('</think>');
-    if (closeIdx !== -1) {
-        result = result.slice(closeIdx + '</think>'.length);
-    }
-    // (c) Orphaned <think> — keep only what comes before
-    const openIdx = result.indexOf('<think>');
-    if (openIdx !== -1) {
-        result = result.slice(0, openIdx);
-    }
-    // (a) Complete <|channel>…<channel|> blocks
-    result = result.replace(/<\|channel>[\s\S]*?<channel\|>/gi, '');
-    // (b) Orphaned <channel|> keep only what comes after
-    const channelCloseIdx = result.indexOf('<channel|>');
-    if (channelCloseIdx !== -1) {
-        result = result.slice(channelCloseIdx + '<channel|>'.length);
-    }
-    // (c) Orphaned <|channel> keep only what comes before
-    const channelOpenIdx = result.indexOf('<|channel>');
-    if (channelOpenIdx !== -1) {
-        result = result.slice(0, channelOpenIdx);
-    }
-
-    return result.trimStart();
 }
