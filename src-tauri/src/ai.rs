@@ -1,17 +1,26 @@
 use futures::stream::StreamExt;
 use eventsource_stream::Eventsource;
 use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tauri::{Emitter, Window};
 use tokio_util::sync::CancellationToken;
 
-// Reusing a single HTTP client across the entire app lifecycle prevents connection 
+// Reusing a single HTTP client across the entire app lifecycle prevents connection
 // exhaustion and takes advantage of internal connection pooling.
-pub static CLIENT: Lazy<reqwest::Client> = Lazy::new(reqwest::Client::new);
+// connect_timeout only bounds how long we wait to establish the TCP/TLS connection -
+// it does NOT bound the overall response time, so long-running generations are unaffected.
+pub static CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .build()
+        .expect("failed to build reqwest client")
+});
 
-// Mutex allows swapping the token on each new request.
+// parking_lot::Mutex instead of std::sync::Mutex: no poisoning, so a panic on some
+// other thread while holding the lock can never propagate into this one via an
+// unwrap(), and lock() returns the guard directly (no Result to unwrap).
 static CANCEL_TOKEN: Lazy<Mutex<CancellationToken>> =
     Lazy::new(|| Mutex::new(CancellationToken::new()));
 
@@ -20,7 +29,7 @@ static CANCEL_TOKEN: Lazy<Mutex<CancellationToken>> =
 /// and drops the underlying TCP connection.
 #[tauri::command]
 pub fn stop_generation() {
-    CANCEL_TOKEN.lock().unwrap().cancel();
+    CANCEL_TOKEN.lock().cancel();
 }
 
 /// OpenAI-compatible SSE (Server-Sent Events) streaming structs.
@@ -127,22 +136,51 @@ pub async fn fetch_models(url: String, api_key: String) -> Result<Vec<String>, S
         .await
         .map_err(|e| format!("Failed to read response body: {}", e))?;
 
-    let body: ModelsResponse = serde_json::from_str(&body_text)
-        .map_err(|e| format!("Failed to parse models response: {}. Raw body: {}", e, &body_text[..body_text.len().min(500)]))?;
+    let body: ModelsResponse = serde_json::from_str(&body_text).map_err(|e| {
+        // chars().take(n) instead of byte-slicing: slicing a &str at an arbitrary byte
+        // index panics if that index falls inside a multi-byte UTF-8 character (e.g. an
+        // umlaut or emoji in the server's error message). This is char-boundary safe.
+        let preview: String = body_text.chars().take(500).collect();
+        format!("Failed to parse models response: {}. Raw body: {}", e, preview)
+    })?;
 
     let ids = body.data.into_iter().map(|m| m.id).collect();
     Ok(ids)
 }
 
+/// Emits whatever is currently buffered in either batch, then clears both buffers.
+/// Shared by the periodic flush tick and the final flush after the loop ends, so the
+/// emit logic only lives in one place.
+fn flush_batches(
+    window: &Window,
+    token_batch: &mut String,
+    thinking_batch: &mut String,
+) -> Result<(), String> {
+    if !token_batch.is_empty() {
+        let batch = std::mem::take(token_batch);
+        window
+            .emit("ai-token", TokenPayload { token: batch })
+            .map_err(|e| e.to_string())?;
+    }
+    if !thinking_batch.is_empty() {
+        let batch = std::mem::take(thinking_batch);
+        window
+            .emit("ai-thinking-token", ThinkingTokenPayload { token: batch })
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Streams completions from an OpenAI-compatible API endpoint.
-/// Batches incoming tokens before emitting them to the frontend to prevent 
+/// Batches incoming tokens before emitting them to the frontend to prevent
 /// overwhelming the Tauri IPC bridge and freezing the Svelte UI.
-/// Uses a CancellationToken so stop_generation() drops the TCP connection immediately.
+/// Uses a CancellationToken so stop_generation() drops the TCP connection immediately -
+/// including during the initial connect, not just once streaming has started.
 #[tauri::command]
 pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), String> {
     // Replace the global token so stop_generation() targets this request.
     let token = CancellationToken::new();
-    *CANCEL_TOKEN.lock().unwrap() = token.clone();
+    *CANCEL_TOKEN.lock() = token.clone();
 
     let mut body = serde_json::json!({
         "model": payload.model,
@@ -192,10 +230,13 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
         req = req.bearer_auth(&payload.api_key);
     }
 
-    let res = req
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    // Cancel-aware connect: without this, stop_generation() would do nothing until the
+    // first byte arrives, since previously only the streaming loop below watched the
+    // token. A server that's slow/unreachable would hang here with no way to abort.
+    let res = tokio::select! {
+        result = req.send() => result.map_err(|e| e.to_string())?,
+        _ = token.cancelled() => return Ok(()),
+    };
 
     if !res.status().is_success() {
         return Err(format!("API error: Status {}", res.status()));
@@ -205,61 +246,62 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
 
     let mut token_batch = String::new();
     let mut thinking_batch = String::new();
-    let mut last_emit = Instant::now();
     let batch_delay = Duration::from_millis(25);
 
+    // Ticks independently of incoming events, so a batch never sits unflushed just
+    // because the server paused between chunks (which the old "flush on next event,
+    // if enough time has passed" logic was prone to under bursty/uneven streaming).
+    let mut flush_tick = tokio::time::interval(batch_delay);
+    flush_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
     loop {
-        // Cancelled arm resolves to None, breaking the loop and dropping the TCP socket.
-        let event_result = tokio::select! {
-            result = stream.next() => result,
-            _ = token.cancelled() => None,
-        };
+        tokio::select! {
+            // Checked first so a Stop click is never left waiting behind a pending
+            // event or tick that happens to be ready at the same instant.
+            biased;
 
-        let Some(event_result) = event_result else {
-            break;
-        };
+            _ = token.cancelled() => break,
 
-        match event_result {
-            Ok(event) => {
-                if event.data == "[DONE]" {
+            maybe_event = stream.next() => {
+                let Some(event_result) = maybe_event else {
                     break;
-                }
-                if let Ok(chunk) = serde_json::from_str::<StreamChunk>(&event.data) {
-                    if let Some(delta) = chunk.choices.first().map(|c| &c.delta) {
-                        if let Some(content) = delta.content.as_ref() {
-                            token_batch.push_str(content);
+                };
+
+                match event_result {
+                    Ok(event) => {
+                        if event.data == "[DONE]" {
+                            break;
                         }
-                        if let Some(reasoning) = delta.reasoning_content.as_ref() {
-                            thinking_batch.push_str(reasoning);
+                        match serde_json::from_str::<StreamChunk>(&event.data) {
+                            Ok(chunk) => {
+                                if let Some(delta) = chunk.choices.first().map(|c| &c.delta) {
+                                    if let Some(content) = delta.content.as_ref() {
+                                        token_batch.push_str(content);
+                                    }
+                                    if let Some(reasoning) = delta.reasoning_content.as_ref() {
+                                        thinking_batch.push_str(reasoning);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to parse SSE chunk: {} (raw: {})", e, event.data);
+                            }
                         }
+                    }
+                    Err(e) => {
+                        eprintln!("SSE Error: {}", e);
                     }
                 }
             }
-            Err(e) => {
-                eprintln!("SSE Error: {}", e);
-            }
-        }
 
-        if (!token_batch.is_empty() || !thinking_batch.is_empty()) && last_emit.elapsed() > batch_delay {
-            if !token_batch.is_empty() {
-                let batch = std::mem::take(&mut token_batch);
-                window.emit("ai-token", TokenPayload { token: batch }).map_err(|e| e.to_string())?;
+            _ = flush_tick.tick() => {
+                flush_batches(&window, &mut token_batch, &mut thinking_batch)?;
             }
-            if !thinking_batch.is_empty() {
-                let batch = std::mem::take(&mut thinking_batch);
-                window.emit("ai-thinking-token", ThinkingTokenPayload { token: batch }).map_err(|e| e.to_string())?;
-            }
-            last_emit = Instant::now();
         }
     }
 
-    // Flush whatever was buffered when the stream stopped (or was cancelled).
-    if !token_batch.is_empty() {
-        window.emit("ai-token", TokenPayload { token: token_batch }).map_err(|e| e.to_string())?;
-    }
-    if !thinking_batch.is_empty() {
-        window.emit("ai-thinking-token", ThinkingTokenPayload { token: thinking_batch }).map_err(|e| e.to_string())?;
-    }
+    // Flush whatever was buffered when the stream stopped (DONE, cancel, or close).
+    flush_batches(&window, &mut token_batch, &mut thinking_batch)?;
 
     Ok(())
 }
