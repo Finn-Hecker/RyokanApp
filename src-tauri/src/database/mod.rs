@@ -39,13 +39,24 @@ pub fn get_connection(app: &AppHandle) -> Result<Connection, String> {
 pub fn init_db(app: &AppHandle) -> Result<(), String> {
     let conn = get_connection(app)?;
 
-    let schema = r#"
+    // All timestamp columns default to this instead of bare CURRENT_TIMESTAMP.
+    // SQLite's CURRENT_TIMESTAMP returns UTC but formatted as
+    // "2026-07-08 19:32:00" — a space instead of "T" and no "Z"/offset.
+    // JS's `Date` constructor doesn't recognize that as UTC and silently
+    // reads it as local time instead, which made a chat that was just
+    // started already look hours old for anyone outside UTC. This produces
+    // a proper ISO-8601 UTC string ("2026-07-08T19:32:00.123Z") that every
+    // consumer parses unambiguously.
+    const UTC_NOW: &str = "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))";
+
+    let schema = format!(
+        r#"
         CREATE TABLE IF NOT EXISTS conversations (
             id TEXT PRIMARY KEY,
             title TEXT,
             character_id TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME DEFAULT {utc_now},
+            updated_at DATETIME DEFAULT {utc_now},
             is_pinned INTEGER NOT NULL DEFAULT 0,
             cloned_from_id TEXT,
             cloned_from_title TEXT
@@ -60,7 +71,7 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             content TEXT,
             swipe_variants TEXT NOT NULL DEFAULT '[]',
             swipe_index INTEGER NOT NULL DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME DEFAULT {utc_now},
             FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
         );
 
@@ -68,7 +79,7 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
         CREATE TRIGGER IF NOT EXISTS update_conversation_timestamp
         AFTER INSERT ON messages
         BEGIN
-            UPDATE conversations SET updated_at = CURRENT_TIMESTAMP
+            UPDATE conversations SET updated_at = {utc_now}
             WHERE id = NEW.conversation_id;
         END;
 
@@ -93,7 +104,7 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             color TEXT,
             avatar BLOB,
             world_info_ids TEXT NOT NULL DEFAULT '[]',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT {utc_now}
         );
 
         CREATE TABLE IF NOT EXISTS roles (
@@ -102,18 +113,20 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             bio      TEXT NOT NULL DEFAULT '',
             pronouns TEXT NOT NULL DEFAULT '',
             avatar   BLOB,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT {utc_now}
         );
         CREATE TABLE IF NOT EXISTS world_infos (
             id          TEXT PRIMARY KEY,
             name        TEXT NOT NULL,
             description TEXT NOT NULL DEFAULT '',
             entries     TEXT NOT NULL DEFAULT '[]',
-            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at  DATETIME DEFAULT {utc_now}
         );
-    "#;
+    "#,
+        utc_now = UTC_NOW
+    );
 
-    conn.execute_batch(schema)
+    conn.execute_batch(&schema)
         .map_err(|e| format!("Failed to initialize database schema: {}", e))?;
 
     // ── Migration: add is_pinned to existing databases that pre-date this column ──
