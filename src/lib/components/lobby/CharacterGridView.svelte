@@ -22,15 +22,33 @@
     onTogglePin: (e: MouseEvent, char: any) => void;
     resolveDesc: (char: any) => string;
   } = $props();
+
+  // Tracks which card is currently being pressed. Driven by pointer events on
+  // the card's own "select" button only, so pressing the context menu button
+  // (which sits above it and intercepts its own clicks) never triggers this.
+  let pressedId = $state<string | null>(null);
+
+  function clearPress(id: string) {
+    if (pressedId === id) pressedId = null;
+  }
 </script>
 
-<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:1rem;">
+<div class="grid grid-cols-1 gap-3 sm:grid-cols-3 md:gap-4 md:[grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]">
   {#each characters as char (char.id)}
     {@const isHidden = characterState.hiddenCharacterIds.has(String(char.id))}
     {@const isPinned = characterState.pinnedCharacterIds.has(String(char.id))}
+    {@const isPressed = pressedId === String(char.id)}
 
-    <div class="group relative w-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-ryokan-accent/40 rounded-2xl transition-all duration-200 active:scale-[0.98] {showHidden && isHidden ? 'opacity-40' : ''}">
-      <button onclick={() => onSelect(char)} aria-label={m.lobby_aria_start_chat()} class="absolute inset-0 z-0 w-full h-full cursor-pointer rounded-2xl"></button>
+    <div class="group relative w-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-ryokan-accent/40 rounded-2xl transition-all duration-200 {isPressed ? 'scale-[0.98]' : ''} {showHidden && isHidden ? 'opacity-40' : ''}">
+      <button
+        onclick={() => onSelect(char)}
+        onpointerdown={() => (pressedId = String(char.id))}
+        onpointerup={() => clearPress(String(char.id))}
+        onpointercancel={() => clearPress(String(char.id))}
+        onpointerleave={() => clearPress(String(char.id))}
+        aria-label={m.lobby_aria_start_chat()}
+        class="absolute inset-0 z-0 w-full h-full cursor-pointer rounded-2xl touch-manipulation select-none [-webkit-tap-highlight-color:transparent]"
+      ></button>
 
       <div class="relative z-10 w-full aspect-[3/4] bg-white/5 overflow-hidden rounded-t-2xl pointer-events-none">
         {#if char.avatarUrl}
@@ -51,7 +69,7 @@
         {/if}
       </div>
 
-      <div class="absolute top-2.5 right-2.5 z-20 pointer-events-auto transition-all duration-200 opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0">
+      <div class="absolute top-2.5 right-2.5 z-20 pointer-events-auto transition-all duration-200 opacity-100 translate-y-0 md:opacity-0 md:group-hover:opacity-100 md:translate-y-1 md:group-hover:translate-y-0">
         <CharacterContextMenu
           {char} {isHidden} {isPinned}
           size="lg"

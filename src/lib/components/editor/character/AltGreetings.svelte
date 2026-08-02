@@ -1,6 +1,7 @@
 <script lang="ts">
   import { slide } from 'svelte/transition';
   import * as m from '$lib/paraglide/messages';
+  import TokenBadge from '$lib/components/TokenBadge.svelte';
 
   let {
     greetings = [],
@@ -40,17 +41,22 @@
             <label for="alt-greeting-{i}" class="greeting-label">
               {m.create_page_label_alt_greeting({ index: i + 1 })}
             </label>
-            <button
-              type="button"
-              onclick={() => onRemove?.(i)}
-              aria-label={m.create_page_title_delete()}
-              class="remove-btn"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <line x1="18" y1="6" x2="6" y2="18"/>
-                <line x1="6" y1="6" x2="18" y2="18"/>
-              </svg>
-            </button>
+            <div class="greeting-header-right">
+              <TokenBadge
+                text={greeting}
+              />
+              <button
+                type="button"
+                onclick={() => onRemove?.(i)}
+                aria-label={m.create_page_title_delete()}
+                class="remove-btn"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
           </div>
           <textarea
             id="alt-greeting-{i}"
@@ -117,6 +123,12 @@
     letter-spacing: 0.1em;
     color: rgba(255,255,255,0.3);
     font-weight: 600;
+  }
+
+  .greeting-header-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
 
   .remove-btn {

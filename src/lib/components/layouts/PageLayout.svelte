@@ -55,10 +55,10 @@
     {/if}
   {/if}
 
-  <div class="flex-1 overflow-y-auto min-w-0">
+  <div class="flex-1 overflow-y-auto min-w-0 scrollbar-hide">
     <div class="{maxContentWidth} mx-auto w-full {contentPadding}">
       
-      <div class="flex items-center justify-between pt-6 mb-6">
+      <div class="flex items-center justify-between pt-[calc(1rem+env(safe-area-inset-top))] mb-6 md:pt-6">
         {#if showSidebar}
           <button
             onclick={() => isMobileSidebarOpen = true}
@@ -85,3 +85,12 @@
     </div>
   </div>
 </div>
+<style>
+  .scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none; /* IE/Edge */
+  scrollbar-width: none;    /* Firefox */
+}
+</style>

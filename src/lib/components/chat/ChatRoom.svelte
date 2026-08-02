@@ -4,7 +4,7 @@
   import { tick, onMount, onDestroy } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { roleState } from '$lib/stores/roleStore.svelte';
-  import { chatState, addMessage, addSwipeVariant, loadMessages, updateMessage, deleteMessage, setSwipeIndex } from '$lib/stores/chatStore.svelte';
+  import { chatState, addMessage, addSwipeVariant, loadMessages, updateMessage, deleteMessage, setSwipeIndex, loadMoreMessages, cloneChatFromMessage } from '$lib/stores/chatStore.svelte';
   import { runGeneration } from '$lib/utils/chatApi';
   import { summaryState, checkAndSummarizeIfNeeded } from '$lib/utils/rollingSummary.svelte';
   import * as m from '$lib/paraglide/messages';
@@ -28,12 +28,21 @@
   let errorMessage = $state('');
   let pendingUserMessage = $state('');
   let retryingMsgId = $state<string | null>(null);
+  let isLoadingMore = $state(false);
+  let cloneCooldown = $state(false);
+  let cloneCooldownTimer: ReturnType<typeof setTimeout> | undefined;
 
   let isBlocked = $derived(isGenerating || summaryState.isSummarizing);
 
   let activeRole = $derived(
     roleState.allRoles.find(p => p.id === roleState.activeRoleId) ?? null
   );
+
+  // The active conversation's own record — used to show a "cloned chat" badge.
+  let activeConversation = $derived(
+    chatState.conversations.find(c => c.id === chatState.activeChatId) ?? null
+  );
+  let clonedFromTitle = $derived(activeConversation?.cloned_from_title ?? null);
 
   let unlistenClose: (() => void) | undefined;
 
@@ -54,6 +63,7 @@
     if (isGenerating) invoke('stop_generation');
     unlistenClose?.();
     window.removeEventListener('keydown', handleArrowKey);
+    if (cloneCooldownTimer) clearTimeout(cloneCooldownTimer);
   });
 
   function handleArrowKey(e: KeyboardEvent) {
@@ -122,6 +132,14 @@
     return null;
   })());
 
+  let lastUserMsgId = $derived((() => {
+    for (let i = displayMessages.length - 1; i >= 0; i--) {
+      const msg = displayMessages[i];
+      if (msg.isUser) return msg.id;
+    }
+    return null;
+  })());
+
   $effect(() => {
     if (displayMessages && chatContainer) {
       handleAutoScroll();
@@ -141,20 +159,58 @@
     if (!chatContainer) return;
 
     const count = displayMessages.length;
-    if (count === 0) { lastFirstMsgId = ''; lastMsgCount = 0; return; }
+    if (count === 0) { 
+      lastFirstMsgId = ''; 
+      lastMsgCount = 0; 
+      return; 
+    }
 
     const currentFirstId = displayMessages[0].id;
-    if (currentFirstId !== lastFirstMsgId) scrollToBottom('auto');
-    else if (count > lastMsgCount && autoscroll) scrollToBottom('smooth');
+    const currentLastId = displayMessages[count - 1].id;
+
+    // CASE 1: The chat was just loaded (initial switch)
+    // We check whether the activeChatId changed or if we don't have any previous message state
+    if (lastFirstMsgId === '') {
+      scrollToBottom('auto');
+    } 
+    // CASE 2: A NEW message was added at the bottom
+    else if (count > lastMsgCount && autoscroll) {
+      // We no longer rely on firstId comparison here, instead we trust 'autoscroll'
+      // which is calculated in handleScroll() (user is near the bottom)
+      scrollToBottom('smooth');
+    }
 
     lastMsgCount = count;
     lastFirstMsgId = currentFirstId;
   }
 
-  function handleScroll() {
+  async function handleScroll() {
     if (!chatContainer || isProgrammaticScroll) return;
     const { scrollTop, scrollHeight, clientHeight } = chatContainer;
     autoscroll = scrollHeight - scrollTop - clientHeight <= 50;
+
+    // INFINITE SCROLL: Load more when we're near the top (< 100px)
+    if (scrollTop < 100 && chatState.hasMoreMessages && !isLoadingMore) {
+      isLoadingMore = true;
+      
+      // Store the exact height and scroll position BEFORE loading
+      const oldScrollHeight = scrollHeight;
+      const oldScrollTop = scrollTop;
+
+      await loadMoreMessages();
+      
+      // Important: wait until Svelte has rendered the new messages into the DOM
+      await tick();
+
+      if (chatContainer) {
+        // Calculate the difference between old and new height and adjust
+        // the scroll position by that amount so the view stays stable
+        const newScrollHeight = chatContainer.scrollHeight;
+        chatContainer.scrollTop = oldScrollTop + (newScrollHeight - oldScrollHeight);
+      }
+      
+      isLoadingMore = false;
+    }
   }
 
   function resetStreamState() {
@@ -279,7 +335,47 @@
   }
 
   async function handleEditSave({ msgId, newContent }: { msgId: string; newContent: string }) {
-    await updateMessage(msgId, newContent);
+    const msgs = chatState.currentMessages;
+    const idx  = msgs.findIndex(msg => msg.id?.toString() === msgId);
+    if (idx < 0) return;
+
+    const editedMsg = msgs[idx];
+
+    if (editedMsg.role === 'user') {
+      await updateMessage(msgId, newContent);
+
+      // Delete every message that came after it (the AI reply and any further turns)
+      const toDelete = msgs.slice(idx + 1);
+      for (const msg of toDelete) {
+        if (msg.id) await deleteMessage(msg.id);
+      }
+
+      // history is already up-to-date in chatState after the deletes
+      autoscroll = true;
+      pendingUserMessage = newContent;
+      await generate(newContent, false);
+    } else {
+      await updateMessage(msgId, newContent);
+    }
+  }
+
+  async function handleCloneFromMessage({ msgId }: { msgId: string }) {
+    if (isBlocked || cloneCooldown) return;
+
+    cloneCooldown = true;
+    if (cloneCooldownTimer) clearTimeout(cloneCooldownTimer);
+    cloneCooldownTimer = setTimeout(() => { cloneCooldown = false; }, 5000);
+
+    const newChatId = await cloneChatFromMessage(msgId);
+    if (!newChatId) {
+      errorMessage = m.chat_clone_error();
+      showErrorModal = true;
+      return;
+    }
+
+    // Jump straight into the freshly cloned chat.
+    autoscroll = true;
+    await loadMessages(newChatId);
   }
 
   async function retryAfterError() {
@@ -306,7 +402,11 @@
   <ChatHeader
     character={appState.activeCharacter}
     isTyping={isGenerating}
+    {clonedFromTitle}
     onBack={() => {
+      chatState.activeChatId = null;
+      chatState.currentMessages = [];
+      chatState.hasMoreMessages = false;
       appState.activeCharacter = null;
       appState.currentView = 'lobby';
     }}
@@ -319,6 +419,16 @@
     style="overflow-anchor: none;"
   >
     <div class="max-w-3xl mx-auto w-full">
+      {#if isLoadingMore}
+        <div class="flex justify-center py-6 opacity-70">
+          <span class="breathe-dots" aria-label="Lade ältere Nachrichten…">
+            <span class="breathe-dot"></span>
+            <span class="breathe-dot" style="animation-delay: 0.22s"></span>
+            <span class="breathe-dot" style="animation-delay: 0.44s"></span>
+          </span>
+        </div>
+      {/if}
+
       {#each displayMessages as msg, i (msg.id)}
         <ChatMessage
           {msg}
@@ -330,9 +440,16 @@
           )}
           canSwipe={!isBlocked && !msg.isUser && msg.id === lastAiMsgId && msg.id !== firstAiMsgId}
           canRetry={!isBlocked && !msg.isUser && msg.id === lastAiMsgId && msg.id !== firstAiMsgId}
-          canEdit={!msg.isUser && msg.id !== 'temp-stream' && msg.id !== firstAiMsgId}
+          canEdit={!isBlocked && msg.id !== 'temp-stream' && (
+            msg.isUser
+              ? msg.id === lastUserMsgId
+              : msg.id !== firstAiMsgId
+          )}
+          canCloneFrom={!isBlocked && !msg.isUser && msg.id !== 'temp-stream'}
+          cloneDisabled={cloneCooldown}
           onRetry={handleRetry}
           onEditSave={handleEditSave}
+          onCloneFrom={handleCloneFromMessage}
         />
       {/each}
 

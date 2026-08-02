@@ -32,6 +32,7 @@
     api_url:              (v) => (appState.apiSettings.url = v),
     api_key:              (v) => (appState.apiSettings.apiKey = v),
     api_model:            (v) => (appState.apiSettings.model = v),
+    api_custom_mode:      (v) => (appState.apiSettings.customMode = v === "true"),
     thinking_mode:        (v) => (appState.apiSettings.isThinkingModel = v === "true"),
     ai_language:          (v) => (appState.apiSettings.aiLanguage = v),
     system_prompt:        (v) => (appState.apiSettings.systemPrompt = v),
@@ -39,6 +40,10 @@
     api_max_tokens:       (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.maxTokens = n; },
     api_presence_penalty: (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.presencePenalty = n; },
     api_context_limit:    (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.contextLimit = n; },
+    api_top_p:             (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.topP = n; },
+    api_top_k:             (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.topK = n; },
+    api_min_p:              (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.minP = n; },
+    api_frequency_penalty: (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.frequencyPenalty = n; },
     settings_power_user:  (v) => { powerUser = v === "true"; },
   };
 
@@ -52,6 +57,28 @@
       if (appState.apiSettings.maxTokens == null) appState.apiSettings.maxTokens = 300;
       if (appState.apiSettings.presencePenalty == null) appState.apiSettings.presencePenalty = 1.1;
       if (appState.apiSettings.contextLimit == null) appState.apiSettings.contextLimit = 4096;
+      if (appState.apiSettings.topP == null) appState.apiSettings.topP = 0.9;
+      if (appState.apiSettings.topK == null) appState.apiSettings.topK = 40;
+      if (appState.apiSettings.minP == null) appState.apiSettings.minP = 0.05;
+      if (appState.apiSettings.frequencyPenalty == null) appState.apiSettings.frequencyPenalty = 0;
+
+      console.log("[Settings] Loaded values:", {
+        url:             appState.apiSettings.url,
+        apiKey:          appState.apiSettings.apiKey,
+        model:           appState.apiSettings.model,
+        isThinkingModel: appState.apiSettings.isThinkingModel,
+        aiLanguage:      appState.apiSettings.aiLanguage,
+        systemPrompt:    appState.apiSettings.systemPrompt,
+        temperature:     appState.apiSettings.temperature,
+        maxTokens:       appState.apiSettings.maxTokens,
+        presencePenalty: appState.apiSettings.presencePenalty,
+        contextLimit:    appState.apiSettings.contextLimit,
+        topP:            appState.apiSettings.topP,
+        topK:            appState.apiSettings.topK,
+        minP:            appState.apiSettings.minP,
+        frequencyPenalty: appState.apiSettings.frequencyPenalty,
+        powerUser,
+      });
     } catch (err) {
       console.error("[Settings] Failed to load:", err);
     }
@@ -64,6 +91,7 @@
         saveSetting("api_url",              appState.apiSettings.url),
         saveSetting("api_key",              appState.apiSettings.apiKey),
         saveSetting("api_model",            appState.apiSettings.model),
+        saveSetting("api_custom_mode",      appState.apiSettings.customMode),
         saveSetting("thinking_mode",        appState.apiSettings.isThinkingModel),
         saveSetting("ai_language",          appState.apiSettings.aiLanguage),
         saveSetting("system_prompt",        appState.apiSettings.systemPrompt),
@@ -71,6 +99,10 @@
         saveSetting("api_max_tokens",       appState.apiSettings.maxTokens ?? 300),
         saveSetting("api_presence_penalty", appState.apiSettings.presencePenalty ?? 1.1),
         saveSetting("api_context_limit",    appState.apiSettings.contextLimit ?? 4096),
+        saveSetting("api_top_p",             appState.apiSettings.topP ?? 0.9),
+        saveSetting("api_top_k",             appState.apiSettings.topK ?? 40),
+        saveSetting("api_min_p",             appState.apiSettings.minP ?? 0.05),
+        saveSetting("api_frequency_penalty", appState.apiSettings.frequencyPenalty ?? 0),
         saveSetting("settings_power_user",  powerUser),
       ]);
       const locale = appState.pendingUiLocale;
@@ -93,9 +125,8 @@
   {/if}
 {/snippet}
 
-{#snippet navFooter()}
-  <div class="nav-footer-divider"></div>
-  <label class="power-user-toggle" title={m.settings_power_user_title()}>
+{#snippet powerToggle({ compact = false }: { compact?: boolean } = {})}
+  <label class="power-user-toggle" class:compact title={m.settings_power_user_title()}>
     <div class="power-icon" class:active={powerUser}>
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
@@ -113,13 +144,19 @@
   </label>
 {/snippet}
 
+{#snippet navFooter()}
+  <div class="nav-footer-divider"></div>
+  {@render powerToggle({})}
+{/snippet}
+
 {#snippet actions()}
-  <div class="flex items-center gap-3">
+  <div class="flex w-full items-center justify-between gap-3 md:w-auto md:justify-start">
     <Button variant="icon" ariaLabel={m.create_page_aria_back()} onclick={goBack}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </Button>
+
     <Button variant="secondary" disabled={isSaving} onclick={saveSettings}>
       {#if isSaving}
         <span class="save-spinner"></span>
@@ -134,7 +171,7 @@
   {#each NAV_ITEMS as item}
     <button
       onclick={() => scrollToSection(item.id)}
-      class="shrink-0 px-4 py-2 rounded-full text-xs font-semibold border transition-all
+      class="flex-1 basis-0 min-w-0 px-4 py-2 rounded-full text-xs font-semibold border transition-all
         {activeSection === item.id
           ? 'bg-white/[0.07] border-white/[0.08] text-white'
           : 'bg-white/[0.03] border-white/[0.06] text-gray-500 hover:text-white hover:bg-white/[0.05]'}"
@@ -142,6 +179,10 @@
       {item.label}
     </button>
   {/each}
+{/snippet}
+
+{#snippet mobileFooter()}
+  {@render powerToggle({ compact: true })}
 {/snippet}
 
 <PageWithNavSidebar
@@ -153,8 +194,9 @@
   {navFooter}
   {actions}
   {mobileNav}
+  {mobileFooter}
 >
-  <div class="max-w-xl mx-auto px-8 pb-32 space-y-10 pt-8">
+  <div class="max-w-xl mx-auto px-4 md:px-8 pb-32 space-y-10 pt-8">
     <div bind:this={sectionEls["api"]}>
       <ApiSection {powerUser} />
     </div>
@@ -196,6 +238,29 @@
     user-select: none;
   }
   .power-user-toggle:hover { background: rgba(255,255,255,0.04); }
+
+  /* On mobile the footer row is a standalone touch target, not tucked
+     into a narrow sidebar — give it more breathing room and a slightly
+     larger hit area so it's comfortable to tap. */
+  .power-user-toggle.compact {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .power-user-toggle.compact:hover,
+  .power-user-toggle.compact:active {
+    background: rgba(255, 255, 255, 0.05);
+  }
+  .power-user-toggle.compact .power-label {
+    font-size: 12.5px;
+  }
+  .power-user-toggle.compact .power-track {
+    width: 40px;
+    height: 22px;
+  }
+
   .power-icon {
     color: #48484a;
     transition: color 0.2s;

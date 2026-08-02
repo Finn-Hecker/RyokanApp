@@ -18,12 +18,15 @@ pub struct DbMessage {
 }
 
 /// Retrieves the full, chronological message history for a specific conversation.
+/// rowid is a tiebreaker for rows sharing the same created_at second (e.g.
+/// rapid inserts, or messages copied in bulk when cloning a chat) — it
+/// always reflects true insertion order.
 #[tauri::command]
 pub fn get_messages(app: AppHandle, chat_id: String) -> Result<Vec<DbMessage>, String> {
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare(
         "SELECT id, conversation_id, role, content, swipe_variants, swipe_index \
-         FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC"
+         FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC, rowid ASC"
     ).map_err(|e| e.to_string())?;
 
     let rows = stmt.query_map(params![chat_id], |row| {
@@ -78,9 +81,8 @@ pub fn add_message(app: AppHandle, chat_id: String, role: String, content: Strin
                 content.clone()
             };
 
-            let mut title = display_content;
-            if title.len() > 30 {
-                title.truncate(27);
+            let mut title: String = display_content.chars().take(27).collect();
+            if display_content.chars().count() > 27 {
                 title.push_str("...");
             }
 
@@ -192,4 +194,41 @@ pub fn delete_message(app: AppHandle, id: String) -> Result<(), String> {
         params![id],
     ).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Fetches a specific page of messages (for infinite scroll).
+#[tauri::command]
+pub fn get_messages_page(app: AppHandle, chat_id: String, limit: i64, offset: i64) -> Result<Vec<DbMessage>, String> {
+    let conn = get_connection(&app)?;
+    
+    // Sort by newest first, use limit/offset to fetch the chunk.
+    // rowid is a tiebreaker for rows sharing the same created_at second — it
+    // always reflects true insertion order, unlike a timestamp with only
+    // second-level resolution (relevant e.g. right after cloning a chat,
+    // where many messages get inserted within the same second).
+    let mut stmt = conn.prepare(
+        "SELECT id, conversation_id, role, content, swipe_variants, swipe_index \
+         FROM messages WHERE conversation_id = ?1 \
+         ORDER BY created_at DESC, rowid DESC \
+         LIMIT ?2 OFFSET ?3"
+    ).map_err(|e| e.to_string())?;
+
+    let rows = stmt.query_map(params![chat_id, limit, offset], |row| {
+        Ok(DbMessage {
+            id: row.get(0)?,
+            conversation_id: row.get(1)?,
+            role: row.get(2)?,
+            content: row.get(3)?,
+            swipe_variants: row.get(4)?,
+            swipe_index: row.get(5)?,
+        })
+    }).map_err(|e| e.to_string())?;
+
+    let mut list = Vec::new();
+    for row in rows { list.push(row.unwrap()); }
+    
+    // IMPORTANT: Reverse the list so the oldest messages in this chunk are at the top
+    list.reverse();
+    
+    Ok(list)
 }

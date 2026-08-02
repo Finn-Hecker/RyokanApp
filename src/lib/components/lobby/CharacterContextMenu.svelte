@@ -1,3 +1,7 @@
+<script module lang="ts">
+  let activeMenuId = $state<string | null>(null);
+</script>
+
 <script lang="ts">
   import * as m from '$lib/paraglide/messages';
 
@@ -21,15 +25,16 @@
     onDelete: (e: MouseEvent, char: any) => void;
   } = $props();
 
-  let open = $state(false);
+  let menuId = $derived(String(char.id));
+  let open = $derived(activeMenuId === menuId);
 
   function toggle(e: MouseEvent) {
     e.stopPropagation();
-    open = !open;
+    activeMenuId = open ? null : menuId;
   }
 
   function close() {
-    open = false;
+    if (open) activeMenuId = null;
   }
 
   function stopProp(e: MouseEvent | KeyboardEvent) {
@@ -57,7 +62,7 @@
   aria-label={m.lobby_aria_options()}
   aria-haspopup="menu"
   aria-expanded={open}
-  class="{buttonSizes[size]} flex items-center justify-center bg-black/50 hover:bg-black/70 backdrop-blur-md border border-white/10 hover:border-ryokan-accent/40 text-gray-300 hover:text-white transition-all duration-150 active:scale-90
+  class="{buttonSizes[size]} relative flex items-center justify-center bg-black/50 hover:bg-black/70 backdrop-blur-md border border-white/10 hover:border-ryokan-accent/40 text-gray-300 hover:text-white transition-all duration-150 active:scale-90 touch-manipulation select-none [-webkit-tap-highlight-color:transparent] before:content-[''] before:absolute before:-inset-2.5
     {size === 'md' ? 'bg-white/5 hover:bg-white/[0.07]' : ''}
     {open ? 'bg-black/70 border-ryokan-accent/50 text-white' + (size === 'md' ? ' !bg-white/[0.07]' : '') : ''}"
 >
@@ -73,7 +78,7 @@
     tabindex="-1"
     onclick={stopProp}
     onkeydown={stopProp}
-    class="absolute right-0 top-full mt-1.5 w-44 bg-[#16161f] border border-ryokan-accent/[0.22] rounded-xl z-30 py-1 overflow-hidden"
+    class="absolute right-0 top-full mt-1.5 w-44 max-w-[calc(100vw-2rem)] bg-[#16161f] border border-ryokan-accent/[0.22] rounded-xl z-30 py-1 overflow-hidden"
     style="box-shadow: 0 20px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(212,180,131,0.04) inset;"
   >
     {#if char.isCustom}
@@ -81,7 +86,7 @@
         type="button"
         role="menuitem"
         onclick={(e) => { close(); onEdit(e, char); }}
-        class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-200 hover:text-white hover:bg-white/[0.06] transition-colors text-left"
+        class="w-full flex items-center gap-2.5 px-3.5 py-2.5 touch-manipulation [-webkit-tap-highlight-color:transparent] text-sm text-gray-200 hover:text-white hover:bg-white/[0.06] transition-colors text-left"
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -95,7 +100,7 @@
       type="button"
       role="menuitem"
       onclick={(e) => { close(); onTogglePin(e, char); }}
-      class="w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors text-left hover:bg-white/[0.06]
+      class="w-full flex items-center gap-2.5 px-3.5 py-2.5 touch-manipulation [-webkit-tap-highlight-color:transparent] text-sm transition-colors text-left hover:bg-white/[0.06]
         {isPinned ? 'text-ryokan-accent hover:text-ryokan-accent/80' : 'text-gray-200 hover:text-white'}"
     >
       <svg width="13" height="13" viewBox="0 0 24 24" fill={isPinned ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -108,7 +113,7 @@
       type="button"
       role="menuitem"
       onclick={(e) => { close(); onToggleHide(e, char); }}
-      class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-200 hover:text-white hover:bg-white/[0.06] transition-colors text-left"
+      class="w-full flex items-center gap-2.5 px-3.5 py-2.5 touch-manipulation [-webkit-tap-highlight-color:transparent] text-sm text-gray-200 hover:text-white hover:bg-white/[0.06] transition-colors text-left"
     >
       {#if isHidden}
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -132,7 +137,7 @@
         type="button"
         role="menuitem"
         onclick={(e) => { close(); onDelete(e, char); }}
-        class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/[0.08] transition-colors text-left"
+        class="w-full flex items-center gap-2.5 px-3.5 py-2.5 touch-manipulation [-webkit-tap-highlight-color:transparent] text-sm text-red-400 hover:text-red-300 hover:bg-red-500/[0.08] transition-colors text-left"
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="3 6 5 6 21 6"/>

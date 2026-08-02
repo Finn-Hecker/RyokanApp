@@ -8,8 +8,13 @@ export interface ApiSettings {
   temperature: number;
   maxTokens: number;
   presencePenalty: number;
+  topP: number;
+  topK: number;
+  minP: number;
+  frequencyPenalty: number;
   contextLimit: number;
   thinkingBudget: number;
+  customMode: boolean;
 }
 
 export const appState = $state({
@@ -30,6 +35,11 @@ export const appState = $state({
     thinkingBudget: 2500,
     maxTokens: 300,
     presencePenalty: 1.12,
+    topP: 0.9,
+    topK: 40,
+    minP: 0.05,
+    frequencyPenalty: 0,
     contextLimit: 4096,
+    customMode: false,
   } as ApiSettings
 });

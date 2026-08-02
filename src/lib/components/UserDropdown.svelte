@@ -71,7 +71,7 @@
       bind:this={dropdownEl}
       role="menu"
       aria-label={m.dropdown_aria_switch_role()}
-      class="absolute right-0 top-[calc(100%+0.9rem)] z-50 w-56 animate-in"
+      class="absolute right-0 top-[calc(100%+0.9rem)] z-50 w-56 max-w-[calc(100vw-2rem)] animate-in"
     >
       <div class="absolute -top-[7px] right-3 w-3.5 h-3.5
                   bg-[#13151c] border-t border-l border-white/[0.08]

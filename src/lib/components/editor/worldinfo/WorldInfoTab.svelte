@@ -2,6 +2,8 @@
   import * as m from '$lib/paraglide/messages';
   import { slide } from 'svelte/transition';
   import { createEmptyEntry, type WorldInfoEntry, type WiPosition } from './worldInfoLogic';
+  import TokenBadge from '$lib/components/TokenBadge.svelte';
+  import { countTokens } from '$lib/utils/tokenCount';
 
   let {
     name = $bindable(''),
@@ -32,6 +34,9 @@
 
   let beforeCount = $derived(entries.filter(e => e.position === 'before' && e.enabled).length);
   let afterCount  = $derived(entries.filter(e => e.position === 'after'  && e.enabled).length);
+  let activeTokens = $derived(
+    entries.filter(e => e.enabled).reduce((sum, e) => sum + countTokens(e.content), 0)
+  );
 </script>
 
 <div class="space-y-4">
@@ -54,11 +59,15 @@
     <span class="section-title">{m.wi_tab_entries_title()}</span>
     {#if entries.length > 0}
       <span class="section-count">{entries.length}</span>
-      
+
       <span class="pos-summary">
         <span class="pos-dot pos-dot--before"></span>{m.wi_tab_before_count({ count: beforeCount })}
         <span class="pos-dot pos-dot--after"></span>{m.wi_tab_after_count({ count: afterCount })}
       </span>
+
+      <TokenBadge
+        count={activeTokens}
+      />
     {/if}
   </div>
 
@@ -117,7 +126,10 @@
           <div class="entry-sep"></div>
 
           <div class="entry-section">
-            <span class="entry-section-label">{m.wi_tab_content_label()}</span>
+            <span class="entry-section-label-row">
+              <span class="entry-section-label">{m.wi_tab_content_label()}</span>
+              <TokenBadge text={entry.content} />
+            </span>
             <textarea
               value={entry.content}
               oninput={e => updateContent(entry.id, e.currentTarget.value)}
@@ -291,10 +303,14 @@
   .remove-btn:hover { color: #f87171; background: rgba(248,113,113,0.1); }
 
   .entry-section { padding: 2px 12px 9px; }
+  .entry-section-label-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 3px;
+  }
   .entry-section-label {
     display: block; font-size: 10px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.1em;
-    color: rgba(255,255,255,0.18); margin-bottom: 3px;
+    color: rgba(255,255,255,0.18);
   }
   .entry-input {
     width: 100%; background: transparent; border: none; outline: none;

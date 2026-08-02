@@ -1,16 +1,65 @@
 <script lang="ts">
   import * as m from '$lib/paraglide/messages';
+  import ChatInfoPanel from './ChatInfoPanel.svelte';
+  import ChatSettingsPanel from './ChatSettingsPanel.svelte';
 
   let {
     character = null,
     isTyping = false,
+    clonedFromTitle = null,
     onBack
   }: {
     character?: any;
     isTyping?: boolean;
+    clonedFromTitle?: string | null;
     onBack?: () => void;
   } = $props();
 
+  let showInfoPanel = $state(false);
+  let infoTab = $state<'character' | 'role' | 'chat'>('character');
+  let showSettingsPanel = $state(false);
+
+  function openInfoPanel(tab: 'character' | 'role' | 'chat' = 'character') {
+    showSettingsPanel = false;
+    infoTab = tab;
+    showInfoPanel = true;
+  }
+
+  function toggleInfoPanel() {
+    if (showInfoPanel) {
+      showInfoPanel = false;
+    } else {
+      openInfoPanel('character');
+    }
+  }
+
+  function closeInfoPanel() {
+    showInfoPanel = false;
+  }
+
+  function openSettingsPanel() {
+    showInfoPanel = false;
+    showSettingsPanel = true;
+  }
+
+  function toggleSettingsPanel() {
+    if (showSettingsPanel) {
+      showSettingsPanel = false;
+    } else {
+      openSettingsPanel();
+    }
+  }
+
+  function closeSettingsPanel() {
+    showSettingsPanel = false;
+  }
+
+  // Close the panels if the user switches to a different character/chat while one is open.
+  $effect(() => {
+    character;
+    showInfoPanel = false;
+    showSettingsPanel = false;
+  });
 </script>
 
 <div class="chat-header">
@@ -38,7 +87,23 @@
   </div>
 
   <div class="meta">
-    <h2 class="char-name">{character?.name ?? '—'}</h2>
+    <div class="name-row">
+      <h2 class="char-name">{character?.name ?? '—'}</h2>
+      {#if clonedFromTitle}
+        <span
+          class="clone-badge"
+          title={m.chat_cloned_badge_tooltip({ title: clonedFromTitle })}
+        >
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="6" y1="3" x2="6" y2="15"/>
+            <circle cx="18" cy="6" r="3"/>
+            <circle cx="6" cy="18" r="3"/>
+            <path d="M18 9a9 9 0 0 1-9 9"/>
+          </svg>
+          <span>{m.chat_cloned_badge()}</span>
+        </span>
+      {/if}
+    </div>
     <div class="status-row" aria-live="polite">
       {#if isTyping}
         <span class="status-text">{m.chat_typing_indicator()}</span>
@@ -51,7 +116,10 @@
   <div class="actions">
     <button
       class="icon-btn"
+      class:icon-btn--active={showInfoPanel}
       aria-label={m.chat_header_aria_info()}
+      aria-expanded={showInfoPanel}
+      onclick={toggleInfoPanel}
     >
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"/>
@@ -63,7 +131,10 @@
     <div class="menu-wrap">
       <button
         class="icon-btn"
+        class:icon-btn--active={showSettingsPanel}
         aria-label={m.chat_header_aria_options()}
+        aria-expanded={showSettingsPanel}
+        onclick={toggleSettingsPanel}
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
           <circle cx="12" cy="5" r="1.2" fill="currentColor" stroke="none"/>
@@ -74,6 +145,18 @@
     </div>
   </div>
 </div>
+
+{#if showInfoPanel}
+  <ChatInfoPanel
+    {character}
+    bind:activeTab={infoTab}
+    onClose={closeInfoPanel}
+  />
+{/if}
+
+{#if showSettingsPanel}
+  <ChatSettingsPanel onClose={closeSettingsPanel} />
+{/if}
 
 <style>
   .chat-header {
@@ -91,6 +174,13 @@
     box-shadow:
       0 1px 0 0 rgba(255,255,255,0.04) inset,
       0 1px 12px 0 rgba(0,0,0,0.2);
+  }
+
+  @media (max-width: 639px) {
+    .chat-header {
+      padding-top: calc(10px + env(safe-area-inset-top));
+      gap: 10px;
+    }
   }
 
   .icon-btn {
@@ -113,6 +203,11 @@
   }
   .icon-btn:active {
     background: rgba(255,255,255,0.12);
+  }
+
+  .icon-btn--active {
+    color: rgba(255,255,255,0.9);
+    background: rgba(255,255,255,0.09);
   }
 
   .avatar-wrap {
@@ -177,6 +272,13 @@
     gap: 2px;
   }
 
+  .name-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+  }
+
   .char-name {
     font-size: 13.5px;
     font-weight: 600;
@@ -187,6 +289,29 @@
     line-height: 1.2;
     letter-spacing: -0.01em;
     margin: 0;
+  }
+
+  .clone-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(212, 180, 131, 0.12);
+    border: 1px solid rgba(212, 180, 131, 0.28);
+    color: #d4b483;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    cursor: default;
+  }
+
+  @media (max-width: 639px) {
+    .clone-badge span:last-child {
+      display: none;
+    }
   }
 
   .status-row {

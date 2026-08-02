@@ -48,7 +48,7 @@
   );
 
   const activeTab = $derived<ProviderTab>(
-    customMode
+    appState.apiSettings.customMode
       ? 'cloud'
       : (activeProvider?.tab ?? (
           appState.apiSettings.url.includes('127.0.0.1') ||
@@ -58,20 +58,20 @@
 
   const filteredProviders = $derived(PROVIDERS.filter(p => p.tab === activeTab));
 
-  const showUrl = $derived(powerUser || customMode);
-  const showKey = $derived(powerUser || activeTab === 'cloud' || customMode);
+  const showUrl = $derived(powerUser || appState.apiSettings.customMode);
+  const showKey = $derived(powerUser || activeTab === 'cloud' || appState.apiSettings.customMode);
 
   const keyPlaceholder = $derived(activeProvider?.keyPlaceholder ?? "sk-...");
 
   function switchTab(tab: ProviderTab) {
     if (activeTab === tab) return;
-    customMode = false;
+    appState.apiSettings.customMode = false;
     const first = PROVIDERS.find(p => p.tab === tab);
     if (first) selectProvider(first);
   }
 
   function selectProvider(provider: Provider) {
-    customMode = false;
+    appState.apiSettings.customMode = false;
     appState.apiSettings.url   = provider.url;
     appState.apiSettings.model = "";
     availableModels = [];
@@ -79,7 +79,7 @@
   }
 
   function selectCustom() {
-    customMode = true;
+    appState.apiSettings.customMode = true;
     appState.apiSettings.url   = "";
     appState.apiSettings.model = "";
     availableModels = [];
@@ -173,7 +173,7 @@
         {/each}
 
         {#if activeTab === 'cloud'}
-          <button onclick={selectCustom} class="provider-btn {customMode ? 'provider-btn--active' : ''}">
+          <button onclick={selectCustom} class="provider-btn {appState.apiSettings.customMode ? 'provider-btn--active' : ''}">
             <svg class="provider-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <circle cx="12" cy="12" r="3"/>
               <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" stroke-linecap="round"/>
@@ -265,7 +265,7 @@
     <div class="settings-divider"></div>
 
     <div class="ctx-row">
-      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 0;">
+      <div class="ctx-row-head">
         <span class="settings-label whitespace-nowrap" style="margin-bottom:0">{m.settings_context_label()}</span>
 
         <Tooltip>
@@ -273,6 +273,11 @@
           {m.settings_context_tooltip_p2()}<br><br>
           <span class="tooltip-hint">{m.settings_context_tooltip_hint()}</span>
         </Tooltip>
+
+        <span class="ctx-current">
+          {CONTEXT_STEPS.find(s => s.value === (appState.apiSettings.contextLimit ?? 4096))?.label
+            ?? `${appState.apiSettings.contextLimit ?? 4096}`}
+        </span>
       </div>
 
       <div class="ctx-chips">
@@ -328,8 +333,14 @@
 
   .provider-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 8px;
+  }
+
+  @media (min-width: 640px) {
+    .provider-grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
   }
 
   .provider-btn {
@@ -400,38 +411,59 @@
 
   .ctx-row {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
   }
-  .ctx-chips {
+  .ctx-row-head {
     display: flex;
-    gap: 4px;
-    background: rgba(0,0,0,0.2);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 10px;
-    padding: 3px;
+    align-items: center;
+    gap: 8px;
+  }
+  .ctx-current {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 700;
+    color: #d4b483;
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .ctx-chips {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+  @media (min-width: 420px) {
+    .ctx-chips {
+      grid-template-columns: repeat(6, 1fr);
+    }
   }
   .ctx-chip {
-    padding: 5px 10px;
-    border-radius: 7px;
-    border: 1px solid transparent;
-    background: transparent;
-    color: #5a5a5e;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
+    width: 100%;
+    padding: 9px 4px;
+    border-radius: 9px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.02);
+    color: #6b6b6e;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-align: center;
     cursor: pointer;
     transition: all 0.15s ease;
     white-space: nowrap;
   }
   .ctx-chip:hover:not(.ctx-chip--active) {
-    color: #a0a0a6;
-    background: rgba(255,255,255,0.03);
+    color: #d1d1d6;
+    border-color: rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.04);
   }
+  .ctx-chip:active { transform: scale(0.97); }
   .ctx-chip--active {
     background: rgba(255,255,255,0.07);
-    border-color: rgba(212,180,131,0.35);
+    border-color: rgba(212,180,131,0.4);
     color: #d4b483;
   }
 </style>

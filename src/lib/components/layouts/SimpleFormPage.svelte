@@ -18,7 +18,7 @@
   in:fade={{ duration: 200 }}
   role="region"
 >
-  <header class="border-b border-white/5 flex items-center justify-between px-8 pt-6 pb-4 shrink-0 bg-ryokan-bg/95 backdrop-blur z-20 sticky top-0">
+  <header class="border-b border-white/5 flex items-center justify-between px-4 md:px-8 pt-[calc(1.75rem+env(safe-area-inset-top))] md:pt-6 pb-4 shrink-0 bg-ryokan-bg/95 backdrop-blur z-20 sticky top-0">
     <div></div>
     <div class="flex items-center gap-3">
       {@render actions?.()}
