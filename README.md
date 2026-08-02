@@ -5,9 +5,10 @@
 
 <p>
   <img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" />
-  <img src="https://img.shields.io/badge/status-Alpha_v0.3-green.svg" />
+  <img src="https://img.shields.io/badge/status-Alpha_v0.4-green.svg" />
   <img src="https://img.shields.io/badge/built_with-Tauri_v2-orange.svg" />
   <img src="https://img.shields.io/badge/frontend-Svelte_5-red.svg" />
+  <img src="https://img.shields.io/badge/platforms-Windows_%7C_Android-blueviolet.svg" />
 </p>
 
 <table>
@@ -33,12 +34,23 @@ No clutter, no friction. Just you, your characters, and your local LLM or any co
 
 ---
 
+## Platforms
+
+Ryokan runs natively on:
+- **Windows** (x64)
+- **Android** (arm64)
+
+Grab the latest build for your platform from the [Releases page](https://github.com/Finn-Hecker/RyokanApp/releases). No build tools required.
+
+---
+
 ## Features
 
 ### Roleplay-First Design
 - **Director Mode:** Step outside the story at any time to nudge the narrative or correct the AI, without breaking immersion. No clunky `[OOC]` brackets needed.
 - **Edit & Retry:** Change any previous message and regenerate from that point forward.
 - **Swipe to Reroll:** Browse alternate AI responses with smooth slide animations.
+- **Chat Cloning:** Branch a conversation from any assistant message into a new chat to explore alternate directions without losing your original thread.
 
 ### Characters & World Building
 - **V3 Character Support:** Full card import/export with alternate greetings, personality traits, scenarios, and example dialogs.
@@ -63,16 +75,18 @@ Full, consistent **English and German** support from day one.
 
 ## Tech Stack
 
-| Layer      | Technology                        |
-|------------|-----------------------------------|
-| Core       | Tauri v2 (Rust)                   |
-| Frontend   | Svelte 5 + TailwindCSS            |
-| Database   | SQLite (local)                    |
-| I18n       | ParaglideJS                       |
+| Layer      | Technology                          |
+|------------|--------------------------------------|
+| Core       | Tauri v2 (Rust)                      |
+| Frontend   | Svelte 5 + TailwindCSS               |
+| Database   | SQLite (local)                       |
+| I18n       | ParaglideJS                          |
 
 ---
 
 ## Getting Started
+
+> **Just want to try it?** Download a prebuilt binary from [Releases](https://github.com/Finn-Hecker/RyokanApp/releases) instead of building from source.
 
 ### Prerequisites
 - Node.js v18+
@@ -90,7 +104,7 @@ npm install
 
 # 3. Launch in dev mode
 npm run tauri dev
-````
+```
 
 No manual tokenizer downloads, no extra setup steps. The `postinstall` hook handles everything.
 
@@ -105,6 +119,6 @@ Ryokan is in active Alpha and contributions are very welcome. Please open an iss
 ## License
 
 Licensed under the **GNU General Public License v3.0**.
-See the [LICENSE](https://www.google.com/search?q=LICENSE) file for details.
+See the [LICENSE](LICENSE) file for details.
 
 [](https://www.gnu.org/licenses/gpl-3.0)
