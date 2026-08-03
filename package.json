@@ -14,7 +14,6 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@inlang/paraglide-js-adapter-sveltekit": "^0.6.7",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-sql": "^2.3.2",
@@ -23,9 +22,9 @@
     "marked": "^17.0.1"
   },
   "devDependencies": {
-    "@inlang/paraglide-js": "^2.10.0",
-    "@sveltejs/adapter-static": "^3.0.6",
-    "@sveltejs/kit": "^2.9.0",
+    "@inlang/paraglide-js": "^2.23.1",
+    "@sveltejs/adapter-static": "^3.0.10",
+    "@sveltejs/kit": "^2.70.2",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@tailwindcss/postcss": "^4.1.18",
     "@tauri-apps/cli": "^2.11.4",
