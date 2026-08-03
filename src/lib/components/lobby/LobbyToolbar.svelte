@@ -28,7 +28,7 @@
       type="text"
       bind:value={searchQuery}
       placeholder={m.lobby_search_placeholder()}
-      class="w-full h-9 pl-8 pr-4 rounded-xl bg-white/[0.04] border border-white/[0.06] text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-ryokan-accent/30 focus:bg-white/[0.06] transition-all"
+      class="w-full h-9 pl-8 pr-4 rounded-xl bg-white/[0.04] border border-white/[0.06] text-sm text-gray-300 placeholder-gray-500 focus:outline-none focus:border-ryokan-accent/30 focus:bg-white/[0.06] transition-all"
     />
   </div>
 
