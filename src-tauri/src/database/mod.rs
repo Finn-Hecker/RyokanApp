@@ -28,8 +28,12 @@ pub fn get_connection(app: &AppHandle) -> Result<Connection, String> {
     let conn = Connection::open(db_path)
         .map_err(|e| format!("Failed to open database: {}", e))?;
 
-    conn.execute_batch("PRAGMA foreign_keys = ON;")
-        .map_err(|e| format!("Failed to enable foreign keys: {}", e))?;
+    conn.execute_batch(
+        "PRAGMA foreign_keys = ON;
+         PRAGMA journal_mode = WAL;
+         PRAGMA synchronous = NORMAL;
+         PRAGMA busy_timeout = 5000;"
+    ).map_err(|e| format!("Failed to configure connection pragmas: {}", e))?;
 
     Ok(conn)
 }
@@ -64,6 +68,9 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
 
         CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at DESC);
 
+        CREATE INDEX IF NOT EXISTS idx_conversations_pinned_updated
+            ON conversations(is_pinned DESC, updated_at DESC);
+
         CREATE TABLE IF NOT EXISTS messages (
             id TEXT PRIMARY KEY,
             conversation_id TEXT,
@@ -74,6 +81,9 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             created_at DATETIME DEFAULT {utc_now},
             FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
         );
+
+        CREATE INDEX IF NOT EXISTS idx_messages_conversation
+            ON messages(conversation_id, created_at);
 
         -- Keeps updated_at current so conversations are sorted by latest activity.
         CREATE TRIGGER IF NOT EXISTS update_conversation_timestamp

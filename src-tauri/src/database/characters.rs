@@ -25,7 +25,7 @@ pub struct DbCharacter {
     pub v3_spec: bool,
     pub initials: String,
     pub color: String,
-    pub avatar: Option<Vec<u8>>,
+    pub has_avatar: bool,
     pub world_info_ids: Vec<String>,
 }
 
@@ -98,20 +98,21 @@ fn process_avatar(base64_img: &str) -> Result<Vec<u8>, String> {
     }
 }
 
-/// Returns all saved characters. Avatars are returned as raw bytes.
+/// Returns all saved characters, WITHOUT avatar bytes.
 #[tauri::command]
-pub fn get_custom_characters(app: AppHandle) -> Result<Vec<DbCharacter>, String> {
+pub async fn get_custom_characters(app: AppHandle) -> Result<Vec<DbCharacter>, String> {
     let conn = get_connection(&app)?;
 
     let mut stmt = conn.prepare(
         "SELECT id, name, desc, personality, scenario, greeting,
                 alternate_greetings, mes_example, creator_notes, tags,
-                v3_spec, initials, color, world_info_ids, avatar
+                v3_spec, initials, color, world_info_ids,
+                LENGTH(avatar) > 0
          FROM characters ORDER BY created_at DESC"
     ).map_err(|e| e.to_string())?;
 
     let rows = stmt.query_map([], |row| {
-        let avatar_blob: Option<Vec<u8>> = row.get(14)?;
+        let has_avatar: Option<bool> = row.get(14)?;
 
         Ok(DbCharacter {
             id:                 row.get(0)?,
@@ -130,7 +131,7 @@ pub fn get_custom_characters(app: AppHandle) -> Result<Vec<DbCharacter>, String>
             world_info_ids: serde_json::from_str(
                 &row.get::<_, Option<String>>(13)?.unwrap_or_default()
             ).unwrap_or_default(),
-            avatar: avatar_blob,
+            has_avatar: has_avatar.unwrap_or(false),
         })
     }).map_err(|e| e.to_string())?;
 
@@ -139,9 +140,26 @@ pub fn get_custom_characters(app: AppHandle) -> Result<Vec<DbCharacter>, String>
     Ok(list)
 }
 
+/// Lazily fetches a single character's avatar, Base64-encoded as a data URL.
+/// Called on demand by the frontend (e.g. when a character card scrolls into view)
+#[tauri::command]
+pub async fn get_character_avatar(app: AppHandle, id: String) -> Result<Option<String>, String> {
+    let conn = get_connection(&app)?;
+
+    let avatar_blob: Option<Vec<u8>> = conn.query_row(
+        "SELECT avatar FROM characters WHERE id = ?1",
+        params![id],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    Ok(avatar_blob.filter(|b| !b.is_empty()).map(|bytes| {
+        format!("data:image/webp;base64,{}", general_purpose::STANDARD.encode(bytes))
+    }))
+}
+
 /// Inserts a new character. Avatar processing runs on a background thread.
 #[tauri::command]
-pub fn create_character(app: AppHandle, payload: CreateCharacterPayload) -> Result<String, String> {
+pub async fn create_character(app: AppHandle, payload: CreateCharacterPayload) -> Result<String, String> {
     let conn = get_connection(&app)?;
     let new_id = Uuid::new_v4().to_string();
 
@@ -204,7 +222,7 @@ pub fn create_character(app: AppHandle, payload: CreateCharacterPayload) -> Resu
 /// Updates an existing character. If no new avatar is provided, the existing one is kept.
 /// Avatar processing runs on a background thread.
 #[tauri::command]
-pub fn update_character(app: AppHandle, id: String, payload: CreateCharacterPayload) -> Result<(), String> {
+pub async fn update_character(app: AppHandle, id: String, payload: CreateCharacterPayload) -> Result<(), String> {
     let conn = get_connection(&app)?;
 
     let alt_greetings_json = serde_json::to_string(&payload.alternate_greetings)
@@ -268,7 +286,7 @@ pub fn update_character(app: AppHandle, id: String, payload: CreateCharacterPayl
 /// Permanently deletes a character. Associated chats are removed via ON DELETE CASCADE.
 /// Also cleans up the character's ID from the hidden_character_ids and pinned_character_ids settings.
 #[tauri::command]
-pub fn delete_character(app: AppHandle, id: String) -> Result<(), String> {
+pub async fn delete_character(app: AppHandle, id: String) -> Result<(), String> {
     let conn = get_connection(&app)?;
 
     conn.execute("DELETE FROM characters WHERE id = ?1", params![id])
@@ -317,7 +335,7 @@ pub fn delete_character(app: AppHandle, id: String) -> Result<(), String> {
 
 /// Returns all hidden character IDs. Applies to both custom and static characters.
 #[tauri::command]
-pub fn get_hidden_character_ids(app: AppHandle) -> Result<Vec<String>, String> {
+pub async fn get_hidden_character_ids(app: AppHandle) -> Result<Vec<String>, String> {
     let conn = get_connection(&app)?;
 
     let raw: Option<String> = conn
@@ -336,7 +354,7 @@ pub fn get_hidden_character_ids(app: AppHandle) -> Result<Vec<String>, String> {
 
 /// Hides or unhides a character by updating the hidden_character_ids list in settings.
 #[tauri::command]
-pub fn set_character_hidden(app: AppHandle, id: String, hidden: bool) -> Result<(), String> {
+pub async fn set_character_hidden(app: AppHandle, id: String, hidden: bool) -> Result<(), String> {
     let conn = get_connection(&app)?;
 
     let raw: Option<String> = conn
@@ -370,7 +388,7 @@ pub fn set_character_hidden(app: AppHandle, id: String, hidden: bool) -> Result<
 
 /// Returns all pinned character IDs. Applies to both custom and static characters.
 #[tauri::command]
-pub fn get_pinned_character_ids(app: AppHandle) -> Result<Vec<String>, String> {
+pub async fn get_pinned_character_ids(app: AppHandle) -> Result<Vec<String>, String> {
     let conn = get_connection(&app)?;
 
     let raw: Option<String> = conn
@@ -389,7 +407,7 @@ pub fn get_pinned_character_ids(app: AppHandle) -> Result<Vec<String>, String> {
 
 /// Pins or unpins a character by updating the pinned_character_ids list in settings.
 #[tauri::command]
-pub fn set_character_pinned(app: AppHandle, id: String, pinned: bool) -> Result<(), String> {
+pub async fn set_character_pinned(app: AppHandle, id: String, pinned: bool) -> Result<(), String> {
     let conn = get_connection(&app)?;
 
     let raw: Option<String> = conn

@@ -6,7 +6,11 @@ export interface Role {
     name: string;
     bio?: string;
     pronouns?: 'he/him' | 'she/her' | 'they/them' | 'it/its' | string;
-    avatar?: number[] | string;
+    /** Base64 data URL, only ever set client-side while editing (upload preview
+     *  or a freshly-fetched avatar) — never round-trips through get_roles. */
+    avatar?: string;
+    /** Whether the DB has an avatar stored for this role. */
+    has_avatar?: boolean;
     avatarUrl?: string;
     createdAt?: string;
 }
@@ -18,22 +22,11 @@ interface RolePayload {
     avatar?:   string;
 }
 
-function bytesToUrl(bytes: number[]): string {
-    const uint8 = new Uint8Array(bytes);
-    const blob  = new Blob([uint8], { type: 'image/webp' });
-    return URL.createObjectURL(blob);
-}
-
 function hydrateRole(p: Role): Role {
-    let avatarUrl = p.avatarUrl;
-
-    if (Array.isArray(p.avatar) && p.avatar.length > 0) {
-        avatarUrl = bytesToUrl(p.avatar);
-    } else if (typeof p.avatar === 'string' && p.avatar.startsWith('data:')) {
-        avatarUrl = p.avatar;
+    if (typeof p.avatar === 'string' && p.avatar.startsWith('data:')) {
+        return { ...p, avatarUrl: p.avatar };
     }
-
-    return { ...p, avatarUrl };
+    return p;
 }
 
 export const roleState = $state({
@@ -47,6 +40,12 @@ export async function loadRoles(): Promise<void> {
     try {
         const rows = await invoke<Role[]>('get_roles');
         roleState.allRoles = [...DEFAULT_ROLES, ...rows.map(hydrateRole)];
+
+        for (const r of rows) {
+            if (r.has_avatar) {
+                loadRoleAvatar(r.id);
+            }
+        }
     } catch (e) {
         console.error('roleStore – loadRoles:', e);
     }
@@ -61,6 +60,18 @@ export async function loadRoles(): Promise<void> {
     } else {
         const first = all[0];
         if (first) setActiveRole(first.id);
+    }
+}
+
+export async function loadRoleAvatar(id: string): Promise<void> {
+    try {
+        const avatarUrl = await invoke<string | null>('get_role_avatar', { id });
+        if (!avatarUrl) return;
+        roleState.allRoles = roleState.allRoles.map(p =>
+            p.id === id ? { ...p, avatarUrl } : p
+        );
+    } catch (e) {
+        console.error('roleStore – loadRoleAvatar:', id, e);
     }
 }
 

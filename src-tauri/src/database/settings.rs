@@ -15,7 +15,7 @@ pub struct SettingRow {
 /// Retrieves all user preferences from the database.
 /// Typically called once during app initialization to hydrate the frontend state.
 #[tauri::command]
-pub fn get_all_settings(app: AppHandle) -> Result<Vec<SettingRow>, String> {
+pub async fn get_all_settings(app: AppHandle) -> Result<Vec<SettingRow>, String> {
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare("SELECT key, value FROM settings")
         .map_err(|e| e.to_string())?;
@@ -38,7 +38,7 @@ pub fn get_all_settings(app: AppHandle) -> Result<Vec<SettingRow>, String> {
 /// Uses `INSERT OR REPLACE` to cleanly handle both the creation of new settings 
 /// and the updating of existing ones in a single, atomic query.
 #[tauri::command]
-pub fn save_setting(app: AppHandle, key: String, value: String) -> Result<(), String> {
+pub async fn save_setting(app: AppHandle, key: String, value: String) -> Result<(), String> {
     let conn = get_connection(&app)?;
     
     conn.execute(

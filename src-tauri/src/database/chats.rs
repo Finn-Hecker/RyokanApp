@@ -23,7 +23,7 @@ pub struct Conversation {
 
 /// Retrieves all chat sessions, ordered by the most recently active.
 #[tauri::command]
-pub fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
+pub async fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare(
         "SELECT id, title, character_id, created_at, updated_at, is_pinned,
@@ -52,7 +52,7 @@ pub fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
 
 /// Retrieves a page of chat sessions, ordered by pinned first, then most recently active.
 #[tauri::command]
-pub fn get_conversations_page(app: AppHandle, limit: i64, offset: i64) -> Result<Vec<Conversation>, String> {
+pub async fn get_conversations_page(app: AppHandle, limit: i64, offset: i64) -> Result<Vec<Conversation>, String> {
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare(
         "SELECT id, title, character_id, created_at, updated_at, is_pinned,
@@ -83,7 +83,7 @@ pub fn get_conversations_page(app: AppHandle, limit: i64, offset: i64) -> Result
 /// Initializes a new chat session and automatically inserts the character's opening message.
 /// Uses an SQLite transaction to guarantee that either both records are created, or neither is.
 #[tauri::command]
-pub fn create_chat(app: AppHandle, character_id: String, character_name: String, initial_message: Option<String>) -> Result<String, String> {
+pub async fn create_chat(app: AppHandle, character_id: String, character_name: String, initial_message: Option<String>) -> Result<String, String> {
     let mut conn = get_connection(&app)?;
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
@@ -118,7 +118,7 @@ pub fn create_chat(app: AppHandle, character_id: String, character_name: String,
 /// message. Everything after the cut-off message is intentionally NOT
 /// copied, and the original conversation is left completely untouched.
 #[tauri::command]
-pub fn clone_chat_from_message(
+pub async fn clone_chat_from_message(
     app: AppHandle,
     chat_id: String,
     up_to_message_id: String,
@@ -184,7 +184,7 @@ pub fn clone_chat_from_message(
 
 /// Renames an existing conversation.
 #[tauri::command]
-pub fn rename_chat(app: AppHandle, id: String, title: String) -> Result<(), String> {
+pub async fn rename_chat(app: AppHandle, id: String, title: String) -> Result<(), String> {
     let conn = get_connection(&app)?;
     conn.execute(
         "UPDATE conversations SET title = ?1 WHERE id = ?2",
@@ -195,7 +195,7 @@ pub fn rename_chat(app: AppHandle, id: String, title: String) -> Result<(), Stri
 
 /// Toggles the pinned state of a conversation.
 #[tauri::command]
-pub fn toggle_pin_chat(app: AppHandle, id: String) -> Result<bool, String> {
+pub async fn toggle_pin_chat(app: AppHandle, id: String) -> Result<bool, String> {
     let conn = get_connection(&app)?;
     // Flip the current value and return the new state.
     conn.execute(
@@ -213,14 +213,15 @@ pub fn toggle_pin_chat(app: AppHandle, id: String) -> Result<bool, String> {
 /// Deletes a conversation and all its associated messages.
 /// Wrapped in a transaction to enforce referential integrity and prevent orphaned messages.
 #[tauri::command]
-pub fn delete_chat(app: AppHandle, id: String) -> Result<(), String> {
+pub async fn delete_chat(app: AppHandle, id: String) -> Result<(), String> {
     let mut conn = get_connection(&app)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
-    
-    // Explicitly delete messages first to avoid foreign key constraint violations
-    tx.execute("DELETE FROM messages WHERE conversation_id = ?1", params![id]).map_err(|e| e.to_string())?;
+
+    // ON DELETE CASCADE on messages.conversation_id (foreign_keys=ON is set per-connection
+    // in get_connection) already removes all messages for this conversation - no need to
+    // do it explicitly first, that was just the same delete done twice.
     tx.execute("DELETE FROM conversations WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
-    
+
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -228,7 +229,7 @@ pub fn delete_chat(app: AppHandle, id: String) -> Result<(), String> {
 /// Persists the rolling-summary metadata for a conversation so it survives app restarts.
 /// Called by the frontend after every successful compression pass.
 #[tauri::command]
-pub fn save_summary_meta(
+pub async fn save_summary_meta(
     app: AppHandle,
     chat_id: String,
     summary: Option<String>,
@@ -253,7 +254,7 @@ pub struct SummaryMeta {
 }
 
 #[tauri::command]
-pub fn get_summary_meta(app: AppHandle, chat_id: String) -> Result<SummaryMeta, String> {
+pub async fn get_summary_meta(app: AppHandle, chat_id: String) -> Result<SummaryMeta, String> {
     let conn = get_connection(&app)?;
     let result = conn.query_row(
         "SELECT summary_text, summary_last_message_id FROM conversations WHERE id = ?1",

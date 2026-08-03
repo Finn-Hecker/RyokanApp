@@ -2,6 +2,7 @@
   import { characterState } from '$lib/stores/characterStore.svelte';
   import * as m from '$lib/paraglide/messages';
   import CharacterContextMenu from './CharacterContextMenu.svelte';
+  import CharacterAvatar from './CharacterAvatar.svelte';
 
   let {
     characters,
@@ -52,11 +53,7 @@
 
       <div class="relative z-10 flex items-center gap-4 px-4 py-3 pr-12 md:pr-4 pointer-events-none">
         <div class="relative w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-white/5">
-          {#if char.avatarUrl}
-            <img src={char.avatarUrl} alt={char.name} class="w-full h-full object-cover" />
-          {:else}
-            <div class="w-full h-full {char.color} flex items-center justify-center text-white font-bold text-sm opacity-80">{char.initials}</div>
-          {/if}
+          <CharacterAvatar {char} fallbackTextClass="text-sm" />
           {#if isPinned}
             <div class="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center rounded-full bg-ryokan-accent/90">
               <svg width="7" height="7" viewBox="0 0 24 24" fill="white">

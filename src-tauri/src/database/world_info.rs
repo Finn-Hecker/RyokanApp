@@ -31,7 +31,7 @@ pub struct WorldInfoPayload {
 }
 
 #[tauri::command]
-pub fn get_world_infos(app: AppHandle) -> Result<Vec<DbWorldInfo>, String> {
+pub async fn get_world_infos(app: AppHandle) -> Result<Vec<DbWorldInfo>, String> {
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare(
         "SELECT id, name, description, entries, created_at
@@ -60,7 +60,7 @@ pub fn get_world_infos(app: AppHandle) -> Result<Vec<DbWorldInfo>, String> {
 }
 
 #[tauri::command]
-pub fn create_world_info(app: AppHandle, payload: WorldInfoPayload) -> Result<String, String> {
+pub async fn create_world_info(app: AppHandle, payload: WorldInfoPayload) -> Result<String, String> {
     let conn = get_connection(&app)?;
     let new_id = Uuid::new_v4().to_string();
     let entries_json = serde_json::to_string(&payload.entries)
@@ -81,7 +81,7 @@ pub fn create_world_info(app: AppHandle, payload: WorldInfoPayload) -> Result<St
 }
 
 #[tauri::command]
-pub fn update_world_info(app: AppHandle, id: String, payload: WorldInfoPayload) -> Result<(), String> {
+pub async fn update_world_info(app: AppHandle, id: String, payload: WorldInfoPayload) -> Result<(), String> {
     let conn = get_connection(&app)?;
     let entries_json = serde_json::to_string(&payload.entries)
         .map_err(|e| e.to_string())?;
@@ -102,7 +102,7 @@ pub fn update_world_info(app: AppHandle, id: String, payload: WorldInfoPayload) 
 }
 
 #[tauri::command]
-pub fn delete_world_info(app: AppHandle, id: String) -> Result<(), String> {
+pub async fn delete_world_info(app: AppHandle, id: String) -> Result<(), String> {
     let conn = get_connection(&app)?;
 
     let mut stmt = conn

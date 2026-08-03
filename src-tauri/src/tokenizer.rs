@@ -40,11 +40,12 @@ fn fallback_count(text: &str) -> u32 {
 
 /// Counts the tokens in `text` using the tokenizer that best matches `model_name`.
 ///
-/// Called once per "Send" press — the async overhead is invisible next to
-/// the AI generation that follows. Falls back to a byte-based heuristic if
-/// the tokenizer failed to load or encoding returns an error.
+/// Runs `async` so the initial parse of the multi-MB tokenizer JSON (lazily
+/// triggered on first use, see the `Lazy` statics above) doesn't block the UI
+/// thread. Falls back to a byte-based heuristic if the tokenizer failed to
+/// load or encoding returns an error.
 #[tauri::command]
-pub fn count_tokens(text: String, model_name: String) -> u32 {
+pub async fn count_tokens(text: String, model_name: String) -> u32 {
     if text.is_empty() {
         return 0;
     }

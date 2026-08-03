@@ -22,7 +22,7 @@ pub struct DbMessage {
 /// rapid inserts, or messages copied in bulk when cloning a chat) — it
 /// always reflects true insertion order.
 #[tauri::command]
-pub fn get_messages(app: AppHandle, chat_id: String) -> Result<Vec<DbMessage>, String> {
+pub async fn get_messages(app: AppHandle, chat_id: String) -> Result<Vec<DbMessage>, String> {
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare(
         "SELECT id, conversation_id, role, content, swipe_variants, swipe_index \
@@ -49,7 +49,7 @@ pub fn get_messages(app: AppHandle, chat_id: String) -> Result<Vec<DbMessage>, S
 /// Automatically updates the conversation title based on the user's first input.
 /// The initial content is stored both in `content` and as the first entry in `swipe_variants`.
 #[tauri::command]
-pub fn add_message(app: AppHandle, chat_id: String, role: String, content: String) -> Result<(), String> {
+pub async fn add_message(app: AppHandle, chat_id: String, role: String, content: String) -> Result<(), String> {
     let conn = crate::database::get_connection(&app)?;
 
     let msg_id = Uuid::new_v4().to_string();
@@ -100,7 +100,7 @@ pub fn add_message(app: AppHandle, chat_id: String, role: String, content: Strin
 /// The new variant is added to the `swipe_variants` array and becomes the active one.
 /// Returns the new swipe_index so the frontend can update its local state.
 #[tauri::command]
-pub fn add_swipe_variant(app: AppHandle, message_id: String, content: String) -> Result<i64, String> {
+pub async fn add_swipe_variant(app: AppHandle, message_id: String, content: String) -> Result<i64, String> {
     let conn = get_connection(&app)?;
 
     // Fetch current variants JSON.
@@ -130,7 +130,7 @@ pub fn add_swipe_variant(app: AppHandle, message_id: String, content: String) ->
 /// Navigates to a specific variant by index without creating a new one.
 /// Updates both `swipe_index` and `content` (so the rest of the app always reads the active text).
 #[tauri::command]
-pub fn set_swipe_index(app: AppHandle, message_id: String, index: i64) -> Result<(), String> {
+pub async fn set_swipe_index(app: AppHandle, message_id: String, index: i64) -> Result<(), String> {
     let conn = get_connection(&app)?;
 
     let variants_json: String = conn.query_row(
@@ -158,7 +158,7 @@ pub fn set_swipe_index(app: AppHandle, message_id: String, index: i64) -> Result
 /// Updates the text content of an existing message (manual inline edit).
 /// Also patches the active variant slot so the two stay in sync.
 #[tauri::command]
-pub fn update_message(app: AppHandle, id: String, content: String) -> Result<(), String> {
+pub async fn update_message(app: AppHandle, id: String, content: String) -> Result<(), String> {
     let conn = get_connection(&app)?;
 
     let (variants_json, swipe_index): (String, i64) = conn.query_row(
@@ -187,7 +187,7 @@ pub fn update_message(app: AppHandle, id: String, content: String) -> Result<(),
 
 /// Deletes a single message by its ID.
 #[tauri::command]
-pub fn delete_message(app: AppHandle, id: String) -> Result<(), String> {
+pub async fn delete_message(app: AppHandle, id: String) -> Result<(), String> {
     let conn = get_connection(&app)?;
     conn.execute(
         "DELETE FROM messages WHERE id = ?1",
@@ -198,7 +198,7 @@ pub fn delete_message(app: AppHandle, id: String) -> Result<(), String> {
 
 /// Fetches a specific page of messages (for infinite scroll).
 #[tauri::command]
-pub fn get_messages_page(app: AppHandle, chat_id: String, limit: i64, offset: i64) -> Result<Vec<DbMessage>, String> {
+pub async fn get_messages_page(app: AppHandle, chat_id: String, limit: i64, offset: i64) -> Result<Vec<DbMessage>, String> {
     let conn = get_connection(&app)?;
     
     // Sort by newest first, use limit/offset to fetch the chunk.

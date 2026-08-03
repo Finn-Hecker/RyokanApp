@@ -1,12 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { CHARACTERS as STATIC_CHARACTERS } from '$lib/data/characters';
 
-function bytesToUrl(bytes: number[]): string {
-    const uint8 = new Uint8Array(bytes);
-    const blob = new Blob([uint8], { type: 'image/webp' });
-    return URL.createObjectURL(blob);
-}
-
 export interface Character {
     id: string | number;
     name: string;
@@ -15,7 +9,9 @@ export interface Character {
     initials: string;
     color: string;
     isCustom?: boolean;
-    avatar?: number[];
+    /** Whether the DB has an avatar stored for this character. The bytes
+     *  themselves are no longer part of the list payload — see loadCharacterAvatar. */
+    has_avatar?: boolean;
     avatarUrl?: string;
     personality?: string;
     scenario?: string;
@@ -54,28 +50,52 @@ export async function loadCharacters() {
     try {
         const dbChars = await invoke<Character[]>('get_custom_characters');
 
-        const customChars = dbChars.map(c => {
-            let avatarUrl: string | undefined = undefined;
-            if (c.avatar && c.avatar.length > 0) {
-                avatarUrl = bytesToUrl(c.avatar);
-            }
-            return {
-                ...c,
-                isCustom: true,
-                avatarUrl,
-                alternate_greetings: typeof c.alternate_greetings === 'string'
-                    ? JSON.parse(c.alternate_greetings)
-                    : (c.alternate_greetings ?? []),
-                world_info_ids: Array.isArray(c.world_info_ids)
-                    ? c.world_info_ids
-                    : [],
-            };
-        });
+        const customChars = dbChars.map(c => ({
+            ...c,
+            isCustom: true,
+            alternate_greetings: typeof c.alternate_greetings === 'string'
+                ? JSON.parse(c.alternate_greetings)
+                : (c.alternate_greetings ?? []),
+            world_info_ids: Array.isArray(c.world_info_ids)
+                ? c.world_info_ids
+                : [],
+        }));
 
         characterState.allCharacters = [...customChars, ...STATIC_CHARACTERS];
 
+        // Avatars are intentionally NOT fetched here. Each view (grid/list/compact)
+        // renders a <CharacterAvatar> that lazily calls loadCharacterAvatar() via an
+        // IntersectionObserver once a card actually scrolls into view - fetching
+        // eagerly for every character here would defeat that.
+
     } catch (e) {
         console.error("Error loading characters:", e);
+    }
+}
+
+/**
+ * Fetches a single character's avatar (as a ready-to-use data URL) and merges
+ * it into state once it resolves. Called by <CharacterAvatar> when a card
+ * scrolls into view. Deduplicated against concurrent calls for the same id,
+ * since switching between grid/list/compact view can mount a new
+ * <CharacterAvatar> for the same character before the first fetch lands.
+ */
+const avatarFetchesInFlight = new Set<string>();
+
+export async function loadCharacterAvatar(id: string): Promise<void> {
+    if (avatarFetchesInFlight.has(id)) return;
+    avatarFetchesInFlight.add(id);
+
+    try {
+        const avatarUrl = await invoke<string | null>('get_character_avatar', { id });
+        if (!avatarUrl) return;
+        characterState.allCharacters = characterState.allCharacters.map(c =>
+            String(c.id) === id ? { ...c, avatarUrl } : c
+        );
+    } catch (e) {
+        console.error('Error loading character avatar:', id, e);
+    } finally {
+        avatarFetchesInFlight.delete(id);
     }
 }
 
