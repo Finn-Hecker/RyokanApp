@@ -79,7 +79,7 @@
 
       <div class="relative z-10 px-4 py-3 pointer-events-none">
         <h3 class="text-sm font-semibold text-gray-100 truncate group-hover:text-ryokan-accent transition-colors">{char.name}</h3>
-        <p class="text-xs text-gray-500 mt-0.5 line-clamp-2 leading-snug">{resolveDesc(char)}</p>
+        <p class="text-xs text-gray-400 mt-0.5 line-clamp-2 leading-snug">{resolveDesc(char)}</p>
       </div>
     </div>
   {/each}

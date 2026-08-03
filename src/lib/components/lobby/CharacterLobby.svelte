@@ -46,6 +46,10 @@
     appState.currentView = 'create';
   }
 
+  function onOpenGroups() {
+    appState.currentView = 'create';
+  }
+
   function onOpenSettings() {
     appState.currentView = 'settings';
   }
@@ -117,6 +121,19 @@
 
 {#snippet header()}
   <div class="flex items-center gap-3">
+    <Button variant="icon" ariaLabel={m.lobby_label_open_groups()} onclick={onOpenGroups}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="7" r="3"/>
+        <path d="M6 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
+        <circle cx="5" cy="9" r="2.2"/>
+        <path d="M1.5 19.5c0-2.4 1.6-3.9 3.5-3.9"/>
+        <circle cx="19" cy="9" r="2.2"/>
+        <path d="M22.5 19.5c0-2.4-1.6-3.9-3.5-3.9"/>
+      </svg>
+    </Button>
+
+    <div class="w-px h-6 bg-white/10"></div>
+
     <Button variant="secondary" onclick={onOpenCreate}>
       <svg class="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>

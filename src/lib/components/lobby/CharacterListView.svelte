@@ -68,7 +68,7 @@
 
         <div class="flex-1 min-w-0">
           <h3 class="text-sm font-semibold text-gray-100 truncate group-hover:text-ryokan-accent transition-colors">{char.name}</h3>
-          <p class="text-xs text-gray-500 truncate">{resolveDesc(char)}</p>
+          <p class="text-xs text-gray-400 truncate">{resolveDesc(char)}</p>
         </div>
       </div>
 
