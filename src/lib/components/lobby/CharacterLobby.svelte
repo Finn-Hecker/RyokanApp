@@ -47,7 +47,7 @@
   }
 
   function onOpenGroups() {
-    appState.currentView = 'create';
+    appState.currentView = 'play';
   }
 
   function onOpenSettings() {

@@ -7,6 +7,8 @@
   import SettingsPage from '$lib/components/settings/SettingsPage.svelte';
   import Onboarding from '$lib/components/Onboarding.svelte';
   import ListView   from '$lib/components/list/ListView.svelte';
+  import PlayHub   from '$lib/components/play/PlayLobby.svelte';
+  import Multiplayer   from '$lib/components/play/MultiplayerRoom.svelte';
   import { getAllSettings } from '$lib/utils/settings';
 
   let loaded = $state(false); 
@@ -46,6 +48,10 @@
         <SettingsPage /> 
       {:else if appState.currentView === 'chat'}
         <ChatRoom />
+      {:else if appState.currentView === 'play'}
+        <PlayHub  />
+      {:else if appState.currentView === 'multiplayerRoom'}
+        <Multiplayer  />
       {:else if appState.currentView === 'list'}
         <ListView  />
       {/if}
