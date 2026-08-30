@@ -1,3 +1,5 @@
+
+
 # Ryokan
 
 > **Immersive, local-first AI Roleplay - built for atmosphere, not spreadsheets.**
@@ -121,4 +123,4 @@ Ryokan is in active Alpha and contributions are very welcome. Please open an iss
 Licensed under the **GNU General Public License v3.0**.
 See the [LICENSE](LICENSE) file for details.
 
-[](https://www.gnu.org/licenses/gpl-3.0)
+[GPL-3.0](https://www.gnu.org/licenses/gpl-3.0)
