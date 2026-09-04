@@ -412,7 +412,7 @@ function handleDecrypted(inner: any): void {
     case 'chat':
       if (typeof inner.id !== 'string' || seenIds.has(inner.id)) return;
       seenIds.add(inner.id);
-      mpState.messages.push({
+      insertSorted({
         id: inner.id,
         kind: 'chat',
         author: String(inner.name ?? '?'),
@@ -422,21 +422,27 @@ function handleDecrypted(inner: any): void {
       break;
 
     case 'llm_d': {
-      // token delta from the host's stream
-      let m = mpState.messages.find((x) => x.id === inner.mid);
+      const mid = String(inner.mid);
+      const delta = String(inner.d ?? '');
+
+      let m = mpState.messages.find((x) => x.id === mid);
+
       if (!m) {
-        m = {
-          id: String(inner.mid),
+        const newMsg: MpMessage = {
+          id: mid,
           kind: 'llm',
           author: String(inner.name ?? mpState.characterName ?? 'AI'),
-          text: '',
+          text: delta,
           ts: Date.now(),
           streaming: true,
         };
-        seenIds.add(m.id);
-        mpState.messages.push(m);
+
+        seenIds.add(mid);
+        insertSorted(newMsg);
+      } else {
+        m.text += delta;
       }
-      m.text += String(inner.d ?? '');
+
       break;
     }
 
@@ -505,7 +511,7 @@ export async function sendChat(text: string): Promise<void> {
     ts: Date.now(),
   };
   seenIds.add(msg.id);
-  mpState.messages.push({
+    insertSorted({
     id: msg.id,
     kind: 'chat',
     author: msg.name,
@@ -565,8 +571,16 @@ async function runGeneration(): Promise<void> {
   const mid = crypto.randomUUID();
   const author = mpState.characterName || 'AI';
   seenIds.add(mid);
-  mpState.messages.push({ id: mid, kind: 'llm', author, text: '', ts: Date.now(), streaming: true });
-  const localMsg = mpState.messages[mpState.messages.length - 1];
+  insertSorted({
+    id: mid,
+    kind: 'llm',
+    author,
+    text: '',
+    ts: Date.now(),
+    streaming: true
+  });
+
+  const localMsg = mpState.messages.find((m) => m.id === mid)!;
 
   let buffer = '';
   const flush = async () => {
@@ -620,6 +634,8 @@ async function runGeneration(): Promise<void> {
   } catch {
     if (!localMsg.text) localMsg.text = '⚠';
   } finally {
+    unlisten();
+
     clearInterval(flushTimer);
     await flush();
     await sendRelay({ k: 'llm_e', mid });
@@ -678,4 +694,9 @@ function buildLlmMessages(): Array<{ role: string; content: string }> {
   const out: Array<{ role: string; content: string }> = [];
   if (system) out.push({ role: 'system', content: system });
   return out.concat(merged);
+}
+
+function insertSorted(msg: MpMessage): void {
+  mpState.messages.push(msg);
+  mpState.messages.sort((a, b) => a.ts - b.ts);
 }
