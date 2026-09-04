@@ -182,7 +182,6 @@ export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
         personality:  character?.personality,
         scenario:     character?.scenario,
         example:      character?.mes_example,
-        lang:         apiSettings.aiLanguage || 'English',
         userName,
         userBio:      role?.bio,
         userPronouns: role?.pronouns,
