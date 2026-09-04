@@ -35,9 +35,9 @@
   });
 
   const NAV_ITEMS = [
-    { id: "api",      label: m.settings_nav_api(),              icon: "M12 2a10 10 0 100 20A10 10 0 0012 2zm0 3v2m0 10v2M5.22 5.22l1.42 1.42m10.72 10.72l1.42 1.42M2 12h2m16 0h2M5.22 18.78l1.42-1.42M17.36 6.64l1.42-1.42" },
-    { id: "behavior", label: m.settings_section_ai_behavior(),  icon: "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" },
-    { id: "general",  label: m.settings_nav_general(),          icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0" },
+    { id: "api",      label: m.settings_nav_api(),             icon: "M12 2a10 10 0 100 20A10 10 0 0012 2zm0 3v2m0 10v2M5.22 5.22l1.42 1.42m10.72 10.72l1.42 1.42M2 12h2m16 0h2M5.22 18.78l1.42-1.42M17.36 6.64l1.42-1.42" },
+    { id: "language", label: m.settings_section_language(),    icon: "M12 21a9 9 0 100-18 9 9 0 000 18zm0 0c2.21 0 4-4.03 4-9s-1.79-9-4-9-4 4.03-4 9 1.79 9 4 9zM3.5 12h17M5 7.5h14M5 16.5h14" },
+    { id: "behavior", label: m.settings_section_ai_behavior(), icon: "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" },
   ];
 
   let activeSection = $state("api");
@@ -245,12 +245,12 @@
       <ApiSection {powerUser} />
     </div>
 
-    <div bind:this={sectionEls["behavior"]}>
-      <GeneralSection {powerUser} bind:parameterEnabled behaviorOnly={true} />
+    <div bind:this={sectionEls["language"]}>
+      <GeneralSection {powerUser} behaviorOnly={false} languageOnly={true} />
     </div>
 
-    <div bind:this={sectionEls["general"]}>
-      <GeneralSection {powerUser} behaviorOnly={false} languageOnly={true} />
+    <div bind:this={sectionEls["behavior"]}>
+      <GeneralSection {powerUser} bind:parameterEnabled behaviorOnly={true} />
     </div>
   </div>
 </PageWithNavSidebar>

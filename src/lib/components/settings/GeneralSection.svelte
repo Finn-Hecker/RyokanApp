@@ -1,7 +1,6 @@
 <script lang="ts">
   import { appState } from "$lib/stores/appState.svelte";
   import { getLocale } from "$lib/paraglide/runtime";
-  import LanguageSelect from "$lib/components/ui/LanguageSelect.svelte";
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
   import * as m from "$lib/paraglide/messages";
   import { fade } from "svelte/transition";
@@ -39,14 +38,10 @@
   }
 
   const uiLanguages = [
-    { code: "de", label: "Deutsch" },
-    { code: "en", label: "English" },
+    { code: "de", label: "Deutsch", country: "de" as const },
+    { code: "en", label: "English", country: "gb" as const },
   ];
 
-  const aiLanguages = [
-    { code: "German",  label: "Deutsch" },
-    { code: "English", label: "English" },
-  ];
 
   $: TEMPERATURES = [
     { label: m.settings_temp_precise(), value: 0.4, hint: m.settings_temp_hint_precise() },
@@ -105,9 +100,6 @@
     appState.pendingUiLocale = code;
   }
 
-  function handleAiLanguageChange(code: string) {
-    appState.apiSettings.aiLanguage = code;
-  }
 
   function clampTokens(v: number) {
     return Math.max(50, Math.min(4000, Math.round(v)));
@@ -143,6 +135,26 @@
   >
     <span class="parameter-switch-thumb" class:parameter-switch-thumb--on={parameterEnabled[key]}></span>
   </button>
+{/snippet}
+
+{#snippet languageFlag(country: "de" | "gb")}
+  <span class="language-flag" aria-hidden="true">
+    {#if country === "de"}
+      <svg viewBox="0 0 60 40" role="presentation">
+        <rect width="60" height="13.34" y="0" fill="#111111" />
+        <rect width="60" height="13.34" y="13.33" fill="#DD0000" />
+        <rect width="60" height="13.34" y="26.66" fill="#FFCE00" />
+      </svg>
+    {:else}
+      <svg viewBox="0 0 60 40" role="presentation">
+        <rect width="60" height="40" fill="#012169" />
+        <path d="M0 0L60 40M60 0L0 40" stroke="#FFFFFF" stroke-width="9" />
+        <path d="M0 0L60 40M60 0L0 40" stroke="#C8102E" stroke-width="4.5" />
+        <path d="M30 0V40M0 20H60" stroke="#FFFFFF" stroke-width="13" />
+        <path d="M30 0V40M0 20H60" stroke="#C8102E" stroke-width="7" />
+      </svg>
+    {/if}
+  </span>
 {/snippet}
 
 {#if behaviorOnly}
@@ -557,35 +569,179 @@
 {#if languageOnly}
 <section>
   <span class="settings-section-title">{m.settings_section_language()}</span>
-  <div class="settings-card space-y-4">
+  <div class="settings-card language-settings-card">
 
-    <div>
-      <label for="ui-language-select" class="settings-label">{m.settings_language_label()}</label>
-      <LanguageSelect
-        id="ui-language-select"
-        items={uiLanguages}
-        selectedCode={appState.pendingUiLocale || getLocale()}
-        onSelect={(code) => handleUiLanguageChange(code)}
-      />
+    <div class="language-group">
+      <div class="language-group-header">
+        <span class="settings-label language-group-label">{m.settings_language_label()}</span>
+      </div>
+
+      <div class="language-grid" role="radiogroup" aria-label={m.settings_language_label()}>
+        {#each uiLanguages as language}
+          {@const selected = (appState.pendingUiLocale || getLocale()) === language.code}
+          <button
+            type="button"
+            class:language-choice--selected={selected}
+            class="language-choice"
+            role="radio"
+            aria-checked={selected}
+            on:click={() => handleUiLanguageChange(language.code)}
+          >
+            {@render languageFlag(language.country)}
+            <span class="language-copy">
+              <span class="language-name">{language.label}</span>
+            </span>
+            <span class="language-state" aria-hidden="true">
+              {#if selected}
+                <svg viewBox="0 0 16 16" fill="none">
+                  <path d="M4 8.25 6.6 10.8 12 5.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              {/if}
+            </span>
+          </button>
+        {/each}
+      </div>
     </div>
 
-    <div class="settings-divider"></div>
-
-    <div>
-      <label for="ai-language-select" class="settings-label">{m.settings_ai_lang_label()}</label>
-      <LanguageSelect
-        id="ai-language-select"
-        items={aiLanguages}
-        selectedCode={appState.apiSettings.aiLanguage}
-        onSelect={(code) => handleAiLanguageChange(code)}
-      />
-    </div>
 
   </div>
 </section>
 {/if}
 
 <style>
+  .language-settings-card {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .language-group {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .language-group-header {
+    display: flex;
+    align-items: center;
+    min-height: 20px;
+  }
+  .language-group-label {
+    margin: 0;
+  }
+  .language-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .language-choice {
+    width: 100%;
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 10px 12px;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px;
+    background: rgba(255,255,255,0.025);
+    color: #aaa9ad;
+    text-align: left;
+    cursor: pointer;
+    transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 120ms ease, box-shadow 140ms ease;
+  }
+  .language-choice:hover {
+    background: rgba(255,255,255,0.045);
+    border-color: rgba(255,255,255,0.12);
+    color: #e3e2e5;
+  }
+  .language-choice:active {
+    transform: scale(0.985);
+  }
+  .language-choice:focus-visible {
+    outline: none;
+    border-color: rgba(212,180,131,0.58);
+    box-shadow: 0 0 0 3px rgba(212,180,131,0.10);
+  }
+  .language-choice--selected {
+    background: linear-gradient(180deg, rgba(212,180,131,0.10), rgba(212,180,131,0.055));
+    border-color: rgba(212,180,131,0.42);
+    color: #f0e4d0;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.025);
+  }
+  .language-choice--selected:hover {
+    background: linear-gradient(180deg, rgba(212,180,131,0.13), rgba(212,180,131,0.07));
+    border-color: rgba(212,180,131,0.52);
+  }
+  .language-flag {
+    flex: 0 0 auto;
+    width: 38px;
+    height: 26px;
+    display: block;
+    overflow: hidden;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.04);
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.10),
+      0 3px 10px rgba(0,0,0,0.16);
+    transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+  }
+  .language-flag svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .language-choice:hover .language-flag {
+    transform: translateY(-1px);
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.14),
+      0 5px 14px rgba(0,0,0,0.20);
+  }
+  .language-choice--selected .language-flag {
+    box-shadow:
+      0 0 0 1px rgba(212,180,131,0.30),
+      0 4px 12px rgba(0,0,0,0.20);
+  }
+  .language-copy {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    align-items: center;
+  }
+  .language-name {
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+  }
+  .language-state {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.09);
+    color: transparent;
+    background: rgba(255,255,255,0.018);
+    transition: all 140ms ease;
+  }
+  .language-choice--selected .language-state {
+    color: #171513;
+    background: #d4b483;
+    border-color: #d4b483;
+    box-shadow: 0 0 0 3px rgba(212,180,131,0.08);
+  }
+  .language-state svg {
+    width: 12px;
+    height: 12px;
+  }
+  @media (max-width: 560px) {
+    .language-grid {
+      grid-template-columns: 1fr;
+    }
+    .language-choice {
+      min-height: 56px;
+    }
+  }
+
   .preset-btn {
     display: flex;
     flex-direction: column;
