@@ -4,8 +4,9 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tauri::{Emitter, Window};
+use tauri::{Emitter, Manager, Window};
 use tokio_util::sync::CancellationToken;
+use crate::database::get_connection;
 
 // Reusing a single HTTP client across the entire app lifecycle prevents connection
 // exhaustion and takes advantage of internal connection pooling.
@@ -23,6 +24,76 @@ pub static CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
 // unwrap(), and lock() returns the guard directly (no Result to unwrap).
 static CANCEL_TOKEN: Lazy<Mutex<CancellationToken>> =
     Lazy::new(|| Mutex::new(CancellationToken::new()));
+
+#[derive(Debug, Clone, Copy)]
+struct ApiParameterFlags {
+    temperature: bool,
+    max_tokens: bool,
+    presence_penalty: bool,
+    thinking_budget: bool,
+    top_p: bool,
+    top_k: bool,
+    min_p: bool,
+    frequency_penalty: bool,
+}
+
+impl Default for ApiParameterFlags {
+    fn default() -> Self {
+        Self {
+            temperature: true,
+            max_tokens: true,
+            presence_penalty: true,
+            thinking_budget: true,
+            top_p: true,
+            top_k: true,
+            min_p: true,
+            frequency_penalty: true,
+        }
+    }
+}
+
+/// Reads the persisted per-parameter switches. Missing keys default to enabled so
+/// existing installations keep their current request behavior after updating.
+fn load_api_parameter_flags(window: &Window) -> ApiParameterFlags {
+    let mut flags = ApiParameterFlags::default();
+
+    let Ok(conn) = get_connection(window.app_handle()) else {
+        return flags;
+    };
+
+    let mut stmt = match conn.prepare(
+        "SELECT key, value FROM settings WHERE key LIKE 'api_%_enabled'"
+    ) {
+        Ok(stmt) => stmt,
+        Err(_) => return flags,
+    };
+
+    let rows = match stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    }) {
+        Ok(rows) => rows,
+        Err(_) => return flags,
+    };
+
+    for row in rows.flatten() {
+        let (key, value) = row;
+        let enabled = value != "false";
+
+        match key.as_str() {
+            "api_temperature_enabled" => flags.temperature = enabled,
+            "api_max_tokens_enabled" => flags.max_tokens = enabled,
+            "api_presence_penalty_enabled" => flags.presence_penalty = enabled,
+            "api_thinking_budget_enabled" => flags.thinking_budget = enabled,
+            "api_top_p_enabled" => flags.top_p = enabled,
+            "api_top_k_enabled" => flags.top_k = enabled,
+            "api_min_p_enabled" => flags.min_p = enabled,
+            "api_frequency_penalty_enabled" => flags.frequency_penalty = enabled,
+            _ => {}
+        }
+    }
+
+    flags
+}
 
 /// Called from the frontend to hard-stop the current stream.
 /// Cancels the active token, which makes the running select! arm resolve to None
@@ -182,32 +253,49 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
     let token = CancellationToken::new();
     *CANCEL_TOKEN.lock() = token.clone();
 
+    let parameter_flags = load_api_parameter_flags(&window);
+
     let mut body = serde_json::json!({
         "model": payload.model,
         "messages": payload.messages,
-        "temperature": payload.temperature,
         "stream": true
     });
 
-    if let Some(max_tokens) = payload.max_tokens {
-        body["max_tokens"] = serde_json::json!(max_tokens);
+    if parameter_flags.temperature {
+        body["temperature"] = serde_json::json!(payload.temperature);
+    }
+
+    if parameter_flags.max_tokens {
+        if let Some(max_tokens) = payload.max_tokens {
+            body["max_tokens"] = serde_json::json!(max_tokens);
+        }
     }
     // Mapped to "repetition_penalty" (llama.cpp/koboldcpp sampler), not the OpenAI
     // "presence_penalty" semantics — see the doc comment on AiRequest::presence_penalty.
-    if let Some(penalty) = payload.presence_penalty {
-        body["repetition_penalty"] = serde_json::json!(penalty);
+    if parameter_flags.presence_penalty {
+        if let Some(penalty) = payload.presence_penalty {
+            body["repetition_penalty"] = serde_json::json!(penalty);
+        }
     }
-    if let Some(top_p) = payload.top_p {
-        body["top_p"] = serde_json::json!(top_p);
+    if parameter_flags.top_p {
+        if let Some(top_p) = payload.top_p {
+            body["top_p"] = serde_json::json!(top_p);
+        }
     }
-    if let Some(top_k) = payload.top_k {
-        body["top_k"] = serde_json::json!(top_k);
+    if parameter_flags.top_k {
+        if let Some(top_k) = payload.top_k {
+            body["top_k"] = serde_json::json!(top_k);
+        }
     }
-    if let Some(min_p) = payload.min_p {
-        body["min_p"] = serde_json::json!(min_p);
+    if parameter_flags.min_p {
+        if let Some(min_p) = payload.min_p {
+            body["min_p"] = serde_json::json!(min_p);
+        }
     }
-    if let Some(freq_penalty) = payload.frequency_penalty {
-        body["frequency_penalty"] = serde_json::json!(freq_penalty);
+    if parameter_flags.frequency_penalty {
+        if let Some(freq_penalty) = payload.frequency_penalty {
+            body["frequency_penalty"] = serde_json::json!(freq_penalty);
+        }
     }
 
     // Thinking / reasoning models (Gemma 4, Qwen3, ...) are toggled per-request via
@@ -215,7 +303,7 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
     // so switching a character/model between thinking and non-thinking mid-session
     // doesn't leak the previous request's state.
     body["chat_template_kwargs"] = serde_json::json!({ "enable_thinking": payload.is_thinking_model });
-    if payload.is_thinking_model {
+    if payload.is_thinking_model && parameter_flags.thinking_budget {
         if let Some(budget) = payload.thinking_budget {
             // 0 = end reasoning immediately, N>0 = token budget, omit for server default (usually unrestricted).
             body["thinking_budget_tokens"] = serde_json::json!(budget);

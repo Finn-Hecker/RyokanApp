@@ -11,6 +11,29 @@
 
   let powerUser = $state(false);
 
+  type ApiParameterKey =
+    | "temperature"
+    | "maxTokens"
+    | "presencePenalty"
+    | "thinkingBudget"
+    | "topP"
+    | "topK"
+    | "minP"
+    | "frequencyPenalty";
+
+  // Keep the numeric value and the enabled state separate. This way disabling a
+  // sampler does not destroy the user's tuned value, and re-enabling restores it.
+  let parameterEnabled = $state<Record<ApiParameterKey, boolean>>({
+    temperature: true,
+    maxTokens: true,
+    presencePenalty: true,
+    thinkingBudget: true,
+    topP: true,
+    topK: true,
+    minP: true,
+    frequencyPenalty: true,
+  });
+
   const NAV_ITEMS = [
     { id: "api",      label: m.settings_nav_api(),              icon: "M12 2a10 10 0 100 20A10 10 0 0012 2zm0 3v2m0 10v2M5.22 5.22l1.42 1.42m10.72 10.72l1.42 1.42M2 12h2m16 0h2M5.22 18.78l1.42-1.42M17.36 6.64l1.42-1.42" },
     { id: "behavior", label: m.settings_section_ai_behavior(),  icon: "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" },
@@ -34,10 +57,19 @@
     api_model:            (v) => (appState.apiSettings.model = v),
     api_custom_mode:      (v) => (appState.apiSettings.customMode = v === "true"),
     thinking_mode:        (v) => (appState.apiSettings.isThinkingModel = v === "true"),
+    api_temperature_enabled:       (v) => (parameterEnabled.temperature = v !== "false"),
+    api_max_tokens_enabled:        (v) => (parameterEnabled.maxTokens = v !== "false"),
+    api_presence_penalty_enabled:  (v) => (parameterEnabled.presencePenalty = v !== "false"),
+    api_thinking_budget_enabled:   (v) => (parameterEnabled.thinkingBudget = v !== "false"),
+    api_top_p_enabled:             (v) => (parameterEnabled.topP = v !== "false"),
+    api_top_k_enabled:             (v) => (parameterEnabled.topK = v !== "false"),
+    api_min_p_enabled:             (v) => (parameterEnabled.minP = v !== "false"),
+    api_frequency_penalty_enabled: (v) => (parameterEnabled.frequencyPenalty = v !== "false"),
     ai_language:          (v) => (appState.apiSettings.aiLanguage = v),
     system_prompt:        (v) => (appState.apiSettings.systemPrompt = v),
     api_temperature:      (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.temperature = n; },
     api_max_tokens:       (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.maxTokens = n; },
+    api_thinking_budget:  (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.thinkingBudget = n; },
     api_presence_penalty: (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.presencePenalty = n; },
     api_context_limit:    (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.contextLimit = n; },
     api_top_p:             (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.topP = n; },
@@ -56,6 +88,7 @@
       if (!appState.apiSettings.aiLanguage) appState.apiSettings.aiLanguage = DEFAULT_AI_LANGUAGE;
       if (appState.apiSettings.maxTokens == null) appState.apiSettings.maxTokens = 300;
       if (appState.apiSettings.presencePenalty == null) appState.apiSettings.presencePenalty = 1.1;
+      if (appState.apiSettings.thinkingBudget == null) appState.apiSettings.thinkingBudget = 2500;
       if (appState.apiSettings.contextLimit == null) appState.apiSettings.contextLimit = 4096;
       if (appState.apiSettings.topP == null) appState.apiSettings.topP = 0.9;
       if (appState.apiSettings.topK == null) appState.apiSettings.topK = 40;
@@ -72,11 +105,13 @@
         temperature:     appState.apiSettings.temperature,
         maxTokens:       appState.apiSettings.maxTokens,
         presencePenalty: appState.apiSettings.presencePenalty,
+        thinkingBudget:  appState.apiSettings.thinkingBudget,
         contextLimit:    appState.apiSettings.contextLimit,
         topP:            appState.apiSettings.topP,
         topK:            appState.apiSettings.topK,
         minP:            appState.apiSettings.minP,
         frequencyPenalty: appState.apiSettings.frequencyPenalty,
+        parameterEnabled: { ...parameterEnabled },
         powerUser,
       });
     } catch (err) {
@@ -97,12 +132,21 @@
         saveSetting("system_prompt",        appState.apiSettings.systemPrompt),
         saveSetting("api_temperature",      appState.apiSettings.temperature ?? 0.7),
         saveSetting("api_max_tokens",       appState.apiSettings.maxTokens ?? 300),
+        saveSetting("api_thinking_budget",  appState.apiSettings.thinkingBudget ?? 2500),
         saveSetting("api_presence_penalty", appState.apiSettings.presencePenalty ?? 1.1),
         saveSetting("api_context_limit",    appState.apiSettings.contextLimit ?? 4096),
         saveSetting("api_top_p",             appState.apiSettings.topP ?? 0.9),
         saveSetting("api_top_k",             appState.apiSettings.topK ?? 40),
         saveSetting("api_min_p",             appState.apiSettings.minP ?? 0.05),
         saveSetting("api_frequency_penalty", appState.apiSettings.frequencyPenalty ?? 0),
+        saveSetting("api_temperature_enabled",       parameterEnabled.temperature),
+        saveSetting("api_max_tokens_enabled",        parameterEnabled.maxTokens),
+        saveSetting("api_presence_penalty_enabled",  parameterEnabled.presencePenalty),
+        saveSetting("api_thinking_budget_enabled",   parameterEnabled.thinkingBudget),
+        saveSetting("api_top_p_enabled",             parameterEnabled.topP),
+        saveSetting("api_top_k_enabled",             parameterEnabled.topK),
+        saveSetting("api_min_p_enabled",             parameterEnabled.minP),
+        saveSetting("api_frequency_penalty_enabled", parameterEnabled.frequencyPenalty),
         saveSetting("settings_power_user",  powerUser),
       ]);
       const locale = appState.pendingUiLocale;
@@ -202,7 +246,7 @@
     </div>
 
     <div bind:this={sectionEls["behavior"]}>
-      <GeneralSection {powerUser} behaviorOnly={true} />
+      <GeneralSection {powerUser} bind:parameterEnabled behaviorOnly={true} />
     </div>
 
     <div bind:this={sectionEls["general"]}>
