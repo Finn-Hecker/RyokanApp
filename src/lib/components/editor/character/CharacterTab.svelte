@@ -4,24 +4,16 @@
 
   let {
     name = $bindable(''),
-    description = $bindable(''),
-    personality = $bindable(''),
-    scenario = $bindable(''),
+    prompt = $bindable(''),
     greeting = $bindable(''),
-    mes_example = $bindable(''),
-    creator_notes = $bindable(''),
     alternate_greetings = $bindable([]),
     worldInfoIds = $bindable([]),
     avatarPreview = null,
     onAvatarFile
   }: {
     name?: string;
-    description?: string;
-    personality?: string;
-    scenario?: string;
+    prompt?: string;
     greeting?: string;
-    mes_example?: string;
-    creator_notes?: string;
     alternate_greetings?: string[];
     worldInfoIds?: string[];
     avatarPreview?: string | null;
@@ -36,14 +28,16 @@
 
 <CharacterFormFields
   bind:name
-  bind:description
-  bind:personality
-  bind:scenario
+  bind:prompt
   bind:greeting
-  bind:mes_example
   bind:worldInfoIds
   alternate_greetings={alternate_greetings}
   onAltGreetingsChange={(updated) => (alternate_greetings = updated)}
-  onAltGreetingsAdd={()     => (alternate_greetings = [...alternate_greetings, ''])}
-  onAltGreetingsRemove={(index) => (alternate_greetings = alternate_greetings.filter((_, i) => i !== index))}
+  onAltGreetingsAdd={() =>
+    (alternate_greetings = [...alternate_greetings, ''])
+  }
+  onAltGreetingsRemove={(index) =>
+    (alternate_greetings =
+      alternate_greetings.filter((_, i) => i !== index))
+  }
 />

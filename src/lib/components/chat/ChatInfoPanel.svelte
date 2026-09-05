@@ -165,39 +165,24 @@
           </div>
 
           <div class="info-fields">
-            {#if character.desc}
+            {#if character.prompt}
               <div class="info-field">
-                <span class="info-label">Beschreibung</span>
-                <p class="info-value">{character.desc}</p>
+                <span class="info-label">Prompt</span>
+                <p class="info-value">{character.prompt}</p>
               </div>
             {/if}
-            {#if character.personality}
-              <div class="info-field">
-                <span class="info-label">Persönlichkeit</span>
-                <p class="info-value">{character.personality}</p>
-              </div>
-            {/if}
-            {#if character.scenario}
-              <div class="info-field">
-                <span class="info-label">Szenario</span>
-                <p class="info-value">{character.scenario}</p>
-              </div>
-            {/if}
+
             {#if character.greeting}
               <div class="info-field">
                 <span class="info-label">Begrüßung</span>
                 <p class="info-value">{character.greeting}</p>
               </div>
             {/if}
-            {#if character.creator_notes}
-              <div class="info-field">
-                <span class="info-label">Notizen</span>
-                <p class="info-value">{character.creator_notes}</p>
-              </div>
-            {/if}
 
-            {#if !character.personality && !character.scenario && !character.greeting && !character.creator_notes && !character.desc}
-              <p class="info-empty">Keine weiteren Informationen hinterlegt.</p>
+            {#if !character.prompt && !character.greeting}
+              <p class="info-empty">
+                Keine weiteren Informationen hinterlegt.
+              </p>
             {/if}
           </div>
         {:else}

@@ -1,15 +1,14 @@
 export type ModelType = 'claude' | 'gpt' | 'ollama' | 'openrouter';
 
 export interface PromptBuilderOptions {
-  charName:      string;
-  desc?:         string | null;
-  personality?:  string | null;
-  scenario?:     string | null;
-  example?:      string | null;
-  modelType?:    ModelType;
+  charName: string;
+  prompt?: string | null;
 }
 
-function replacePlaceholders(text: string, charName: string): string {
+function replacePlaceholders(
+  text: string,
+  charName: string
+): string {
   return text
     .replace(/\{\{char\}\}/gi, charName)
     .replace(/\{\{user\}\}/gi, 'User');
@@ -17,15 +16,9 @@ function replacePlaceholders(text: string, charName: string): string {
 
 export function buildSystemPrompt({
   charName,
-  desc,
-  personality,
-  scenario,
-  example,
-  modelType = 'ollama',
+  prompt,
 }: PromptBuilderOptions): string {
-  const rp = (text: string) => replacePlaceholders(text, charName);
-
-const coreInstructions = `You are ${charName}.
+  const coreInstructions = `You are ${charName}.
 
 You are speaking with the user. React to them as ${charName} naturally would throughout the entire conversation.
 
@@ -33,20 +26,13 @@ Stay fully in character.
 
 If a message is prefixed with [OOC:], treat it as a director's instruction. Do NOT respond as ${charName}. Silently incorporate it into your next in-character response, then seamlessly return to character.`;
 
-  const parts: string[] = [coreInstructions];
+  const cardPrompt = prompt?.trim()
+    ? replacePlaceholders(prompt.trim(), charName)
+    : '';
 
-  const cardSections: Array<{ label: string; content: string }> = [];
-
-  if (desc?.trim())        cardSections.push({ label: 'description',    content: rp(desc.trim()) });
-  if (personality?.trim()) cardSections.push({ label: 'personality',    content: rp(personality.trim()) });
-  if (scenario?.trim())    cardSections.push({ label: 'scenario',       content: rp(scenario.trim()) });
-  if (example?.trim())     cardSections.push({ label: 'example_dialog', content: rp(example.trim()) });
-
-  for (const s of cardSections) {
-    parts.push(formatSection(s.label, s.content, modelType));
-  }
-
-  return parts.join('\n\n');
+  return cardPrompt
+    ? `${coreInstructions}\n\n${cardPrompt}`
+    : coreInstructions;
 }
 
 export function buildWorldInfoBlock(
@@ -63,7 +49,9 @@ export function buildWorldInfoBlock(
 
   if (parts.length === 0) return '';
 
-return `[Roleplay context for the next reply only — not something the user said, do not treat it as dialogue]\n`
+return `[Roleplay context for the next reply only — not something the user said, do not treat it as dialogue]
+
+${parts.join('\n\n')}`;
 }
 
 export function buildWiString(

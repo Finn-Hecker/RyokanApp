@@ -7,12 +7,8 @@ import {
 
 export interface CharFormData {
   name: string;
-  description: string;
-  personality: string;
-  scenario: string;
+  prompt: string;
   greeting: string;
-  mes_example: string;
-  creator_notes: string;
   alternate_greetings: string[];
   world_info_ids?: string[];
 }
@@ -27,17 +23,14 @@ export async function saveCharacter(
   avatarPreview: string | null,
   avatarChanged: boolean
 ): Promise<void> {
-  const validAltGreetings = formData.alternate_greetings.filter(g => g.trim().length > 0);
+  const validAltGreetings = formData.alternate_greetings
+    .filter(g => g.trim().length > 0);
 
   const charData = {
     name: formData.name,
-    desc: formData.description,
-    personality: formData.personality,
-    scenario: formData.scenario,
+    prompt: formData.prompt,
     greeting: formData.greeting,
     alternate_greetings: validAltGreetings,
-    mes_example: formData.mes_example,
-    creator_notes: formData.creator_notes,
     world_info_ids: formData.world_info_ids ?? [],
     initials: formData.name.substring(0, 1).toUpperCase(),
     color: editChar?.color ?? 'bg-indigo-600',
@@ -79,32 +72,34 @@ export function readImageAsDataUrl(file: File): Promise<string> {
   });
 }
 
-export async function importCharacterFromFile(file: File): Promise<ImportResult> {
+export async function importCharacterFromFile(
+  file: File
+): Promise<ImportResult> {
   const result: ImportResult = {};
 
   try {
     result.avatarDataUrl = await readImageAsDataUrl(file);
   } catch {
-    // Avatar is optional — importing metadata-only cards is valid.
+    // Avatar optional.
   }
 
   const arrayBuffer = await file.arrayBuffer();
   const uint8Array = new Uint8Array(arrayBuffer);
 
-  const metadata = await invoke<any>('parse_character_card', {
+  const metadata = await invoke<{ name: string | null; prompt: string; first_mes: string | null; alternate_greetings: string[] }>('parse_character_card', {
     imageData: Array.from(uint8Array)
   });
 
-  if (metadata.name)              result.name = metadata.name;
-  if (metadata.description)       result.description = metadata.description;
-  if (metadata.personality)       result.personality = metadata.personality;
-  if (metadata.scenario)          result.scenario = metadata.scenario;
-  if (metadata.first_mes)         result.greeting = metadata.first_mes;
-  if (metadata.mes_example)       result.mes_example = metadata.mes_example;
-  if (metadata.creator_notes)     result.creator_notes = metadata.creator_notes;
-  if (metadata.alternate_greetings?.length > 0) {
+  if (metadata.name) {
+    result.name = metadata.name;
+  }
+
+  result.prompt = metadata.prompt;
+  if (metadata.first_mes) result.greeting = metadata.first_mes;
+  if (metadata.alternate_greetings.length > 0) {
     result.alternate_greetings = metadata.alternate_greetings;
   }
+
 
   return result;
 }

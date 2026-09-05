@@ -48,23 +48,12 @@
 
   // Character States
   let charName = $state('');
-  let charDescription = $state('');
-  let charPersonality = $state('');
-  let charScenario = $state('');
   let charGreeting = $state('');
-  let charMesExample = $state('');
-  let charCreatorNotes = $state('');
+  let charPrompt = $state('');
   let charAltGreetings = $state<string[]>([]);
   let worldInfoIds = $state<string[]>([]);
   let avatarPreview = $state<string | null>(null);
   let avatarChanged = $state(true);
-
-  // Role States
-  let roleName = $state('');
-  let roleDescription = $state('');
-  let rolePronouns = $state('');
-  let roleAvatar = $state<string | null>(null);
-  let roleAvatarChanged = $state(true);
 
   // WorldInfo States
   let worldInfoName = $state('');
@@ -97,12 +86,8 @@
     editChar = current;
 
     charName = current.name ?? '';
-    charDescription = current.desc ?? '';
-    charPersonality = current.personality ?? '';
-    charScenario = current.scenario ?? '';
+    charPrompt = current.prompt ?? '';
     charGreeting = current.greeting ?? '';
-    charMesExample = current.mes_example ?? '';
-    charCreatorNotes = current.creator_notes ?? '';
     charAltGreetings = Array.isArray(current.alternate_greetings) ? current.alternate_greetings : [];
     worldInfoIds = Array.isArray(current.world_info_ids) ? current.world_info_ids : [];
 
@@ -126,7 +111,7 @@
 
   let canSave = $derived(
     activeTab === 'character'
-      ? !!(charName && charDescription)
+      ? !!(charName.trim() && charPrompt.trim())
       : !!worldInfoName
   );
 
@@ -162,25 +147,29 @@
     if (!file.type.includes('image')) return;
     try {
       const result = await importCharacterFromFile(file);
-      if (result.avatarDataUrl) { avatarPreview = result.avatarDataUrl; avatarChanged = true; }
-      if (result.name) charName = result.name;
-      if (result.description) charDescription = result.description;
-      if (result.personality) charPersonality = result.personality;
-      if (result.scenario) charScenario = result.scenario;
-      if (result.greeting) charGreeting = result.greeting;
-      if (result.mes_example) charMesExample = result.mes_example;
-      if (result.creator_notes) charCreatorNotes = result.creator_notes;
-      if (result.alternate_greetings) charAltGreetings = result.alternate_greetings;
+      if (result.avatarDataUrl) {
+        avatarPreview = result.avatarDataUrl;
+        avatarChanged = true;
+      }
+
+      if (result.name) {
+        charName = result.name;
+      }
+
+      if (result.prompt !== undefined) {
+        charPrompt = result.prompt;
+      }
+
+      if (result.greeting) {
+        charGreeting = result.greeting;
+      }
+
+      if (result.alternate_greetings) {
+        charAltGreetings = result.alternate_greetings;
+      }
     } catch (err) {
       console.warn('Import failed:', err);
     }
-  }
-
-  async function handleRoleAvatarFile(file: File) {
-    try {
-      roleAvatar = await readImageAsDataUrl(file);
-      roleAvatarChanged = true;
-    } catch { /* not an image */ }
   }
 
   async function handleSave() {
@@ -190,13 +179,15 @@
       if (activeTab === 'character') {
         await saveCharacter(
           {
-            name: charName, description: charDescription,
-            personality: charPersonality, scenario: charScenario,
-            greeting: charGreeting, mes_example: charMesExample,
-            creator_notes: charCreatorNotes, alternate_greetings: charAltGreetings,
+            name: charName,
+            prompt: charPrompt,
+            greeting: charGreeting,
+            alternate_greetings: charAltGreetings,
             world_info_ids: worldInfoIds,
           },
-          editChar, avatarPreview, avatarChanged
+          editChar,
+          avatarPreview,
+          avatarChanged
         );
         goBack();
       } else {
@@ -421,11 +412,8 @@
           {#if activeTab === 'character'}
             <CharacterTab
               bind:name={charName}
-              bind:description={charDescription}
-              bind:personality={charPersonality}
-              bind:scenario={charScenario}
+              bind:prompt={charPrompt}
               bind:greeting={charGreeting}
-              bind:mes_example={charMesExample}
               bind:alternate_greetings={charAltGreetings}
               bind:worldInfoIds={worldInfoIds}
               {avatarPreview}

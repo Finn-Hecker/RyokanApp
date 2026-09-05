@@ -14,13 +14,9 @@ use std::io::Cursor;
 pub struct DbCharacter {
     pub id: String,
     pub name: String,
-    pub desc: String,
-    pub personality: String,
-    pub scenario: String,
+    pub prompt: String,
     pub greeting: String,
     pub alternate_greetings: String,
-    pub mes_example: String,
-    pub creator_notes: String,
     pub tags: String,
     pub v3_spec: bool,
     pub initials: String,
@@ -34,15 +30,9 @@ pub struct DbCharacter {
 #[derive(Deserialize)]
 pub struct CreateCharacterPayload {
     pub name: String,
-    pub desc: String,
-    pub personality: String,
-    pub scenario: String,
+    pub prompt: String,
     pub greeting: String,
     pub alternate_greetings: Vec<String>,
-    pub mes_example: String,
-    pub creator_notes: String,
-    pub tags: Vec<String>,
-    pub v3_spec: bool,
     pub initials: String,
     pub color: String,
     pub avatar: Option<String>,
@@ -117,13 +107,14 @@ pub async fn get_custom_characters(app: AppHandle) -> Result<Vec<DbCharacter>, S
         Ok(DbCharacter {
             id:                 row.get(0)?,
             name:               row.get(1)?,
-            desc:               row.get(2)?,
-            personality:        row.get(3)?,
-            scenario:           row.get(4)?,
+            prompt: crate::import::combine_legacy_prompt(
+                &row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                &row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                &row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                &row.get::<_, Option<String>>(7)?.unwrap_or_default(),
+            ),
             greeting:           row.get(5)?,
             alternate_greetings: row.get(6)?,
-            mes_example:        row.get(7)?,
-            creator_notes:      row.get(8)?,
             tags:               row.get(9)?,
             v3_spec:            row.get(10)?,
             initials:           row.get(11)?,
@@ -165,8 +156,7 @@ pub async fn create_character(app: AppHandle, payload: CreateCharacterPayload) -
 
     let alt_greetings_json = serde_json::to_string(&payload.alternate_greetings)
         .unwrap_or_else(|_| "[]".to_string());
-    let tags_json = serde_json::to_string(&payload.tags)
-        .unwrap_or_else(|_| "[]".to_string());
+    let tags_json = "[]";
     let world_info_ids_json = serde_json::to_string(
         &payload.world_info_ids.unwrap_or_default()
     ).unwrap_or_else(|_| "[]".to_string());
@@ -180,15 +170,15 @@ pub async fn create_character(app: AppHandle, payload: CreateCharacterPayload) -
         params![
             new_id,
             payload.name,
-            payload.desc,
-            payload.personality,
-            payload.scenario,
+            payload.prompt,
+            "",
+            "",
             payload.greeting,
             alt_greetings_json,
-            payload.mes_example,
-            payload.creator_notes,
+            "",
+            "",
             tags_json,
-            payload.v3_spec,
+            false,
             payload.initials,
             payload.color,
             world_info_ids_json,
@@ -227,30 +217,22 @@ pub async fn update_character(app: AppHandle, id: String, payload: CreateCharact
 
     let alt_greetings_json = serde_json::to_string(&payload.alternate_greetings)
         .unwrap_or_else(|_| "[]".to_string());
-    let tags_json = serde_json::to_string(&payload.tags)
-        .unwrap_or_else(|_| "[]".to_string());
     let world_info_ids_json = serde_json::to_string(
         &payload.world_info_ids.unwrap_or_default()
     ).unwrap_or_else(|_| "[]".to_string());
 
+    // Folded legacy prompt sections now live in desc. Preserve notes and metadata.
     conn.execute(
         "UPDATE characters SET
-            name = ?1, desc = ?2, personality = ?3, scenario = ?4,
-            greeting = ?5, alternate_greetings = ?6, mes_example = ?7,
-            creator_notes = ?8, tags = ?9, v3_spec = ?10,
-            initials = ?11, color = ?12, world_info_ids = ?13
-         WHERE id = ?14",
+            name = ?1, desc = ?2, personality = '', scenario = '',
+            greeting = ?3, alternate_greetings = ?4, mes_example = '',
+            initials = ?5, color = ?6, world_info_ids = ?7
+         WHERE id = ?8",
         params![
             payload.name,
-            payload.desc,
-            payload.personality,
-            payload.scenario,
+            payload.prompt,
             payload.greeting,
             alt_greetings_json,
-            payload.mes_example,
-            payload.creator_notes,
-            tags_json,
-            payload.v3_spec,
             payload.initials,
             payload.color,
             world_info_ids_json,

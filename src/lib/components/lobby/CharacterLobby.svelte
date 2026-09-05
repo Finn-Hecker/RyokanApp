@@ -84,7 +84,7 @@
   }
 
   function resolveDesc(char: any): string {
-    return char.desc?.replace(/\{\{char\}\}/g, char.name) ?? '';
+    return char.prompt?.replace(/\{\{char\}\}/g, char.name) ?? '';
   }
 
   let filtered = $derived(
@@ -94,7 +94,7 @@
       .filter((c: any) =>
         searchQuery.trim() === '' ||
         c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.desc?.toLowerCase().includes(searchQuery.toLowerCase())
+        c.prompt?.toLowerCase().includes(searchQuery.toLowerCase())
       )
       .sort((a: any, b: any) => {
         const aPinned = characterState.pinnedCharacterIds.has(String(a.id));

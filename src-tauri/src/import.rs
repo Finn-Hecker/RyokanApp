@@ -16,6 +16,7 @@ pub struct CharacterMetadata {
     pub creator_notes: Option<String>,
     pub tags: Vec<String>,
     pub v3_spec: bool,
+    pub prompt: String,
 }
 
 // Manually parses PNG chunks to avoid heavy image dependencies and ensure zero-lag extraction.
@@ -102,7 +103,7 @@ fn map_json_to_metadata(json: &Value) -> Option<CharacterMetadata> {
     if let Some(desc) = get_str("description") { meta.description = Some(desc); found_any = true; }
     if let Some(pers) = get_str("personality") { meta.personality = Some(pers); }
     if let Some(scen) = get_str("scenario") { meta.scenario = Some(scen); }
-    
+
     // Fallbacks for older formats that use different keys for the greeting.
     meta.first_mes = get_str("first_mes")
         .or_else(|| get_str("first_message"))
@@ -132,10 +133,95 @@ fn map_json_to_metadata(json: &Value) -> Option<CharacterMetadata> {
         meta.v3_spec = true;
     }
 
-    // Some creators put the system prompt entirely into the personality field.
+    meta.prompt = combine_legacy_prompt(
+        meta.description.as_deref().unwrap_or_default(),
+        meta.personality.as_deref().unwrap_or_default(),
+        meta.scenario.as_deref().unwrap_or_default(),
+        meta.mes_example.as_deref().unwrap_or_default(),
+    );
+    found_any |= !meta.prompt.is_empty();
+
+    // Preserve the existing parser response for personality-only legacy cards.
     if meta.description.is_none() && meta.personality.is_some() {
         meta.description = meta.personality.clone();
     }
 
     if found_any { Some(meta) } else { None }
+}
+
+/// Adapts legacy rows and imported cards without changing the database schema.
+/// A prompt already stored alone in desc passes through unchanged.
+pub fn combine_legacy_prompt(description: &str, personality: &str, scenario: &str, examples: &str) -> String {
+    if [personality, scenario, examples].iter().all(|text| text.trim().is_empty()) {
+        return description.to_string();
+    }
+    [("Description", description), ("Personality", personality),
+     ("Scenario", scenario), ("Example Dialogs", examples)]
+        .into_iter()
+        .filter(|(_, text)| !text.trim().is_empty())
+        .map(|(label, text)| format!("{}\n{}", label, text.trim()))
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn combines_legacy_content_without_greetings_or_notes() {
+        let meta = map_json_to_metadata(&serde_json::json!({"data": {
+            "name": "Rin", "description": "Character", "personality": "Kind",
+            "scenario": "Inn", "mes_example": "{{char}}: Hello",
+            "first_mes": "Welcome", "alternate_greetings": ["Good evening"],
+            "creator_notes": "Not instructions"
+        }})).unwrap();
+        assert_eq!(meta.prompt, "Description\nCharacter\n\nPersonality\nKind\n\nScenario\nInn\n\nExample Dialogs\n{{char}}: Hello");
+        assert_eq!(meta.first_mes.as_deref(), Some("Welcome"));
+        assert_eq!(meta.alternate_greetings, vec!["Good evening"]);
+    }
+
+    #[test]
+    fn preserves_prompt_stored_in_description_without_duplicate_sections() {
+        let prompt = "  Write freely.\n\nKeep this spacing.  ";
+        let meta = map_json_to_metadata(&serde_json::json!({"data": {
+            "name": "Rin", "description": prompt, "personality": "",
+            "scenario": "", "mes_example": "", "first_mes": "Hi"
+        }})).unwrap();
+        assert_eq!(meta.prompt, prompt);
+        assert_eq!(meta.first_mes.as_deref(), Some("Hi"));
+        assert_eq!(combine_legacy_prompt(prompt, "", " ", ""), prompt);
+        assert_eq!(combine_legacy_prompt("", "Kind", "", ""), "Personality\nKind");
+    }
+
+    #[tokio::test]
+    async fn imports_v2_and_v3_png_chunks() {
+        for (keyword, spec) in [("chara", "chara_card_v2"), ("ccv3", "chara_card_v3")] {
+            let payload = general_purpose::STANDARD.encode(
+                serde_json::to_vec(&serde_json::json!({"spec": spec, "data": {
+                    "name": "Rin", "description": "Free prompt", "first_mes": "Hello",
+                    "alternate_greetings": ["Hi"]
+                }})).unwrap()
+            );
+            let mut png = std::io::Cursor::new(Vec::new());
+            image::DynamicImage::new_rgba8(1, 1).write_to(&mut png, image::ImageFormat::Png).unwrap();
+            let mut png = png.into_inner();
+            let data = format!("{keyword}\0{payload}").into_bytes();
+            let mut chunk = (data.len() as u32).to_be_bytes().to_vec();
+            chunk.extend_from_slice(b"tEXt");
+            chunk.extend_from_slice(&data);
+            let mut crc = !0u32;
+            for byte in &chunk[4..] {
+                crc ^= u32::from(*byte);
+                for _ in 0..8 { crc = (crc >> 1) ^ (0xedb88320 & 0u32.wrapping_sub(crc & 1)); }
+            }
+            chunk.extend_from_slice(&(!crc).to_be_bytes());
+            png.splice(33..33, chunk);
+            let meta = parse_character_card(png).await.unwrap();
+            assert_eq!(meta.prompt, "Free prompt", "{spec}");
+            assert_eq!(meta.first_mes.as_deref(), Some("Hello"));
+            assert_eq!(meta.alternate_greetings, vec!["Hi"]);
+        }
+    }
 }

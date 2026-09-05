@@ -649,8 +649,8 @@ function buildLlmMessages(): Array<{ role: string; content: string }> {
   const s = appState.apiSettings;
   const char = appState.activeCharacter;
   let system = s.systemPrompt || '';
-  if (char?.description) {
-    system += `${system ? '\n\n' : ''}You are ${char.name ?? 'the character'}. ${char.description}`;
+  if (char?.prompt) {
+    system += `${system ? '\n\n' : ''}You are ${char.name ?? 'the character'}. ${char.prompt}`;
   }
   if (s.aiLanguage) {
     system += `${system ? '\n' : ''}Respond in ${s.aiLanguage}.`;

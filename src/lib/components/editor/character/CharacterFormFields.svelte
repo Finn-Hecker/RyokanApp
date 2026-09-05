@@ -7,11 +7,8 @@
 
   let {
     name = $bindable(''),
-    description = $bindable(''),
-    personality = $bindable(''),
-    scenario = $bindable(''),
+    prompt = $bindable(''),
     greeting = $bindable(''),
-    mes_example = $bindable(''),
     alternate_greetings = $bindable([]),
     worldInfoIds = $bindable([]),
     onAltGreetingsChange,
@@ -19,11 +16,8 @@
     onAltGreetingsRemove
   }: {
     name?: string;
-    description?: string;
-    personality?: string;
-    scenario?: string;
+    prompt?: string;
     greeting?: string;
-    mes_example?: string;
     alternate_greetings?: string[];
     worldInfoIds?: string[];
     onAltGreetingsChange?: (updated: string[]) => void;
@@ -32,7 +26,7 @@
   } = $props();
 
   let totalTokens = $derived(
-    countCoreCharacterTokens({ name, description, personality, scenario, greeting, mes_example })
+    countCoreCharacterTokens({ name, prompt, greeting })
   );
 </script>
 
@@ -61,15 +55,15 @@
 
   <div class="field-wrap">
     <div class="field-label-row">
-      <label for="character-description" class="field-label">{m.create_page_label_desc()}</label>
-      <TokenBadge text={description} />
+      <label for="character-prompt" class="field-label">{m.create_page_label_prompt()}</label>
+      <TokenBadge text={prompt} />
     </div>
     <textarea
-      id="character-description"
-      bind:value={description}
-      rows="6"
+      id="character-prompt"
+      bind:value={prompt}
+      rows="14"
       class="field-textarea"
-      placeholder={m.create_page_placeholder_desc()}
+      placeholder={m.create_page_placeholder_prompt()}
     ></textarea>
   </div>
 
@@ -93,52 +87,6 @@
     onAdd={onAltGreetingsAdd}
     onRemove={onAltGreetingsRemove}
   />
-
-  <div class="section-header">
-    <span class="section-title">{m.create_page_header_advanced()}</span>
-  </div>
-
-  <div class="field-wrap">
-    <div class="field-label-row">
-      <label for="char-personality" class="field-label">{m.create_page_label_personality()}</label>
-      <TokenBadge text={personality} />
-    </div>
-    <textarea
-      id="char-personality"
-      bind:value={personality}
-      rows="3"
-      class="field-textarea"
-      placeholder={m.create_page_placeholder_personality()}
-    ></textarea>
-  </div>
-
-  <div class="field-wrap">
-    <div class="field-label-row">
-      <label for="char-scenario" class="field-label">{m.create_page_label_scenario()}</label>
-      <TokenBadge text={scenario} />
-    </div>
-    <textarea
-      id="char-scenario"
-      bind:value={scenario}
-      rows="3"
-      class="field-textarea"
-      placeholder={m.create_page_placeholder_scenario()}
-    ></textarea>
-  </div>
-
-  <div class="field-wrap">
-    <div class="field-label-row">
-      <label for="char-mes-example" class="field-label">{m.create_page_label_mes_example()}</label>
-      <TokenBadge text={mes_example} />
-    </div>
-    <textarea
-      id="char-mes-example"
-      bind:value={mes_example}
-      rows="4"
-      class="field-textarea field-textarea--mono"
-      placeholder={m.create_page_placeholder_mes_example()}
-    ></textarea>
-  </div>
 
   <WorldInfoPicker bind:selectedIds={worldInfoIds} />
 
@@ -219,27 +167,11 @@
     padding: 4px 14px 10px;
     font-size: 0.875rem;
     line-height: 1.65;
-    resize: none;
+    resize: vertical;
     font-family: inherit;
     outline: none;
   }
 
-  .field-textarea--mono {
-    font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
-    font-size: 0.8125rem;
-  }
-
   .field-textarea::placeholder { color: #374151; }
 
-  .section-header {
-    padding: 10px 2px 0;
-  }
-
-  .section-title {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.15em;
-    color: rgba(var(--accent-rgb, 167 139 250) / 0.6);
-  }
 </style>

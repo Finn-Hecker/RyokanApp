@@ -4,7 +4,7 @@ import { CHARACTERS as STATIC_CHARACTERS } from '$lib/data/characters';
 export interface Character {
     id: string | number;
     name: string;
-    desc: string;
+    prompt: string;
     greeting: string;
     initials: string;
     color: string;
@@ -13,14 +13,12 @@ export interface Character {
      *  themselves are no longer part of the list payload — see loadCharacterAvatar. */
     has_avatar?: boolean;
     avatarUrl?: string;
-    personality?: string;
-    scenario?: string;
-    mes_example?: string;
-    creator_notes?: string;
     hidden?: boolean;
     alternate_greetings?: string[];
     world_info_ids?: string[];
 }
+
+export type CharacterInput = Pick<Character, 'name' | 'prompt' | 'greeting' | 'initials' | 'color' | 'alternate_greetings' | 'world_info_ids'> & { avatar?: string | null };
 
 export const characterState = $state({
     allCharacters: [] as Character[],
@@ -99,12 +97,12 @@ export async function loadCharacterAvatar(id: string): Promise<void> {
     }
 }
 
-export async function createCharacter(charData: any) {
+export async function createCharacter(charData: CharacterInput) {
     const tempId = `temp-${Date.now()}`;
     const tempChar: Character = {
         id: tempId,
         name: charData.name,
-        desc: charData.desc,
+        prompt: charData.prompt,
         greeting: charData.greeting || "",
         initials: charData.initials,
         color: charData.color,
@@ -123,16 +121,10 @@ export async function createCharacter(charData: any) {
         const realId = await invoke<string>('create_character', {
             payload: {
                 name: charData.name,
-                desc: charData.desc,
-                personality: charData.personality || "",
-                scenario: charData.scenario || "",
+                prompt: charData.prompt,
                 greeting: charData.greeting || "",
                 alternate_greetings: charData.alternate_greetings || [],
-                mes_example: charData.mes_example || "",
-                creator_notes: charData.creator_notes || "",
-                tags: charData.tags || [],
                 avatar: charData.avatar || null,
-                v3_spec: charData.v3_spec || false,
                 initials: charData.initials,
                 color: charData.color,
                 world_info_ids: charData.world_info_ids ?? [],
@@ -152,22 +144,16 @@ export async function createCharacter(charData: any) {
     }
 }
 
-export async function updateCharacter(id: string, charData: any) {
+export async function updateCharacter(id: string, charData: CharacterInput) {
     try {
         await invoke('update_character', {
             id,
             payload: {
                 name: charData.name,
-                desc: charData.desc,
-                personality: charData.personality || "",
-                scenario: charData.scenario || "",
+                prompt: charData.prompt,
                 greeting: charData.greeting || "",
                 alternate_greetings: charData.alternate_greetings || [],
-                mes_example: charData.mes_example || "",
-                creator_notes: charData.creator_notes || "",
-                tags: charData.tags || [],
                 avatar: charData.avatar || null,
-                v3_spec: charData.v3_spec || false,
                 initials: charData.initials,
                 color: charData.color,
                 world_info_ids: charData.world_info_ids ?? [],

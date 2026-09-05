@@ -16,23 +16,16 @@ export function countTokens(text: string | null | undefined): number {
 
 export interface CharacterTokenFields {
   name?: string;
-  description?: string;
-  personality?: string;
-  scenario?: string;
+  prompt?: string;
   greeting?: string;
-  mes_example?: string;
 }
 
-/**
- * Counts the tokens of character fields that are included in the core prompt context.
- */
-export function countCoreCharacterTokens(fields: CharacterTokenFields): number {
+export function countCoreCharacterTokens(
+  fields: CharacterTokenFields
+): number {
   return (
     countTokens(fields.name) +
-    countTokens(fields.description) +
-    countTokens(fields.personality) +
-    countTokens(fields.scenario) +
-    countTokens(fields.greeting) +
-    countTokens(fields.mes_example)
+    countTokens(fields.prompt) +
+    countTokens(fields.greeting)
   );
 }

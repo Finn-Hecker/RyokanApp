@@ -12,11 +12,8 @@ export interface GenerationCallbacks {
 
 export interface GenerationOptions {
     character: {
-        name?:           string;
-        desc?:           string;
-        personality?:    string;
-        scenario?:       string;
-        mes_example?:    string;
+        name?: string;
+        prompt?: string;
         world_info_ids?: string[];
     } | null;
     apiSettings:    ApiSettings;
@@ -172,11 +169,7 @@ export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
     // No world info here — see the layout note above.
     const baseSystemPrompt = buildSystemPrompt({
         charName,
-        desc:         character?.desc,
-        personality:  character?.personality,
-        scenario:     character?.scenario,
-        example:      character?.mes_example,
-        modelType:    'ollama',
+        prompt: character?.prompt,
     });
 
     const { currentSummary, lastSummarizedMessageId } = chatState.summaryMeta;

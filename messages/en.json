@@ -1,5 +1,7 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
+  "create_page_label_prompt": "Prompt",
+  "create_page_placeholder_prompt": "Describe the character, setting, relationships, writing style, rules, and anything else the AI should know.",
   "app_name": "Ryokan",
   "welcome_title": "Welcome to Ryokan",
   "lobby_subtitle_pre": "Choose your companion for a",
