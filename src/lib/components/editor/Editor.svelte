@@ -11,12 +11,9 @@
   import DeleteConfirmDialog from '$lib/components/editor/shared/DeleteConfirmDialog.svelte';
 
   import CharacterTab from '$lib/components/editor/character/CharacterTab.svelte';
-  import RoleTab from '$lib/components/editor/roles/RolesTab.svelte';
   import WorldInfoTab from '$lib/components/editor/worldinfo/WorldInfoTab.svelte';
   import type { WorldInfoEntry } from '$lib/components/editor/worldinfo/worldInfoLogic';
   import { createWorldInfo, updateWorldInfo } from '$lib/components/editor/worldinfo/worldInfoLogic';
-  import { type Role } from '$lib/stores/roleStore.svelte';
-  import { saveNewRole, saveExistingRole, removeRole } from '$lib/components/editor/roles/rolesLogic';
 
   import {
     saveCharacter,
@@ -26,21 +23,15 @@
     readImageAsDataUrl
   } from '$lib/components/editor/character/characterLogic';
 
-  type Tab = 'character' | 'role' | 'worldinfo';
+  type Tab = 'character' | 'worldinfo';
 
   let activeTab = $state<Tab>('character');
-  let editRole = $state<Role | null>(null);
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     {
       id: 'character',
       label: m.creator_tab_character(),
       icon: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z'
-    },
-    {
-      id: 'role',
-      label: m.creator_tab_role(),
-      icon: 'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z M8 14s1.5 2 4 2 4-2 4-2 M9 9h.01 M15 9h.01'
     },
     {
       id: 'worldinfo',
@@ -53,7 +44,7 @@
   
   let isEditMode = $derived(!!editChar);
   let isHidden = $derived(editChar?.id != null ? characterState.hiddenCharacterIds.has(editChar.id) : false);
-  let isAnyEditMode = $derived(isEditMode || !!editRole);
+  let isAnyEditMode = $derived(isEditMode);
 
   // Character States
   let charName = $state('');
@@ -95,10 +86,6 @@
   let fromRoleManager = $state(false);
 
   onMount(() => {
-    if (appState.currentView === 'roleEditor') {
-      activeTab = 'role';
-      fromRoleManager = true;
-    }
     if (appState.currentView === 'worldInfoEditor') {
       activeTab = 'worldinfo';
       fromRoleManager = true;
@@ -124,15 +111,6 @@
       avatarChanged = false;
     }
 
-    if (appState.currentView === 'roleEditor') {
-      editRole = current as Role;
-      roleName = editRole.name ?? '';
-      roleDescription = editRole.bio ?? '';
-      rolePronouns = editRole.pronouns ?? '';
-      roleAvatar = editRole.avatarUrl ?? null;
-      roleAvatarChanged = false;
-    }
-
     if (appState.currentView === 'worldInfoEditor') {
       activeTab = 'worldinfo';
       fromRoleManager = true;
@@ -149,9 +127,7 @@
   let canSave = $derived(
     activeTab === 'character'
       ? !!(charName && charDescription)
-      : activeTab === 'role'
-        ? !!roleName
-        : !!worldInfoName
+      : !!worldInfoName
   );
 
   let saveLabel = $derived(m.create_page_btn_done());
@@ -223,20 +199,6 @@
           editChar, avatarPreview, avatarChanged
         );
         goBack();
-      } else if (activeTab === 'role') {
-        const opts = {
-          name: roleName,
-          bio: roleDescription,
-          pronouns: rolePronouns,
-          avatarDataUrl: roleAvatar,
-          avatarChanged: roleAvatarChanged,
-        };
-        if (editRole) {
-          await saveExistingRole(editRole.id, opts);
-        } else {
-          await saveNewRole(opts);
-        }
-        goBack();
       } else {
         const data = {
           name: worldInfoName,
@@ -258,9 +220,7 @@
   async function handleDelete() {
     isDeleting = true;
     try {
-      if (activeTab === 'role' && editRole) {
-        await removeRole(editRole.id);
-      } else if (editChar?.isCustom) {
+      if (editChar?.isCustom) {
         await removeCharacter(editChar);
       } else if (activeTab === 'worldinfo' && editChar?.id) {
         //await deleteWorldInfo(editChar.id);
@@ -394,7 +354,7 @@
               {/if}
             {/if}
 
-            {#if activeTab === 'role' || activeTab === 'worldinfo'}
+            {#if activeTab === 'worldinfo'}
               <button class="menu-item menu-item--danger" onclick={handleDeleteClick}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="3 6 5 6 21 6"/>
@@ -402,7 +362,7 @@
                   <path d="M10 11v6M14 11v6"/>
                   <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
                 </svg>
-                <span>Delete {activeTab === 'role' ? 'Role' : 'World Info'}</span>
+                <span>Delete</span>
               </button>
             {/if}
 
@@ -422,23 +382,20 @@
 
   <SimpleFormPage {actions}>
 
-    {#if !isAnyEditMode}
-      <div class="page-heading text-center">
-        <h1 class="page-title">
-          {activeTab === 'character'
-            ? (isEditMode ? m.creator_title_edit_character() : m.creator_title_new_character())
-            : activeTab === 'role'
-              ? m.creator_title_new_role()
-              : m.creator_title_new_lorebook()}
-        </h1>
-        <p class="page-subtitle">
-            {activeTab === 'character'
-              ? m.creator_subtitle_character()
-              : activeTab === 'role'
-                ? m.creator_subtitle_role()
-                : m.creator_subtitle_lorebook()}
-        </p>
-      </div>
+  {#if !isAnyEditMode}
+    <div class="page-heading text-center">
+      <h1 class="page-title">
+        {activeTab === 'character'
+          ? (isEditMode ? m.creator_title_edit_character() : m.creator_title_new_character())
+          : m.creator_title_new_lorebook()}
+      </h1>
+
+      <p class="page-subtitle">
+        {activeTab === 'character'
+          ? m.creator_subtitle_character()
+          : m.creator_subtitle_lorebook()}
+      </p>
+    </div>
 
       <div class="tab-row">
         <div class="tab-bar">
@@ -473,14 +430,6 @@
               bind:worldInfoIds={worldInfoIds}
               {avatarPreview}
               onAvatarFile={handleCharAvatarFile}
-            />
-          {:else if activeTab === 'role'}
-            <RoleTab
-              bind:name={roleName}
-              bind:description={roleDescription}
-              bind:pronouns={rolePronouns}
-              avatarPreview={roleAvatar}
-              onAvatarFile={handleRoleAvatarFile}
             />
           {:else}
             <WorldInfoTab

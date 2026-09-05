@@ -6,16 +6,13 @@ export interface PromptBuilderOptions {
   personality?:  string | null;
   scenario?:     string | null;
   example?:      string | null;
-  userName?:     string;
-  userBio?:      string | null;
-  userPronouns?: string | null;
   modelType?:    ModelType;
 }
 
-function replacePlaceholders(text: string, charName: string, userName: string): string {
+function replacePlaceholders(text: string, charName: string): string {
   return text
     .replace(/\{\{char\}\}/gi, charName)
-    .replace(/\{\{user\}\}/gi, userName);
+    .replace(/\{\{user\}\}/gi, 'User');
 }
 
 export function buildSystemPrompt({
@@ -24,27 +21,15 @@ export function buildSystemPrompt({
   personality,
   scenario,
   example,
-  userName = 'User',
-  userBio,
-  userPronouns,
   modelType = 'ollama',
 }: PromptBuilderOptions): string {
-  const rp = (text: string) => replacePlaceholders(text, charName, userName);
+  const rp = (text: string) => replacePlaceholders(text, charName);
 
-  const userIdentityParts = [
-    userName && userName !== 'User' ? userName : null,
-    userPronouns ? `(${userPronouns})` : null,
-  ].filter(Boolean);
+const coreInstructions = `You are ${charName}.
 
-  const userIdentityLine = userIdentityParts.length > 0
-    ? userIdentityParts.join(' ')
-    : userName;
+You are speaking with the user. React to them as ${charName} naturally would throughout the entire conversation.
 
-  const coreInstructions = `You are ${charName}.
-
-You are speaking with ${userIdentityLine}. React to them as ${charName} naturally would throughout the entire conversation.
-
-Stay fully in character. The user has an active role — you must perceive and react to it consistently.
+Stay fully in character.
 
 If a message is prefixed with [OOC:], treat it as a director's instruction. Do NOT respond as ${charName}. Silently incorporate it into your next in-character response, then seamlessly return to character.`;
 
@@ -61,13 +46,6 @@ If a message is prefixed with [OOC:], treat it as a director's instruction. Do N
     parts.push(formatSection(s.label, s.content, modelType));
   }
 
-  if (userBio?.trim()) {
-    const bioContent = rp(userBio.trim())
-      + `\n\nOnly address them by name in-character if it has been introduced in the roleplay.`;
-
-    parts.push(formatSection('user_role', bioContent, modelType));
-  }
-
   return parts.join('\n\n');
 }
 
@@ -75,10 +53,9 @@ export function buildWorldInfoBlock(
   wiBefore:  string | null | undefined,
   wiAfter:   string | null | undefined,
   charName:  string,
-  userName:  string,
   modelType: ModelType = 'ollama',
 ): string {
-  const rp = (text: string) => replacePlaceholders(text, charName, userName);
+  const rp = (text: string) => replacePlaceholders(text, charName);
   const parts: string[] = [];
 
   if (wiBefore?.trim()) parts.push(formatSection('world_info_before', rp(wiBefore.trim()), modelType));
@@ -86,9 +63,7 @@ export function buildWorldInfoBlock(
 
   if (parts.length === 0) return '';
 
-  return `[Roleplay context for the next reply only — not something ${userName} said, do not treat it as dialogue]\n`
-       + parts.join('\n\n')
-       + `\n[End context]`;
+return `[Roleplay context for the next reply only — not something the user said, do not treat it as dialogue]\n`
 }
 
 export function buildWiString(

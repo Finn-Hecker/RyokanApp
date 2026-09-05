@@ -3,7 +3,6 @@
   import { appState } from '$lib/stores/appState.svelte';
   import { tick, onMount, onDestroy } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { roleState } from '$lib/stores/roleStore.svelte';
   import { chatState, addMessage, addSwipeVariant, loadMessages, updateMessage, deleteMessage, setSwipeIndex, loadMoreMessages, cloneChatFromMessage } from '$lib/stores/chatStore.svelte';
   import { runGeneration } from '$lib/utils/chatApi';
   import { summaryState, checkAndSummarizeIfNeeded } from '$lib/utils/rollingSummary.svelte';
@@ -33,10 +32,6 @@
   let cloneCooldownTimer: ReturnType<typeof setTimeout> | undefined;
 
   let isBlocked = $derived(isGenerating || summaryState.isSummarizing);
-
-  let activeRole = $derived(
-    roleState.allRoles.find(p => p.id === roleState.activeRoleId) ?? null
-  );
 
   // The active conversation's own record — used to show a "cloned chat" badge.
   let activeConversation = $derived(
@@ -230,11 +225,6 @@
       apiSettings:    appState.apiSettings,
       recentMessages: chatState.currentMessages,
       userPrompt:     undefined as string | undefined,
-      role: activeRole ? {
-        name:      activeRole.name,
-        bio:       activeRole.bio,
-        pronouns:  activeRole.pronouns
-      } : null,
     };
 
     await checkAndSummarizeIfNeeded(chatState.currentMessages, generationOptions);
@@ -307,11 +297,6 @@
           apiSettings: appState.apiSettings,
           recentMessages: historySlice,
           userPrompt: undefined,
-          role: activeRole ? {
-            name: activeRole.name,
-            bio: activeRole.bio,
-            pronouns: activeRole.pronouns
-          } : null,
         },
         {
           onStreamUpdate:

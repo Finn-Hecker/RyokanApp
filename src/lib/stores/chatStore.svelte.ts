@@ -1,7 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { appState } from './appState.svelte';
 import { characterState } from './characterStore.svelte';
-import { roleState } from './roleStore.svelte';
 import { getLocale } from '$lib/paraglide/runtime';
 
 export interface Message {
@@ -123,12 +122,10 @@ export async function startNewChat(character: any) {
         const rawGreeting = allGreetings.length > 0
             ? allGreetings[Math.floor(Math.random() * allGreetings.length)]
             : null;
-        const activeRole = roleState.allRoles.find(r => r.id === roleState.activeRoleId);
-        const userName: string = activeRole?.name ?? (character as any).userName ?? 'User';
         const selectedGreeting = rawGreeting
             ? rawGreeting
                 .replace(/\{\{char\}\}/gi, character.name)
-                .replace(/\{\{user\}\}/gi, userName)
+                .replace(/\{\{user\}\}/gi, 'User')
             : null;
         const newId = await invoke<string>('create_chat', {
             characterId: character.id.toString(),

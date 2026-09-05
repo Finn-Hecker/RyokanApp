@@ -3,20 +3,17 @@
   import { chatState, openHistoryChat, loadAllConversations, loadMoreConversations, deleteConversation, renameConversation, togglePinConversation } from '$lib/stores/chatStore.svelte';
   import { appState } from '$lib/stores/appState.svelte';
   import * as m from '$lib/paraglide/messages';
-  import { getLocale } from '$lib/paraglide/runtime';
   import { onMount, onDestroy, untrack } from 'svelte';
 
   let {
     isOpen,
     close,
     alwaysVisible = false,
-    onRolesClick,
     onWorldInfoClick
   }: {
     isOpen: boolean;
     close: () => void;
     alwaysVisible?: boolean;
-    onRolesClick?: () => void;
     onWorldInfoClick?: () => void;
   } = $props();
 
@@ -164,13 +161,6 @@
     chatToDelete = null;
   }
 
-  function handleRolesClick() {
-    if (onRolesClick) { onRolesClick(); return; }
-    appState.listInitialTab = 'roles';
-    appState.currentView = 'list';
-    if (!alwaysVisible) close();
-  }
-
   function handleWorldInfoClick() {
     if (onWorldInfoClick) { onWorldInfoClick(); return; }
     appState.listInitialTab = 'worldinfo';
@@ -314,23 +304,6 @@
 
 {#snippet navButtons()}
   <div class="p-3 border-t border-white/5 flex gap-2 shrink-0">
-    <button
-      onclick={handleRolesClick}
-      class="flex-1 flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl
-             bg-white/[0.03] hover:bg-white/[0.07]
-             border border-white/[0.06] hover:border-ryokan-accent/40
-             text-gray-500 hover:text-ryokan-accent
-             transition-all duration-200 active:scale-[0.97]"
-    >
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-        <circle cx="9" cy="7" r="4"/>
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-      </svg>
-      <span class="text-[10px] font-medium leading-none tracking-wide text-current opacity-70">{m.sidebar_roles()}</span>
-    </button>
-
     <button
       onclick={handleWorldInfoClick}
       class="flex-1 flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl
