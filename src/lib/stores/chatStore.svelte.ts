@@ -8,6 +8,7 @@ export interface Message {
     conversation_id: string;
     role: 'user' | 'assistant';
     content: string;
+    author?: string | null;
     swipe_variants: string[];
     swipe_index: number;
 }
@@ -15,7 +16,8 @@ export interface Message {
 export interface Conversation {
     id: string;
     title: string;
-    character_id: string;
+    character_id: string | null;
+    mode: 'singleplayer' | 'multiplayer';
     created_at: string;
     updated_at: string;
     is_pinned: boolean;
@@ -130,7 +132,8 @@ export async function startNewChat(character: any) {
         const newId = await invoke<string>('create_chat', {
             characterId: character.id.toString(),
             characterName: character.name,
-            initialMessage: selectedGreeting
+            initialMessage: selectedGreeting,
+            mode: 'singleplayer',
         });
         await loadAllConversations();
         await loadMessages(newId);
@@ -253,7 +256,14 @@ export async function addMessage(role: 'user' | 'assistant', content: string) {
     const chatId = chatState.activeChatId;
     if (!chatId) return;
     try {
-        await invoke('add_message', { chatId, role, content });
+        await invoke('add_message', {
+            chatId,
+            role,
+            content,
+            author: null,
+            messageId: null,
+            createdAt: null,
+        });
         await loadAllConversations();
         await loadMessages(chatId);
     } catch (e) { console.error(e); }

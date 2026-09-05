@@ -11,10 +11,14 @@ pub struct DbMessage {
     pub conversation_id: String,
     pub role: String,
     pub content: String,
+    /// Human display name for multiplayer user messages. Null for legacy and
+    /// singleplayer messages.
+    pub author: Option<String>,
     /// JSON array of all generated content variants (including the active one).
     pub swipe_variants: String,
     /// Zero-based index pointing to the currently displayed variant.
     pub swipe_index: i64,
+    pub created_at: String,
 }
 
 /// Retrieves the full, chronological message history for a specific conversation.
@@ -25,7 +29,7 @@ pub struct DbMessage {
 pub async fn get_messages(app: AppHandle, chat_id: String) -> Result<Vec<DbMessage>, String> {
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare(
-        "SELECT id, conversation_id, role, content, swipe_variants, swipe_index \
+        "SELECT id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at \
          FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC, rowid ASC"
     ).map_err(|e| e.to_string())?;
 
@@ -35,8 +39,10 @@ pub async fn get_messages(app: AppHandle, chat_id: String) -> Result<Vec<DbMessa
             conversation_id: row.get(1)?,
             role: row.get(2)?,
             content: row.get(3)?,
-            swipe_variants: row.get(4)?,
-            swipe_index: row.get(5)?,
+            author: row.get(4)?,
+            swipe_variants: row.get(5)?,
+            swipe_index: row.get(6)?,
+            created_at: row.get(7)?,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -49,19 +55,34 @@ pub async fn get_messages(app: AppHandle, chat_id: String) -> Result<Vec<DbMessa
 /// Automatically updates the conversation title based on the user's first input.
 /// The initial content is stored both in `content` and as the first entry in `swipe_variants`.
 #[tauri::command]
-pub async fn add_message(app: AppHandle, chat_id: String, role: String, content: String) -> Result<(), String> {
+pub async fn add_message(
+    app: AppHandle,
+    chat_id: String,
+    role: String,
+    content: String,
+    author: Option<String>,
+    message_id: Option<String>,
+    created_at: Option<String>,
+) -> Result<(), String> {
     let conn = crate::database::get_connection(&app)?;
 
-    let msg_id = Uuid::new_v4().to_string();
+    let msg_id = message_id.unwrap_or_else(|| Uuid::new_v4().to_string());
     // Store the initial content as the first (and only) swipe variant.
     let initial_variants = serde_json::to_string(&vec![&content])
         .map_err(|e| e.to_string())?;
 
-    conn.execute(
-        "INSERT INTO messages (id, conversation_id, role, content, swipe_variants, swipe_index) \
-         VALUES (?1, ?2, ?3, ?4, ?5, 0)",
-        rusqlite::params![msg_id, chat_id, role, content, initial_variants],
+    let inserted = conn.execute(
+        "INSERT INTO messages (id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, COALESCE(?7, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))) \
+         ON CONFLICT(id) DO NOTHING",
+        rusqlite::params![msg_id, chat_id, role, content, author, initial_variants, created_at],
     ).map_err(|e| e.to_string())?;
+
+    // Relay snapshots and echoed frames can contain the same stable message
+    // id. Treat those as an idempotent replay and do not re-run auto-title.
+    if inserted == 0 {
+        return Ok(());
+    }
 
     // Auto-titling logic: use the first user message as the conversation title.
     if role == "user" {
@@ -207,7 +228,7 @@ pub async fn get_messages_page(app: AppHandle, chat_id: String, limit: i64, offs
     // second-level resolution (relevant e.g. right after cloning a chat,
     // where many messages get inserted within the same second).
     let mut stmt = conn.prepare(
-        "SELECT id, conversation_id, role, content, swipe_variants, swipe_index \
+        "SELECT id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at \
          FROM messages WHERE conversation_id = ?1 \
          ORDER BY created_at DESC, rowid DESC \
          LIMIT ?2 OFFSET ?3"
@@ -219,8 +240,10 @@ pub async fn get_messages_page(app: AppHandle, chat_id: String, limit: i64, offs
             conversation_id: row.get(1)?,
             role: row.get(2)?,
             content: row.get(3)?,
-            swipe_variants: row.get(4)?,
-            swipe_index: row.get(5)?,
+            author: row.get(4)?,
+            swipe_variants: row.get(5)?,
+            swipe_index: row.get(6)?,
+            created_at: row.get(7)?,
         })
     }).map_err(|e| e.to_string())?;
 

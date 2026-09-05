@@ -22,7 +22,7 @@
 
   const locked = $derived(mpState.lockedBy !== null);
   const canGenerate = $derived(
-    mpState.connected && !locked && (mpState.role === 'host' || mpState.everyoneCanGenerate)
+    mpState.connected && !mpState.viewingHistory && !locked && (mpState.role === 'host' || mpState.everyoneCanGenerate)
   );
   const canEnter = $derived(nameInput.trim().length >= 1 && !mpState.connecting);
 
@@ -124,7 +124,7 @@
       </Button>
     </div>
 
-  {:else if !mpState.connected}
+  {:else if !mpState.connected && !mpState.viewingHistory}
     <div class="mx-auto mt-16 max-w-md rounded-2xl border border-white/10 bg-white/[0.03] p-8">
       <h2 class="mb-1 font-medium text-gray-100">{m.mp_gate_title()}</h2>
       <p class="mb-5 text-sm text-gray-500">{m.mp_gate_desc()}</p>
@@ -199,7 +199,7 @@
         </div>
       {/if}
 
-      {#if mpState.role === 'host'}
+      {#if mpState.role === 'host' && !mpState.viewingHistory}
         <label class="mb-3 flex w-fit cursor-pointer items-center gap-2 text-sm text-gray-400">
           <input
             type="checkbox"
@@ -233,7 +233,7 @@
         {/each}
       </div>
 
-      {#if locked}
+      {#if locked && !mpState.viewingHistory}
         <div class="mt-3 flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5">
           <span class="flex items-center gap-2 text-sm text-gray-300">
             <span class="h-2 w-2 animate-pulse rounded-full bg-ryokan-accent"></span>
@@ -247,6 +247,7 @@
         </div>
       {/if}
 
+      {#if !mpState.viewingHistory}
       <div class="mt-3 flex items-center gap-2">
         <input
           type="text"
@@ -277,6 +278,7 @@
           </button>
         {/if}
       </div>
+      {/if}
     </div>
   {/if}
 </PageLayout>

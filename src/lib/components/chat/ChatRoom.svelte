@@ -96,7 +96,7 @@
         text: isBeingRetried && streamingText ? streamingText : msg.content,
         isUser: msg.role === 'user',
         senderName: msg.role === 'user'
-          ? m.chat_sender_you()
+          ? (msg.author || m.chat_sender_you())
           : (appState.activeCharacter?.name || m.chat_sender_ai()),
         swipeVariants: msg.swipe_variants ?? [msg.content],
         swipeIndex: msg.swipe_index ?? 0,

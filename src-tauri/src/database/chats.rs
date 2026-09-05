@@ -10,6 +10,7 @@ pub struct Conversation {
     pub id: String,
     pub title: String,
     pub character_id: Option<String>,
+    pub mode: String,
     pub created_at: String,
     pub updated_at: String,
     pub is_pinned: bool,
@@ -26,7 +27,7 @@ pub struct Conversation {
 pub async fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare(
-        "SELECT id, title, character_id, created_at, updated_at, is_pinned,
+        "SELECT id, title, character_id, mode, created_at, updated_at, is_pinned,
                 cloned_from_id, cloned_from_title
          FROM conversations
          ORDER BY is_pinned DESC, updated_at DESC"
@@ -37,11 +38,12 @@ pub async fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, Stri
             id: row.get(0)?,
             title: row.get(1)?,
             character_id: row.get(2)?,
-            created_at: row.get(3)?,
-            updated_at: row.get(4)?,
-            is_pinned: row.get::<_, i64>(5)? != 0,
-            cloned_from_id: row.get(6)?,
-            cloned_from_title: row.get(7)?,
+            mode: row.get(3)?,
+            created_at: row.get(4)?,
+            updated_at: row.get(5)?,
+            is_pinned: row.get::<_, i64>(6)? != 0,
+            cloned_from_id: row.get(7)?,
+            cloned_from_title: row.get(8)?,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -55,7 +57,7 @@ pub async fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, Stri
 pub async fn get_conversations_page(app: AppHandle, limit: i64, offset: i64) -> Result<Vec<Conversation>, String> {
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare(
-        "SELECT id, title, character_id, created_at, updated_at, is_pinned,
+        "SELECT id, title, character_id, mode, created_at, updated_at, is_pinned,
                 cloned_from_id, cloned_from_title
          FROM conversations
          ORDER BY is_pinned DESC, updated_at DESC
@@ -67,11 +69,12 @@ pub async fn get_conversations_page(app: AppHandle, limit: i64, offset: i64) -> 
             id: row.get(0)?,
             title: row.get(1)?,
             character_id: row.get(2)?,
-            created_at: row.get(3)?,
-            updated_at: row.get(4)?,
-            is_pinned: row.get::<_, i64>(5)? != 0,
-            cloned_from_id: row.get(6)?,
-            cloned_from_title: row.get(7)?,
+            mode: row.get(3)?,
+            created_at: row.get(4)?,
+            updated_at: row.get(5)?,
+            is_pinned: row.get::<_, i64>(6)? != 0,
+            cloned_from_id: row.get(7)?,
+            cloned_from_title: row.get(8)?,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -83,17 +86,31 @@ pub async fn get_conversations_page(app: AppHandle, limit: i64, offset: i64) -> 
 /// Initializes a new chat session and automatically inserts the character's opening message.
 /// Uses an SQLite transaction to guarantee that either both records are created, or neither is.
 #[tauri::command]
-pub async fn create_chat(app: AppHandle, character_id: String, character_name: String, initial_message: Option<String>) -> Result<String, String> {
+pub async fn create_chat(
+    app: AppHandle,
+    character_id: Option<String>,
+    character_name: String,
+    initial_message: Option<String>,
+    mode: Option<String>,
+) -> Result<String, String> {
     let mut conn = get_connection(&app)?;
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     let new_id = Uuid::new_v4().to_string();
-    let title = format!("💬 {}", character_name);
+    let mode = match mode.as_deref() {
+        Some("multiplayer") => "multiplayer",
+        _ => "singleplayer",
+    };
+    let title = if mode == "multiplayer" {
+        format!("👥 {}", character_name)
+    } else {
+        format!("💬 {}", character_name)
+    };
 
     tx.execute(
-        "INSERT INTO conversations (id, title, character_id) VALUES (?1, ?2, ?3)",
-        params![new_id, title, character_id],
+        "INSERT INTO conversations (id, title, character_id, mode) VALUES (?1, ?2, ?3, ?4)",
+        params![new_id, title, character_id, mode],
     ).map_err(|e| e.to_string())?;
     
     if let Some(msg) = initial_message {
@@ -127,23 +144,23 @@ pub async fn clone_chat_from_message(
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     // Snapshot of the source conversation (title + character).
-    let (source_title, character_id): (String, Option<String>) = tx.query_row(
-        "SELECT title, character_id FROM conversations WHERE id = ?1",
+    let (source_title, character_id, mode): (String, Option<String>, String) = tx.query_row(
+        "SELECT title, character_id, mode FROM conversations WHERE id = ?1",
         params![chat_id],
-        |row| Ok((row.get(0)?, row.get(1)?)),
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     ).map_err(|e| e.to_string())?;
 
     // All messages in chronological order, so we can cut at the right spot.
     // rowid is a tiebreaker for messages sharing the same created_at second
     // (e.g. rapid inserts) — it always reflects true insertion order.
     let mut stmt = tx.prepare(
-        "SELECT id, role, content, swipe_variants, swipe_index
+        "SELECT id, role, content, swipe_variants, swipe_index, author
          FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC, rowid ASC"
     ).map_err(|e| e.to_string())?;
 
-    let all_messages: Vec<(String, String, String, String, i64)> = stmt
+    let all_messages: Vec<(String, String, String, String, i64, Option<String>)> = stmt
         .query_map(params![chat_id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))
         }).map_err(|e| e.to_string())?
         .collect::<Result<_, _>>()
         .map_err(|e| e.to_string())?;
@@ -160,20 +177,20 @@ pub async fn clone_chat_from_message(
     let new_title = format!("🔗 {}", source_title);
 
     tx.execute(
-        "INSERT INTO conversations (id, title, character_id, cloned_from_id, cloned_from_title)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![new_chat_id, new_title, character_id, chat_id, source_title],
+        "INSERT INTO conversations (id, title, character_id, mode, cloned_from_id, cloned_from_title)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![new_chat_id, new_title, character_id, mode, chat_id, source_title],
     ).map_err(|e| e.to_string())?;
 
     // Copy every message up to the cut-off with fresh ids, preserving role,
     // content and swipe history. Inserted in order so created_at / rowid
     // ordering matches the original conversation.
-    for (_, role, content, swipe_variants, swipe_index) in messages_to_copy {
+    for (_, role, content, swipe_variants, swipe_index, author) in messages_to_copy {
         let new_msg_id = Uuid::new_v4().to_string();
         tx.execute(
-            "INSERT INTO messages (id, conversation_id, role, content, swipe_variants, swipe_index)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![new_msg_id, new_chat_id, role, content, swipe_variants, swipe_index],
+            "INSERT INTO messages (id, conversation_id, role, content, swipe_variants, swipe_index, author)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![new_msg_id, new_chat_id, role, content, swipe_variants, swipe_index, author],
         ).map_err(|e| e.to_string())?;
     }
 

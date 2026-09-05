@@ -75,6 +75,10 @@ export const mpState = $state({
   messages: [] as MpMessage[],
   displayName: '',
   characterName: '',
+  /** Stable local conversation id. Deliberately unrelated to roomId. */
+  conversationId: null as string | null,
+  /** Read-only rendering of a saved session after the relay room is gone. */
+  viewingHistory: false,
   /** Set right after room creation, used to display the links */
   shareLink: '',
   hostLink: '',
@@ -93,6 +97,7 @@ let hostToken: string | null = null;
 const seenIds = new Set<string>();
 let snapshotTimer: ReturnType<typeof setTimeout> | null = null;
 let llmAbort: AbortController | null = null;
+let sessionPromise: Promise<string> | null = null;
 
 // Crypto (WebCrypto, AES-256-GCM, payload = base64url(iv || ciphertext))
 
@@ -120,11 +125,17 @@ async function generateKey(): Promise<void> {
 }
 
 async function importKey(b64: string): Promise<void> {
-  const keyBytes = b64u.decode(b64) as Uint8Array<ArrayBuffer>;
-  cryptoKey = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-GCM' }, false, [
-    'encrypt',
-    'decrypt',
-  ]);
+  const decoded = b64u.decode(b64);
+  const keyBytes = new Uint8Array(decoded);
+
+  cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+
   keyB64 = b64;
 }
 
@@ -234,6 +245,71 @@ export async function enterRoom(displayName: string): Promise<void> {
   }
 }
 
+interface PersistedMpMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  author: string | null;
+  created_at: string;
+}
+
+/** Opens a saved multiplayer session without attempting to revive its relay room. */
+export async function openPersistentSession(
+  conversationId: string,
+  characterName: string,
+): Promise<void> {
+  resetRoomState();
+  mpState.conversationId = conversationId;
+  mpState.characterName = characterName;
+  mpState.viewingHistory = true;
+
+  const rows = await invoke<PersistedMpMessage[]>('get_messages', { chatId: conversationId });
+  mpState.messages = rows.map((row) => ({
+    id: row.id,
+    kind: row.role === 'assistant' ? 'llm' : 'chat',
+    author: row.author || (row.role === 'assistant' ? characterName || 'AI' : '?'),
+    text: row.content,
+    ts: Date.parse(row.created_at) || 0,
+  }));
+  for (const message of mpState.messages) seenIds.add(message.id);
+}
+
+async function ensurePersistentSession(): Promise<string> {
+  if (mpState.conversationId) return mpState.conversationId;
+  if (sessionPromise) return sessionPromise;
+
+  const character = mpState.role === 'host' ? appState.activeCharacter : null;
+  const characterName = character?.name || mpState.characterName || 'Multiplayer';
+  sessionPromise = invoke<string>('create_chat', {
+    characterId: character?.id != null ? String(character.id) : null,
+    characterName,
+    initialMessage: null,
+    mode: 'multiplayer',
+  }).then((id) => {
+    mpState.conversationId = id;
+    return id;
+  }).finally(() => {
+    sessionPromise = null;
+  });
+  return sessionPromise;
+}
+
+async function persistMessage(message: MpMessage): Promise<void> {
+  if (message.kind === 'system' || message.streaming) return;
+  const chatId = await ensurePersistentSession();
+  await invoke('add_message', {
+    chatId,
+    role: message.kind === 'llm' ? 'assistant' : 'user',
+    content: message.text,
+    author: message.author || null,
+    // The relay id is only unique within its network history. Namespace it by
+    // the persistent session so rejoining the same ephemeral room can never
+    // collide with a different local conversation.
+    messageId: `${chatId}:${message.id}`,
+    createdAt: new Date(message.ts).toISOString(),
+  });
+}
+
 async function createRoom(): Promise<void> {
   const res = await fetch(`${RELAY_URL}/api/rooms`, { method: 'POST' });
   if (!res.ok) throw new Error('create failed');
@@ -320,6 +396,7 @@ function resetRoomState(): void {
   keyB64 = '';
   hostToken = null;
   seenIds.clear();
+  sessionPromise = null;
   Object.assign(mpState, {
     connected: false,
     connecting: false,
@@ -332,6 +409,8 @@ function resetRoomState(): void {
     generating: false,
     messages: [],
     characterName: '',
+    conversationId: null,
+    viewingHistory: false,
     shareLink: '',
     hostLink: '',
     showLinks: false,
@@ -357,6 +436,7 @@ async function handleServerMsg(msg: any): Promise<void> {
       if (mpState.role === 'host') {
         mpState.characterName = appState.activeCharacter?.name ?? '';
       }
+      await ensurePersistentSession();
       break;
 
     case 'joined':
@@ -412,13 +492,15 @@ function handleDecrypted(inner: any): void {
     case 'chat':
       if (typeof inner.id !== 'string' || seenIds.has(inner.id)) return;
       seenIds.add(inner.id);
-      insertSorted({
+      const message: MpMessage = {
         id: inner.id,
         kind: 'chat',
         author: String(inner.name ?? '?'),
         text: String(inner.text ?? ''),
         ts: Number(inner.ts) || Date.now(),
-      });
+      };
+      insertSorted(message);
+      void persistMessage(message);
       break;
 
     case 'llm_d': {
@@ -448,7 +530,10 @@ function handleDecrypted(inner: any): void {
 
     case 'llm_e': {
       const m = mpState.messages.find((x) => x.id === inner.mid);
-      if (m) m.streaming = false;
+      if (m) {
+        m.streaming = false;
+        void persistMessage(m);
+      }
       break;
     }
 
@@ -464,13 +549,15 @@ function handleDecrypted(inner: any): void {
         for (const raw of inner.msgs) {
           if (typeof raw?.id !== 'string' || seenIds.has(raw.id)) continue;
           seenIds.add(raw.id);
-          mpState.messages.push({
+          const message: MpMessage = {
             id: raw.id,
             kind: raw.kind === 'llm' ? 'llm' : 'chat',
             author: String(raw.author ?? '?'),
             text: String(raw.text ?? ''),
             ts: Number(raw.ts) || 0,
-          });
+          };
+          mpState.messages.push(message);
+          void persistMessage(message);
           added = true;
         }
         if (added) mpState.messages.sort((a, b) => a.ts - b.ts);
@@ -511,13 +598,15 @@ export async function sendChat(text: string): Promise<void> {
     ts: Date.now(),
   };
   seenIds.add(msg.id);
-    insertSorted({
+  const localMessage: MpMessage = {
     id: msg.id,
     kind: 'chat',
     author: msg.name,
     text: msg.text,
     ts: msg.ts,
-  });
+  };
+  insertSorted(localMessage);
+  await persistMessage(localMessage);
   await sendRelay(msg);
 }
 
@@ -640,6 +729,7 @@ async function runGeneration(): Promise<void> {
     await flush();
     await sendRelay({ k: 'llm_e', mid });
     localMsg.streaming = false;
+    await persistMessage(localMsg);
     mpState.generating = false;
     ws?.send(JSON.stringify({ t: 'gen_end' }));
   }

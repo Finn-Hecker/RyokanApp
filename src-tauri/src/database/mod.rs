@@ -59,6 +59,7 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             id TEXT PRIMARY KEY,
             title TEXT,
             character_id TEXT,
+            mode TEXT NOT NULL DEFAULT 'singleplayer',
             created_at DATETIME DEFAULT {utc_now},
             updated_at DATETIME DEFAULT {utc_now},
             is_pinned INTEGER NOT NULL DEFAULT 0,
@@ -76,6 +77,7 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             conversation_id TEXT,
             role TEXT,
             content TEXT,
+            author TEXT,
             swipe_variants TEXT NOT NULL DEFAULT '[]',
             swipe_index INTEGER NOT NULL DEFAULT 0,
             created_at DATETIME DEFAULT {utc_now},
@@ -162,6 +164,15 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
     );
     let _ = conn.execute_batch(
         "ALTER TABLE conversations ADD COLUMN cloned_from_title TEXT;"
+    );
+
+    // Multiplayer sessions reuse the normal conversation/message tables. The
+    // defaults keep every pre-0.5 database and all existing rows singleplayer.
+    let _ = conn.execute_batch(
+        "ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'singleplayer';"
+    );
+    let _ = conn.execute_batch(
+        "ALTER TABLE messages ADD COLUMN author TEXT;"
     );
 
     Ok(())

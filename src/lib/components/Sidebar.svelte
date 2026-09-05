@@ -2,6 +2,7 @@
   import { scale } from 'svelte/transition';
   import { chatState, openHistoryChat, loadAllConversations, loadMoreConversations, deleteConversation, renameConversation, togglePinConversation } from '$lib/stores/chatStore.svelte';
   import { appState } from '$lib/stores/appState.svelte';
+  import { openPersistentSession } from '$lib/stores/multiplayer.svelte';
   import * as m from '$lib/paraglide/messages';
   import { onMount, onDestroy, untrack } from 'svelte';
 
@@ -90,7 +91,13 @@
 
   async function loadChat(id: string) {
     await openHistoryChat(id);
-    appState.currentView = 'chat';
+    const conversation = chatState.conversations.find((chat) => chat.id === id);
+    if (conversation?.mode === 'multiplayer') {
+      await openPersistentSession(id, appState.activeCharacter?.name ?? 'AI');
+      appState.currentView = 'multiplayerRoom';
+    } else {
+      appState.currentView = 'chat';
+    }
     if (!alwaysVisible) close();
   }
 
