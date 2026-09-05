@@ -56,7 +56,7 @@ export interface MpMessage {
 }
 
 interface PendingJoin {
-  mode: 'create' | 'join';
+  mode: 'create' | 'join' | 'resume';
   roomId?: string;
   keyB64?: string;
   hostToken?: string;
@@ -232,7 +232,7 @@ export async function enterRoom(displayName: string): Promise<void> {
   mpState.displayName = displayName.trim();
   mpState.connecting = true;
   try {
-    if (pending.mode === 'create') {
+    if (pending.mode === 'create' || pending.mode === 'resume') {
       await createRoom();
     } else {
       await importKey(pending.keyB64!);
@@ -272,6 +272,43 @@ export async function openPersistentSession(
     ts: Date.parse(row.created_at) || 0,
   }));
   for (const message of mpState.messages) seenIds.add(message.id);
+}
+
+/**
+ * Turns a saved, read-only session back into a hosted session. Only the
+ * persistent conversation and its messages survive this transition; the
+ * room, credentials and encryption key are always created from scratch.
+ */
+export function prepareResume(): void {
+  if (!mpState.viewingHistory || !mpState.conversationId) return;
+
+  ws?.close(1000);
+  ws = null;
+  stopGeneration();
+  if (snapshotTimer) clearTimeout(snapshotTimer);
+  snapshotTimer = null;
+  cryptoKey = null;
+  keyB64 = '';
+  hostToken = null;
+
+  Object.assign(mpState, {
+    connected: false,
+    connecting: false,
+    roomId: '',
+    role: 'host',
+    selfId: 0,
+    count: 0,
+    lockedBy: null,
+    everyoneCanGenerate: false,
+    generating: false,
+    viewingHistory: false,
+    shareLink: '',
+    hostLink: '',
+    showLinks: false,
+    closedReason: '',
+    error: '',
+    pending: { mode: 'resume' } satisfies PendingJoin,
+  });
 }
 
 async function ensurePersistentSession(): Promise<string> {

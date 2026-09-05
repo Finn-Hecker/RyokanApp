@@ -8,6 +8,7 @@
     requestGeneration,
     abortGeneration,
     setPolicy,
+    prepareResume,
   } from '$lib/stores/multiplayer.svelte';
   import * as m from '$lib/paraglide/messages';
 
@@ -147,6 +148,8 @@
             {m.mp_connecting()}
           {:else if mpState.pending?.mode === 'create'}
             {m.mp_gate_create_btn()}
+          {:else if mpState.pending?.mode === 'resume'}
+            {m.mp_resume_btn()}
           {:else}
             {m.mp_gate_join_btn()}
           {/if}
@@ -159,6 +162,18 @@
 
   {:else}
     <div class="flex h-[calc(100dvh-11rem)] min-h-[24rem] flex-col">
+
+      {#if mpState.viewingHistory}
+        <div class="mb-4 flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <div>
+            <h3 class="text-sm font-medium text-gray-100">{m.mp_resume_title()}</h3>
+            <p class="mt-1 text-xs text-gray-500">{m.mp_resume_desc()}</p>
+          </div>
+          <Button variant="secondary" onclick={prepareResume}>
+            {m.mp_resume_btn()}
+          </Button>
+        </div>
+      {/if}
 
       {#if mpState.showLinks}
         <div class="mb-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
