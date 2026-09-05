@@ -8,6 +8,8 @@
   import Sidebar from '$lib/components/Sidebar.svelte';
   import PageLayout from '$lib/components/layouts/PageLayout.svelte';
   import Button from '$lib/components/ui/Button.svelte';
+  import CharacterAvatar from '$lib/components/lobby/CharacterAvatar.svelte';
+  import MultiplayerCharacterPicker from './MultiplayerCharacterPicker.svelte';
 
   type PlayTab = 'minigames' | 'multiplayer';
   let activeTab = $state<PlayTab>('multiplayer');
@@ -15,12 +17,17 @@
   let joinCode = $state('');
   let joinError = $state('');
   let selectedCharacterId = $state('');
+  let characterPickerOpen = $state(false);
+  let multiplayerCharacters = $derived(
+    characterState.allCharacters.filter((character) => character.play_mode === 'multiplayer')
+  );
   let availableCharacters = $derived(
-    characterState.allCharacters.filter(
-      (character) =>
-        character.play_mode !== 'solo' &&
-        !characterState.hiddenCharacterIds.has(String(character.id))
+    multiplayerCharacters.filter(
+      (character) => !characterState.hiddenCharacterIds.has(String(character.id))
     )
+  );
+  let selectedCharacter = $derived(
+    availableCharacters.find((character) => String(character.id) === selectedCharacterId)
   );
 
   onMount(async () => {
@@ -57,10 +64,18 @@
 
   function createRoom() {
     joinError = '';
-    const character = availableCharacters.find(
-      (candidate) => String(candidate.id) === selectedCharacterId
-    );
-    if (character) prepareCreate(character);
+    if (selectedCharacter) prepareCreate(selectedCharacter);
+  }
+
+  function selectCharacter(character: (typeof availableCharacters)[number]) {
+    selectedCharacterId = String(character.id);
+    characterPickerOpen = false;
+  }
+
+  function manageCharacter(character: (typeof availableCharacters)[number]) {
+    characterPickerOpen = false;
+    appState.editingCharacter = character;
+    appState.currentView = 'create';
   }
 
   function joinRoom() {
@@ -162,20 +177,35 @@
         </div>
         <h3 class="text-gray-100 font-medium mb-1">{m.play_mp_create_title()}</h3>
         <p class="text-sm text-gray-500 mb-5 flex-1">{m.play_mp_create_desc()}</p>
-        <label for="multiplayer-character" class="mb-1.5 text-xs text-gray-400">
+        <span class="mb-1.5 text-xs text-gray-400">
           {m.play_mp_character_label()}
-        </label>
-        <select
-          id="multiplayer-character"
-          bind:value={selectedCharacterId}
-          class="mb-3 w-full rounded-lg border border-white/10 bg-ryokan-surface px-3 py-2 text-sm text-gray-200 focus:border-white/25 focus:outline-none"
+        </span>
+        <button
+          type="button"
+          onclick={() => (characterPickerOpen = true)}
+          class="group mb-3 flex min-h-14 w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-left transition-colors hover:border-white/20 hover:bg-white/[0.06] focus:border-ryokan-accent/50 focus:outline-none"
         >
-          <option value="">{m.play_mp_character_placeholder()}</option>
-          {#each availableCharacters as character (character.id)}
-            <option value={String(character.id)}>{character.name}</option>
-          {/each}
-        </select>
-        <Button variant="secondary" disabled={!selectedCharacterId} onclick={createRoom}>
+          {#if selectedCharacter}
+            <span class="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-white/5">
+              <CharacterAvatar char={selectedCharacter} fallbackTextClass="text-sm" />
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-sm font-medium text-gray-100">{selectedCharacter.name}</span>
+              <span class="block text-xs text-gray-500">{m.play_mp_character_change()}</span>
+            </span>
+          {:else}
+            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/5 text-gray-500">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/>
+              </svg>
+            </span>
+            <span class="flex-1 text-sm text-gray-400">{m.play_mp_character_placeholder()}</span>
+          {/if}
+          <svg class="shrink-0 text-gray-600 transition-colors group-hover:text-gray-400" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="m9 18 6-6-6-6"/>
+          </svg>
+        </button>
+        <Button variant="secondary" disabled={!selectedCharacter} onclick={createRoom}>
           {m.play_mp_create_btn()}
         </Button>
       </div>
@@ -261,3 +291,14 @@
     </div>
   {/if}
 </PageLayout>
+
+{#if characterPickerOpen}
+  <MultiplayerCharacterPicker
+    characters={multiplayerCharacters}
+    hiddenIds={characterState.hiddenCharacterIds}
+    selectedId={selectedCharacterId}
+    onSelect={selectCharacter}
+    onManage={manageCharacter}
+    onClose={() => (characterPickerOpen = false)}
+  />
+{/if}

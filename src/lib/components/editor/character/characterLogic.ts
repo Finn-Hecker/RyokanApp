@@ -4,13 +4,14 @@ import {
   updateCharacter,
   deleteCharacter as storeDeleteCharacter
 } from '$lib/stores/characterStore.svelte';
+import type { PlayMode } from '$lib/stores/characterStore.svelte';
 
 export interface CharFormData {
   name: string;
   prompt: string;
   greeting: string;
   alternate_greetings: string[];
-  play_mode: 'solo' | 'multiplayer' | 'both';
+  play_mode: PlayMode;
   world_info_ids?: string[];
 }
 
@@ -78,6 +79,7 @@ export async function importCharacterFromFile(
   file: File
 ): Promise<ImportResult> {
   const result: ImportResult = {};
+  result.play_mode = 'solo';
 
   try {
     result.avatarDataUrl = await readImageAsDataUrl(file);

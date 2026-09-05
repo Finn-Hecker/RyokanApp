@@ -4,13 +4,14 @@
   import WorldInfoPicker from './WorldInfoPicker.svelte';
   import TokenBadge from '$lib/components/TokenBadge.svelte';
   import { countCoreCharacterTokens } from '$lib/utils/tokenCount';
+  import type { PlayMode } from '$lib/stores/characterStore.svelte';
 
   let {
     name = $bindable(''),
     prompt = $bindable(''),
     greeting = $bindable(''),
     alternate_greetings = $bindable([]),
-    playMode = $bindable('both'),
+    playMode = $bindable('solo'),
     worldInfoIds = $bindable([]),
     onAltGreetingsChange,
     onAltGreetingsAdd,
@@ -20,7 +21,7 @@
     prompt?: string;
     greeting?: string;
     alternate_greetings?: string[];
-    playMode?: 'solo' | 'multiplayer' | 'both';
+    playMode?: PlayMode;
     worldInfoIds?: string[];
     onAltGreetingsChange?: (updated: string[]) => void;
     onAltGreetingsAdd?: () => void;
@@ -62,7 +63,6 @@
     <select id="character-play-mode" bind:value={playMode} class="field-input">
       <option value="solo">{m.create_page_play_mode_solo()}</option>
       <option value="multiplayer">{m.create_page_play_mode_multiplayer()}</option>
-      <option value="both">{m.create_page_play_mode_both()}</option>
     </select>
   </div>
 

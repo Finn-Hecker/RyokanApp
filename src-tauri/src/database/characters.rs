@@ -45,7 +45,7 @@ fn normalize_play_mode(play_mode: Option<&str>) -> &'static str {
     match play_mode {
         Some("solo") => "solo",
         Some("multiplayer") => "multiplayer",
-        _ => "both",
+        _ => "solo",
     }
 }
 
@@ -129,7 +129,8 @@ pub async fn get_custom_characters(app: AppHandle) -> Result<Vec<DbCharacter>, S
             v3_spec:            row.get(10)?,
             initials:           row.get(11)?,
             color:              row.get(12)?,
-            play_mode:          row.get(13)?,
+            play_mode:          normalize_play_mode(row.get::<_, Option<String>>(13)?.as_deref())
+                .to_string(),
             world_info_ids: serde_json::from_str(
                 &row.get::<_, Option<String>>(14)?.unwrap_or_default()
             ).unwrap_or_default(),
@@ -441,9 +442,10 @@ mod tests {
     use super::normalize_play_mode;
 
     #[test]
-    fn play_mode_defaults_to_both_and_rejects_unknown_values() {
-        assert_eq!(normalize_play_mode(None), "both");
-        assert_eq!(normalize_play_mode(Some("unknown")), "both");
+    fn play_mode_defaults_to_solo_and_rejects_unknown_values() {
+        assert_eq!(normalize_play_mode(None), "solo");
+        assert_eq!(normalize_play_mode(Some("both")), "solo");
+        assert_eq!(normalize_play_mode(Some("unknown")), "solo");
         assert_eq!(normalize_play_mode(Some("solo")), "solo");
         assert_eq!(normalize_play_mode(Some("multiplayer")), "multiplayer");
     }

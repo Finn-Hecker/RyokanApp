@@ -90,7 +90,7 @@
   let filtered = $derived(
     (characterState.allCharacters ?? [])
       .filter(Boolean)
-      .filter((c: any) => c.play_mode !== 'multiplayer')
+      .filter((c: any) => c.play_mode === 'solo')
       .filter((c: any) => showHidden || !characterState.hiddenCharacterIds.has(String(c.id)))
       .filter((c: any) =>
         searchQuery.trim() === '' ||

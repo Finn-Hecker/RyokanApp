@@ -1,13 +1,14 @@
 <script lang="ts">
   import AvatarPicker from './AvatarPicker.svelte';
   import CharacterFormFields from './CharacterFormFields.svelte';
+  import type { PlayMode } from '$lib/stores/characterStore.svelte';
 
   let {
     name = $bindable(''),
     prompt = $bindable(''),
     greeting = $bindable(''),
     alternate_greetings = $bindable([]),
-    playMode = $bindable('both'),
+    playMode = $bindable('solo'),
     worldInfoIds = $bindable([]),
     avatarPreview = null,
     onAvatarFile
@@ -16,7 +17,7 @@
     prompt?: string;
     greeting?: string;
     alternate_greetings?: string[];
-    playMode?: 'solo' | 'multiplayer' | 'both';
+    playMode?: PlayMode;
     worldInfoIds?: string[];
     avatarPreview?: string | null;
     onAvatarFile?: (file: File) => void;

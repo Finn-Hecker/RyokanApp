@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
   import { appState } from '$lib/stores/appState.svelte';
-  import { characterState, toggleHideCharacter } from '$lib/stores/characterStore.svelte';
+  import { characterState, normalizePlayMode, toggleHideCharacter } from '$lib/stores/characterStore.svelte';
+  import type { PlayMode } from '$lib/stores/characterStore.svelte';
   import * as m from '$lib/paraglide/messages';
 
   import SimpleFormPage from '$lib/components/layouts/SimpleFormPage.svelte';
@@ -51,7 +52,7 @@
   let charGreeting = $state('');
   let charPrompt = $state('');
   let charAltGreetings = $state<string[]>([]);
-  let charPlayMode = $state<'solo' | 'multiplayer' | 'both'>('both');
+  let charPlayMode = $state<PlayMode>('solo');
   let worldInfoIds = $state<string[]>([]);
   let avatarPreview = $state<string | null>(null);
   let avatarChanged = $state(true);
@@ -90,7 +91,7 @@
     charPrompt = current.prompt ?? '';
     charGreeting = current.greeting ?? '';
     charAltGreetings = Array.isArray(current.alternate_greetings) ? current.alternate_greetings : [];
-    charPlayMode = current.play_mode ?? 'both';
+    charPlayMode = normalizePlayMode(current.play_mode);
     worldInfoIds = Array.isArray(current.world_info_ids) ? current.world_info_ids : [];
 
     if (current.avatarUrl) {
@@ -169,6 +170,8 @@
       if (result.alternate_greetings) {
         charAltGreetings = result.alternate_greetings;
       }
+
+      charPlayMode = result.play_mode ?? 'solo';
     } catch (err) {
       console.warn('Import failed:', err);
     }

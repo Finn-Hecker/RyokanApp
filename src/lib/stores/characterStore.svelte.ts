@@ -1,6 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { CHARACTERS as STATIC_CHARACTERS } from '$lib/data/characters';
 
+export type PlayMode = 'solo' | 'multiplayer';
+
 export interface Character {
     id: string | number;
     name: string;
@@ -8,7 +10,7 @@ export interface Character {
     greeting: string;
     initials: string;
     color: string;
-    play_mode: 'solo' | 'multiplayer' | 'both';
+    play_mode: PlayMode;
     isCustom?: boolean;
     /** Whether the DB has an avatar stored for this character. The bytes
      *  themselves are no longer part of the list payload — see loadCharacterAvatar. */
@@ -26,6 +28,10 @@ export const characterState = $state({
     hiddenCharacterIds: new Set<string | number>(),
     pinnedCharacterIds: new Set<string | number>(),
 });
+
+export function normalizePlayMode(playMode: unknown): PlayMode {
+    return playMode === 'multiplayer' ? 'multiplayer' : 'solo';
+}
 
 export async function loadHiddenIds() {
     try {
@@ -52,7 +58,7 @@ export async function loadCharacters() {
         const customChars = dbChars.map(c => ({
             ...c,
             isCustom: true,
-            play_mode: c.play_mode ?? 'both',
+            play_mode: normalizePlayMode(c.play_mode),
             alternate_greetings: typeof c.alternate_greetings === 'string'
                 ? JSON.parse(c.alternate_greetings)
                 : (c.alternate_greetings ?? []),

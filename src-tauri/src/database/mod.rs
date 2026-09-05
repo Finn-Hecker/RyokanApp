@@ -11,6 +11,15 @@ pub mod roles;
 
 const DB_FILENAME: &str = "ryokan.db";
 
+fn normalize_character_play_modes(conn: &Connection) -> rusqlite::Result<usize> {
+    conn.execute(
+        "UPDATE characters
+         SET play_mode = 'solo'
+         WHERE play_mode IS NULL OR play_mode NOT IN ('solo', 'multiplayer')",
+        [],
+    )
+}
+
 /// Establishes a connection to the local SQLite database.
 /// Foreign keys are enabled per-connection, as SQLite disables them by default.
 pub fn get_connection(app: &AppHandle) -> Result<Connection, String> {
@@ -114,7 +123,7 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             v3_spec BOOLEAN,
             initials TEXT,
             color TEXT,
-            play_mode TEXT NOT NULL DEFAULT 'both',
+            play_mode TEXT NOT NULL DEFAULT 'solo',
             avatar BLOB,
             world_info_ids TEXT NOT NULL DEFAULT '[]',
             created_at DATETIME DEFAULT {utc_now}
@@ -176,10 +185,57 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
         "ALTER TABLE messages ADD COLUMN author TEXT;"
     );
 
-    // Existing and imported characters keep their previous availability.
+    // Characters created before play modes existed default to singleplayer.
     let _ = conn.execute_batch(
-        "ALTER TABLE characters ADD COLUMN play_mode TEXT NOT NULL DEFAULT 'both';"
+        "ALTER TABLE characters ADD COLUMN play_mode TEXT NOT NULL DEFAULT 'solo';"
     );
 
+    // "both" is no longer a supported mode. Normalize it, NULLs, and any
+    // unknown values so older databases remain usable with the stricter model.
+    normalize_character_play_modes(&conn)
+        .map_err(|e| format!("Failed to normalize character play modes: {}", e))?;
+
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_character_play_modes;
+    use rusqlite::{params, Connection};
+
+    #[test]
+    fn legacy_and_invalid_character_play_modes_migrate_to_solo() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE characters (id TEXT PRIMARY KEY, play_mode TEXT);
+             INSERT INTO characters VALUES
+                ('solo', 'solo'),
+                ('multi', 'multiplayer'),
+                ('both', 'both'),
+                ('invalid', 'something-else'),
+                ('missing', NULL);",
+        )
+        .unwrap();
+
+        normalize_character_play_modes(&conn).unwrap();
+
+        for id in ["solo", "both", "invalid", "missing"] {
+            let mode: String = conn
+                .query_row(
+                    "SELECT play_mode FROM characters WHERE id = ?1",
+                    params![id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(mode, "solo", "{id}");
+        }
+        let multiplayer: String = conn
+            .query_row(
+                "SELECT play_mode FROM characters WHERE id = 'multi'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(multiplayer, "multiplayer");
+    }
 }
