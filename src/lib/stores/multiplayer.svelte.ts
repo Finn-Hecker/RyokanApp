@@ -108,10 +108,31 @@ let cryptoKey: CryptoKey | null = null;
 let keyB64 = '';
 let hostToken: string | null = null;
 const seenIds = new Set<string>();
+const completedStreamIds = new Set<string>();
+const persistedIds = new Set<string>();
+const persistenceInFlight = new Map<string, Promise<void>>();
 let snapshotTimer: ReturnType<typeof setTimeout> | null = null;
-let llmAbort: AbortController | null = null;
 let sessionPromise: Promise<string> | null = null;
 let shouldInsertInitialGreeting = false;
+
+interface ActiveGeneration {
+  id: string;
+  messageId: string;
+  author: string;
+  timestamp: number;
+  conversationId: string | null;
+  aborted: boolean;
+  /** Explicit user Stop discards the whole streamed message. */
+  discardPartial: boolean;
+  /** Whether this invocation still owns releasing the relay generation lock. */
+  releaseLock: boolean;
+  buffer: string;
+  relayChain: Promise<void>;
+  flushTimer: ReturnType<typeof setInterval> | null;
+  unlisten: (() => void) | null;
+}
+
+let activeGeneration: ActiveGeneration | null = null;
 
 // Crypto (WebCrypto, AES-256-GCM, payload = base64url(iv || ciphertext))
 
@@ -304,7 +325,7 @@ export function prepareResume(): void {
 
   ws?.close(1000);
   ws = null;
-  stopGeneration();
+  cancelActiveGeneration(false);
   if (snapshotTimer) clearTimeout(snapshotTimer);
   snapshotTimer = null;
   cryptoKey = null;
@@ -420,9 +441,9 @@ function applySessionCharacter(raw: unknown): void {
   appState.activeCharacter = { id: 'multiplayer-session', ...character };
 }
 
-async function persistMessage(message: MpMessage): Promise<void> {
+async function persistMessage(message: MpMessage, conversationId?: string | null): Promise<void> {
   if (message.kind === 'system' || message.streaming) return;
-  const chatId = await ensurePersistentSession();
+  const chatId = conversationId ?? await ensurePersistentSession();
   await invoke('add_message', {
     chatId,
     role: message.kind === 'llm' ? 'assistant' : 'user',
@@ -434,6 +455,37 @@ async function persistMessage(message: MpMessage): Promise<void> {
     messageId: `${chatId}:${message.id}`,
     createdAt: new Date(message.ts).toISOString(),
   });
+}
+
+async function persistMessageOnce(
+  message: MpMessage,
+  conversationId?: string | null,
+): Promise<void> {
+  if (message.kind === 'system' || message.streaming || persistedIds.has(message.id)) return;
+
+  const pending = persistenceInFlight.get(message.id);
+  if (pending) return pending;
+
+  const persistence = persistMessage(message, conversationId)
+    .then(() => { persistedIds.add(message.id); })
+    .finally(() => { persistenceInFlight.delete(message.id); });
+  persistenceInFlight.set(message.id, persistence);
+  return persistence;
+}
+
+async function discardPersistedMessage(
+  messageId: string,
+  conversationId?: string | null,
+): Promise<void> {
+  // If an earlier finalization already started writing this message, wait for
+  // it before deleting so the late INSERT cannot recreate cancelled history.
+  await persistenceInFlight.get(messageId)?.catch(() => undefined);
+
+  const chatId = conversationId ?? mpState.conversationId;
+  if (!chatId) return;
+
+  await invoke('delete_message', { id: `${chatId}:${messageId}` });
+  persistedIds.delete(messageId);
 }
 
 async function insertInitialGreeting(): Promise<void> {
@@ -451,7 +503,7 @@ async function insertInitialGreeting(): Promise<void> {
   };
   seenIds.add(message.id);
   insertSorted(message);
-  await persistMessage(message);
+  await persistMessageOnce(message);
 }
 
 async function createRoom(): Promise<void> {
@@ -492,7 +544,7 @@ function connect(roomId: string): void {
     const wasConnected = mpState.connected;
     mpState.connected = false;
     mpState.connecting = false;
-    stopGeneration();
+    cancelActiveGeneration(false);
     if (mpState.closedReason) return; // room_closed already carried a reason
     mpState.closedReason = mapCloseCode(ev.code, wasConnected);
   };
@@ -527,7 +579,7 @@ export function leaveRoom(): void {
   mpState.closedReason = 'left';
   ws?.close(1000);
   ws = null;
-  stopGeneration();
+  cancelActiveGeneration(false);
   appState.activeCharacter = null;
   appState.currentView = 'play';
 }
@@ -535,13 +587,16 @@ export function leaveRoom(): void {
 function resetRoomState(): void {
   ws?.close(1000);
   ws = null;
-  stopGeneration();
+  cancelActiveGeneration(false);
   if (snapshotTimer) clearTimeout(snapshotTimer);
   snapshotTimer = null;
   cryptoKey = null;
   keyB64 = '';
   hostToken = null;
   seenIds.clear();
+  completedStreamIds.clear();
+  persistedIds.clear();
+  persistenceInFlight.clear();
   sessionPromise = null;
   shouldInsertInitialGreeting = false;
   Object.assign(mpState, {
@@ -617,8 +672,9 @@ async function handleServerMsg(msg: any): Promise<void> {
 
     case 'unlocked':
       mpState.lockedBy = null;
-      if (mpState.generating) stopGeneration(); // e.g. triggered by the server watchdog
-      finalizeStreamingMessages();
+      // The relay watchdog already released the lock. Cancel only the matching
+      // host request and let its normal finalizer publish/persist the partial.
+      if (activeGeneration) cancelActiveGeneration(false);
       break;
 
     case 'policy':
@@ -651,11 +707,12 @@ function handleDecrypted(inner: any): void {
         ts: Number(inner.ts) || Date.now(),
       };
       insertSorted(message);
-      void persistMessage(message);
+      void persistMessageOnce(message);
       break;
 
     case 'llm_d': {
       const mid = String(inner.mid);
+      if (completedStreamIds.has(mid) || activeGeneration?.messageId === mid) return;
       const delta = String(inner.d ?? '');
 
       let m = mpState.messages.find((x) => x.id === mid);
@@ -666,7 +723,7 @@ function handleDecrypted(inner: any): void {
           kind: 'llm',
           author: String(inner.name ?? mpState.characterName ?? 'AI'),
           text: delta,
-          ts: Date.now(),
+          ts: Number(inner.ts) || Date.now(),
           streaming: true,
         };
 
@@ -680,10 +737,27 @@ function handleDecrypted(inner: any): void {
     }
 
     case 'llm_e': {
-      const m = mpState.messages.find((x) => x.id === inner.mid);
+      const mid = String(inner.mid);
+      const cancelled = inner.cancelled === true;
+      if (cancelled) {
+        seenIds.add(mid);
+        completedStreamIds.add(mid);
+        mpState.messages = mpState.messages.filter((message) => message.id !== mid);
+        void discardPersistedMessage(mid).catch((error) => {
+          console.error('Failed to discard cancelled multiplayer generation', error);
+        });
+        break;
+      }
+      if (completedStreamIds.has(mid) || activeGeneration?.messageId === mid) return;
+      completedStreamIds.add(mid);
+      const m = mpState.messages.find((x) => x.id === mid);
       if (m) {
         m.streaming = false;
-        void persistMessage(m);
+        if (m.text.trim()) {
+          void persistMessageOnce(m);
+        } else {
+          mpState.messages = mpState.messages.filter((x) => x.id !== mid);
+        }
       }
       break;
     }
@@ -709,7 +783,7 @@ function handleDecrypted(inner: any): void {
             ts: Number(raw.ts) || 0,
           };
           mpState.messages.push(message);
-          void persistMessage(message);
+          void persistMessageOnce(message);
           added = true;
         }
         if (added) mpState.messages.sort((a, b) => a.ts - b.ts);
@@ -726,10 +800,6 @@ function pushSystem(text: string): void {
     text,
     ts: Date.now(),
   });
-}
-
-function finalizeStreamingMessages(): void {
-  for (const m of mpState.messages) if (m.streaming) m.streaming = false;
 }
 
 // Sending
@@ -758,7 +828,7 @@ export async function sendChat(text: string): Promise<void> {
     ts: msg.ts,
   };
   insertSorted(localMessage);
-  await persistMessage(localMessage);
+  await persistMessageOnce(localMessage);
   await sendRelay(msg);
 }
 
@@ -773,12 +843,10 @@ export function setPolicy(everyone: boolean): void {
   ws?.send(JSON.stringify({ t: 'policy', everyone }));
 }
 
-/** Host cancels a running generation; the lock is released for everyone. */
+/** Host cancels the current generation; its finalizer releases the lock. */
 export function abortGeneration(): void {
   if (mpState.role !== 'host') return;
-  stopGeneration();
-  ws?.send(JSON.stringify({ t: 'gen_end' }));
-  finalizeStreamingMessages();
+  cancelActiveGeneration(true, true);
 }
 
 // Host: history snapshot for late joiners (client side only, debounced)
@@ -800,91 +868,204 @@ function scheduleSnapshot(): void {
 
 // Host: LLM call
 
-function stopGeneration(): void {
-  llmAbort?.abort();
-  llmAbort = null;
+function cleanupGenerationResources(generation: ActiveGeneration): void {
+  generation.unlisten?.();
+  generation.unlisten = null;
+  if (generation.flushTimer) clearInterval(generation.flushTimer);
+  generation.flushTimer = null;
+}
+
+function cancelActiveGeneration(releaseLock: boolean, discardPartial = false): void {
+  const generation = activeGeneration;
+  if (!generation) return;
+
+  generation.aborted = true;
+  generation.releaseLock = releaseLock;
+  generation.discardPartial ||= discardPartial;
+  cleanupGenerationResources(generation);
+  if (generation.discardPartial) {
+    generation.buffer = '';
+    completedStreamIds.add(generation.messageId);
+    mpState.messages = mpState.messages.filter(
+      (message) => message.id !== generation.messageId,
+    );
+  }
+  if (activeGeneration === generation) activeGeneration = null;
   mpState.generating = false;
+
+  // Rust owns the HTTP stream. The id prevents a delayed abort command from
+  // cancelling a subsequent generation that has already become active.
+  void invoke('stop_generation', { generationId: generation.id }).catch((error) => {
+    console.error('Failed to stop multiplayer generation', error);
+  });
+}
+
+function queueGenerationRelay(generation: ActiveGeneration, payload: unknown): Promise<void> {
+  generation.relayChain = generation.relayChain
+    .catch(() => undefined)
+    .then(() => sendRelay(payload));
+  return generation.relayChain;
+}
+
+function flushGeneration(generation: ActiveGeneration): Promise<void> {
+  if (!generation.buffer) return generation.relayChain;
+  const delta = generation.buffer;
+  generation.buffer = '';
+  return queueGenerationRelay(generation, {
+    k: 'llm_d',
+    mid: generation.messageId,
+    name: generation.author,
+    ts: generation.timestamp,
+    d: delta,
+  });
 }
 
 async function runGeneration(): Promise<void> {
-  if (mpState.generating) return;
+  if (activeGeneration) return;
   mpState.generating = true;
 
   const mid = crypto.randomUUID();
+  const generationId = crypto.randomUUID();
   const author = mpState.characterName || 'AI';
+  const timestamp = Date.now();
+  const generation: ActiveGeneration = {
+    id: generationId,
+    messageId: mid,
+    author,
+    timestamp,
+    conversationId: mpState.conversationId,
+    aborted: false,
+    discardPartial: false,
+    releaseLock: true,
+    buffer: '',
+    relayChain: Promise.resolve(),
+    flushTimer: null,
+    unlisten: null,
+  };
+  activeGeneration = generation;
   seenIds.add(mid);
   insertSorted({
     id: mid,
     kind: 'llm',
     author,
     text: '',
-    ts: Date.now(),
+    ts: timestamp,
     streaming: true
   });
 
   const localMsg = mpState.messages.find((m) => m.id === mid)!;
 
-  let buffer = '';
-  const flush = async () => {
-    if (!buffer) return;
-    const d = buffer;
-    buffer = '';
-    await sendRelay({ k: 'llm_d', mid, name: author, d });
-  };
-  const flushTimer = setInterval(() => void flush(), LLM_FLUSH_MS);
-
-  const { listen } = await import('@tauri-apps/api/event');
   let raw = '';
   const s = appState.apiSettings;
 
-  const unlisten = await listen<{ token: string }>('ai-token', (ev) => {
-    if (!mpState.generating) return; // stop touching state after abort or unlock
-    raw += ev.payload.token;
-    const visible = s.isThinkingModel
-      ? processThinkingOutput(raw, false).text
-      : raw;
-    // diff against the visible text we already emitted
-    const delta = visible.slice(localMsg.text.length);
-    if (delta) {
-      localMsg.text += delta;
-      buffer += delta;
-    }
-  });
-
   try {
-    await invoke('call_ai_api', {
-      payload: {
-        url: s.url,
-        api_key: s.apiKey,
-        model: s.model,
-        messages: buildLlmMessages(),
-        temperature: s.temperature,
-        max_tokens: s.maxTokens,
-        presence_penalty: s.presencePenalty,
-        top_p: s.topP,
-        top_k: s.topK,
-        min_p: s.minP,
-        frequency_penalty: s.frequencyPenalty,
-        is_thinking_model: s.isThinkingModel,
+    // Capture the stable conversation before generation can finish. This
+    // keeps a late finalizer attached to the original session even if the UI
+    // has already left or reset the ephemeral room.
+    generation.conversationId = await ensurePersistentSession();
+
+    const { listen } = await import('@tauri-apps/api/event');
+    generation.unlisten = await listen<{ token: string; generationId?: string }>(
+      'ai-token',
+      (ev) => {
+        if (generation.aborted || ev.payload.generationId !== generation.id) return;
+        raw += ev.payload.token;
+        const visible = s.isThinkingModel
+          ? processThinkingOutput(raw, false).text
+          : raw;
+        // Diff against the visible text already added to the local message.
+        const delta = visible.slice(localMsg.text.length);
+        if (delta) {
+          localMsg.text += delta;
+          generation.buffer += delta;
+        }
       },
-    });
+    );
+
+    if (generation.aborted) {
+      cleanupGenerationResources(generation);
+    } else {
+      generation.flushTimer = setInterval(
+        () => void flushGeneration(generation),
+        LLM_FLUSH_MS,
+      );
+    }
+
+    if (!generation.aborted) {
+      await invoke('call_ai_api', {
+        payload: {
+          generation_id: generation.id,
+          url: s.url,
+          api_key: s.apiKey,
+          model: s.model,
+          messages: buildLlmMessages(),
+          temperature: s.temperature,
+          max_tokens: s.maxTokens,
+          presence_penalty: s.presencePenalty,
+          top_p: s.topP,
+          top_k: s.topK,
+          min_p: s.minP,
+          frequency_penalty: s.frequencyPenalty,
+          is_thinking_model: s.isThinkingModel,
+        },
+      });
+    }
     if (s.isThinkingModel) {
       const { text } = processThinkingOutput(raw, true);
       const delta = text.slice(localMsg.text.length);
-      if (delta) { localMsg.text = text; buffer += delta; }
+      if (delta) { localMsg.text = text; generation.buffer += delta; }
     }
-  } catch {
-    if (!localMsg.text) localMsg.text = '⚠';
+  } catch (error) {
+    if (!generation.aborted) {
+      console.error('Multiplayer generation failed', error);
+      if (!localMsg.text.trim()) localMsg.text = '⚠';
+    }
   } finally {
-    unlisten();
+    cleanupGenerationResources(generation);
+    completedStreamIds.add(mid);
 
-    clearInterval(flushTimer);
-    await flush();
-    await sendRelay({ k: 'llm_e', mid });
-    localMsg.streaming = false;
-    await persistMessage(localMsg);
-    mpState.generating = false;
-    ws?.send(JSON.stringify({ t: 'gen_end' }));
+    let meaningful = localMsg.text.trim().length > 0;
+    if (meaningful && !generation.discardPartial) {
+      await flushGeneration(generation).catch(() => undefined);
+    }
+
+    // Stop may be pressed while the final buffered relay is completing, so
+    // decide whether to keep the message only after that await boundary.
+    if (generation.discardPartial || !meaningful) {
+      meaningful = false;
+      generation.buffer = '';
+      if (mpState.messages.includes(localMsg)) {
+        mpState.messages = mpState.messages.filter((message) => message !== localMsg);
+      }
+    }
+
+    if (meaningful) localMsg.streaming = false;
+
+    // Queue the final marker behind any deltas already in flight. A cancelled
+    // marker makes guests remove those deltas instead of persisting them.
+    await queueGenerationRelay(generation, {
+      k: 'llm_e',
+      mid,
+      cancelled: generation.discardPartial,
+    }).catch(() => undefined);
+
+    if (activeGeneration === generation) activeGeneration = null;
+    mpState.generating = activeGeneration !== null;
+    if (generation.releaseLock) ws?.send(JSON.stringify({ t: 'gen_end' }));
+
+    if (generation.discardPartial) {
+      try {
+        await discardPersistedMessage(mid, generation.conversationId);
+      } catch (error) {
+        console.error('Failed to discard cancelled multiplayer generation', error);
+      }
+    } else if (meaningful) {
+      try {
+        await persistMessageOnce(localMsg, generation.conversationId);
+      } catch (error) {
+        console.error('Failed to persist multiplayer generation', error);
+      }
+    }
   }
 }
 
