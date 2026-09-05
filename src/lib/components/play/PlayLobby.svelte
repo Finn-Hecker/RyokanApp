@@ -1,6 +1,8 @@
 <script lang="ts">
   import { appState } from '$lib/stores/appState.svelte';
   import { mpState, prepareCreate, prepareJoin } from '$lib/stores/multiplayer.svelte';
+  import { characterState, loadCharacters } from '$lib/stores/characterStore.svelte';
+  import { onMount } from 'svelte';
   import * as m from '$lib/paraglide/messages';
 
   import Sidebar from '$lib/components/Sidebar.svelte';
@@ -12,6 +14,18 @@
 
   let joinCode = $state('');
   let joinError = $state('');
+  let selectedCharacterId = $state('');
+  let availableCharacters = $derived(
+    characterState.allCharacters.filter(
+      (character) =>
+        character.play_mode !== 'solo' &&
+        !characterState.hiddenCharacterIds.has(String(character.id))
+    )
+  );
+
+  onMount(async () => {
+    if (characterState.allCharacters.length === 0) await loadCharacters();
+  });
 
   type Minigame = {
     id: string;
@@ -43,7 +57,10 @@
 
   function createRoom() {
     joinError = '';
-    prepareCreate();
+    const character = availableCharacters.find(
+      (candidate) => String(candidate.id) === selectedCharacterId
+    );
+    if (character) prepareCreate(character);
   }
 
   function joinRoom() {
@@ -145,7 +162,20 @@
         </div>
         <h3 class="text-gray-100 font-medium mb-1">{m.play_mp_create_title()}</h3>
         <p class="text-sm text-gray-500 mb-5 flex-1">{m.play_mp_create_desc()}</p>
-        <Button variant="secondary" onclick={createRoom}>
+        <label for="multiplayer-character" class="mb-1.5 text-xs text-gray-400">
+          {m.play_mp_character_label()}
+        </label>
+        <select
+          id="multiplayer-character"
+          bind:value={selectedCharacterId}
+          class="mb-3 w-full rounded-lg border border-white/10 bg-ryokan-surface px-3 py-2 text-sm text-gray-200 focus:border-white/25 focus:outline-none"
+        >
+          <option value="">{m.play_mp_character_placeholder()}</option>
+          {#each availableCharacters as character (character.id)}
+            <option value={String(character.id)}>{character.name}</option>
+          {/each}
+        </select>
+        <Button variant="secondary" disabled={!selectedCharacterId} onclick={createRoom}>
           {m.play_mp_create_btn()}
         </Button>
       </div>

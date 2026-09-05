@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
+import { selectInitialGreeting } from '$lib/utils/characterGreeting';
 import { appState } from './appState.svelte';
-import { characterState } from './characterStore.svelte';
+import { characterState, loadCharacters } from './characterStore.svelte';
 import { getLocale } from '$lib/paraglide/runtime';
 
 export interface Message {
@@ -103,32 +104,7 @@ export async function loadMoreConversations(): Promise<boolean> {
 
 export async function startNewChat(character: any) {
     try {
-        let allGreetings: string[] = [];
-        if (character.greeting && character.greeting.trim().length > 0) {
-            allGreetings.push(character.greeting);
-        }
-        if (character.alternate_greetings) {
-            try {
-                const altGreetings = typeof character.alternate_greetings === 'string'
-                    ? JSON.parse(character.alternate_greetings)
-                    : character.alternate_greetings;
-                if (Array.isArray(altGreetings)) {
-                    allGreetings.push(...altGreetings.filter((g: unknown) =>
-                        typeof g === 'string' && (g as string).trim().length > 0
-                    ));
-                }
-            } catch (e) {
-                console.warn("Could not parse alternative greetings:", e);
-            }
-        }
-        const rawGreeting = allGreetings.length > 0
-            ? allGreetings[Math.floor(Math.random() * allGreetings.length)]
-            : null;
-        const selectedGreeting = rawGreeting
-            ? rawGreeting
-                .replace(/\{\{char\}\}/gi, character.name)
-                .replace(/\{\{user\}\}/gi, 'User')
-            : null;
+        const selectedGreeting = selectInitialGreeting(character);
         const newId = await invoke<string>('create_chat', {
             characterId: character.id.toString(),
             characterName: character.name,
@@ -143,7 +119,9 @@ export async function startNewChat(character: any) {
 export async function openHistoryChat(chatId: string) {
     await loadMessages(chatId);
     const currentChat = chatState.conversations.find(c => c.id === chatId);
+    appState.activeCharacter = null;
     if (currentChat?.character_id) {
+        if (characterState.allCharacters.length === 0) await loadCharacters();
         const char = characterState.allCharacters.find(
             c => c.id.toString() === currentChat.character_id
         );

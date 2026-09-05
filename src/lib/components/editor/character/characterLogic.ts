@@ -10,6 +10,7 @@ export interface CharFormData {
   prompt: string;
   greeting: string;
   alternate_greetings: string[];
+  play_mode: 'solo' | 'multiplayer' | 'both';
   world_info_ids?: string[];
 }
 
@@ -31,6 +32,7 @@ export async function saveCharacter(
     prompt: formData.prompt,
     greeting: formData.greeting,
     alternate_greetings: validAltGreetings,
+    play_mode: formData.play_mode,
     world_info_ids: formData.world_info_ids ?? [],
     initials: formData.name.substring(0, 1).toUpperCase(),
     color: editChar?.color ?? 'bg-indigo-600',

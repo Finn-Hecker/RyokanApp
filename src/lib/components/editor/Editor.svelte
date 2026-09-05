@@ -51,6 +51,7 @@
   let charGreeting = $state('');
   let charPrompt = $state('');
   let charAltGreetings = $state<string[]>([]);
+  let charPlayMode = $state<'solo' | 'multiplayer' | 'both'>('both');
   let worldInfoIds = $state<string[]>([]);
   let avatarPreview = $state<string | null>(null);
   let avatarChanged = $state(true);
@@ -89,6 +90,7 @@
     charPrompt = current.prompt ?? '';
     charGreeting = current.greeting ?? '';
     charAltGreetings = Array.isArray(current.alternate_greetings) ? current.alternate_greetings : [];
+    charPlayMode = current.play_mode ?? 'both';
     worldInfoIds = Array.isArray(current.world_info_ids) ? current.world_info_ids : [];
 
     if (current.avatarUrl) {
@@ -183,6 +185,7 @@
             prompt: charPrompt,
             greeting: charGreeting,
             alternate_greetings: charAltGreetings,
+            play_mode: charPlayMode,
             world_info_ids: worldInfoIds,
           },
           editChar,
@@ -415,6 +418,7 @@
               bind:prompt={charPrompt}
               bind:greeting={charGreeting}
               bind:alternate_greetings={charAltGreetings}
+              bind:playMode={charPlayMode}
               bind:worldInfoIds={worldInfoIds}
               {avatarPreview}
               onAvatarFile={handleCharAvatarFile}

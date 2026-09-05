@@ -8,6 +8,7 @@ export interface Character {
     greeting: string;
     initials: string;
     color: string;
+    play_mode: 'solo' | 'multiplayer' | 'both';
     isCustom?: boolean;
     /** Whether the DB has an avatar stored for this character. The bytes
      *  themselves are no longer part of the list payload — see loadCharacterAvatar. */
@@ -18,7 +19,7 @@ export interface Character {
     world_info_ids?: string[];
 }
 
-export type CharacterInput = Pick<Character, 'name' | 'prompt' | 'greeting' | 'initials' | 'color' | 'alternate_greetings' | 'world_info_ids'> & { avatar?: string | null };
+export type CharacterInput = Pick<Character, 'name' | 'prompt' | 'greeting' | 'initials' | 'color' | 'play_mode' | 'alternate_greetings' | 'world_info_ids'> & { avatar?: string | null };
 
 export const characterState = $state({
     allCharacters: [] as Character[],
@@ -51,6 +52,7 @@ export async function loadCharacters() {
         const customChars = dbChars.map(c => ({
             ...c,
             isCustom: true,
+            play_mode: c.play_mode ?? 'both',
             alternate_greetings: typeof c.alternate_greetings === 'string'
                 ? JSON.parse(c.alternate_greetings)
                 : (c.alternate_greetings ?? []),
@@ -106,6 +108,7 @@ export async function createCharacter(charData: CharacterInput) {
         greeting: charData.greeting || "",
         initials: charData.initials,
         color: charData.color,
+        play_mode: charData.play_mode,
         isCustom: true,
         avatarUrl: charData.avatar || undefined,
         world_info_ids: charData.world_info_ids ?? [],
@@ -127,6 +130,7 @@ export async function createCharacter(charData: CharacterInput) {
                 avatar: charData.avatar || null,
                 initials: charData.initials,
                 color: charData.color,
+                play_mode: charData.play_mode,
                 world_info_ids: charData.world_info_ids ?? [],
             }
         });
@@ -156,6 +160,7 @@ export async function updateCharacter(id: string, charData: CharacterInput) {
                 avatar: charData.avatar || null,
                 initials: charData.initials,
                 color: charData.color,
+                play_mode: charData.play_mode,
                 world_info_ids: charData.world_info_ids ?? [],
             }
         });

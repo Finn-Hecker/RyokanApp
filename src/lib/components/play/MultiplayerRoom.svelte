@@ -167,9 +167,11 @@
         <div class="mb-4 flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
           <div>
             <h3 class="text-sm font-medium text-gray-100">{m.mp_resume_title()}</h3>
-            <p class="mt-1 text-xs text-gray-500">{m.mp_resume_desc()}</p>
+            <p class="mt-1 text-xs text-gray-500">
+              {mpState.sessionCharacter ? m.mp_resume_desc() : m.mp_resume_missing_character()}
+            </p>
           </div>
-          <Button variant="secondary" onclick={prepareResume}>
+          <Button variant="secondary" disabled={!mpState.sessionCharacter} onclick={prepareResume}>
             {m.mp_resume_btn()}
           </Button>
         </div>
@@ -232,9 +234,22 @@
             <p class="text-center text-xs text-gray-600">{systemText(msg.text)}</p>
           {:else}
             <div class="flex flex-col {msg.kind === 'chat' && msg.author === mpState.displayName ? 'items-end' : 'items-start'}">
-              <span class="mb-0.5 px-1 text-xs {msg.kind === 'llm' ? 'text-ryokan-accent' : 'text-gray-500'}">
-                {msg.author}
-              </span>
+              <div class="mb-0.5 flex items-center gap-1.5 px-1 text-xs {msg.kind === 'llm' ? 'text-ryokan-accent' : 'text-gray-500'}">
+                {#if msg.kind === 'llm' && mpState.sessionCharacter}
+                  <span class="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full {mpState.sessionCharacter.color} text-[9px] font-bold text-white">
+                    {#if mpState.sessionCharacter.avatarUrl}
+                      <img
+                        src={mpState.sessionCharacter.avatarUrl}
+                        alt={mpState.sessionCharacter.name}
+                        class="h-full w-full object-cover"
+                      />
+                    {:else}
+                      {mpState.sessionCharacter.initials}
+                    {/if}
+                  </span>
+                {/if}
+                <span>{msg.author}</span>
+              </div>
               <div class="max-w-[85%] whitespace-pre-wrap rounded-xl border px-3 py-2 text-sm leading-relaxed
                 {msg.kind === 'llm'
                   ? 'border-white/10 bg-white/[0.06] text-gray-200'

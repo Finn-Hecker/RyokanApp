@@ -10,6 +10,7 @@
     prompt = $bindable(''),
     greeting = $bindable(''),
     alternate_greetings = $bindable([]),
+    playMode = $bindable('both'),
     worldInfoIds = $bindable([]),
     onAltGreetingsChange,
     onAltGreetingsAdd,
@@ -19,6 +20,7 @@
     prompt?: string;
     greeting?: string;
     alternate_greetings?: string[];
+    playMode?: 'solo' | 'multiplayer' | 'both';
     worldInfoIds?: string[];
     onAltGreetingsChange?: (updated: string[]) => void;
     onAltGreetingsAdd?: () => void;
@@ -51,6 +53,17 @@
       class="field-input field-input--lg"
       placeholder={m.create_page_placeholder_name()}
     />
+  </div>
+
+  <div class="field-wrap">
+    <div class="field-label-row">
+      <label for="character-play-mode" class="field-label">{m.create_page_label_play_mode()}</label>
+    </div>
+    <select id="character-play-mode" bind:value={playMode} class="field-input">
+      <option value="solo">{m.create_page_play_mode_solo()}</option>
+      <option value="multiplayer">{m.create_page_play_mode_multiplayer()}</option>
+      <option value="both">{m.create_page_play_mode_both()}</option>
+    </select>
   </div>
 
   <div class="field-wrap">

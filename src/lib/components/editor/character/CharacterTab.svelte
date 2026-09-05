@@ -7,6 +7,7 @@
     prompt = $bindable(''),
     greeting = $bindable(''),
     alternate_greetings = $bindable([]),
+    playMode = $bindable('both'),
     worldInfoIds = $bindable([]),
     avatarPreview = null,
     onAvatarFile
@@ -15,6 +16,7 @@
     prompt?: string;
     greeting?: string;
     alternate_greetings?: string[];
+    playMode?: 'solo' | 'multiplayer' | 'both';
     worldInfoIds?: string[];
     avatarPreview?: string | null;
     onAvatarFile?: (file: File) => void;
@@ -30,6 +32,7 @@
   bind:name
   bind:prompt
   bind:greeting
+  bind:playMode
   bind:worldInfoIds
   alternate_greetings={alternate_greetings}
   onAltGreetingsChange={(updated) => (alternate_greetings = updated)}

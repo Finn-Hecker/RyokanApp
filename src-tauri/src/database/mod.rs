@@ -114,6 +114,7 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             v3_spec BOOLEAN,
             initials TEXT,
             color TEXT,
+            play_mode TEXT NOT NULL DEFAULT 'both',
             avatar BLOB,
             world_info_ids TEXT NOT NULL DEFAULT '[]',
             created_at DATETIME DEFAULT {utc_now}
@@ -173,6 +174,11 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
     );
     let _ = conn.execute_batch(
         "ALTER TABLE messages ADD COLUMN author TEXT;"
+    );
+
+    // Existing and imported characters keep their previous availability.
+    let _ = conn.execute_batch(
+        "ALTER TABLE characters ADD COLUMN play_mode TEXT NOT NULL DEFAULT 'both';"
     );
 
     Ok(())

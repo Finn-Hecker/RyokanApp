@@ -21,6 +21,7 @@ pub struct DbCharacter {
     pub v3_spec: bool,
     pub initials: String,
     pub color: String,
+    pub play_mode: String,
     pub has_avatar: bool,
     pub world_info_ids: Vec<String>,
 }
@@ -35,8 +36,17 @@ pub struct CreateCharacterPayload {
     pub alternate_greetings: Vec<String>,
     pub initials: String,
     pub color: String,
+    pub play_mode: Option<String>,
     pub avatar: Option<String>,
     pub world_info_ids: Option<Vec<String>>,
+}
+
+fn normalize_play_mode(play_mode: Option<&str>) -> &'static str {
+    match play_mode {
+        Some("solo") => "solo",
+        Some("multiplayer") => "multiplayer",
+        _ => "both",
+    }
 }
 
 /// Decodes a Base64 image from the frontend, resizes it if it exceeds 2048×2048,
@@ -96,13 +106,13 @@ pub async fn get_custom_characters(app: AppHandle) -> Result<Vec<DbCharacter>, S
     let mut stmt = conn.prepare(
         "SELECT id, name, desc, personality, scenario, greeting,
                 alternate_greetings, mes_example, creator_notes, tags,
-                v3_spec, initials, color, world_info_ids,
+                v3_spec, initials, color, play_mode, world_info_ids,
                 LENGTH(avatar) > 0
          FROM characters ORDER BY created_at DESC"
     ).map_err(|e| e.to_string())?;
 
     let rows = stmt.query_map([], |row| {
-        let has_avatar: Option<bool> = row.get(14)?;
+        let has_avatar: Option<bool> = row.get(15)?;
 
         Ok(DbCharacter {
             id:                 row.get(0)?,
@@ -119,8 +129,9 @@ pub async fn get_custom_characters(app: AppHandle) -> Result<Vec<DbCharacter>, S
             v3_spec:            row.get(10)?,
             initials:           row.get(11)?,
             color:              row.get(12)?,
+            play_mode:          row.get(13)?,
             world_info_ids: serde_json::from_str(
-                &row.get::<_, Option<String>>(13)?.unwrap_or_default()
+                &row.get::<_, Option<String>>(14)?.unwrap_or_default()
             ).unwrap_or_default(),
             has_avatar: has_avatar.unwrap_or(false),
         })
@@ -157,6 +168,7 @@ pub async fn create_character(app: AppHandle, payload: CreateCharacterPayload) -
     let alt_greetings_json = serde_json::to_string(&payload.alternate_greetings)
         .unwrap_or_else(|_| "[]".to_string());
     let tags_json = "[]";
+    let play_mode = normalize_play_mode(payload.play_mode.as_deref());
     let world_info_ids_json = serde_json::to_string(
         &payload.world_info_ids.unwrap_or_default()
     ).unwrap_or_else(|_| "[]".to_string());
@@ -165,8 +177,8 @@ pub async fn create_character(app: AppHandle, payload: CreateCharacterPayload) -
         "INSERT INTO characters
             (id, name, desc, personality, scenario, greeting,
              alternate_greetings, mes_example, creator_notes, tags,
-             v3_spec, initials, color, avatar, world_info_ids)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, NULL, ?14)",
+             v3_spec, initials, color, play_mode, avatar, world_info_ids)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL, ?15)",
         params![
             new_id,
             payload.name,
@@ -181,6 +193,7 @@ pub async fn create_character(app: AppHandle, payload: CreateCharacterPayload) -
             false,
             payload.initials,
             payload.color,
+            play_mode,
             world_info_ids_json,
         ],
     ).map_err(|e| e.to_string())?;
@@ -220,14 +233,15 @@ pub async fn update_character(app: AppHandle, id: String, payload: CreateCharact
     let world_info_ids_json = serde_json::to_string(
         &payload.world_info_ids.unwrap_or_default()
     ).unwrap_or_else(|_| "[]".to_string());
+    let play_mode = normalize_play_mode(payload.play_mode.as_deref());
 
     // Folded legacy prompt sections now live in desc. Preserve notes and metadata.
     conn.execute(
         "UPDATE characters SET
             name = ?1, desc = ?2, personality = '', scenario = '',
             greeting = ?3, alternate_greetings = ?4, mes_example = '',
-            initials = ?5, color = ?6, world_info_ids = ?7
-         WHERE id = ?8",
+            initials = ?5, color = ?6, play_mode = ?7, world_info_ids = ?8
+         WHERE id = ?9",
         params![
             payload.name,
             payload.prompt,
@@ -235,6 +249,7 @@ pub async fn update_character(app: AppHandle, id: String, payload: CreateCharact
             alt_greetings_json,
             payload.initials,
             payload.color,
+            play_mode,
             world_info_ids_json,
             id,
         ],
@@ -419,4 +434,17 @@ pub async fn set_character_pinned(app: AppHandle, id: String, pinned: bool) -> R
     ).map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_play_mode;
+
+    #[test]
+    fn play_mode_defaults_to_both_and_rejects_unknown_values() {
+        assert_eq!(normalize_play_mode(None), "both");
+        assert_eq!(normalize_play_mode(Some("unknown")), "both");
+        assert_eq!(normalize_play_mode(Some("solo")), "solo");
+        assert_eq!(normalize_play_mode(Some("multiplayer")), "multiplayer");
+    }
 }

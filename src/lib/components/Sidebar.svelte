@@ -93,7 +93,7 @@
     await openHistoryChat(id);
     const conversation = chatState.conversations.find((chat) => chat.id === id);
     if (conversation?.mode === 'multiplayer') {
-      await openPersistentSession(id, appState.activeCharacter?.name ?? 'AI');
+      await openPersistentSession(id, appState.activeCharacter);
       appState.currentView = 'multiplayerRoom';
     } else {
       appState.currentView = 'chat';

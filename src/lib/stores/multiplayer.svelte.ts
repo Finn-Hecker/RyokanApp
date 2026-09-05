@@ -20,6 +20,8 @@
 import { appState } from './appState.svelte';
 import { invoke } from '@tauri-apps/api/core';
 import { processThinkingOutput } from '$lib/utils/chatApi';
+import { selectInitialGreeting } from '$lib/utils/characterGreeting';
+import type { Character } from './characterStore.svelte';
 
 // Configuration
 
@@ -55,6 +57,15 @@ export interface MpMessage {
   streaming?: boolean;
 }
 
+export interface SessionCharacter {
+  name: string;
+  prompt: string;
+  greeting: string;
+  initials: string;
+  color: string;
+  avatarUrl?: string;
+}
+
 interface PendingJoin {
   mode: 'create' | 'join' | 'resume';
   roomId?: string;
@@ -75,6 +86,8 @@ export const mpState = $state({
   messages: [] as MpMessage[],
   displayName: '',
   characterName: '',
+  /** Host-authoritative character data for this room; transient on guests. */
+  sessionCharacter: null as SessionCharacter | null,
   /** Stable local conversation id. Deliberately unrelated to roomId. */
   conversationId: null as string | null,
   /** Read-only rendering of a saved session after the relay room is gone. */
@@ -98,6 +111,7 @@ const seenIds = new Set<string>();
 let snapshotTimer: ReturnType<typeof setTimeout> | null = null;
 let llmAbort: AbortController | null = null;
 let sessionPromise: Promise<string> | null = null;
+let shouldInsertInitialGreeting = false;
 
 // Crypto (WebCrypto, AES-256-GCM, payload = base64url(iv || ciphertext))
 
@@ -168,8 +182,11 @@ async function decryptJson(p: string): Promise<any | null> {
 // Entry points: create, join, deep link
 
 /** "Create room" from the play page: name gate first, then createRoom(). */
-export function prepareCreate(): void {
+export function prepareCreate(character: Character): void {
   resetRoomState();
+  shouldInsertInitialGreeting = true;
+  appState.activeCharacter = character;
+  mpState.characterName = character.name;
   mpState.pending = { mode: 'create' };
   appState.currentView = 'multiplayerRoom';
 }
@@ -185,6 +202,7 @@ export function prepareJoin(input: string): boolean {
     return false;
   }
   resetRoomState();
+  appState.activeCharacter = null;
   mpState.pending = { mode: 'join', ...parsed };
   appState.currentView = 'multiplayerRoom';
   return true;
@@ -200,6 +218,7 @@ export function checkJoinLink(): void {
   if (!parsed) return;
   history.replaceState(null, '', window.location.pathname);
   resetRoomState();
+  appState.activeCharacter = null;
   mpState.pending = { mode: 'join', ...parsed };
   appState.currentView = 'multiplayerRoom';
 }
@@ -256,18 +275,19 @@ interface PersistedMpMessage {
 /** Opens a saved multiplayer session without attempting to revive its relay room. */
 export async function openPersistentSession(
   conversationId: string,
-  characterName: string,
+  character: Character | null,
 ): Promise<void> {
   resetRoomState();
   mpState.conversationId = conversationId;
-  mpState.characterName = characterName;
+  mpState.characterName = character?.name ?? 'AI';
+  if (character) mpState.sessionCharacter = sessionCharacterFrom(character);
   mpState.viewingHistory = true;
 
   const rows = await invoke<PersistedMpMessage[]>('get_messages', { chatId: conversationId });
   mpState.messages = rows.map((row) => ({
     id: row.id,
     kind: row.role === 'assistant' ? 'llm' : 'chat',
-    author: row.author || (row.role === 'assistant' ? characterName || 'AI' : '?'),
+    author: row.author || (row.role === 'assistant' ? mpState.characterName : '?'),
     text: row.content,
     ts: Date.parse(row.created_at) || 0,
   }));
@@ -280,7 +300,7 @@ export async function openPersistentSession(
  * room, credentials and encryption key are always created from scratch.
  */
 export function prepareResume(): void {
-  if (!mpState.viewingHistory || !mpState.conversationId) return;
+  if (!mpState.viewingHistory || !mpState.conversationId || !mpState.sessionCharacter) return;
 
   ws?.close(1000);
   ws = null;
@@ -331,6 +351,75 @@ async function ensurePersistentSession(): Promise<string> {
   return sessionPromise;
 }
 
+function sessionCharacterFrom(character: Character, avatarUrl = character.avatarUrl): SessionCharacter {
+  return {
+    name: character.name,
+    prompt: character.prompt,
+    greeting: character.greeting || '',
+    initials: character.initials || character.name.slice(0, 1).toUpperCase(),
+    color: character.color || 'bg-stone-700',
+    ...(avatarUrl ? { avatarUrl } : {}),
+  };
+}
+
+async function inlineAvatar(url: string): Promise<string | undefined> {
+  if (url.startsWith('data:image/')) return url;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return undefined;
+    const blob = await response.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+async function prepareHostSessionCharacter(): Promise<void> {
+  const character = appState.activeCharacter as Character | null;
+  if (!character) throw new Error('missing multiplayer character');
+
+  let avatarUrl = character.avatarUrl;
+  if (!avatarUrl && character.isCustom && character.has_avatar) {
+    avatarUrl = await invoke<string | null>('get_character_avatar', {
+      id: String(character.id),
+    }) ?? undefined;
+  }
+  if (avatarUrl) avatarUrl = await inlineAvatar(avatarUrl);
+
+  mpState.sessionCharacter = sessionCharacterFrom(character, avatarUrl);
+  mpState.characterName = character.name;
+}
+
+function applySessionCharacter(raw: unknown): void {
+  if (!raw || typeof raw !== 'object') return;
+  const candidate = raw as Partial<SessionCharacter>;
+  if (typeof candidate.name !== 'string' || typeof candidate.prompt !== 'string') return;
+
+  const avatarUrl = typeof candidate.avatarUrl === 'string'
+    && (candidate.avatarUrl.startsWith('data:image/') || candidate.avatarUrl.startsWith('/'))
+      ? candidate.avatarUrl
+      : undefined;
+  const character: SessionCharacter = {
+    name: candidate.name,
+    prompt: candidate.prompt,
+    greeting: typeof candidate.greeting === 'string' ? candidate.greeting : '',
+    initials: typeof candidate.initials === 'string' && candidate.initials
+      ? candidate.initials
+      : candidate.name.slice(0, 1).toUpperCase(),
+    color: typeof candidate.color === 'string' ? candidate.color : 'bg-stone-700',
+    ...(avatarUrl ? { avatarUrl } : {}),
+  };
+
+  mpState.sessionCharacter = character;
+  mpState.characterName = character.name;
+  appState.activeCharacter = { id: 'multiplayer-session', ...character };
+}
+
 async function persistMessage(message: MpMessage): Promise<void> {
   if (message.kind === 'system' || message.streaming) return;
   const chatId = await ensurePersistentSession();
@@ -347,7 +436,26 @@ async function persistMessage(message: MpMessage): Promise<void> {
   });
 }
 
+async function insertInitialGreeting(): Promise<void> {
+  const character = appState.activeCharacter as Character | null;
+  if (!character) return;
+  const greeting = selectInitialGreeting(character);
+  if (!greeting) return;
+
+  const message: MpMessage = {
+    id: crypto.randomUUID(),
+    kind: 'llm',
+    author: character.name,
+    text: greeting,
+    ts: Date.now(),
+  };
+  seenIds.add(message.id);
+  insertSorted(message);
+  await persistMessage(message);
+}
+
 async function createRoom(): Promise<void> {
+  await prepareHostSessionCharacter();
   const res = await fetch(`${RELAY_URL}/api/rooms`, { method: 'POST' });
   if (!res.ok) throw new Error('create failed');
   const { room_id, host_token } = await res.json();
@@ -420,6 +528,7 @@ export function leaveRoom(): void {
   ws?.close(1000);
   ws = null;
   stopGeneration();
+  appState.activeCharacter = null;
   appState.currentView = 'play';
 }
 
@@ -434,6 +543,7 @@ function resetRoomState(): void {
   hostToken = null;
   seenIds.clear();
   sessionPromise = null;
+  shouldInsertInitialGreeting = false;
   Object.assign(mpState, {
     connected: false,
     connecting: false,
@@ -446,6 +556,7 @@ function resetRoomState(): void {
     generating: false,
     messages: [],
     characterName: '',
+    sessionCharacter: null,
     conversationId: null,
     viewingHistory: false,
     shareLink: '',
@@ -473,7 +584,10 @@ async function handleServerMsg(msg: any): Promise<void> {
       if (mpState.role === 'host') {
         mpState.characterName = appState.activeCharacter?.name ?? '';
       }
+      const addInitialGreeting = mpState.role === 'host' && shouldInsertInitialGreeting;
+      if (addInitialGreeting) shouldInsertInitialGreeting = false;
       await ensurePersistentSession();
+      if (addInitialGreeting) await insertInitialGreeting();
       break;
 
     case 'joined':
@@ -581,6 +695,7 @@ function handleDecrypted(inner: any): void {
       if (typeof inner.charName === 'string' && !mpState.characterName) {
         mpState.characterName = inner.charName;
       }
+      applySessionCharacter(inner.character);
       if (Array.isArray(inner.msgs)) {
         let added = false;
         for (const raw of inner.msgs) {
@@ -675,6 +790,7 @@ function scheduleSnapshot(): void {
     void sendRelay({
       k: 'snap',
       charName: mpState.characterName,
+      character: mpState.sessionCharacter,
       msgs: mpState.messages
         .filter((m) => m.kind !== 'system' && !m.streaming)
         .map(({ id, kind, author, text, ts }) => ({ id, kind, author, text, ts })),
@@ -774,7 +890,7 @@ async function runGeneration(): Promise<void> {
 
 function buildLlmMessages(): Array<{ role: string; content: string }> {
   const s = appState.apiSettings;
-  const char = appState.activeCharacter;
+  const char = mpState.sessionCharacter ?? appState.activeCharacter;
   let system = s.systemPrompt || '';
   if (char?.prompt) {
     system += `${system ? '\n\n' : ''}You are ${char.name ?? 'the character'}. ${char.prompt}`;
