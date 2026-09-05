@@ -1,7 +1,6 @@
 <script lang="ts">
   import * as m from '$lib/paraglide/messages';
   import { getLocale } from '$lib/paraglide/runtime';
-  import { roleState } from '$lib/stores/roleStore.svelte';
   import { chatState } from '$lib/stores/chatStore.svelte';
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
 
@@ -14,10 +13,6 @@
     activeTab?: 'character' | 'role' | 'chat';
     onClose: () => void;
   } = $props();
-
-  let activeRole = $derived(
-    roleState.allRoles.find(p => p.id === roleState.activeRoleId) ?? null
-  );
 
   let activeConversation = $derived(
     chatState.conversations.find(c => c.id === chatState.activeChatId) ?? null
@@ -207,40 +202,6 @@
           </div>
         {:else}
           <p class="info-empty">Kein Charakter ausgewählt.</p>
-        {/if}
-
-      {:else if activeTab === 'role'}
-        {#if activeRole}
-          <div class="info-head">
-            <div class="info-avatar" style="--char-color: #6366f1">
-              {#if activeRole.avatarUrl}
-                <img src={activeRole.avatarUrl} alt={activeRole.name} />
-              {:else}
-                <div class="info-avatar-fallback bg-ryokan-surface">
-                  <span>{activeRole.name?.[0]?.toUpperCase() ?? '?'}</span>
-                </div>
-              {/if}
-            </div>
-            <div class="info-head-text">
-              <h3>{activeRole.name}</h3>
-              {#if activeRole.pronouns}
-                <p class="info-subtitle">{activeRole.pronouns}</p>
-              {/if}
-            </div>
-          </div>
-
-          <div class="info-fields">
-            {#if activeRole.bio}
-              <div class="info-field">
-                <span class="info-label">Bio</span>
-                <p class="info-value">{activeRole.bio}</p>
-              </div>
-            {:else}
-              <p class="info-empty">Keine Bio hinterlegt.</p>
-            {/if}
-          </div>
-        {:else}
-          <p class="info-empty">Keine Rolle ausgewählt.</p>
         {/if}
 
       {:else}

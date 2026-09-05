@@ -4,7 +4,6 @@
   import { fade }       from 'svelte/transition';
   import SimpleFormPage from '$lib/components/layouts/SimpleFormPage.svelte';
   import Button         from '$lib/components/ui/Button.svelte';
-  import RolesList      from './RolesList.svelte';
   import WorldInfoList  from './WorldInfoList.svelte';
   import { appState } from '$lib/stores/appState.svelte';
 
@@ -88,11 +87,7 @@
 
     {#key activeTab}
       <div in:fade={{ duration: 140, delay: 30 }}>
-        {#if activeTab === 'roles'}
-          <RolesList />
-        {:else}
           <WorldInfoList />
-        {/if}
       </div>
     {/key}
 

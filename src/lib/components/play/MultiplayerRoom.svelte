@@ -14,7 +14,6 @@
   import Sidebar from '$lib/components/Sidebar.svelte';
   import PageLayout from '$lib/components/layouts/PageLayout.svelte';
   import Button from '$lib/components/ui/Button.svelte';
-  import UserDropdown from '$lib/components/UserDropdown.svelte';
 
   let nameInput = $state('');
   let chatInput = $state('');
@@ -102,7 +101,6 @@
     {/if}
 
     <div class="flex-1"></div>
-    <UserDropdown />
   </div>
 {/snippet}
 
