@@ -1,6 +1,6 @@
 <script lang="ts">
   import { scale } from 'svelte/transition';
-  import { chatState, openHistoryChat, loadAllConversations, loadMoreConversations, deleteConversation, renameConversation, togglePinConversation } from '$lib/stores/chatStore.svelte';
+  import { chatState, openHistoryChat, loadAllConversations, loadMoreConversations, deleteConversation, renameConversation, togglePinConversation, type ConversationMode } from '$lib/stores/chatStore.svelte';
   import { appState } from '$lib/stores/appState.svelte';
   import { openPersistentSession } from '$lib/stores/multiplayer.svelte';
   import * as m from '$lib/paraglide/messages';
@@ -10,12 +10,14 @@
     isOpen,
     close,
     alwaysVisible = false,
-    onWorldInfoClick
+    onWorldInfoClick,
+    mode = 'singleplayer'
   }: {
     isOpen: boolean;
     close: () => void;
     alwaysVisible?: boolean;
     onWorldInfoClick?: () => void;
+    mode?: ConversationMode;
   } = $props();
 
   let chatToDelete      = $state<string | null>(null);
@@ -63,7 +65,7 @@
     isLoading = true;
     hasMore = true;
     try {
-      await loadAllConversations();
+      await loadAllConversations(mode);
     } catch (error) {
       console.error("[Sidebar] Error loading chats:", error);
     } finally {
@@ -79,7 +81,7 @@
       if (!entries[0].isIntersecting || isLoading || !hasMore) return;
       isLoading = true;
       try {
-        hasMore = await loadMoreConversations();
+        hasMore = await loadMoreConversations(mode);
       } catch (error) {
         console.error("[Sidebar] Error loading more chats:", error);
       } finally {
@@ -90,8 +92,9 @@
   }
 
   async function loadChat(id: string) {
-    await openHistoryChat(id);
     const conversation = chatState.conversations.find((chat) => chat.id === id);
+    if (!conversation || conversation.mode !== mode) return;
+    await openHistoryChat(id);
     if (conversation?.mode === 'multiplayer') {
       await openPersistentSession(id, appState.activeCharacter);
       appState.currentView = 'multiplayerRoom';

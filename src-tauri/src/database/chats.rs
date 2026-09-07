@@ -52,19 +52,30 @@ pub async fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, Stri
     Ok(list)
 }
 
-/// Retrieves a page of chat sessions, ordered by pinned first, then most recently active.
+/// Retrieves a page of chat sessions for one experience, ordered by pinned first,
+/// then most recently active.
 #[tauri::command]
-pub async fn get_conversations_page(app: AppHandle, limit: i64, offset: i64) -> Result<Vec<Conversation>, String> {
+pub async fn get_conversations_page(
+    app: AppHandle,
+    limit: i64,
+    offset: i64,
+    mode: Option<String>,
+) -> Result<Vec<Conversation>, String> {
     let conn = get_connection(&app)?;
+    let mode = match mode.as_deref() {
+        Some("multiplayer") => "multiplayer",
+        _ => "singleplayer",
+    };
     let mut stmt = conn.prepare(
         "SELECT id, title, character_id, mode, created_at, updated_at, is_pinned,
                 cloned_from_id, cloned_from_title
          FROM conversations
+         WHERE mode = ?1
          ORDER BY is_pinned DESC, updated_at DESC
-         LIMIT ?1 OFFSET ?2"
+         LIMIT ?2 OFFSET ?3"
     ).map_err(|e| e.to_string())?;
 
-    let rows = stmt.query_map(params![limit, offset], |row| {
+    let rows = stmt.query_map(params![mode, limit, offset], |row| {
         Ok(Conversation {
             id: row.get(0)?,
             title: row.get(1)?,

@@ -524,23 +524,32 @@ async function createRoom(): Promise<void> {
 
 function connect(roomId: string): void {
   mpState.roomId = roomId;
-  ws = new WebSocket(`${RELAY_WS}/ws/${roomId}`);
+  const socket = new WebSocket(`${RELAY_WS}/ws/${roomId}`);
+  let incomingFrameChain = Promise.resolve();
+  ws = socket;
 
-  ws.onopen = () => {
+  socket.onopen = () => {
     ws?.send(JSON.stringify({ t: 'hello', host_token: hostToken }));
   };
 
-  ws.onmessage = (ev) => {
+  socket.onmessage = (ev) => {
     let msg: any;
     try {
       msg = JSON.parse(ev.data);
     } catch {
       return;
     }
-    void handleServerMsg(msg);
+    incomingFrameChain = incomingFrameChain
+      .then(() => {
+        if (ws !== socket) return;
+        return handleServerMsg(msg);
+      })
+      .catch((error) => {
+        console.error('Failed to process multiplayer frame', error);
+      });
   };
 
-  ws.onclose = (ev) => {
+  socket.onclose = (ev) => {
     const wasConnected = mpState.connected;
     mpState.connected = false;
     mpState.connecting = false;
@@ -750,7 +759,28 @@ function handleDecrypted(inner: any): void {
       }
       if (completedStreamIds.has(mid) || activeGeneration?.messageId === mid) return;
       completedStreamIds.add(mid);
-      const m = mpState.messages.find((x) => x.id === mid);
+      const finalText = typeof inner.text === 'string' ? inner.text : null;
+      const finalAuthor = typeof inner.name === 'string' ? inner.name : null;
+      const finalTimestamp = Number(inner.ts) || 0;
+      let m = mpState.messages.find((x) => x.id === mid);
+      if (!m && finalText !== null) {
+        m = {
+          id: mid,
+          kind: 'llm',
+          author: finalAuthor ?? mpState.characterName ?? 'AI',
+          text: finalText,
+          ts: finalTimestamp || Date.now(),
+        };
+        seenIds.add(mid);
+        insertSorted(m);
+      } else if (m) {
+        if (finalText !== null) m.text = finalText;
+        if (finalAuthor !== null) m.author = finalAuthor;
+        if (finalTimestamp) {
+          m.ts = finalTimestamp;
+          mpState.messages.sort((a, b) => a.ts - b.ts);
+        }
+      }
       if (m) {
         m.streaming = false;
         if (m.text.trim()) {
@@ -1043,11 +1073,17 @@ async function runGeneration(): Promise<void> {
 
     // Queue the final marker behind any deltas already in flight. A cancelled
     // marker makes guests remove those deltas instead of persisting them.
-    await queueGenerationRelay(generation, {
-      k: 'llm_e',
-      mid,
-      cancelled: generation.discardPartial,
-    }).catch(() => undefined);
+    const completion = generation.discardPartial
+      ? { k: 'llm_e', mid, cancelled: true }
+      : {
+          k: 'llm_e',
+          mid,
+          cancelled: false,
+          text: localMsg.text,
+          name: generation.author,
+          ts: generation.timestamp,
+        };
+    await queueGenerationRelay(generation, completion).catch(() => undefined);
 
     if (activeGeneration === generation) activeGeneration = null;
     mpState.generating = activeGeneration !== null;

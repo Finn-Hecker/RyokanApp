@@ -29,6 +29,8 @@ export interface Conversation {
     cloned_from_title?: string | null;
 }
 
+export type ConversationMode = Conversation['mode'];
+
 export interface DisplayMessage {
     id: string;
     text: string;
@@ -64,12 +66,15 @@ const dateFormatter = new Intl.DateTimeFormat(getLocale(), {
 });
 
 const PAGE_SIZE = 15;
+let loadedConversationMode: ConversationMode = 'singleplayer';
 
-export async function loadAllConversations() {
+export async function loadAllConversations(mode: ConversationMode = loadedConversationMode) {
+    loadedConversationMode = mode;
     try {
         const result = await invoke<Conversation[]>('get_conversations_page', {
             limit: PAGE_SIZE,
             offset: 0,
+            mode,
         });
         chatState.conversations = result.map(chat => ({
             ...chat,
@@ -80,12 +85,17 @@ export async function loadAllConversations() {
     }
 }
 
-export async function loadMoreConversations(): Promise<boolean> {
+export async function loadMoreConversations(mode: ConversationMode = loadedConversationMode): Promise<boolean> {
+    if (mode !== loadedConversationMode) {
+        await loadAllConversations(mode);
+        return chatState.conversations.length === PAGE_SIZE;
+    }
     try {
         const currentLength = chatState.conversations.length;
         const result = await invoke<Conversation[]>('get_conversations_page', {
             limit: PAGE_SIZE,
             offset: currentLength,
+            mode,
         });
         if (result.length === 0) return false;
         chatState.conversations = [
@@ -111,7 +121,7 @@ export async function startNewChat(character: any) {
             initialMessage: selectedGreeting,
             mode: 'singleplayer',
         });
-        await loadAllConversations();
+        await loadAllConversations('singleplayer');
         await loadMessages(newId);
     } catch (e) { console.error(e); }
 }
@@ -146,7 +156,7 @@ export async function cloneChatFromMessage(messageId: string): Promise<string | 
             chatId,
             upToMessageId: messageId,
         });
-        await loadAllConversations();
+        await loadAllConversations('singleplayer');
         return newChatId;
     } catch (e) {
         console.error(e);
