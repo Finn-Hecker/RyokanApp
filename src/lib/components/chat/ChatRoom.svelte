@@ -5,6 +5,7 @@
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { chatState, addMessage, addSwipeVariant, loadMessages, updateMessage, deleteMessage, setSwipeIndex, loadMoreMessages, cloneChatFromMessage } from '$lib/stores/chatStore.svelte';
   import { runGeneration } from '$lib/utils/chatApi';
+  import { positionSentChatMessage } from '$lib/utils/chatScroll';
   import { summaryState, checkAndSummarizeIfNeeded } from '$lib/utils/rollingSummary.svelte';
   import * as m from '$lib/paraglide/messages';
   import ChatHeader from './ChatHeader.svelte';
@@ -16,13 +17,9 @@
   let inputText = $state('');
   let isOOC = $state(false);
   let chatContainer = $state<HTMLDivElement | null>(null);
-  let autoscroll = $state(true);
-  let isProgrammaticScroll = $state(false);
   let isGenerating = $state(false);
   let isThinkingPhase = $state(false);
   let streamingText = $state('');
-  let lastMsgCount = $state(0);
-  let lastFirstMsgId = $state('');
   let showErrorModal = $state(false);
   let errorMessage = $state('');
   let pendingUserMessage = $state('');
@@ -135,54 +132,9 @@
     return null;
   })());
 
-  $effect(() => {
-    if (displayMessages && chatContainer) {
-      handleAutoScroll();
-    }
-  });
-
-  async function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
-    await tick();
-    if (!chatContainer) return;
-    isProgrammaticScroll = true;
-    chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior });
-    setTimeout(() => { isProgrammaticScroll = false; }, 100);
-  }
-
-  async function handleAutoScroll() {
-    await tick();
-    if (!chatContainer) return;
-
-    const count = displayMessages.length;
-    if (count === 0) { 
-      lastFirstMsgId = ''; 
-      lastMsgCount = 0; 
-      return; 
-    }
-
-    const currentFirstId = displayMessages[0].id;
-    const currentLastId = displayMessages[count - 1].id;
-
-    // CASE 1: The chat was just loaded (initial switch)
-    // We check whether the activeChatId changed or if we don't have any previous message state
-    if (lastFirstMsgId === '') {
-      scrollToBottom('auto');
-    } 
-    // CASE 2: A NEW message was added at the bottom
-    else if (count > lastMsgCount && autoscroll) {
-      // We no longer rely on firstId comparison here, instead we trust 'autoscroll'
-      // which is calculated in handleScroll() (user is near the bottom)
-      scrollToBottom('smooth');
-    }
-
-    lastMsgCount = count;
-    lastFirstMsgId = currentFirstId;
-  }
-
   async function handleScroll() {
-    if (!chatContainer || isProgrammaticScroll) return;
-    const { scrollTop, scrollHeight, clientHeight } = chatContainer;
-    autoscroll = scrollHeight - scrollTop - clientHeight <= 50;
+    if (!chatContainer) return;
+    const { scrollTop, scrollHeight } = chatContainer;
 
     // INFINITE SCROLL: Load more when we're near the top (< 100px)
     if (scrollTop < 100 && chatState.hasMoreMessages && !isLoadingMore) {
@@ -216,9 +168,23 @@
   async function generate(prompt: string, saveUserMessage: boolean) {
     isGenerating = true;
     resetStreamState();
-    if (autoscroll) scrollToBottom();
 
-    if (saveUserMessage) await addMessage('user', prompt);
+    if (saveUserMessage) {
+      const existingMessageIds = new Set(
+        chatState.currentMessages.map((message) => message.id?.toString()),
+      );
+      await addMessage('user', prompt);
+
+      const sentMessage = chatState.currentMessages.find(
+        (message) => message.role === 'user'
+          && message.id != null
+          && !existingMessageIds.has(message.id.toString()),
+      );
+      if (sentMessage?.id != null) {
+        await tick();
+        positionSentChatMessage(chatContainer, sentMessage.id.toString());
+      }
+    }
 
     const generationOptions = {
       character:      appState.activeCharacter,
@@ -235,8 +201,7 @@
       const result = await runGeneration(
         generationOptions,
         {
-          onStreamUpdate:
-            (text) => { streamingText = text; if (autoscroll) scrollToBottom(); },
+          onStreamUpdate: (text) => { streamingText = text; },
           onThinkingPhaseChange: (v) => { isThinkingPhase = v; },
         }
       );
@@ -249,8 +214,6 @@
       isGenerating = false;
       streamingText = '';
       isThinkingPhase = false;
-      await tick();
-      if (autoscroll) await scrollToBottom('auto');
     }
   }
 
@@ -263,7 +226,6 @@
     isOOC = false;
 
     pendingUserMessage = prompt;
-    autoscroll = true;
     await generate(prompt, true);
   }
 
@@ -286,7 +248,6 @@
     retryingMsgId = msgId;
     isGenerating = true;
     resetStreamState();
-    if (autoscroll) scrollToBottom();
 
     const historySlice = msgs.slice(0, idx);
 
@@ -299,8 +260,7 @@
           userPrompt: undefined,
         },
         {
-          onStreamUpdate:
-            (text) => { streamingText = text; if (autoscroll) scrollToBottom(); },
+          onStreamUpdate: (text) => { streamingText = text; },
           onThinkingPhaseChange: (v) => { isThinkingPhase = v; },
         }
       );
@@ -314,8 +274,6 @@
       isGenerating = false;
       streamingText = '';
       isThinkingPhase = false;
-      await tick();
-      if (autoscroll) await scrollToBottom('auto');
     }
   }
 
@@ -336,7 +294,6 @@
       }
 
       // history is already up-to-date in chatState after the deletes
-      autoscroll = true;
       pendingUserMessage = newContent;
       await generate(newContent, false);
     } else {
@@ -359,7 +316,6 @@
     }
 
     // Jump straight into the freshly cloned chat.
-    autoscroll = true;
     await loadMessages(newChatId);
   }
 

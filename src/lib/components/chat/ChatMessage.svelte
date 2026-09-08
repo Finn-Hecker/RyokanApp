@@ -112,7 +112,7 @@
   }
 </script>
 
-<div class="flex {msg.isUser ? 'justify-end mb-6' : 'justify-start mb-8'}">
+<div data-message-id={msg.id} class="flex {msg.isUser ? 'justify-end mb-6' : 'justify-start mb-8'}">
 
 {#if msg.isUser}
   <div class="max-w-[75%] sm:max-w-[65%] group/usermsg">

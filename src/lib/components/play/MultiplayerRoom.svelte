@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { appState } from '$lib/stores/appState.svelte';
   import { loadAllConversations } from '$lib/stores/chatStore.svelte';
+  import { positionSentChatMessage } from '$lib/utils/chatScroll';
   import {
     mpState,
     enterRoom,
@@ -45,12 +47,6 @@
     }
   });
 
-  $effect(() => {
-    void mpState.messages.length;
-    void mpState.messages.at(-1)?.text;
-    if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
-  });
-
   // Replace the old room-ready card with a one-time compact invite popover.
   $effect(() => {
     if (mpState.showLinks) {
@@ -81,11 +77,23 @@
     } catch { }
   }
 
-  function submitChat() {
+  async function submitChat() {
     const text = chatInput;
     if (!text.trim() || locked) return;
+
+    const existingMessageIds = new Set(mpState.messages.map((message) => message.id));
     chatInput = '';
     void sendChat(text);
+
+    const sentMessage = mpState.messages.find(
+      (message) => message.kind === 'chat'
+        && message.author === mpState.displayName
+        && !existingMessageIds.has(message.id),
+    );
+    if (!sentMessage) return;
+
+    await tick();
+    positionSentChatMessage(messagesEl, sentMessage.id);
   }
 
   function handleComposerKeydown(event: KeyboardEvent) {
@@ -258,7 +266,7 @@
         </div>
       {/if}
 
-      <div bind:this={messagesEl} class="min-h-0 flex-1 overflow-y-auto px-1 py-3 sm:px-4 sm:py-5">
+      <div bind:this={messagesEl} class="min-h-0 flex-1 overflow-y-auto px-1 py-3 sm:px-4 sm:py-5" style="overflow-anchor: none;">
         <div class="mx-auto w-full max-w-3xl">
           {#each mpState.messages as msg (msg.id)}
             {#if msg.kind === 'system'}
@@ -280,7 +288,7 @@
                 </div>
               </div>
             {:else}
-              <div class="mb-6 flex {msg.author === mpState.displayName ? 'justify-end' : 'justify-start'}">
+              <div data-message-id={msg.id} class="mb-6 flex {msg.author === mpState.displayName ? 'justify-end' : 'justify-start'}">
                 <div class="max-w-[82%] sm:max-w-[68%]">
                   <p class="mb-1 px-1 text-[11px] text-gray-500 {msg.author === mpState.displayName ? 'text-right' : ''}">{msg.author}</p>
                   <p class="whitespace-pre-wrap break-words rounded-2xl border border-white/[0.04] px-4 py-3 text-[15px] leading-relaxed text-gray-200 {msg.author === mpState.displayName ? 'rounded-tr-sm bg-[#1e1e22]' : 'rounded-tl-sm bg-white/[0.035]'}">{msg.text}</p>
