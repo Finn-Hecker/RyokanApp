@@ -65,20 +65,20 @@ struct ApiParameterFlags {
 impl Default for ApiParameterFlags {
     fn default() -> Self {
         Self {
-            temperature: true,
-            max_tokens: true,
-            presence_penalty: true,
-            thinking_budget: true,
-            top_p: true,
-            top_k: true,
-            min_p: true,
-            frequency_penalty: true,
+            temperature: false,
+            max_tokens: false,
+            presence_penalty: false,
+            thinking_budget: false,
+            top_p: false,
+            top_k: false,
+            min_p: false,
+            frequency_penalty: false,
         }
     }
 }
 
-/// Reads the persisted per-parameter switches. Missing keys default to enabled so
-/// existing installations keep their current request behavior after updating.
+/// Reads the persisted per-parameter switches. Missing keys default to disabled so
+/// generation parameters stay opt-in, matching the settings UI.
 fn load_api_parameter_flags(window: &Window) -> ApiParameterFlags {
     let mut flags = ApiParameterFlags::default();
 

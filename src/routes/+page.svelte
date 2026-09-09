@@ -27,6 +27,11 @@
     if (map.api_max_tokens)       appState.apiSettings.maxTokens       = parseInt(map.api_max_tokens);
     if (map.api_presence_penalty) appState.apiSettings.presencePenalty = parseFloat(map.api_presence_penalty);
     if (map.api_context_limit)    appState.apiSettings.contextLimit    = parseInt(map.api_context_limit);
+    if (map.api_thinking_budget)  appState.apiSettings.thinkingBudget  = parseInt(map.api_thinking_budget);
+    if (map.api_top_p)            appState.apiSettings.topP             = parseFloat(map.api_top_p);
+    if (map.api_top_k)            appState.apiSettings.topK             = parseInt(map.api_top_k);
+    if (map.api_min_p)            appState.apiSettings.minP             = parseFloat(map.api_min_p);
+    if (map.api_frequency_penalty) appState.apiSettings.frequencyPenalty = parseFloat(map.api_frequency_penalty);
 
     appState.isOnboarding = map['onboarding_completed'] !== 'true';
     loaded = true;

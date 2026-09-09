@@ -5,20 +5,30 @@
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
   import { fade } from "svelte/transition";
   import { onMount } from "svelte";
+  import {
+    API_PARAMETER_SETTING_KEYS,
+    createDefaultApiParameterEnabled,
+    readApiParameterEnabled,
+    type ApiParameterKey,
+  } from "$lib/utils/apiParameters";
 
   let { onClose }: { onClose: () => void } = $props();
 
   // The power-user flag isn't part of appState, so it's loaded/persisted
   // the same way SettingsPage.svelte does it (via the settings_power_user key).
   let powerUser = $state(false);
+  let parameterEnabled = $state<Record<ApiParameterKey, boolean>>(
+    createDefaultApiParameterEnabled(),
+  );
 
   onMount(async () => {
     try {
       const settings = await getAllSettings();
       const row = settings.find(r => r.key === "settings_power_user");
       if (row) powerUser = row.value === "true";
+      parameterEnabled = readApiParameterEnabled(settings);
     } catch (err) {
-      console.error("[ChatSettingsPanel] Failed to load power user flag:", err);
+      console.error("[ChatSettingsPanel] Failed to load settings:", err);
     }
   });
 
@@ -31,6 +41,11 @@
   function togglePowerUser() {
     powerUser = !powerUser;
     persist("settings_power_user", powerUser);
+  }
+
+  function toggleParameter(key: ApiParameterKey) {
+    parameterEnabled[key] = !parameterEnabled[key];
+    persist(API_PARAMETER_SETTING_KEYS[key], parameterEnabled[key]);
   }
 
   const TEMPERATURES = $derived([
@@ -99,7 +114,7 @@
   function setTemperature(v: number) { appState.apiSettings.temperature = v; persist("api_temperature", v); }
   function setMaxTokens(v: number) { appState.apiSettings.maxTokens = v; persist("api_max_tokens", v); }
   function setPresencePenalty(v: number) { appState.apiSettings.presencePenalty = v; persist("api_presence_penalty", v); }
-  function setThinkingBudget(v: number) { appState.apiSettings.thinkingBudget = v; }
+  function setThinkingBudget(v: number) { appState.apiSettings.thinkingBudget = v; persist("api_thinking_budget", v); }
   function setTopP(v: number) { appState.apiSettings.topP = v; persist("api_top_p", v); }
   function setTopK(v: number) { appState.apiSettings.topK = v; persist("api_top_k", v); }
   function setMinP(v: number) { appState.apiSettings.minP = v; persist("api_min_p", v); }
@@ -120,6 +135,19 @@
     if (e.target === e.currentTarget) onClose();
   }
 </script>
+
+{#snippet parameterToggle(key: ApiParameterKey)}
+  <button
+    type="button"
+    class="parameter-switch"
+    class:parameter-switch--on={parameterEnabled[key]}
+    aria-pressed={parameterEnabled[key]}
+    aria-label={parameterEnabled[key] ? "Parameter enabled" : "Parameter disabled"}
+    onclick={() => toggleParameter(key)}
+  >
+    <span class="parameter-switch-thumb" class:parameter-switch-thumb--on={parameterEnabled[key]}></span>
+  </button>
+{/snippet}
 
 <svelte:window onkeydown={handleWindowKeydown} />
 
@@ -154,9 +182,12 @@
                 <span class="tooltip-hint">{m.settings_creativity_tooltip_hint()}</span>
               </Tooltip>
             </div>
-            {#if powerUser}
-              <span class="power-value">{appState.apiSettings.temperature?.toFixed(2) ?? "0.80"}</span>
-            {/if}
+            <div class="parameter-actions">
+              {#if powerUser}
+                <span class="power-value" class:power-value--disabled={!parameterEnabled.temperature}>{appState.apiSettings.temperature?.toFixed(2) ?? "0.80"}</span>
+              {/if}
+              {@render parameterToggle("temperature")}
+            </div>
           </div>
           {#if powerUser}
             <div in:fade={{ duration: 250, delay: 30 }}>
@@ -165,6 +196,7 @@
                 value={appState.apiSettings.temperature ?? 0.8}
                 oninput={(e) => setTemperature(+e.currentTarget.value)}
                 class="power-slider"
+                disabled={!parameterEnabled.temperature}
                 aria-label={m.settings_creativity_label()}
               />
               <div class="slider-bounds"><span>{m.settings_slider_precise()}</span><span>{m.settings_slider_creative()}</span></div>
@@ -174,6 +206,7 @@
               {#each TEMPERATURES as temp}
                 <button
                   onclick={() => setTemperature(temp.value)}
+                  disabled={!parameterEnabled.temperature}
                   class="preset-btn {appState.apiSettings.temperature === temp.value ? 'preset-btn--active' : ''}"
                 >
                   <span class="preset-label">{temp.label}</span>
@@ -196,9 +229,12 @@
                 <span class="tooltip-hint">{m.settings_tokens_tooltip_hint()}</span>
               </Tooltip>
             </div>
-            {#if powerUser}
-              <span class="power-value">{appState.apiSettings.maxTokens ?? 300} Tokens</span>
-            {/if}
+            <div class="parameter-actions">
+              {#if powerUser}
+                <span class="power-value" class:power-value--disabled={!parameterEnabled.maxTokens}>{appState.apiSettings.maxTokens ?? 300} Tokens</span>
+              {/if}
+              {@render parameterToggle("maxTokens")}
+            </div>
           </div>
           {#if powerUser}
             <div in:fade={{ duration: 250, delay: 30 }}>
@@ -207,6 +243,7 @@
                 value={appState.apiSettings.maxTokens ?? 300}
                 oninput={(e) => setMaxTokens(clampTokens(+e.currentTarget.value))}
                 class="power-slider"
+                disabled={!parameterEnabled.maxTokens}
                 aria-label={m.settings_tokens_label()}
               />
               <div class="slider-bounds"><span>{m.settings_slider_short()}</span><span>{m.settings_slider_long()}</span></div>
@@ -216,6 +253,7 @@
               {#each MAX_TOKENS_PRESETS as preset}
                 <button
                   onclick={() => setMaxTokens(preset.value)}
+                  disabled={!parameterEnabled.maxTokens}
                   class="preset-btn {closestPreset(MAX_TOKENS_PRESETS, appState.apiSettings.maxTokens ?? 300) === preset.value ? 'preset-btn--active' : ''}"
                 >
                   <span class="preset-label">{preset.label}</span>
@@ -238,9 +276,12 @@
                 <span class="tooltip-hint">{m.settings_penalty_tooltip_hint()}</span>
               </Tooltip>
             </div>
-            {#if powerUser}
-              <span class="power-value">{(appState.apiSettings.presencePenalty ?? 1.12).toFixed(2)}</span>
-            {/if}
+            <div class="parameter-actions">
+              {#if powerUser}
+                <span class="power-value" class:power-value--disabled={!parameterEnabled.presencePenalty}>{(appState.apiSettings.presencePenalty ?? 1.12).toFixed(2)}</span>
+              {/if}
+              {@render parameterToggle("presencePenalty")}
+            </div>
           </div>
           {#if powerUser}
             <div in:fade={{ duration: 250, delay: 30 }}>
@@ -249,6 +290,7 @@
                 value={appState.apiSettings.presencePenalty ?? 1.12}
                 oninput={(e) => setPresencePenalty(clampPenalty(+e.currentTarget.value))}
                 class="power-slider"
+                disabled={!parameterEnabled.presencePenalty}
                 aria-label={m.settings_penalty_label()}
               />
               <div class="slider-bounds"><span>{m.settings_slider_tolerant()}</span><span>{m.settings_slider_strict()}</span></div>
@@ -258,6 +300,7 @@
               {#each PENALTY_PRESETS as preset}
                 <button
                   onclick={() => setPresencePenalty(preset.value)}
+                  disabled={!parameterEnabled.presencePenalty}
                   class="preset-btn {closestPreset(PENALTY_PRESETS, appState.apiSettings.presencePenalty ?? 1.12) === preset.value ? 'preset-btn--active' : ''}"
                 >
                   <span class="preset-label">{preset.label}</span>
@@ -300,9 +343,12 @@
                     <span class="tooltip-hint">{m.settings_thinking_budget_tooltip_hint()}</span>
                   </Tooltip>
                 </div>
-                {#if powerUser}
-                  <span class="power-value">{appState.apiSettings.thinkingBudget ?? 2500} Tokens</span>
-                {/if}
+                <div class="parameter-actions">
+                  {#if powerUser}
+                    <span class="power-value" class:power-value--disabled={!parameterEnabled.thinkingBudget}>{appState.apiSettings.thinkingBudget ?? 2500} Tokens</span>
+                  {/if}
+                  {@render parameterToggle("thinkingBudget")}
+                </div>
               </div>
               {#if powerUser}
                 <div in:fade={{ duration: 250, delay: 30 }}>
@@ -311,6 +357,7 @@
                     value={appState.apiSettings.thinkingBudget ?? 2500}
                     oninput={(e) => setThinkingBudget(clampThinkingBudget(+e.currentTarget.value))}
                     class="power-slider"
+                    disabled={!parameterEnabled.thinkingBudget}
                     aria-label={m.settings_thinking_budget_label()}
                   />
                   <div class="slider-bounds"><span>500</span><span>10 000</span></div>
@@ -320,6 +367,7 @@
                   {#each THINKING_BUDGET_PRESETS as preset}
                     <button
                       onclick={() => setThinkingBudget(preset.value)}
+                      disabled={!parameterEnabled.thinkingBudget}
                       class="preset-btn {(appState.apiSettings.thinkingBudget ?? 2500) === preset.value ? 'preset-btn--active' : ''}"
                     >
                       <span class="preset-label">{preset.label}</span>
@@ -348,9 +396,12 @@
                 <span class="tooltip-hint">{m.settings_topp_tooltip_hint()}</span>
               </Tooltip>
             </div>
-            {#if powerUser}
-              <span class="power-value">{(appState.apiSettings.topP ?? 0.9).toFixed(2)}</span>
-            {/if}
+            <div class="parameter-actions">
+              {#if powerUser}
+                <span class="power-value" class:power-value--disabled={!parameterEnabled.topP}>{(appState.apiSettings.topP ?? 0.9).toFixed(2)}</span>
+              {/if}
+              {@render parameterToggle("topP")}
+            </div>
           </div>
           {#if powerUser}
             <div in:fade={{ duration: 250, delay: 30 }}>
@@ -359,6 +410,7 @@
                 value={appState.apiSettings.topP ?? 0.9}
                 oninput={(e) => setTopP(clampTopP(+e.currentTarget.value))}
                 class="power-slider"
+                disabled={!parameterEnabled.topP}
                 aria-label={m.settings_topp_label()}
               />
               <div class="slider-bounds"><span>{m.settings_slider_focused()}</span><span>{m.settings_slider_diverse()}</span></div>
@@ -368,6 +420,7 @@
               {#each TOP_P_PRESETS as preset}
                 <button
                   onclick={() => setTopP(preset.value)}
+                  disabled={!parameterEnabled.topP}
                   class="preset-btn {closestPreset(TOP_P_PRESETS, appState.apiSettings.topP ?? 0.9) === preset.value ? 'preset-btn--active' : ''}"
                 >
                   <span class="preset-label">{preset.label}</span>
@@ -390,9 +443,12 @@
                 <span class="tooltip-hint">{m.settings_topk_tooltip_hint()}</span>
               </Tooltip>
             </div>
-            {#if powerUser}
-              <span class="power-value">{appState.apiSettings.topK ?? 40}</span>
-            {/if}
+            <div class="parameter-actions">
+              {#if powerUser}
+                <span class="power-value" class:power-value--disabled={!parameterEnabled.topK}>{appState.apiSettings.topK ?? 40}</span>
+              {/if}
+              {@render parameterToggle("topK")}
+            </div>
           </div>
           {#if powerUser}
             <div in:fade={{ duration: 250, delay: 30 }}>
@@ -401,6 +457,7 @@
                 value={appState.apiSettings.topK ?? 40}
                 oninput={(e) => setTopK(clampTopK(+e.currentTarget.value))}
                 class="power-slider"
+                disabled={!parameterEnabled.topK}
                 aria-label={m.settings_topk_label()}
               />
               <div class="slider-bounds"><span>{m.settings_slider_narrow()}</span><span>{m.settings_slider_wide()}</span></div>
@@ -410,6 +467,7 @@
               {#each TOP_K_PRESETS as preset}
                 <button
                   onclick={() => setTopK(preset.value)}
+                  disabled={!parameterEnabled.topK}
                   class="preset-btn {closestPreset(TOP_K_PRESETS, appState.apiSettings.topK ?? 40) === preset.value ? 'preset-btn--active' : ''}"
                 >
                   <span class="preset-label">{preset.label}</span>
@@ -432,9 +490,12 @@
                 <span class="tooltip-hint">{m.settings_minp_tooltip_hint()}</span>
               </Tooltip>
             </div>
-            {#if powerUser}
-              <span class="power-value">{(appState.apiSettings.minP ?? 0.05).toFixed(2)}</span>
-            {/if}
+            <div class="parameter-actions">
+              {#if powerUser}
+                <span class="power-value" class:power-value--disabled={!parameterEnabled.minP}>{(appState.apiSettings.minP ?? 0.05).toFixed(2)}</span>
+              {/if}
+              {@render parameterToggle("minP")}
+            </div>
           </div>
           {#if powerUser}
             <div in:fade={{ duration: 250, delay: 30 }}>
@@ -443,6 +504,7 @@
                 value={appState.apiSettings.minP ?? 0.05}
                 oninput={(e) => setMinP(clampMinP(+e.currentTarget.value))}
                 class="power-slider"
+                disabled={!parameterEnabled.minP}
                 aria-label={m.settings_minp_label()}
               />
               <div class="slider-bounds"><span>{m.settings_slider_off()}</span><span>{m.settings_slider_strict()}</span></div>
@@ -452,6 +514,7 @@
               {#each MIN_P_PRESETS as preset}
                 <button
                   onclick={() => setMinP(preset.value)}
+                  disabled={!parameterEnabled.minP}
                   class="preset-btn {closestPreset(MIN_P_PRESETS, appState.apiSettings.minP ?? 0.05) === preset.value ? 'preset-btn--active' : ''}"
                 >
                   <span class="preset-label">{preset.label}</span>
@@ -474,9 +537,12 @@
                 <span class="tooltip-hint">{m.settings_freqpenalty_tooltip_hint()}</span>
               </Tooltip>
             </div>
-            {#if powerUser}
-              <span class="power-value">{(appState.apiSettings.frequencyPenalty ?? 0).toFixed(2)}</span>
-            {/if}
+            <div class="parameter-actions">
+              {#if powerUser}
+                <span class="power-value" class:power-value--disabled={!parameterEnabled.frequencyPenalty}>{(appState.apiSettings.frequencyPenalty ?? 0).toFixed(2)}</span>
+              {/if}
+              {@render parameterToggle("frequencyPenalty")}
+            </div>
           </div>
           {#if powerUser}
             <div in:fade={{ duration: 250, delay: 30 }}>
@@ -485,6 +551,7 @@
                 value={appState.apiSettings.frequencyPenalty ?? 0}
                 oninput={(e) => setFreqPenalty(clampFreqPenalty(+e.currentTarget.value))}
                 class="power-slider"
+                disabled={!parameterEnabled.frequencyPenalty}
                 aria-label={m.settings_freqpenalty_label()}
               />
               <div class="slider-bounds"><span>{m.settings_slider_off()}</span><span>{m.settings_slider_strict()}</span></div>
@@ -494,6 +561,7 @@
               {#each FREQ_PENALTY_PRESETS as preset}
                 <button
                   onclick={() => setFreqPenalty(preset.value)}
+                  disabled={!parameterEnabled.frequencyPenalty}
                   class="preset-btn {closestPreset(FREQ_PENALTY_PRESETS, appState.apiSettings.frequencyPenalty ?? 0) === preset.value ? 'preset-btn--active' : ''}"
                 >
                   <span class="preset-label">{preset.label}</span>
@@ -686,7 +754,12 @@
     transition: all 0.15s ease;
     cursor: pointer;
   }
-  .preset-btn:hover {
+  .preset-btn:disabled {
+    opacity: 0.32;
+    cursor: not-allowed;
+  }
+  .preset-btn:disabled:active { transform: none; }
+  .preset-btn:hover:not(:disabled) {
     border-color: rgba(255,255,255,0.12);
     color: #d1d1d6;
     background: rgba(255,255,255,0.04);
@@ -731,12 +804,60 @@
     margin: 10px 0 15px 0;
   }
 
+  .parameter-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 9px;
+    flex-shrink: 0;
+  }
+
+  .parameter-switch {
+    position: relative;
+    width: 30px;
+    height: 18px;
+    flex-shrink: 0;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.055);
+    cursor: pointer;
+    transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+  }
+  .parameter-switch:hover {
+    border-color: rgba(255,255,255,0.16);
+    background: rgba(255,255,255,0.08);
+  }
+  .parameter-switch--on {
+    background: rgba(212,180,131,0.16);
+    border-color: rgba(212,180,131,0.34);
+  }
+  .parameter-switch-thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #5a5a5e;
+    transition: transform 0.16s ease, background 0.16s ease;
+  }
+  .parameter-switch-thumb--on {
+    transform: translateX(12px);
+    background: #d4b483;
+  }
+
   .power-value {
     font-size: 11px;
     font-weight: 700;
     color: #d4b483;
     letter-spacing: 0.04em;
     font-variant-numeric: tabular-nums;
+    transition: opacity 0.16s ease, color 0.16s ease;
+  }
+  .power-value--disabled {
+    color: #55555a;
+    opacity: 0.7;
   }
 
   .power-slider {
@@ -750,6 +871,12 @@
     display: block;
     margin-top: 4px;
   }
+  .power-slider:disabled {
+    opacity: 0.28;
+    cursor: not-allowed;
+  }
+  .power-slider:disabled::-webkit-slider-thumb { cursor: not-allowed; }
+  .power-slider:disabled::-moz-range-thumb { cursor: not-allowed; }
   .power-slider::-webkit-slider-thumb {
     appearance: none;
     width: 16px;

@@ -8,31 +8,20 @@
   import ApiSection from "./ApiSection.svelte";
   import GeneralSection from "./GeneralSection.svelte";
   import Button from '$lib/components/ui/Button.svelte';
+  import {
+    API_PARAMETER_SETTING_KEYS,
+    createDefaultApiParameterEnabled,
+    readApiParameterEnabled,
+    type ApiParameterKey,
+  } from "$lib/utils/apiParameters";
 
   let powerUser = $state(false);
 
-  type ApiParameterKey =
-    | "temperature"
-    | "maxTokens"
-    | "presencePenalty"
-    | "thinkingBudget"
-    | "topP"
-    | "topK"
-    | "minP"
-    | "frequencyPenalty";
-
   // Keep the numeric value and the enabled state separate. This way disabling a
   // sampler does not destroy the user's tuned value, and re-enabling restores it.
-  let parameterEnabled = $state<Record<ApiParameterKey, boolean>>({
-    temperature: true,
-    maxTokens: true,
-    presencePenalty: true,
-    thinkingBudget: true,
-    topP: true,
-    topK: true,
-    minP: true,
-    frequencyPenalty: true,
-  });
+  let parameterEnabled = $state<Record<ApiParameterKey, boolean>>(
+    createDefaultApiParameterEnabled(),
+  );
 
   const NAV_ITEMS = [
     { id: "api",      label: m.settings_nav_api(),             icon: "M12 2a10 10 0 100 20A10 10 0 0012 2zm0 3v2m0 10v2M5.22 5.22l1.42 1.42m10.72 10.72l1.42 1.42M2 12h2m16 0h2M5.22 18.78l1.42-1.42M17.36 6.64l1.42-1.42" },
@@ -57,14 +46,6 @@
     api_model:            (v) => (appState.apiSettings.model = v),
     api_custom_mode:      (v) => (appState.apiSettings.customMode = v === "true"),
     thinking_mode:        (v) => (appState.apiSettings.isThinkingModel = v === "true"),
-    api_temperature_enabled:       (v) => (parameterEnabled.temperature = v !== "false"),
-    api_max_tokens_enabled:        (v) => (parameterEnabled.maxTokens = v !== "false"),
-    api_presence_penalty_enabled:  (v) => (parameterEnabled.presencePenalty = v !== "false"),
-    api_thinking_budget_enabled:   (v) => (parameterEnabled.thinkingBudget = v !== "false"),
-    api_top_p_enabled:             (v) => (parameterEnabled.topP = v !== "false"),
-    api_top_k_enabled:             (v) => (parameterEnabled.topK = v !== "false"),
-    api_min_p_enabled:             (v) => (parameterEnabled.minP = v !== "false"),
-    api_frequency_penalty_enabled: (v) => (parameterEnabled.frequencyPenalty = v !== "false"),
     ai_language:          (v) => (appState.apiSettings.aiLanguage = v),
     system_prompt:        (v) => (appState.apiSettings.systemPrompt = v),
     api_temperature:      (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.temperature = n; },
@@ -84,6 +65,7 @@
   async function loadSettings() {
     try {
       const settings = await getAllSettings();
+      parameterEnabled = readApiParameterEnabled(settings);
       for (const row of settings) SETTINGS_MAP[row.key]?.(row.value);
       if (!appState.apiSettings.aiLanguage) appState.apiSettings.aiLanguage = DEFAULT_AI_LANGUAGE;
       if (appState.apiSettings.maxTokens == null) appState.apiSettings.maxTokens = 300;
@@ -139,14 +121,9 @@
         saveSetting("api_top_k",             appState.apiSettings.topK ?? 40),
         saveSetting("api_min_p",             appState.apiSettings.minP ?? 0.05),
         saveSetting("api_frequency_penalty", appState.apiSettings.frequencyPenalty ?? 0),
-        saveSetting("api_temperature_enabled",       parameterEnabled.temperature),
-        saveSetting("api_max_tokens_enabled",        parameterEnabled.maxTokens),
-        saveSetting("api_presence_penalty_enabled",  parameterEnabled.presencePenalty),
-        saveSetting("api_thinking_budget_enabled",   parameterEnabled.thinkingBudget),
-        saveSetting("api_top_p_enabled",             parameterEnabled.topP),
-        saveSetting("api_top_k_enabled",             parameterEnabled.topK),
-        saveSetting("api_min_p_enabled",             parameterEnabled.minP),
-        saveSetting("api_frequency_penalty_enabled", parameterEnabled.frequencyPenalty),
+        ...Object.entries(API_PARAMETER_SETTING_KEYS).map(([parameter, settingKey]) =>
+          saveSetting(settingKey, parameterEnabled[parameter as ApiParameterKey])
+        ),
         saveSetting("settings_power_user",  powerUser),
       ]);
       const locale = appState.pendingUiLocale;

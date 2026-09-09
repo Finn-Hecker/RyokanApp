@@ -4,31 +4,17 @@
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
   import * as m from "$lib/paraglide/messages";
   import { fade } from "svelte/transition";
+  import {
+    createDefaultApiParameterEnabled,
+    type ApiParameterKey,
+  } from "$lib/utils/apiParameters";
 
   export let powerUser: boolean = false;
   export let behaviorOnly: boolean = false;
   export let languageOnly: boolean = false;
 
-  type ApiParameterKey =
-    | "temperature"
-    | "maxTokens"
-    | "presencePenalty"
-    | "thinkingBudget"
-    | "topP"
-    | "topK"
-    | "minP"
-    | "frequencyPenalty";
-
-  export let parameterEnabled: Record<ApiParameterKey, boolean> = {
-    temperature: true,
-    maxTokens: true,
-    presencePenalty: true,
-    thinkingBudget: true,
-    topP: true,
-    topK: true,
-    minP: true,
-    frequencyPenalty: true,
-  };
+  export let parameterEnabled: Record<ApiParameterKey, boolean> =
+    createDefaultApiParameterEnabled();
 
   function toggleParameter(key: ApiParameterKey) {
     parameterEnabled = {
