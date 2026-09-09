@@ -2,7 +2,7 @@ import * as m from '$lib/paraglide/messages';
 import maraAvatar from '$lib/assets/avatars/mara.webp';
 import ilyanAvatar from '$lib/assets/avatars/ilyan.webp';
 
-export const CHARACTERS = [
+export const SOLO_CHARACTERS = [
   {
     id: 1,
     name: m.char_mara_name(),
@@ -28,3 +28,20 @@ export const CHARACTERS = [
     world_info_ids: [],
   }
 ];
+
+export const MULTIPLAYER_CHARACTERS = [
+  {
+    id: 3,
+    name: m.char_broken_gas_station_name(),
+    prompt: m.char_broken_gas_station_prompt(),
+    color: "bg-sky-900",
+    play_mode: 'multiplayer' as const,
+    initials: "GS",
+    greeting: m.char_broken_gas_station_greeting(),
+    avatarUrl: undefined,
+    alternate_greetings: [],
+    world_info_ids: [],
+  }
+];
+
+export const CHARACTERS = [...SOLO_CHARACTERS, ...MULTIPLAYER_CHARACTERS];
