@@ -6,6 +6,9 @@ export type PlayMode = 'solo' | 'multiplayer';
 export interface Character {
     id: string | number;
     name: string;
+    /** Short, card-friendly summary. Static characters localize this separately
+     *  from their full prompt; custom characters fall back to their prompt. */
+    description?: string;
     prompt: string;
     greeting: string;
     initials: string;

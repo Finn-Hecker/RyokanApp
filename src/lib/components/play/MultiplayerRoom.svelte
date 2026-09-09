@@ -20,7 +20,7 @@
   import PageLayout from '$lib/components/layouts/PageLayout.svelte';
   import Button from '$lib/components/ui/Button.svelte';
 
-  let nameInput = $state('');
+  let nameInput = $state(mpState.displayName);
   let chatInput = $state('');
   let copied = $state(false);
   let roomMenuOpen = $state(false);
@@ -223,37 +223,42 @@
     </div>
 
   {:else if !mpState.connected && !mpState.viewingHistory}
-    <div class="mx-auto mt-16 max-w-md rounded-2xl border border-white/10 bg-white/[0.03] p-6 sm:p-8">
-      <h2 class="mb-1 font-medium text-gray-100">{m.mp_gate_title()}</h2>
-      <p class="mb-5 text-sm text-gray-500">{m.mp_gate_desc()}</p>
-      <div class="flex items-center gap-2">
-        <input
-          type="text"
-          bind:value={nameInput}
-          placeholder={m.mp_gate_placeholder()}
-          maxlength="24"
-          autocomplete="nickname"
-          class="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-white/25 focus:outline-none"
-          onkeydown={(event) => event.key === 'Enter' && canEnter && enterRoom(nameInput)}
-        />
-        <button
-          class="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-gray-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
-          disabled={!canEnter}
-          onclick={() => enterRoom(nameInput)}
-        >
-          {#if mpState.connecting}
-            {m.mp_connecting()}
-          {:else if mpState.pending?.mode === 'create'}
-            {m.mp_gate_create_btn()}
-          {:else if mpState.pending?.mode === 'resume'}
-            {m.mp_resume_btn()}
-          {:else}
-            {m.mp_gate_join_btn()}
-          {/if}
-        </button>
+    {#if mpState.connecting}
+      <div class="mx-auto mt-20 flex items-center gap-3 text-sm text-gray-400" role="status">
+        <span class="h-4 w-4 animate-spin rounded-full border-2 border-white/15 border-t-ryokan-accent"></span>
+        {m.mp_connecting()}
       </div>
-      {#if mpState.error === 'create_failed'}<p class="mt-3 text-sm text-red-400">{m.mp_error_create_failed()}</p>{/if}
-    </div>
+    {:else}
+      <div class="mx-auto mt-16 max-w-md rounded-2xl border border-white/10 bg-white/[0.03] p-6 sm:p-8">
+        <h2 class="mb-1 font-medium text-gray-100">{m.mp_gate_title()}</h2>
+        <p class="mb-5 text-sm text-gray-500">{m.mp_gate_desc()}</p>
+        <div class="flex items-center gap-2">
+          <input
+            type="text"
+            bind:value={nameInput}
+            placeholder={m.mp_gate_placeholder()}
+            maxlength="24"
+            autocomplete="nickname"
+            class="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-white/25 focus:outline-none"
+            onkeydown={(event) => event.key === 'Enter' && canEnter && enterRoom(nameInput)}
+          />
+          <button
+            class="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-gray-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={!canEnter}
+            onclick={() => enterRoom(nameInput)}
+          >
+            {#if mpState.pending?.mode === 'create'}
+              {m.mp_gate_create_btn()}
+            {:else if mpState.pending?.mode === 'resume'}
+              {m.mp_resume_btn()}
+            {:else}
+              {m.mp_gate_join_btn()}
+            {/if}
+          </button>
+        </div>
+        {#if mpState.error === 'create_failed'}<p class="mt-3 text-sm text-red-400">{m.mp_error_create_failed()}</p>{/if}
+      </div>
+    {/if}
 
   {:else}
     <div class="flex h-[calc(100dvh-7rem)] min-h-[24rem] flex-col md:h-[calc(100dvh-7.5rem)]">

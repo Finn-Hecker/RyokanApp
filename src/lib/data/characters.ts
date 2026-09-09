@@ -1,6 +1,7 @@
 import * as m from '$lib/paraglide/messages';
 import maraAvatar from '$lib/assets/avatars/mara.webp';
 import ilyanAvatar from '$lib/assets/avatars/ilyan.webp';
+import brokenGasStation from '$lib/assets/avatars/broken_gas_station.webp';
 
 export const SOLO_CHARACTERS = [
   {
@@ -33,12 +34,13 @@ export const MULTIPLAYER_CHARACTERS = [
   {
     id: 3,
     name: m.char_broken_gas_station_name(),
+    description: m.char_broken_gas_station_description(),
     prompt: m.char_broken_gas_station_prompt(),
     color: "bg-sky-900",
     play_mode: 'multiplayer' as const,
     initials: "GS",
     greeting: m.char_broken_gas_station_greeting(),
-    avatarUrl: undefined,
+    avatarUrl: brokenGasStation,
     alternate_greetings: [],
     world_info_ids: [],
   }
