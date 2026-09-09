@@ -2,11 +2,17 @@ import { paraglideVitePlugin } from '@inlang/paraglide-js'
 import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
 
-const host = process.env.TAURI_DEV_HOST;
+const host = /** @type {{ process?: { env?: Record<string, string | undefined> } }} */ (
+  globalThis
+).process?.env?.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [paraglideVitePlugin({ project: './project.inlang', outdir: './src/lib/paraglide' }),sveltekit()],
+  plugins: [paraglideVitePlugin({
+    project: './project.inlang',
+    outdir: './src/lib/paraglide',
+    disableAsyncLocalStorage: true,
+  }), sveltekit()],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

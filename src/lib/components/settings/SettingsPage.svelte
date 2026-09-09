@@ -79,7 +79,7 @@
 
       console.log("[Settings] Loaded values:", {
         url:             appState.apiSettings.url,
-        apiKey:          appState.apiSettings.apiKey,
+        apiKeyConfigured: Boolean(appState.apiSettings.apiKey),
         model:           appState.apiSettings.model,
         isThinkingModel: appState.apiSettings.isThinkingModel,
         aiLanguage:      appState.apiSettings.aiLanguage,

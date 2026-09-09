@@ -33,6 +33,12 @@ const SNAPSHOT_DEBOUNCE_MS = 1200; // batch joins so snapshots don't spam
 const LLM_FLUSH_MS = 150; // batch token deltas instead of one frame per token
 const TYPING_TIMEOUT_MS = 3000;
 const TYPING_SEND_INTERVAL_MS = 1000;
+const MAX_NAME_CHARS = 32;
+const MAX_CHAT_CHARS = 4000;
+const MAX_MESSAGE_ID_CHARS = 128;
+const MAX_LLM_DELTA_CHARS = 64 * 1024;
+const MAX_LLM_FINAL_CHARS = 512 * 1024;
+const MAX_SNAPSHOT_MESSAGES = 1000;
 
 // Types and reactive state
 
@@ -73,6 +79,9 @@ interface PendingJoin {
   roomId?: string;
   keyB64?: string;
   hostToken?: string;
+  guestToken?: string;
+  signingPublicB64?: string;
+  signingPrivateB64?: string;
 }
 
 export const mpState = $state({
@@ -110,6 +119,17 @@ let ws: WebSocket | null = null;
 let cryptoKey: CryptoKey | null = null;
 let keyB64 = '';
 let hostToken: string | null = null;
+let guestToken = '';
+let signingPrivateKey: CryptoKey | null = null;
+let signingPublicKey: CryptoKey | null = null;
+let signingPublicB64 = '';
+let signingPrivateB64 = '';
+let hostSequence = 0;
+let lastVerifiedHostSequence = 0;
+let hostStateInitialized = false;
+let hostRelayChain = Promise.resolve();
+let generationLockRequested = false;
+const seenGenerationRequests = new Set<string>();
 const seenIds = new Set<string>();
 const completedStreamIds = new Set<string>();
 const persistedIds = new Set<string>();
@@ -159,6 +179,10 @@ const b64u = {
   },
 };
 
+function validKeyBytes(bytes: Uint8Array): boolean {
+  return bytes.byteLength === 32;
+}
+
 async function generateKey(): Promise<void> {
   cryptoKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, [
     'encrypt',
@@ -169,6 +193,7 @@ async function generateKey(): Promise<void> {
 
 async function importKey(b64: string): Promise<void> {
   const decoded = b64u.decode(b64);
+  if (!validKeyBytes(decoded)) throw new Error('invalid room key');
   const keyBytes = new Uint8Array(decoded);
 
   cryptoKey = await crypto.subtle.importKey(
@@ -256,17 +281,31 @@ function parseLink(input: string): Omit<PendingJoin, 'mode'> | null {
   let roomId = '';
   let key = '';
   let host = '';
+  let guest = '';
+  let signingPublic = '';
+  let signingPrivate = '';
   try {
     const url = new URL(input, window.location.origin);
     roomId = url.searchParams.get('mp') ?? '';
     const frag = new URLSearchParams(url.hash.replace(/^#/, ''));
     key = frag.get('k') ?? '';
     host = frag.get('h') ?? '';
+    guest = frag.get('g') ?? '';
+    signingPublic = frag.get('s') ?? '';
+    signingPrivate = frag.get('sk') ?? '';
   } catch {
     return null;
   }
-  if (!roomId || !key) return null;
-  return { roomId: roomId.toUpperCase(), keyB64: key, hostToken: host || undefined };
+  if (!/^[A-HJ-NP-Z2-9]{6}$/i.test(roomId) || !key || !guest || !signingPublic) return null;
+  if (host && !signingPrivate) return null;
+  return {
+    roomId: roomId.toUpperCase(),
+    keyB64: key,
+    hostToken: host || undefined,
+    guestToken: guest,
+    signingPublicB64: signingPublic,
+    signingPrivateB64: signingPrivate || undefined,
+  };
 }
 
 function looksLikeBareCode(input: string): boolean {
@@ -285,6 +324,8 @@ export async function enterRoom(displayName: string): Promise<void> {
     } else {
       await importKey(pending.keyB64!);
       hostToken = pending.hostToken ?? null;
+      guestToken = pending.guestToken!;
+      await importSigningKeys(pending.signingPublicB64!, pending.signingPrivateB64);
       connect(pending.roomId!);
     }
   } catch {
@@ -339,6 +380,17 @@ export function prepareResume(): void {
   cryptoKey = null;
   keyB64 = '';
   hostToken = null;
+  guestToken = '';
+  signingPrivateKey = null;
+  signingPublicKey = null;
+  signingPublicB64 = '';
+  signingPrivateB64 = '';
+  hostSequence = 0;
+  lastVerifiedHostSequence = 0;
+  hostStateInitialized = false;
+  hostRelayChain = Promise.resolve();
+  generationLockRequested = false;
+  seenGenerationRequests.clear();
 
   Object.assign(mpState, {
     connected: false,
@@ -518,12 +570,14 @@ async function createRoom(): Promise<void> {
   await prepareHostSessionCharacter();
   const res = await fetch(`${RELAY_URL}/api/rooms`, { method: 'POST' });
   if (!res.ok) throw new Error('create failed');
-  const { room_id, host_token } = await res.json();
+  const { room_id, host_token, guest_token } = await res.json();
   await generateKey();
+  await generateSigningKeys();
   hostToken = host_token;
+  guestToken = guest_token;
   const base = `${window.location.origin}${window.location.pathname}`;
-  mpState.shareLink = `${base}?mp=${room_id}#k=${keyB64}`;
-  mpState.hostLink = `${base}?mp=${room_id}#k=${keyB64}&h=${host_token}`;
+  mpState.shareLink = `${base}?mp=${room_id}#k=${keyB64}&g=${guest_token}&s=${signingPublicB64}`;
+  mpState.hostLink = `${mpState.shareLink}&h=${host_token}&sk=${signingPrivateB64}`;
   mpState.showLinks = true;
   connect(room_id);
 }
@@ -537,7 +591,11 @@ function connect(roomId: string): void {
   ws = socket;
 
   socket.onopen = () => {
-    ws?.send(JSON.stringify({ t: 'hello', host_token: hostToken }));
+    ws?.send(JSON.stringify({
+      t: 'hello',
+      host_token: hostToken,
+      guest_token: hostToken ? undefined : guestToken,
+    }));
   };
 
   socket.onmessage = (ev) => {
@@ -614,6 +672,17 @@ function resetRoomState(): void {
   cryptoKey = null;
   keyB64 = '';
   hostToken = null;
+  guestToken = '';
+  signingPrivateKey = null;
+  signingPublicKey = null;
+  signingPublicB64 = '';
+  signingPrivateB64 = '';
+  hostSequence = 0;
+  lastVerifiedHostSequence = 0;
+  hostStateInitialized = false;
+  hostRelayChain = Promise.resolve();
+  generationLockRequested = false;
+  seenGenerationRequests.clear();
   seenIds.clear();
   completedStreamIds.clear();
   persistedIds.clear();
@@ -657,7 +726,7 @@ async function handleServerMsg(msg: any): Promise<void> {
       mpState.role = msg.role;
       mpState.count = msg.count;
       mpState.lockedBy = msg.locked_by ?? null;
-      mpState.everyoneCanGenerate = msg.everyone_can_generate;
+      mpState.everyoneCanGenerate = false;
       if (mpState.role === 'host') {
         mpState.characterName = appState.activeCharacter?.name ?? '';
       }
@@ -681,7 +750,7 @@ async function handleServerMsg(msg: any): Promise<void> {
 
     case 'relay': {
       const inner = await decryptJson(msg.p);
-      if (inner) handleDecrypted(inner, Number(msg.from));
+      if (inner) await handleDecrypted(inner, Number(msg.from));
       break;
     }
 
@@ -690,18 +759,23 @@ async function handleServerMsg(msg: any): Promise<void> {
       // Triggering and running are separate concerns: no matter who grabbed
       // the lock, generation always happens on the host, since only it has
       // the key, the context, and the LLM.
-      if (mpState.role === 'host') void runGeneration();
+      if (mpState.role === 'host' && generationLockRequested) {
+        generationLockRequested = false;
+        void runGeneration();
+      }
       break;
 
     case 'unlocked':
       mpState.lockedBy = null;
+      generationLockRequested = false;
       // The relay watchdog already released the lock. Cancel only the matching
       // host request and let its normal finalizer publish/persist the partial.
       if (activeGeneration) cancelActiveGeneration(false);
       break;
 
     case 'policy':
-      mpState.everyoneCanGenerate = msg.everyone;
+      // UI policy is host-signed inside the encrypted channel. The relay uses
+      // this metadata for lock arbitration but is not trusted to set client state.
       break;
 
     case 'room_closed':
@@ -711,23 +785,48 @@ async function handleServerMsg(msg: any): Promise<void> {
     case 'error':
       // "locked" / "not_allowed" / "already_locked": the UI blocks these
       // anyway, so just ignore defensively here.
+      if (msg.code === 'already_locked' || msg.code === 'not_allowed') {
+        generationLockRequested = false;
+      }
       break;
   }
 }
 
 // Decrypted application frames (the actual protocol, opaque to the server)
 
-function handleDecrypted(inner: any, sourceId: number): void {
+function safeTimestamp(value: unknown, fallback = Date.now()): number {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp >= 0 && timestamp <= 8.64e15
+    ? timestamp
+    : fallback;
+}
+
+async function handleDecrypted(inner: any, sourceId: number): Promise<void> {
+  if (!inner || typeof inner !== 'object') return;
+  let hostAuthenticated = false;
+  if (inner.k === 'host') {
+    inner = await verifyHostEnvelope(inner);
+    if (!inner || typeof inner !== 'object') return;
+    hostAuthenticated = true;
+  }
+  if (['llm_d', 'llm_e', 'snap', 'policy'].includes(inner.k) && !hostAuthenticated) return;
+
   switch (inner.k) {
     case 'chat':
-      if (typeof inner.id !== 'string' || seenIds.has(inner.id)) return;
+      if (typeof inner.id !== 'string'
+        || inner.id.length > MAX_MESSAGE_ID_CHARS
+        || seenIds.has(inner.id)
+        || typeof inner.name !== 'string'
+        || inner.name.length > MAX_NAME_CHARS
+        || typeof inner.text !== 'string'
+        || inner.text.length > MAX_CHAT_CHARS) return;
       seenIds.add(inner.id);
       const message: MpMessage = {
         id: inner.id,
         kind: 'chat',
         author: String(inner.name ?? '?'),
         text: String(inner.text ?? ''),
-        ts: Number(inner.ts) || Date.now(),
+        ts: safeTimestamp(inner.ts),
       };
       insertSorted(message);
       clearRemoteTyping(sourceId);
@@ -739,14 +838,29 @@ function handleDecrypted(inner: any, sourceId: number): void {
       if (inner.active === false) {
         clearRemoteTyping(sourceId);
       } else {
-        showRemoteTyping(sourceId, String(inner.name ?? '?'));
+        if (typeof inner.name === 'string' && inner.name.length <= MAX_NAME_CHARS) {
+          showRemoteTyping(sourceId, inner.name);
+        }
       }
       break;
 
+    case 'gen_req': {
+      if (mpState.role !== 'host' || !mpState.everyoneCanGenerate || mpState.lockedBy !== null) return;
+      if (typeof inner.id !== 'string'
+        || inner.id.length > MAX_MESSAGE_ID_CHARS
+        || seenGenerationRequests.has(inner.id)) return;
+      seenGenerationRequests.add(inner.id);
+      generationLockRequested = true;
+      ws?.send(JSON.stringify({ t: 'gen_start' }));
+      break;
+    }
+
     case 'llm_d': {
       const mid = String(inner.mid);
+      if (!mid || mid.length > MAX_MESSAGE_ID_CHARS || typeof inner.d !== 'string'
+        || inner.d.length > MAX_LLM_DELTA_CHARS) return;
       if (completedStreamIds.has(mid) || activeGeneration?.messageId === mid) return;
-      const delta = String(inner.d ?? '');
+      const delta = inner.d;
 
       let m = mpState.messages.find((x) => x.id === mid);
 
@@ -756,7 +870,7 @@ function handleDecrypted(inner: any, sourceId: number): void {
           kind: 'llm',
           author: String(inner.name ?? mpState.characterName ?? 'AI'),
           text: delta,
-          ts: Number(inner.ts) || Date.now(),
+          ts: safeTimestamp(inner.ts),
           streaming: true,
         };
 
@@ -771,6 +885,7 @@ function handleDecrypted(inner: any, sourceId: number): void {
 
     case 'llm_e': {
       const mid = String(inner.mid);
+      if (!mid || mid.length > MAX_MESSAGE_ID_CHARS) return;
       const cancelled = inner.cancelled === true;
       if (cancelled) {
         seenIds.add(mid);
@@ -783,9 +898,11 @@ function handleDecrypted(inner: any, sourceId: number): void {
       }
       if (completedStreamIds.has(mid) || activeGeneration?.messageId === mid) return;
       completedStreamIds.add(mid);
-      const finalText = typeof inner.text === 'string' ? inner.text : null;
+      const finalText = typeof inner.text === 'string' && inner.text.length <= MAX_LLM_FINAL_CHARS
+        ? inner.text
+        : null;
       const finalAuthor = typeof inner.name === 'string' ? inner.name : null;
-      const finalTimestamp = Number(inner.ts) || 0;
+      const finalTimestamp = safeTimestamp(inner.ts, 0);
       let m = mpState.messages.find((x) => x.id === mid);
       if (!m && finalText !== null) {
         m = {
@@ -824,17 +941,23 @@ function handleDecrypted(inner: any, sourceId: number): void {
         mpState.characterName = inner.charName;
       }
       applySessionCharacter(inner.character);
-      if (Array.isArray(inner.msgs)) {
+      if (Array.isArray(inner.msgs) && inner.msgs.length <= MAX_SNAPSHOT_MESSAGES) {
         let added = false;
         for (const raw of inner.msgs) {
-          if (typeof raw?.id !== 'string' || seenIds.has(raw.id)) continue;
+          if (typeof raw?.id !== 'string'
+            || raw.id.length > MAX_MESSAGE_ID_CHARS
+            || seenIds.has(raw.id)
+            || typeof raw.author !== 'string'
+            || raw.author.length > MAX_NAME_CHARS
+            || typeof raw.text !== 'string'
+            || raw.text.length > MAX_LLM_FINAL_CHARS) continue;
           seenIds.add(raw.id);
           const message: MpMessage = {
             id: raw.id,
             kind: raw.kind === 'llm' ? 'llm' : 'chat',
             author: String(raw.author ?? '?'),
             text: String(raw.text ?? ''),
-            ts: Number(raw.ts) || 0,
+            ts: safeTimestamp(raw.ts, 0),
           };
           mpState.messages.push(message);
           void persistMessageOnce(message);
@@ -842,6 +965,10 @@ function handleDecrypted(inner: any, sourceId: number): void {
         }
         if (added) mpState.messages.sort((a, b) => a.ts - b.ts);
       }
+      break;
+
+    case 'policy':
+      if (typeof inner.everyone === 'boolean') mpState.everyoneCanGenerate = inner.everyone;
       break;
   }
 }
@@ -861,6 +988,89 @@ function pushSystem(text: string): void {
 async function sendRelay(obj: unknown): Promise<void> {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({ t: 'relay', p: await encryptJson(obj) }));
+}
+
+async function generateSigningKeys(): Promise<void> {
+  const pair = await crypto.subtle.generateKey(
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    true,
+    ['sign', 'verify'],
+  );
+  signingPrivateKey = pair.privateKey;
+  signingPublicKey = pair.publicKey;
+  signingPublicB64 = b64u.encode(await crypto.subtle.exportKey('raw', pair.publicKey));
+  signingPrivateB64 = b64u.encode(await crypto.subtle.exportKey('pkcs8', pair.privateKey));
+}
+
+async function importSigningKeys(publicB64: string, privateB64?: string): Promise<void> {
+  const publicBytes = new Uint8Array(b64u.decode(publicB64));
+  if (publicBytes.byteLength !== 65) throw new Error('invalid host signing key');
+  signingPublicKey = await crypto.subtle.importKey(
+    'raw',
+    publicBytes,
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['verify'],
+  );
+  signingPublicB64 = publicB64;
+  if (privateB64) {
+    signingPrivateKey = await crypto.subtle.importKey(
+      'pkcs8',
+      new Uint8Array(b64u.decode(privateB64)),
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['sign'],
+    );
+    signingPrivateB64 = privateB64;
+  }
+}
+
+function hostSignatureInput(sequence: number, body: unknown): Uint8Array {
+  return new TextEncoder().encode(
+    JSON.stringify({ v: 1, room: mpState.roomId, sequence, body }),
+  );
+}
+
+async function verifyHostEnvelope(envelope: any): Promise<unknown | null> {
+  if (!signingPublicKey || envelope?.v !== 1 || !Number.isSafeInteger(envelope.sequence)) return null;
+  if (envelope.sequence <= lastVerifiedHostSequence || typeof envelope.sig !== 'string') return null;
+  try {
+    const valid = await crypto.subtle.verify(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      signingPublicKey,
+      new Uint8Array(b64u.decode(envelope.sig)),
+      hostSignatureInput(envelope.sequence, envelope.body),
+    );
+    if (!valid) return null;
+    if (!hostStateInitialized && envelope.body?.k !== 'snap') return null;
+    lastVerifiedHostSequence = envelope.sequence;
+    hostStateInitialized = true;
+    return envelope.body;
+  } catch {
+    return null;
+  }
+}
+
+function sendHostRelay(body: unknown): Promise<void> {
+  hostRelayChain = hostRelayChain
+    .catch(() => undefined)
+    .then(async () => {
+      if (!signingPrivateKey || !ws || ws.readyState !== WebSocket.OPEN) return;
+      const sequence = ++hostSequence;
+      const signature = await crypto.subtle.sign(
+        { name: 'ECDSA', hash: 'SHA-256' },
+        signingPrivateKey,
+        hostSignatureInput(sequence, body),
+      );
+      await sendRelay({
+        k: 'host',
+        v: 1,
+        sequence,
+        body,
+        sig: b64u.encode(signature),
+      });
+    });
+  return hostRelayChain;
 }
 
 function clearRemoteTyping(sourceId?: number): void {
@@ -918,12 +1128,19 @@ export async function sendChat(text: string): Promise<void> {
 export function requestGeneration(): void {
   if (mpState.lockedBy !== null) return;
   if (!(mpState.role === 'host' || mpState.everyoneCanGenerate)) return;
-  ws?.send(JSON.stringify({ t: 'gen_start' }));
+  if (mpState.role === 'host') {
+    generationLockRequested = true;
+    ws?.send(JSON.stringify({ t: 'gen_start' }));
+  } else {
+    void sendRelay({ k: 'gen_req', id: crypto.randomUUID() });
+  }
 }
 
 export function setPolicy(everyone: boolean): void {
   if (mpState.role !== 'host') return;
+  mpState.everyoneCanGenerate = everyone;
   ws?.send(JSON.stringify({ t: 'policy', everyone }));
+  void sendHostRelay({ k: 'policy', everyone });
 }
 
 /** Host cancels the current generation; its finalizer releases the lock. */
@@ -938,7 +1155,7 @@ function scheduleSnapshot(): void {
   if (snapshotTimer) clearTimeout(snapshotTimer);
   snapshotTimer = setTimeout(() => {
     snapshotTimer = null;
-    void sendRelay({
+    void sendHostRelay({
       k: 'snap',
       charName: mpState.characterName,
       character: mpState.sessionCharacter,
@@ -946,6 +1163,7 @@ function scheduleSnapshot(): void {
         .filter((m) => m.kind !== 'system' && !m.streaming)
         .map(({ id, kind, author, text, ts }) => ({ id, kind, author, text, ts })),
     });
+    void sendHostRelay({ k: 'policy', everyone: mpState.everyoneCanGenerate });
   }, SNAPSHOT_DEBOUNCE_MS);
 }
 
@@ -986,7 +1204,7 @@ function cancelActiveGeneration(releaseLock: boolean, discardPartial = false): v
 function queueGenerationRelay(generation: ActiveGeneration, payload: unknown): Promise<void> {
   generation.relayChain = generation.relayChain
     .catch(() => undefined)
-    .then(() => sendRelay(payload));
+    .then(() => sendHostRelay(payload));
   return generation.relayChain;
 }
 
