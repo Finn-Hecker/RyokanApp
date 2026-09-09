@@ -8,6 +8,7 @@
     enterRoom,
     leaveRoom,
     sendChat,
+    sendTyping,
     requestGeneration,
     abortGeneration,
     setPolicy,
@@ -296,6 +297,11 @@
               </div>
             {/if}
           {/each}
+          {#if mpState.remoteTypingName}
+            <p class="mb-6 px-1 text-sm italic text-gray-500" aria-live="polite">
+              {m.mp_human_typing({ name: mpState.remoteTypingName })}
+            </p>
+          {/if}
         </div>
       </div>
 
@@ -309,6 +315,7 @@
                 rows="1"
                 maxlength="4000"
                 placeholder={locked ? m.mp_input_locked_placeholder() : m.mp_input_placeholder()}
+                oninput={() => sendTyping(Boolean(chatInput.trim()))}
                 onkeydown={handleComposerKeydown}
                 class="block min-h-[56px] max-h-40 w-full resize-none bg-transparent px-5 pb-2 pt-4 text-[15px] leading-relaxed text-ryokan-text outline-none placeholder:text-[#44444c] disabled:cursor-not-allowed disabled:opacity-50"
               ></textarea>

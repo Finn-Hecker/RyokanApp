@@ -31,6 +31,8 @@ const RELAY_WS = RELAY_URL.replace(/^http/, 'ws');
 
 const SNAPSHOT_DEBOUNCE_MS = 1200; // batch joins so snapshots don't spam
 const LLM_FLUSH_MS = 150; // batch token deltas instead of one frame per token
+const TYPING_TIMEOUT_MS = 3000;
+const TYPING_SEND_INTERVAL_MS = 1000;
 
 // Types and reactive state
 
@@ -84,6 +86,7 @@ export const mpState = $state({
   everyoneCanGenerate: false,
   generating: false, // true only on the host while it runs the LLM call
   messages: [] as MpMessage[],
+  remoteTypingName: '',
   displayName: '',
   characterName: '',
   /** Host-authoritative character data for this room; transient on guests. */
@@ -114,6 +117,11 @@ const persistenceInFlight = new Map<string, Promise<void>>();
 let snapshotTimer: ReturnType<typeof setTimeout> | null = null;
 let sessionPromise: Promise<string> | null = null;
 let shouldInsertInitialGreeting = false;
+let remoteTypingId: number | null = null;
+let remoteTypingTimer: ReturnType<typeof setTimeout> | null = null;
+let localTyping = false;
+let lastTypingSentAt = 0;
+let typingRelayChain = Promise.resolve();
 
 interface ActiveGeneration {
   id: string;
@@ -599,6 +607,10 @@ function resetRoomState(): void {
   cancelActiveGeneration(false);
   if (snapshotTimer) clearTimeout(snapshotTimer);
   snapshotTimer = null;
+  clearRemoteTyping();
+  localTyping = false;
+  lastTypingSentAt = 0;
+  typingRelayChain = Promise.resolve();
   cryptoKey = null;
   keyB64 = '';
   hostToken = null;
@@ -619,6 +631,7 @@ function resetRoomState(): void {
     everyoneCanGenerate: false,
     generating: false,
     messages: [],
+    remoteTypingName: '',
     characterName: '',
     sessionCharacter: null,
     conversationId: null,
@@ -662,12 +675,13 @@ async function handleServerMsg(msg: any): Promise<void> {
 
     case 'left':
       mpState.count = msg.count;
+      clearRemoteTyping(Number(msg.id));
       pushSystem(`__left:${msg.id}`);
       break;
 
     case 'relay': {
       const inner = await decryptJson(msg.p);
-      if (inner) handleDecrypted(inner);
+      if (inner) handleDecrypted(inner, Number(msg.from));
       break;
     }
 
@@ -703,7 +717,7 @@ async function handleServerMsg(msg: any): Promise<void> {
 
 // Decrypted application frames (the actual protocol, opaque to the server)
 
-function handleDecrypted(inner: any): void {
+function handleDecrypted(inner: any, sourceId: number): void {
   switch (inner.k) {
     case 'chat':
       if (typeof inner.id !== 'string' || seenIds.has(inner.id)) return;
@@ -716,7 +730,17 @@ function handleDecrypted(inner: any): void {
         ts: Number(inner.ts) || Date.now(),
       };
       insertSorted(message);
+      clearRemoteTyping(sourceId);
       void persistMessageOnce(message);
+      break;
+
+    case 'typing':
+      if (sourceId === mpState.selfId) return;
+      if (inner.active === false) {
+        clearRemoteTyping(sourceId);
+      } else {
+        showRemoteTyping(sourceId, String(inner.name ?? '?'));
+      }
       break;
 
     case 'llm_d': {
@@ -839,9 +863,38 @@ async function sendRelay(obj: unknown): Promise<void> {
   ws.send(JSON.stringify({ t: 'relay', p: await encryptJson(obj) }));
 }
 
+function clearRemoteTyping(sourceId?: number): void {
+  if (sourceId !== undefined && sourceId !== remoteTypingId) return;
+  if (remoteTypingTimer) clearTimeout(remoteTypingTimer);
+  remoteTypingTimer = null;
+  remoteTypingId = null;
+  mpState.remoteTypingName = '';
+}
+
+function showRemoteTyping(sourceId: number, name: string): void {
+  clearRemoteTyping();
+  remoteTypingId = sourceId;
+  mpState.remoteTypingName = name;
+  remoteTypingTimer = setTimeout(() => clearRemoteTyping(sourceId), TYPING_TIMEOUT_MS);
+}
+
+export function sendTyping(active = true): void {
+  if (!mpState.connected || !ws || ws.readyState !== WebSocket.OPEN) return;
+  const now = Date.now();
+  if (active && localTyping && now - lastTypingSentAt < TYPING_SEND_INTERVAL_MS) return;
+  if (!active && !localTyping) return;
+
+  localTyping = active;
+  lastTypingSentAt = now;
+  const frame = { k: 'typing', name: mpState.displayName || '?', active };
+  typingRelayChain = typingRelayChain.then(() => sendRelay(frame)).catch(() => undefined);
+}
+
 export async function sendChat(text: string): Promise<void> {
   const trimmed = text.trim();
   if (!trimmed || mpState.lockedBy !== null) return;
+  sendTyping(false);
+  await typingRelayChain;
   const msg = {
     k: 'chat',
     id: crypto.randomUUID(),

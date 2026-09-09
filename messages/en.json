@@ -178,6 +178,7 @@
   "settings_freqpenalty_preset_strong_hint": "0.6",
 
   "chat_typing_indicator": "is typing...",
+  "mp_human_typing": "{name} is typing…",
   "chat_status_online": "Online",
   "chat_thinking": "thinking...",
   "chat_placeholder": "Type a message...",
