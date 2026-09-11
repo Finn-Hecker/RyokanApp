@@ -1,7 +1,6 @@
 <script lang="ts">
   import * as m from '$lib/paraglide/messages';
-  import { marked } from 'marked';
-  import DOMPurify from 'dompurify';
+  import { renderMessageMarkdown } from '$lib/utils/renderMessageMarkdown';
   import { setSwipeIndex } from '$lib/stores/chatStore.svelte';
   import type { DisplayMessage } from '$lib/stores/chatStore.svelte';
 
@@ -47,8 +46,7 @@
   let displayText = $derived(
     isOocMsg ? msg.text.replace(/^\[OOC:\s*/, '').replace(/\]$/, '') : msg.text
   );
-  let rawHtml   = $derived(marked.parse(msg.text || '') as string);
-  let cleanHtml = $derived(DOMPurify.sanitize(rawHtml));
+  let cleanHtml = $derived(renderMessageMarkdown(msg.text));
 
   // Swipe
   let totalVariants = $derived(msg.swipeVariants?.length ?? 1);

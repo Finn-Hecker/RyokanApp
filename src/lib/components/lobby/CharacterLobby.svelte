@@ -84,7 +84,8 @@
   }
 
   function resolveDesc(char: any): string {
-    return char.prompt?.replace(/\{\{char\}\}/g, char.name) ?? '';
+    return (char.description?.trim() || char.prompt || '')
+      .replace(/\{\{char\}\}/g, char.name);
   }
 
   let filtered = $derived(

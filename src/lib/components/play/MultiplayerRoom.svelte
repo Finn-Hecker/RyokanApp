@@ -3,6 +3,7 @@
   import { appState } from '$lib/stores/appState.svelte';
   import { loadAllConversations } from '$lib/stores/chatStore.svelte';
   import { positionSentChatMessage } from '$lib/utils/chatScroll';
+  import { renderMessageMarkdown } from '$lib/utils/renderMessageMarkdown';
   import {
     mpState,
     enterRoom,
@@ -288,9 +289,9 @@
                 </span>
                 <div class="min-w-0 max-w-[720px] flex-1">
                   <p class="mb-1 text-[11px] font-medium text-ryokan-accent/80">{msg.author}</p>
-                  <p class="whitespace-pre-wrap break-words text-[15px] leading-relaxed text-gray-200">
-                    {msg.text}{#if msg.streaming}<span class="ml-1 inline-block h-3.5 w-1 animate-pulse rounded-sm bg-ryokan-accent align-middle"></span>{/if}
-                  </p>
+                  <div class="prose-custom break-words text-[15px] leading-relaxed text-gray-200">
+                    {@html renderMessageMarkdown(msg.text)}{#if msg.streaming}<span class="ml-1 inline-block h-3.5 w-1 animate-pulse rounded-sm bg-ryokan-accent align-middle"></span>{/if}
+                  </div>
                 </div>
               </div>
             {:else}
@@ -369,3 +370,10 @@
     </div>
   {/if}
 </PageLayout>
+
+<style>
+  :global(.prose-custom p)            { margin-bottom: 1.2em; }
+  :global(.prose-custom p:last-child) { margin-bottom: 0; }
+  :global(.prose-custom strong)       { color: #ffffff; font-weight: 600; }
+  :global(.prose-custom em)           { color: #a39887; font-style: italic; }
+</style>

@@ -1,30 +1,33 @@
 import * as m from '$lib/paraglide/messages';
-import maraAvatar from '$lib/assets/avatars/mara.webp';
-import ilyanAvatar from '$lib/assets/avatars/ilyan.webp';
-import brokenGasStation from '$lib/assets/avatars/broken_gas_station.webp';
+
+import scenarioBadPlan from '$lib/assets/avatars/scenario_bad_plan.webp';
+import scenarioNightShift from '$lib/assets/avatars/scenario_night_shift.webp';
+import scenarioIslandPrison from '$lib/assets/avatars/scenario_island_prison.webp';
 
 export const SOLO_CHARACTERS = [
   {
     id: 1,
-    name: m.char_mara_name(),
-    prompt: m.char_mara_prompt(),
+    name: m.scenario_bad_plan_name(),
+    description: m.scenario_bad_plan_description(),
+    prompt: m.scenario_bad_plan_prompt(),
     color: "bg-amber-600",
     play_mode: 'solo' as const,
-    initials: "M",
-    greeting: m.char_mara_greeting(),
-    avatarUrl: maraAvatar,
+    initials: "BP",
+    greeting: m.scenario_bad_plan_greeting(),
+    avatarUrl: scenarioBadPlan,
     alternate_greetings: [],
     world_info_ids: [],
   },
   {
     id: 2,
-    name: m.char_ilyan_name(),
-    prompt: m.char_ilyan_prompt(),
+    name: m.scenario_night_shift_name(),
+    description: m.scenario_night_shift_description(),
+    prompt: m.scenario_night_shift_prompt(),
     color: "bg-stone-700",
     play_mode: 'solo' as const,
-    initials: "I",
-    greeting: m.char_ilyan_greeting(),
-    avatarUrl: ilyanAvatar,
+    initials: "NS",
+    greeting: m.scenario_night_shift_greeting(),
+    avatarUrl: scenarioNightShift,
     alternate_greetings: [],
     world_info_ids: [],
   }
@@ -33,17 +36,20 @@ export const SOLO_CHARACTERS = [
 export const MULTIPLAYER_CHARACTERS = [
   {
     id: 3,
-    name: m.char_broken_gas_station_name(),
-    description: m.char_broken_gas_station_description(),
-    prompt: m.char_broken_gas_station_prompt(),
+    name: m.scenario_island_prison_name(),
+    description: m.scenario_island_prison_description(),
+    prompt: m.scenario_island_prison_prompt(),
     color: "bg-sky-900",
     play_mode: 'multiplayer' as const,
-    initials: "GS",
-    greeting: m.char_broken_gas_station_greeting(),
-    avatarUrl: brokenGasStation,
+    initials: "IP",
+    greeting: m.scenario_island_prison_greeting(),
+    avatarUrl: scenarioIslandPrison,
     alternate_greetings: [],
     world_info_ids: [],
   }
 ];
 
-export const CHARACTERS = [...SOLO_CHARACTERS, ...MULTIPLAYER_CHARACTERS];
+export const CHARACTERS = [
+  ...SOLO_CHARACTERS,
+  ...MULTIPLAYER_CHARACTERS
+];
