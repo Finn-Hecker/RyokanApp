@@ -110,7 +110,6 @@
     modelError = '';
 
     try {
-      await saveSetting('ai_language', selectedLanguage);
       await saveSetting('api_url', apiUrl);
       await saveSetting('api_key', apiKey);
       await saveSetting('api_model', selectedModel);
@@ -120,7 +119,6 @@
 
       appState.apiSettings = {
         ...appState.apiSettings,
-        aiLanguage: selectedLanguage,
         url:        apiUrl,
         apiKey:     apiKey,
         model:      selectedModel

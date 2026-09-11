@@ -38,15 +38,12 @@
     sectionEls[id]?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  const DEFAULT_AI_LANGUAGE = "English";
-
   const SETTINGS_MAP: Record<string, (value: string) => void> = {
     api_url:              (v) => (appState.apiSettings.url = v),
     api_key:              (v) => (appState.apiSettings.apiKey = v),
     api_model:            (v) => (appState.apiSettings.model = v),
     api_custom_mode:      (v) => (appState.apiSettings.customMode = v === "true"),
     thinking_mode:        (v) => (appState.apiSettings.isThinkingModel = v === "true"),
-    ai_language:          (v) => (appState.apiSettings.aiLanguage = v),
     system_prompt:        (v) => (appState.apiSettings.systemPrompt = v),
     api_temperature:      (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.temperature = n; },
     api_max_tokens:       (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.maxTokens = n; },
@@ -67,7 +64,6 @@
       const settings = await getAllSettings();
       parameterEnabled = readApiParameterEnabled(settings);
       for (const row of settings) SETTINGS_MAP[row.key]?.(row.value);
-      if (!appState.apiSettings.aiLanguage) appState.apiSettings.aiLanguage = DEFAULT_AI_LANGUAGE;
       if (appState.apiSettings.maxTokens == null) appState.apiSettings.maxTokens = 300;
       if (appState.apiSettings.presencePenalty == null) appState.apiSettings.presencePenalty = 1.1;
       if (appState.apiSettings.thinkingBudget == null) appState.apiSettings.thinkingBudget = 2500;
@@ -82,7 +78,6 @@
         apiKeyConfigured: Boolean(appState.apiSettings.apiKey),
         model:           appState.apiSettings.model,
         isThinkingModel: appState.apiSettings.isThinkingModel,
-        aiLanguage:      appState.apiSettings.aiLanguage,
         systemPrompt:    appState.apiSettings.systemPrompt,
         temperature:     appState.apiSettings.temperature,
         maxTokens:       appState.apiSettings.maxTokens,
@@ -110,7 +105,6 @@
         saveSetting("api_model",            appState.apiSettings.model),
         saveSetting("api_custom_mode",      appState.apiSettings.customMode),
         saveSetting("thinking_mode",        appState.apiSettings.isThinkingModel),
-        saveSetting("ai_language",          appState.apiSettings.aiLanguage),
         saveSetting("system_prompt",        appState.apiSettings.systemPrompt),
         saveSetting("api_temperature",      appState.apiSettings.temperature ?? 0.7),
         saveSetting("api_max_tokens",       appState.apiSettings.maxTokens ?? 300),

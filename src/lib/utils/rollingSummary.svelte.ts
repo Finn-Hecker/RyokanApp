@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { appState } from '$lib/stores/appState.svelte';
+import { getClientLanguageName } from '$lib/utils/clientLanguage';
 import { chatState } from '$lib/stores/chatStore.svelte';
 import type { Message } from '$lib/stores/chatStore.svelte';
 import { buildApiMessages } from '$lib/utils/chatApi';
@@ -131,7 +132,7 @@ async function generateSummary(
         `(3) Keep: character names, relationships, locations, key decisions, unresolved tensions. ` +
         `(4) Use short, dense sentences — no prose padding. ` +
         `(5) Hard limit: ${MAX_SUMMARY_TOKENS} tokens total. Cut low-priority details before exceeding it. ` +
-        `(6) Write in ${apiSettings.aiLanguage || 'English'}. ` +
+        `(6) Write in ${getClientLanguageName()}. ` +
         `Output only the summary — no intro, no labels, no commentary.`;
 
     const summarizeMessages = [

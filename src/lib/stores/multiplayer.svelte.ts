@@ -20,6 +20,7 @@
 import { appState } from './appState.svelte';
 import { invoke } from '@tauri-apps/api/core';
 import { processThinkingOutput } from '$lib/utils/chatApi';
+import { getClientLanguageName } from '$lib/utils/clientLanguage';
 import { selectInitialGreeting } from '$lib/utils/characterGreeting';
 import type { Character } from './characterStore.svelte';
 
@@ -1383,9 +1384,7 @@ function buildLlmMessages(): Array<{ role: string; content: string }> {
   if (char?.prompt) {
     system += `${system ? '\n\n' : ''}You are ${char.name ?? 'the character'}. ${char.prompt}`;
   }
-  if (s.aiLanguage) {
-    system += `${system ? '\n' : ''}Respond in ${s.aiLanguage}.`;
-  }
+  system += `${system ? '\n' : ''}Respond in ${getClientLanguageName()}.`;
 
   // 1) collect history as before, walking backwards within a character budget
   const budget = Math.max(1000, (s.contextLimit || 4096) * 3);

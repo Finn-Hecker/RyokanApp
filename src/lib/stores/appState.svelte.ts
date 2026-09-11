@@ -3,7 +3,6 @@ export interface ApiSettings {
   apiKey: string;
   model: string;
   isThinkingModel: boolean;
-  aiLanguage: string;
   systemPrompt: string;
   temperature: number;
   maxTokens: number;
@@ -29,7 +28,6 @@ export const appState = $state({
     apiKey: "",
     model: "",
     isThinkingModel: false,
-    aiLanguage: "German",
     systemPrompt: "",
     temperature: 0.8,
     thinkingBudget: 2500,
