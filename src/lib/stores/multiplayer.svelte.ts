@@ -26,8 +26,9 @@ import type { Character } from './characterStore.svelte';
 
 // Configuration
 
-export const RELAY_URL: string =
-  (import.meta as any).env?.VITE_RELAY_URL ?? 'http://127.0.0.1:8787';
+export const RELAY_URL: string = (
+  (import.meta as any).env?.VITE_RELAY_URL ?? 'https://ryokan-relay.duckdns.org'
+).replace(/\/+$/, '');
 const RELAY_WS = RELAY_URL.replace(/^http/, 'ws');
 
 const SNAPSHOT_DEBOUNCE_MS = 1200; // batch joins so snapshots don't spam
@@ -576,8 +577,7 @@ async function createRoom(): Promise<void> {
   await generateSigningKeys();
   hostToken = host_token;
   guestToken = guest_token;
-  const base = `${window.location.origin}${window.location.pathname}`;
-  mpState.shareLink = `${base}?mp=${room_id}#k=${keyB64}&g=${guest_token}&s=${signingPublicB64}`;
+  mpState.shareLink = `${RELAY_URL}/?mp=${room_id}#k=${keyB64}&g=${guest_token}&s=${signingPublicB64}`;
   mpState.hostLink = `${mpState.shareLink}&h=${host_token}&sk=${signingPrivateB64}`;
   mpState.showLinks = true;
   connect(room_id);
