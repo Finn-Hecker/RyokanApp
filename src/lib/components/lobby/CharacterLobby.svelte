@@ -2,13 +2,11 @@
   import { appState } from '$lib/stores/appState.svelte';
   import { characterState, loadCharacters, toggleHideCharacter, togglePinCharacter, deleteCharacter, loadHiddenIds, loadPinnedIds } from '$lib/stores/characterStore.svelte';
   import { startNewChat } from '$lib/stores/chatStore.svelte';
-  import { loadRoles } from '$lib/stores/roleStore.svelte';
   import { onMount } from 'svelte';
 
   import Sidebar from '$lib/components/Sidebar.svelte';
   import PageLayout from '$lib/components/layouts/PageLayout.svelte';
   import Button from '$lib/components/ui/Button.svelte';
-  import UserDropdown from '$lib/components/UserDropdown.svelte';
   import * as m from '$lib/paraglide/messages';
 
   import LobbyToolbar from './LobbyToolbar.svelte';
@@ -28,7 +26,6 @@
     await loadHiddenIds();
     await loadPinnedIds();
     await loadCharacters();
-    await loadRoles();
     const saved = localStorage.getItem('ryokan-view-mode');
     if (saved === 'grid' || saved === 'compact' || saved === 'list') {
       viewMode = saved;
@@ -44,6 +41,10 @@
   function onOpenCreate() {
     appState.editingCharacter = null;
     appState.currentView = 'create';
+  }
+
+  function onOpenGroups() {
+    appState.currentView = 'play';
   }
 
   function onOpenSettings() {
@@ -83,17 +84,19 @@
   }
 
   function resolveDesc(char: any): string {
-    return char.desc?.replace(/\{\{char\}\}/g, char.name) ?? '';
+    return (char.description?.trim() || char.prompt || '')
+      .replace(/\{\{char\}\}/g, char.name);
   }
 
   let filtered = $derived(
     (characterState.allCharacters ?? [])
       .filter(Boolean)
+      .filter((c: any) => c.play_mode === 'solo')
       .filter((c: any) => showHidden || !characterState.hiddenCharacterIds.has(String(c.id)))
       .filter((c: any) =>
         searchQuery.trim() === '' ||
         c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.desc?.toLowerCase().includes(searchQuery.toLowerCase())
+        c.prompt?.toLowerCase().includes(searchQuery.toLowerCase())
       )
       .sort((a: any, b: any) => {
         const aPinned = characterState.pinnedCharacterIds.has(String(a.id));
@@ -117,6 +120,19 @@
 
 {#snippet header()}
   <div class="flex items-center gap-3">
+    <Button variant="icon" ariaLabel={m.lobby_label_open_groups()} onclick={onOpenGroups}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="7" r="3"/>
+        <path d="M6 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
+        <circle cx="5" cy="9" r="2.2"/>
+        <path d="M1.5 19.5c0-2.4 1.6-3.9 3.5-3.9"/>
+        <circle cx="19" cy="9" r="2.2"/>
+        <path d="M22.5 19.5c0-2.4-1.6-3.9-3.5-3.9"/>
+      </svg>
+    </Button>
+
+    <div class="w-px h-6 bg-white/10"></div>
+
     <Button variant="secondary" onclick={onOpenCreate}>
       <svg class="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -129,7 +145,6 @@
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
       </svg>
     </Button>
-    <UserDropdown />
   </div>
 {/snippet}
 

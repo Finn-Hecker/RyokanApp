@@ -8,13 +8,25 @@
   import ApiSection from "./ApiSection.svelte";
   import GeneralSection from "./GeneralSection.svelte";
   import Button from '$lib/components/ui/Button.svelte';
+  import {
+    API_PARAMETER_SETTING_KEYS,
+    createDefaultApiParameterEnabled,
+    readApiParameterEnabled,
+    type ApiParameterKey,
+  } from "$lib/utils/apiParameters";
 
   let powerUser = $state(false);
 
+  // Keep the numeric value and the enabled state separate. This way disabling a
+  // sampler does not destroy the user's tuned value, and re-enabling restores it.
+  let parameterEnabled = $state<Record<ApiParameterKey, boolean>>(
+    createDefaultApiParameterEnabled(),
+  );
+
   const NAV_ITEMS = [
-    { id: "api",      label: m.settings_nav_api(),              icon: "M12 2a10 10 0 100 20A10 10 0 0012 2zm0 3v2m0 10v2M5.22 5.22l1.42 1.42m10.72 10.72l1.42 1.42M2 12h2m16 0h2M5.22 18.78l1.42-1.42M17.36 6.64l1.42-1.42" },
-    { id: "behavior", label: m.settings_section_ai_behavior(),  icon: "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" },
-    { id: "general",  label: m.settings_nav_general(),          icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0" },
+    { id: "api",      label: m.settings_nav_api(),             icon: "M12 2a10 10 0 100 20A10 10 0 0012 2zm0 3v2m0 10v2M5.22 5.22l1.42 1.42m10.72 10.72l1.42 1.42M2 12h2m16 0h2M5.22 18.78l1.42-1.42M17.36 6.64l1.42-1.42" },
+    { id: "language", label: m.settings_section_language(),    icon: "M12 21a9 9 0 100-18 9 9 0 000 18zm0 0c2.21 0 4-4.03 4-9s-1.79-9-4-9-4 4.03-4 9 1.79 9 4 9zM3.5 12h17M5 7.5h14M5 16.5h14" },
+    { id: "behavior", label: m.settings_section_ai_behavior(), icon: "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" },
   ];
 
   let activeSection = $state("api");
@@ -26,18 +38,16 @@
     sectionEls[id]?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  const DEFAULT_AI_LANGUAGE = "English";
-
   const SETTINGS_MAP: Record<string, (value: string) => void> = {
     api_url:              (v) => (appState.apiSettings.url = v),
     api_key:              (v) => (appState.apiSettings.apiKey = v),
     api_model:            (v) => (appState.apiSettings.model = v),
     api_custom_mode:      (v) => (appState.apiSettings.customMode = v === "true"),
     thinking_mode:        (v) => (appState.apiSettings.isThinkingModel = v === "true"),
-    ai_language:          (v) => (appState.apiSettings.aiLanguage = v),
     system_prompt:        (v) => (appState.apiSettings.systemPrompt = v),
     api_temperature:      (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.temperature = n; },
     api_max_tokens:       (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.maxTokens = n; },
+    api_thinking_budget:  (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.thinkingBudget = n; },
     api_presence_penalty: (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.presencePenalty = n; },
     api_context_limit:    (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.contextLimit = n; },
     api_top_p:             (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.topP = n; },
@@ -52,10 +62,11 @@
   async function loadSettings() {
     try {
       const settings = await getAllSettings();
+      parameterEnabled = readApiParameterEnabled(settings);
       for (const row of settings) SETTINGS_MAP[row.key]?.(row.value);
-      if (!appState.apiSettings.aiLanguage) appState.apiSettings.aiLanguage = DEFAULT_AI_LANGUAGE;
       if (appState.apiSettings.maxTokens == null) appState.apiSettings.maxTokens = 300;
       if (appState.apiSettings.presencePenalty == null) appState.apiSettings.presencePenalty = 1.1;
+      if (appState.apiSettings.thinkingBudget == null) appState.apiSettings.thinkingBudget = 2500;
       if (appState.apiSettings.contextLimit == null) appState.apiSettings.contextLimit = 4096;
       if (appState.apiSettings.topP == null) appState.apiSettings.topP = 0.9;
       if (appState.apiSettings.topK == null) appState.apiSettings.topK = 40;
@@ -64,19 +75,20 @@
 
       console.log("[Settings] Loaded values:", {
         url:             appState.apiSettings.url,
-        apiKey:          appState.apiSettings.apiKey,
+        apiKeyConfigured: Boolean(appState.apiSettings.apiKey),
         model:           appState.apiSettings.model,
         isThinkingModel: appState.apiSettings.isThinkingModel,
-        aiLanguage:      appState.apiSettings.aiLanguage,
         systemPrompt:    appState.apiSettings.systemPrompt,
         temperature:     appState.apiSettings.temperature,
         maxTokens:       appState.apiSettings.maxTokens,
         presencePenalty: appState.apiSettings.presencePenalty,
+        thinkingBudget:  appState.apiSettings.thinkingBudget,
         contextLimit:    appState.apiSettings.contextLimit,
         topP:            appState.apiSettings.topP,
         topK:            appState.apiSettings.topK,
         minP:            appState.apiSettings.minP,
         frequencyPenalty: appState.apiSettings.frequencyPenalty,
+        parameterEnabled: { ...parameterEnabled },
         powerUser,
       });
     } catch (err) {
@@ -93,16 +105,19 @@
         saveSetting("api_model",            appState.apiSettings.model),
         saveSetting("api_custom_mode",      appState.apiSettings.customMode),
         saveSetting("thinking_mode",        appState.apiSettings.isThinkingModel),
-        saveSetting("ai_language",          appState.apiSettings.aiLanguage),
         saveSetting("system_prompt",        appState.apiSettings.systemPrompt),
         saveSetting("api_temperature",      appState.apiSettings.temperature ?? 0.7),
         saveSetting("api_max_tokens",       appState.apiSettings.maxTokens ?? 300),
+        saveSetting("api_thinking_budget",  appState.apiSettings.thinkingBudget ?? 2500),
         saveSetting("api_presence_penalty", appState.apiSettings.presencePenalty ?? 1.1),
         saveSetting("api_context_limit",    appState.apiSettings.contextLimit ?? 4096),
         saveSetting("api_top_p",             appState.apiSettings.topP ?? 0.9),
         saveSetting("api_top_k",             appState.apiSettings.topK ?? 40),
         saveSetting("api_min_p",             appState.apiSettings.minP ?? 0.05),
         saveSetting("api_frequency_penalty", appState.apiSettings.frequencyPenalty ?? 0),
+        ...Object.entries(API_PARAMETER_SETTING_KEYS).map(([parameter, settingKey]) =>
+          saveSetting(settingKey, parameterEnabled[parameter as ApiParameterKey])
+        ),
         saveSetting("settings_power_user",  powerUser),
       ]);
       const locale = appState.pendingUiLocale;
@@ -201,12 +216,12 @@
       <ApiSection {powerUser} />
     </div>
 
-    <div bind:this={sectionEls["behavior"]}>
-      <GeneralSection {powerUser} behaviorOnly={true} />
+    <div bind:this={sectionEls["language"]}>
+      <GeneralSection {powerUser} behaviorOnly={false} languageOnly={true} />
     </div>
 
-    <div bind:this={sectionEls["general"]}>
-      <GeneralSection {powerUser} behaviorOnly={false} languageOnly={true} />
+    <div bind:this={sectionEls["behavior"]}>
+      <GeneralSection {powerUser} bind:parameterEnabled behaviorOnly={true} />
     </div>
   </div>
 </PageWithNavSidebar>

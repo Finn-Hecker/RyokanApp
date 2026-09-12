@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
+import { selectInitialGreeting } from '$lib/utils/characterGreeting';
 import { appState } from './appState.svelte';
-import { characterState } from './characterStore.svelte';
-import { roleState } from './roleStore.svelte';
+import { characterState, loadCharacters } from './characterStore.svelte';
 import { getLocale } from '$lib/paraglide/runtime';
 
 export interface Message {
@@ -9,6 +9,7 @@ export interface Message {
     conversation_id: string;
     role: 'user' | 'assistant';
     content: string;
+    author?: string | null;
     swipe_variants: string[];
     swipe_index: number;
 }
@@ -16,7 +17,8 @@ export interface Message {
 export interface Conversation {
     id: string;
     title: string;
-    character_id: string;
+    character_id: string | null;
+    mode: 'singleplayer' | 'multiplayer';
     created_at: string;
     updated_at: string;
     is_pinned: boolean;
@@ -26,6 +28,8 @@ export interface Conversation {
     /** Title of the source chat at the time it was cloned. */
     cloned_from_title?: string | null;
 }
+
+export type ConversationMode = Conversation['mode'];
 
 export interface DisplayMessage {
     id: string;
@@ -62,12 +66,15 @@ const dateFormatter = new Intl.DateTimeFormat(getLocale(), {
 });
 
 const PAGE_SIZE = 15;
+let loadedConversationMode: ConversationMode = 'singleplayer';
 
-export async function loadAllConversations() {
+export async function loadAllConversations(mode: ConversationMode = loadedConversationMode) {
+    loadedConversationMode = mode;
     try {
         const result = await invoke<Conversation[]>('get_conversations_page', {
             limit: PAGE_SIZE,
             offset: 0,
+            mode,
         });
         chatState.conversations = result.map(chat => ({
             ...chat,
@@ -78,12 +85,17 @@ export async function loadAllConversations() {
     }
 }
 
-export async function loadMoreConversations(): Promise<boolean> {
+export async function loadMoreConversations(mode: ConversationMode = loadedConversationMode): Promise<boolean> {
+    if (mode !== loadedConversationMode) {
+        await loadAllConversations(mode);
+        return chatState.conversations.length === PAGE_SIZE;
+    }
     try {
         const currentLength = chatState.conversations.length;
         const result = await invoke<Conversation[]>('get_conversations_page', {
             limit: PAGE_SIZE,
             offset: currentLength,
+            mode,
         });
         if (result.length === 0) return false;
         chatState.conversations = [
@@ -102,40 +114,14 @@ export async function loadMoreConversations(): Promise<boolean> {
 
 export async function startNewChat(character: any) {
     try {
-        let allGreetings: string[] = [];
-        if (character.greeting && character.greeting.trim().length > 0) {
-            allGreetings.push(character.greeting);
-        }
-        if (character.alternate_greetings) {
-            try {
-                const altGreetings = typeof character.alternate_greetings === 'string'
-                    ? JSON.parse(character.alternate_greetings)
-                    : character.alternate_greetings;
-                if (Array.isArray(altGreetings)) {
-                    allGreetings.push(...altGreetings.filter((g: unknown) =>
-                        typeof g === 'string' && (g as string).trim().length > 0
-                    ));
-                }
-            } catch (e) {
-                console.warn("Could not parse alternative greetings:", e);
-            }
-        }
-        const rawGreeting = allGreetings.length > 0
-            ? allGreetings[Math.floor(Math.random() * allGreetings.length)]
-            : null;
-        const activeRole = roleState.allRoles.find(r => r.id === roleState.activeRoleId);
-        const userName: string = activeRole?.name ?? (character as any).userName ?? 'User';
-        const selectedGreeting = rawGreeting
-            ? rawGreeting
-                .replace(/\{\{char\}\}/gi, character.name)
-                .replace(/\{\{user\}\}/gi, userName)
-            : null;
+        const selectedGreeting = selectInitialGreeting(character);
         const newId = await invoke<string>('create_chat', {
             characterId: character.id.toString(),
             characterName: character.name,
-            initialMessage: selectedGreeting
+            initialMessage: selectedGreeting,
+            mode: 'singleplayer',
         });
-        await loadAllConversations();
+        await loadAllConversations('singleplayer');
         await loadMessages(newId);
     } catch (e) { console.error(e); }
 }
@@ -143,7 +129,9 @@ export async function startNewChat(character: any) {
 export async function openHistoryChat(chatId: string) {
     await loadMessages(chatId);
     const currentChat = chatState.conversations.find(c => c.id === chatId);
+    appState.activeCharacter = null;
     if (currentChat?.character_id) {
+        if (characterState.allCharacters.length === 0) await loadCharacters();
         const char = characterState.allCharacters.find(
             c => c.id.toString() === currentChat.character_id
         );
@@ -168,7 +156,7 @@ export async function cloneChatFromMessage(messageId: string): Promise<string | 
             chatId,
             upToMessageId: messageId,
         });
-        await loadAllConversations();
+        await loadAllConversations('singleplayer');
         return newChatId;
     } catch (e) {
         console.error(e);
@@ -256,7 +244,14 @@ export async function addMessage(role: 'user' | 'assistant', content: string) {
     const chatId = chatState.activeChatId;
     if (!chatId) return;
     try {
-        await invoke('add_message', { chatId, role, content });
+        await invoke('add_message', {
+            chatId,
+            role,
+            content,
+            author: null,
+            messageId: null,
+            createdAt: null,
+        });
         await loadAllConversations();
         await loadMessages(chatId);
     } catch (e) { console.error(e); }

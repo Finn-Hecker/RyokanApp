@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
   import { appState } from '$lib/stores/appState.svelte';
-  import { characterState, toggleHideCharacter } from '$lib/stores/characterStore.svelte';
+  import { characterState, normalizePlayMode, toggleHideCharacter } from '$lib/stores/characterStore.svelte';
+  import type { PlayMode } from '$lib/stores/characterStore.svelte';
   import * as m from '$lib/paraglide/messages';
 
   import SimpleFormPage from '$lib/components/layouts/SimpleFormPage.svelte';
@@ -11,12 +12,9 @@
   import DeleteConfirmDialog from '$lib/components/editor/shared/DeleteConfirmDialog.svelte';
 
   import CharacterTab from '$lib/components/editor/character/CharacterTab.svelte';
-  import RoleTab from '$lib/components/editor/roles/RolesTab.svelte';
   import WorldInfoTab from '$lib/components/editor/worldinfo/WorldInfoTab.svelte';
   import type { WorldInfoEntry } from '$lib/components/editor/worldinfo/worldInfoLogic';
   import { createWorldInfo, updateWorldInfo } from '$lib/components/editor/worldinfo/worldInfoLogic';
-  import { type Role } from '$lib/stores/roleStore.svelte';
-  import { saveNewRole, saveExistingRole, removeRole } from '$lib/components/editor/roles/rolesLogic';
 
   import {
     saveCharacter,
@@ -26,21 +24,15 @@
     readImageAsDataUrl
   } from '$lib/components/editor/character/characterLogic';
 
-  type Tab = 'character' | 'role' | 'worldinfo';
+  type Tab = 'character' | 'worldinfo';
 
   let activeTab = $state<Tab>('character');
-  let editRole = $state<Role | null>(null);
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     {
       id: 'character',
       label: m.creator_tab_character(),
       icon: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z'
-    },
-    {
-      id: 'role',
-      label: m.creator_tab_role(),
-      icon: 'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z M8 14s1.5 2 4 2 4-2 4-2 M9 9h.01 M15 9h.01'
     },
     {
       id: 'worldinfo',
@@ -53,27 +45,17 @@
   
   let isEditMode = $derived(!!editChar);
   let isHidden = $derived(editChar?.id != null ? characterState.hiddenCharacterIds.has(editChar.id) : false);
-  let isAnyEditMode = $derived(isEditMode || !!editRole);
+  let isAnyEditMode = $derived(isEditMode);
 
   // Character States
   let charName = $state('');
-  let charDescription = $state('');
-  let charPersonality = $state('');
-  let charScenario = $state('');
   let charGreeting = $state('');
-  let charMesExample = $state('');
-  let charCreatorNotes = $state('');
+  let charPrompt = $state('');
   let charAltGreetings = $state<string[]>([]);
+  let charPlayMode = $state<PlayMode>('solo');
   let worldInfoIds = $state<string[]>([]);
   let avatarPreview = $state<string | null>(null);
   let avatarChanged = $state(true);
-
-  // Role States
-  let roleName = $state('');
-  let roleDescription = $state('');
-  let rolePronouns = $state('');
-  let roleAvatar = $state<string | null>(null);
-  let roleAvatarChanged = $state(true);
 
   // WorldInfo States
   let worldInfoName = $state('');
@@ -95,10 +77,6 @@
   let fromRoleManager = $state(false);
 
   onMount(() => {
-    if (appState.currentView === 'roleEditor') {
-      activeTab = 'role';
-      fromRoleManager = true;
-    }
     if (appState.currentView === 'worldInfoEditor') {
       activeTab = 'worldinfo';
       fromRoleManager = true;
@@ -110,27 +88,15 @@
     editChar = current;
 
     charName = current.name ?? '';
-    charDescription = current.desc ?? '';
-    charPersonality = current.personality ?? '';
-    charScenario = current.scenario ?? '';
+    charPrompt = current.prompt ?? '';
     charGreeting = current.greeting ?? '';
-    charMesExample = current.mes_example ?? '';
-    charCreatorNotes = current.creator_notes ?? '';
     charAltGreetings = Array.isArray(current.alternate_greetings) ? current.alternate_greetings : [];
+    charPlayMode = normalizePlayMode(current.play_mode);
     worldInfoIds = Array.isArray(current.world_info_ids) ? current.world_info_ids : [];
 
     if (current.avatarUrl) {
       avatarPreview = current.avatarUrl;
       avatarChanged = false;
-    }
-
-    if (appState.currentView === 'roleEditor') {
-      editRole = current as Role;
-      roleName = editRole.name ?? '';
-      roleDescription = editRole.bio ?? '';
-      rolePronouns = editRole.pronouns ?? '';
-      roleAvatar = editRole.avatarUrl ?? null;
-      roleAvatarChanged = false;
     }
 
     if (appState.currentView === 'worldInfoEditor') {
@@ -148,10 +114,8 @@
 
   let canSave = $derived(
     activeTab === 'character'
-      ? !!(charName && charDescription)
-      : activeTab === 'role'
-        ? !!roleName
-        : !!worldInfoName
+      ? !!(charName.trim() && charPrompt.trim())
+      : !!worldInfoName
   );
 
   let saveLabel = $derived(m.create_page_btn_done());
@@ -186,25 +150,31 @@
     if (!file.type.includes('image')) return;
     try {
       const result = await importCharacterFromFile(file);
-      if (result.avatarDataUrl) { avatarPreview = result.avatarDataUrl; avatarChanged = true; }
-      if (result.name) charName = result.name;
-      if (result.description) charDescription = result.description;
-      if (result.personality) charPersonality = result.personality;
-      if (result.scenario) charScenario = result.scenario;
-      if (result.greeting) charGreeting = result.greeting;
-      if (result.mes_example) charMesExample = result.mes_example;
-      if (result.creator_notes) charCreatorNotes = result.creator_notes;
-      if (result.alternate_greetings) charAltGreetings = result.alternate_greetings;
+      if (result.avatarDataUrl) {
+        avatarPreview = result.avatarDataUrl;
+        avatarChanged = true;
+      }
+
+      if (result.name) {
+        charName = result.name;
+      }
+
+      if (result.prompt !== undefined) {
+        charPrompt = result.prompt;
+      }
+
+      if (result.greeting) {
+        charGreeting = result.greeting;
+      }
+
+      if (result.alternate_greetings) {
+        charAltGreetings = result.alternate_greetings;
+      }
+
+      charPlayMode = result.play_mode ?? 'solo';
     } catch (err) {
       console.warn('Import failed:', err);
     }
-  }
-
-  async function handleRoleAvatarFile(file: File) {
-    try {
-      roleAvatar = await readImageAsDataUrl(file);
-      roleAvatarChanged = true;
-    } catch { /* not an image */ }
   }
 
   async function handleSave() {
@@ -214,28 +184,17 @@
       if (activeTab === 'character') {
         await saveCharacter(
           {
-            name: charName, description: charDescription,
-            personality: charPersonality, scenario: charScenario,
-            greeting: charGreeting, mes_example: charMesExample,
-            creator_notes: charCreatorNotes, alternate_greetings: charAltGreetings,
+            name: charName,
+            prompt: charPrompt,
+            greeting: charGreeting,
+            alternate_greetings: charAltGreetings,
+            play_mode: charPlayMode,
             world_info_ids: worldInfoIds,
           },
-          editChar, avatarPreview, avatarChanged
+          editChar,
+          avatarPreview,
+          avatarChanged
         );
-        goBack();
-      } else if (activeTab === 'role') {
-        const opts = {
-          name: roleName,
-          bio: roleDescription,
-          pronouns: rolePronouns,
-          avatarDataUrl: roleAvatar,
-          avatarChanged: roleAvatarChanged,
-        };
-        if (editRole) {
-          await saveExistingRole(editRole.id, opts);
-        } else {
-          await saveNewRole(opts);
-        }
         goBack();
       } else {
         const data = {
@@ -258,9 +217,7 @@
   async function handleDelete() {
     isDeleting = true;
     try {
-      if (activeTab === 'role' && editRole) {
-        await removeRole(editRole.id);
-      } else if (editChar?.isCustom) {
+      if (editChar?.isCustom) {
         await removeCharacter(editChar);
       } else if (activeTab === 'worldinfo' && editChar?.id) {
         //await deleteWorldInfo(editChar.id);
@@ -394,7 +351,7 @@
               {/if}
             {/if}
 
-            {#if activeTab === 'role' || activeTab === 'worldinfo'}
+            {#if activeTab === 'worldinfo'}
               <button class="menu-item menu-item--danger" onclick={handleDeleteClick}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="3 6 5 6 21 6"/>
@@ -402,7 +359,7 @@
                   <path d="M10 11v6M14 11v6"/>
                   <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
                 </svg>
-                <span>Delete {activeTab === 'role' ? 'Role' : 'World Info'}</span>
+                <span>Delete</span>
               </button>
             {/if}
 
@@ -422,23 +379,20 @@
 
   <SimpleFormPage {actions}>
 
-    {#if !isAnyEditMode}
-      <div class="page-heading text-center">
-        <h1 class="page-title">
-          {activeTab === 'character'
-            ? (isEditMode ? m.creator_title_edit_character() : m.creator_title_new_character())
-            : activeTab === 'role'
-              ? m.creator_title_new_role()
-              : m.creator_title_new_lorebook()}
-        </h1>
-        <p class="page-subtitle">
-            {activeTab === 'character'
-              ? m.creator_subtitle_character()
-              : activeTab === 'role'
-                ? m.creator_subtitle_role()
-                : m.creator_subtitle_lorebook()}
-        </p>
-      </div>
+  {#if !isAnyEditMode}
+    <div class="page-heading text-center">
+      <h1 class="page-title">
+        {activeTab === 'character'
+          ? (isEditMode ? m.creator_title_edit_character() : m.creator_title_new_character())
+          : m.creator_title_new_lorebook()}
+      </h1>
+
+      <p class="page-subtitle">
+        {activeTab === 'character'
+          ? m.creator_subtitle_character()
+          : m.creator_subtitle_lorebook()}
+      </p>
+    </div>
 
       <div class="tab-row">
         <div class="tab-bar">
@@ -464,23 +418,13 @@
           {#if activeTab === 'character'}
             <CharacterTab
               bind:name={charName}
-              bind:description={charDescription}
-              bind:personality={charPersonality}
-              bind:scenario={charScenario}
+              bind:prompt={charPrompt}
               bind:greeting={charGreeting}
-              bind:mes_example={charMesExample}
               bind:alternate_greetings={charAltGreetings}
+              bind:playMode={charPlayMode}
               bind:worldInfoIds={worldInfoIds}
               {avatarPreview}
               onAvatarFile={handleCharAvatarFile}
-            />
-          {:else if activeTab === 'role'}
-            <RoleTab
-              bind:name={roleName}
-              bind:description={roleDescription}
-              bind:pronouns={rolePronouns}
-              avatarPreview={roleAvatar}
-              onAvatarFile={handleRoleAvatarFile}
             />
           {:else}
             <WorldInfoTab

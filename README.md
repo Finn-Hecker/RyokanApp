@@ -1,11 +1,14 @@
 # Ryokan
 
-> **Immersive, local-first AI Roleplay - built for atmosphere, not spreadsheets.**
-> Powered by Rust, Tauri v2, and Svelte 5.
+> **Immersive, local-first AI roleplay — built for atmosphere, not spreadsheets.**
+> Play solo or invite friends into the same story with accountless, end-to-end encrypted multiplayer.
+
+Powered by Rust, Tauri v2, and Svelte 5.
 
 <p>
   <img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" />
-  <img src="https://img.shields.io/badge/status-Alpha_v0.4-green.svg" />
+  <img src="https://img.shields.io/badge/status-Alpha_v0.5-green.svg" />
+  <img src="https://img.shields.io/badge/multiplayer-Beta-purple.svg" />
   <img src="https://img.shields.io/badge/built_with-Tauri_v2-orange.svg" />
   <img src="https://img.shields.io/badge/frontend-Svelte_5-red.svg" />
   <img src="https://img.shields.io/badge/platforms-Windows_%7C_Android-blueviolet.svg" />
@@ -13,12 +16,12 @@
 
 <table>
   <tr>
-    <td><img width="400" alt="RyokanApp Interface" src="https://github.com/user-attachments/assets/075e4ebd-62e1-4d4b-a428-ceaa7635b53e" /></td>
-    <td><img width="400" alt="RyokanApp Chat" src="https://github.com/user-attachments/assets/62517ce6-ad51-4b3d-8787-e50928d58fb5" /></td>
+    <td><img width="400" alt="Ryokan Interface" src="https://github.com/user-attachments/assets/e479b31f-388d-4ac5-8f5e-85681d3198ff" /></td>
+    <td><img width="400" alt="Ryokan Chat" src="https://github.com/user-attachments/assets/62517ce6-ad51-4b3d-8787-e50928d58fb5" /></td>
   </tr>
   <tr>
-    <td><img width="400" alt="RyokanApp Settings" src="https://github.com/user-attachments/assets/ebe082e7-f21f-4a22-9903-b2d6a461c2b4" /></td>
-    <td><img width="400" alt="RyokanApp Editor" src="https://github.com/user-attachments/assets/7d8fa647-6ba4-49a8-a2f8-a0ab4fbab1c8" /></td>
+    <td><img width="400" alt="Ryokan Settings" src="https://github.com/user-attachments/assets/bc1a2dfa-ac00-4735-ace3-71b7ebd4607d" /></td>
+    <td><img width="400" alt="Ryokan Editor" src="https://github.com/user-attachments/assets/67b35fc4-e8ce-451a-a25d-212c5cc6cfe1" /></td>
   </tr>
 </table>
 
@@ -26,99 +29,174 @@
 
 ## What is Ryokan?
 
-Most AI roleplay frontends feel like cockpits. Hundreds of sliders, raw JSON, terminal prompts. Ryokan takes the opposite approach.
+Most AI roleplay frontends feel like control panels.
 
-It gets out of the way so the story can breathe.
+Raw JSON, endless settings, terminal setup, and dozens of options before you can even start a conversation.
 
-No clutter, no friction. Just you, your characters, and your local LLM or any compatible cloud API. Built for people who want a polished, immersive experience without sacrificing the power features underneath.
+Ryokan takes the opposite approach.
+
+It is a native AI roleplay app designed to stay out of the way once the story begins. Download the app, connect your local model or API, pick a character or scenario, and start playing.
+
+The advanced controls are still there when you want them — they just do not need to be the first thing you see.
 
 ---
 
-## Platforms
+## Solo or Multiplayer
 
-Ryokan runs natively on:
-- **Windows** (x64)
-- **Android** (arm64)
+Ryokan works as a traditional solo AI roleplay app, but stories do not have to stay single-player.
 
-Grab the latest build for your platform from the [Releases page](https://github.com/Finn-Hecker/RyokanApp/releases). No build tools required.
+The host runs Ryokan and provides the AI connection. Friends can join the same session directly from their browser using an invite link.
+
+They do not need a Ryokan installation, an account, an API key, or their own language model.
+
+### Multiplayer includes
+
+* **Browser Guests:** Friends join using a simple invite link.
+* **No Accounts:** Multiplayer sessions do not require user accounts.
+* **Shared Roleplay:** Players and the AI participate in the same synchronized conversation.
+* **Live AI Streaming:** Everyone sees the response as it is generated.
+* **Typing Indicators:** See when another player is writing.
+* **Shared Characters & Scenarios:** The host chooses the experience for the room.
+* **Generation Control:** The host can decide whether other players may trigger AI responses.
+* **Saved Sessions:** Multiplayer conversations are stored locally and can later be reopened or hosted again.
+* **End-to-End Encryption:** Story content is encrypted on the client before it passes through the relay. The relay never receives the room key.
+
+> Multiplayer is currently in beta and may still change as the system evolves.
 
 ---
 
 ## Features
 
-### Roleplay-First Design
-- **Director Mode:** Step outside the story at any time to nudge the narrative or correct the AI, without breaking immersion. No clunky `[OOC]` brackets needed.
-- **Edit & Retry:** Change any previous message and regenerate from that point forward.
-- **Swipe to Reroll:** Browse alternate AI responses with smooth slide animations.
-- **Chat Cloning:** Branch a conversation from any assistant message into a new chat to explore alternate directions without losing your original thread.
+### Roleplay First
 
-### Characters & World Building
-- **V3 Character Support:** Full card import/export with alternate greetings, personality traits, scenarios, and example dialogs.
-- **Lorebooks & World Info:** Keyword-triggered entries injected automatically into context, with full position control.
-- **Persona System:** Define exactly who *you* are in the story: name, pronouns, background.
-- **Ready-to-Play Content:** Pre-installed bilingual characters bundled with matching World Info, adapting automatically to your language (EN/DE).
+* **Director Mode:** Step outside the story to guide the narrative or correct the AI without filling the conversation with OOC messages.
+* **Edit & Retry:** Edit your latest message and regenerate the AI response.
+* **Swipe to Reroll:** Move between alternative AI responses without losing previous generations.
+* **Chat Cloning:** Branch an existing conversation into a new chat and explore another direction without destroying the original.
 
-### AI & Performance
-- **Rolling Summary Engine:** Long conversations stay coherent. The summary engine compresses older context intelligently so nothing important gets lost.
-- **Thinking Model Support:** Advanced budget presets and context-aware token reserves, tuned specifically for reasoning models.
-- **Simplified Settings:** Dial in AI behavior (Creativity, Length, Repetition) via clean presets. Power User mode unlocks raw controls for those who want them.
+### Characters & Scenarios
 
-### Privacy & Connectivity
-- **Local Privacy First:** All chats, characters, and settings live in a local SQLite database. Nothing leaves your machine.
-- **BYOK & Local Models:** Connect to LM Studio, llama.cpp, KoboldCPP, or any OpenAI-compatible endpoint. Or bring your own OpenRouter API key for cloud generation.
-- **Custom API Endpoints:** Switch between local and cloud providers on the fly from settings.
+* **V3 Character Cards:** Import and export compatible character cards.
+* **Lorebooks & World Info:** Automatically inject relevant context when keywords appear.
+* **Alternate Greetings:** Characters can start conversations in different ways.
+* **Ready-to-Play Content:** Ryokan includes built-in characters and scenarios so you can start without downloading anything first.
+* **Solo & Multiplayer Scenarios:** Experiences can be designed specifically for one player or a group.
 
-### Native Bilingual
-Full, consistent **English and German** support from day one.
+### AI & Context
+
+* **Local Models:** Connect to LM Studio, llama.cpp, KoboldCPP, or other OpenAI-compatible servers.
+* **Cloud APIs:** Use OpenRouter or your own compatible API endpoint.
+* **Rolling Summaries:** Older parts of long conversations can be compressed to preserve important context.
+* **Thinking Model Support:** Ryokan supports models that use separate reasoning or thinking output.
+* **Simple Settings:** Common controls such as creativity, response length, and repetition are presented in a human-friendly way.
+* **Advanced Controls:** Power users can configure individual sampling parameters when needed.
+
+### Local-First
+
+Chats, characters, settings, and saved sessions are stored locally in SQLite.
+
+Single-player conversations do not require a Ryokan server.
+
+For multiplayer, encrypted session traffic is passed through a relay so remote players can stay synchronized. AI generation still happens through the host's configured local model or API.
+
+---
+
+## Built Like an App, Not a Toolkit
+
+Ryokan is designed for people who want to roleplay, not spend an evening configuring their frontend.
+
+For normal use:
+
+* Download the app.
+* Open it.
+* Connect your model or API.
+* Start playing.
+
+No Docker setup.
+No Git clone.
+No manually edited configuration files.
+No terminal required.
+
+Power-user features are available when you need them without defining the default experience.
+
+---
+
+## Platforms
+
+Ryokan currently runs natively on:
+
+* **Windows** — x64
+* **Android** — arm64
+
+Prebuilt versions are available from the [Releases page](https://github.com/Finn-Hecker/RyokanApp/releases).
+
+Multiplayer guests can join supported sessions directly through their browser.
 
 ---
 
 ## Tech Stack
 
-| Layer      | Technology                          |
-|------------|--------------------------------------|
-| Core       | Tauri v2 (Rust)                      |
-| Frontend   | Svelte 5 + TailwindCSS               |
-| Database   | SQLite (local)                       |
-| I18n       | ParaglideJS                          |
+| Layer                  | Technology                        |
+| ---------------------- | --------------------------------- |
+| Native Core            | Tauri v2 + Rust                   |
+| Frontend               | Svelte 5 + TailwindCSS            |
+| Database               | SQLite                            |
+| Internationalization   | ParaglideJS                       |
+| Multiplayer Transport  | WebSocket relay                   |
+| Multiplayer Encryption | Client-side end-to-end encryption |
+
+---
+
+## Languages
+
+Ryokan includes native interface support for:
+
+* **English**
+* **German**
+
+Built-in characters and scenarios are available in both languages where supported.
 
 ---
 
 ## Getting Started
 
-> **Just want to try it?** Download a prebuilt binary from [Releases](https://github.com/Finn-Hecker/RyokanApp/releases) instead of building from source.
+> **Just want to use Ryokan?**
+> Download a prebuilt version from [Releases](https://github.com/Finn-Hecker/RyokanApp/releases). You do not need development tools.
 
-### Prerequisites
-- Node.js v18+
-- Rust (latest stable)
-- A local OpenAI-compatible server (e.g. LM Studio on `:1234`, llama.cpp on `:8080`) or a valid OpenRouter API key
+### Building from Source
 
-### Installation
+#### Prerequisites
+
+* Node.js v18+
+* Rust stable
+* The platform requirements for Tauri v2
+* An OpenAI-compatible model server or compatible cloud API
+
 ```bash
-# 1. Clone the repo
 git clone https://github.com/Finn-Hecker/RyokanApp.git
 cd RyokanApp
 
-# 2. Install dependencies (tokenizers are set up automatically)
 npm install
 
-# 3. Launch in dev mode
 npm run tauri dev
 ```
 
-No manual tokenizer downloads, no extra setup steps. The `postinstall` hook handles everything.
+The project handles its required tokenizer setup automatically during installation.
 
------
+---
 
 ## Contributing
 
-Ryokan is in active Alpha and contributions are very welcome. Please open an issue before submitting a Pull Request for major changes. This helps avoid duplicate work and keeps things moving in the right direction.
+Ryokan is under active development and contributions are welcome.
 
------
+For larger changes, please open an issue before submitting a pull request so the idea can be discussed first and duplicate work can be avoided.
+
+Bug reports, compatibility reports, UI improvements, translations, and focused pull requests are especially useful.
+
+---
 
 ## License
 
-Licensed under the **GNU General Public License v3.0**.
-See the [LICENSE](LICENSE) file for details.
+Ryokan is licensed under the **GNU General Public License v3.0**.
 
-[](https://www.gnu.org/licenses/gpl-3.0)
+See [LICENSE](LICENSE) for details.

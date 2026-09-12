@@ -1,32 +1,55 @@
 import * as m from '$lib/paraglide/messages';
-import emmaAvatar from '$lib/assets/avatars/emma.webp';
-import kaelenAvatar from '$lib/assets/avatars/kaelen.webp';
+
+import scenarioBadPlan from '$lib/assets/avatars/scenario_bad_plan.webp';
+import scenarioNightShift from '$lib/assets/avatars/scenario_night_shift.webp';
+import scenarioIslandPrison from '$lib/assets/avatars/scenario_island_prison.webp';
+
+export const SOLO_CHARACTERS = [
+  {
+    id: 1,
+    name: m.scenario_bad_plan_name(),
+    description: m.scenario_bad_plan_description(),
+    prompt: m.scenario_bad_plan_prompt(),
+    color: "bg-amber-600",
+    play_mode: 'solo' as const,
+    initials: "BP",
+    greeting: m.scenario_bad_plan_greeting(),
+    avatarUrl: scenarioBadPlan,
+    alternate_greetings: [],
+    world_info_ids: [],
+  },
+  {
+    id: 2,
+    name: m.scenario_night_shift_name(),
+    description: m.scenario_night_shift_description(),
+    prompt: m.scenario_night_shift_prompt(),
+    color: "bg-stone-700",
+    play_mode: 'solo' as const,
+    initials: "NS",
+    greeting: m.scenario_night_shift_greeting(),
+    avatarUrl: scenarioNightShift,
+    alternate_greetings: [],
+    world_info_ids: [],
+  }
+];
+
+export const MULTIPLAYER_CHARACTERS = [
+  {
+    id: 3,
+    name: m.scenario_island_prison_name(),
+    description: m.scenario_island_prison_description(),
+    prompt: m.scenario_island_prison_prompt(),
+    color: "bg-sky-900",
+    play_mode: 'multiplayer' as const,
+    initials: "IP",
+    greeting: m.scenario_island_prison_greeting(),
+    avatarUrl: scenarioIslandPrison,
+    alternate_greetings: [],
+    world_info_ids: [],
+  }
+];
 
 export const CHARACTERS = [
-  { 
-    id: 1,
-    name: m.char_emma_name(), 
-    desc: m.char_emma_desc(), 
-    personality: m.char_emma_personality(),
-    scenario: m.char_emma_scenario(),
-    mes_example: m.char_emma_example(), 
-    color: "bg-amber-600",
-    initials: "E",
-    greeting: m.char_emma_greeting(),
-    avatarUrl: emmaAvatar,
-    world_info_ids: ['wi-emma-campus'],
-  },
-  { 
-    id: 2, 
-    name: m.char_kaelen_name(), 
-    desc: m.char_kaelen_desc(), 
-    personality: m.char_kaelen_personality(),
-    scenario: m.char_kaelen_scenario(),
-    mes_example: m.char_kaelen_example(), 
-    color: "bg-stone-700",
-    initials: "K",
-    greeting: m.char_kaelen_greeting(),
-    avatarUrl: kaelenAvatar,
-    world_info_ids: ['wi-kaelen-guild'],
-  }
+  ...SOLO_CHARACTERS,
+  ...MULTIPLAYER_CHARACTERS
 ];

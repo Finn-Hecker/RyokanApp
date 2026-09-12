@@ -1,10 +1,12 @@
-use futures::stream::StreamExt;
+use crate::database::get_connection;
 use eventsource_stream::Eventsource;
+use futures::stream::StreamExt;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
-use tauri::{Emitter, Window};
+use tauri::{Emitter, Manager, Window};
 use tokio_util::sync::CancellationToken;
 
 // Reusing a single HTTP client across the entire app lifecycle prevents connection
@@ -21,15 +23,118 @@ pub static CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
 // parking_lot::Mutex instead of std::sync::Mutex: no poisoning, so a panic on some
 // other thread while holding the lock can never propagate into this one via an
 // unwrap(), and lock() returns the guard directly (no Result to unwrap).
-static CANCEL_TOKEN: Lazy<Mutex<CancellationToken>> =
-    Lazy::new(|| Mutex::new(CancellationToken::new()));
+struct ActiveCancellation {
+    request_id: u64,
+    generation_id: Option<String>,
+    token: CancellationToken,
+}
+
+static ACTIVE_CANCELLATION: Lazy<Mutex<Option<ActiveCancellation>>> =
+    Lazy::new(|| Mutex::new(None));
+static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
+
+struct ActiveCancellationGuard {
+    request_id: u64,
+}
+
+impl Drop for ActiveCancellationGuard {
+    fn drop(&mut self) {
+        let mut active = ACTIVE_CANCELLATION.lock();
+        if active.as_ref().map(|entry| entry.request_id) == Some(self.request_id) {
+            *active = None;
+        }
+    }
+}
+
+fn cancellation_matches(active_id: &Option<String>, requested_id: &Option<String>) -> bool {
+    requested_id.is_none() || active_id == requested_id
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ApiParameterFlags {
+    temperature: bool,
+    max_tokens: bool,
+    presence_penalty: bool,
+    thinking_budget: bool,
+    top_p: bool,
+    top_k: bool,
+    min_p: bool,
+    frequency_penalty: bool,
+}
+
+impl Default for ApiParameterFlags {
+    fn default() -> Self {
+        Self {
+            temperature: false,
+            max_tokens: false,
+            presence_penalty: false,
+            thinking_budget: false,
+            top_p: false,
+            top_k: false,
+            min_p: false,
+            frequency_penalty: false,
+        }
+    }
+}
+
+/// Reads the persisted per-parameter switches. Missing keys default to disabled so
+/// generation parameters stay opt-in, matching the settings UI.
+fn load_api_parameter_flags(window: &Window) -> ApiParameterFlags {
+    let mut flags = ApiParameterFlags::default();
+
+    let Ok(conn) = get_connection(window.app_handle()) else {
+        return flags;
+    };
+
+    let mut stmt =
+        match conn.prepare("SELECT key, value FROM settings WHERE key LIKE 'api_%_enabled'") {
+            Ok(stmt) => stmt,
+            Err(_) => return flags,
+        };
+
+    let rows = match stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    }) {
+        Ok(rows) => rows,
+        Err(_) => return flags,
+    };
+
+    for row in rows.flatten() {
+        let (key, value) = row;
+        let enabled = value != "false";
+
+        match key.as_str() {
+            "api_temperature_enabled" => flags.temperature = enabled,
+            "api_max_tokens_enabled" => flags.max_tokens = enabled,
+            "api_presence_penalty_enabled" => flags.presence_penalty = enabled,
+            "api_thinking_budget_enabled" => flags.thinking_budget = enabled,
+            "api_top_p_enabled" => flags.top_p = enabled,
+            "api_top_k_enabled" => flags.top_k = enabled,
+            "api_min_p_enabled" => flags.min_p = enabled,
+            "api_frequency_penalty_enabled" => flags.frequency_penalty = enabled,
+            _ => {}
+        }
+    }
+
+    flags
+}
 
 /// Called from the frontend to hard-stop the current stream.
 /// Cancels the active token, which makes the running select! arm resolve to None
 /// and drops the underlying TCP connection.
 #[tauri::command]
-pub fn stop_generation() {
-    CANCEL_TOKEN.lock().cancel();
+pub fn stop_generation(generation_id: Option<String>) {
+    let active = ACTIVE_CANCELLATION.lock();
+    let Some(active) = active.as_ref() else {
+        return;
+    };
+
+    // Calls without an id are the legacy singleplayer path and retain their
+    // existing "stop the current request" behaviour. Multiplayer supplies an
+    // id so a late Stop from an older stream cannot cancel a newer request.
+    if cancellation_matches(&active.generation_id, &generation_id) {
+        active.token.cancel();
+    }
 }
 
 /// OpenAI-compatible SSE (Server-Sent Events) streaming structs.
@@ -55,6 +160,8 @@ struct Delta {
 /// left untouched to avoid breaking whatever already works.
 #[derive(Deserialize)]
 pub(crate) struct AiRequest {
+    #[serde(alias = "generationId")]
+    generation_id: Option<String>,
     url: String,
     api_key: String,
     model: String,
@@ -90,14 +197,18 @@ pub(crate) struct AiRequest {
 
 /// Payload emitted back to the frontend containing the generated text.
 #[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct TokenPayload {
     token: String,
+    generation_id: Option<String>,
 }
 
 /// Payload emitted back to the frontend containing reasoning/"thinking" text.
 #[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct ThinkingTokenPayload {
     token: String,
+    generation_id: Option<String>,
 }
 
 /// OpenAI-compatible /models response structs.
@@ -141,7 +252,10 @@ pub async fn fetch_models(url: String, api_key: String) -> Result<Vec<String>, S
         // index panics if that index falls inside a multi-byte UTF-8 character (e.g. an
         // umlaut or emoji in the server's error message). This is char-boundary safe.
         let preview: String = body_text.chars().take(500).collect();
-        format!("Failed to parse models response: {}. Raw body: {}", e, preview)
+        format!(
+            "Failed to parse models response: {}. Raw body: {}",
+            e, preview
+        )
     })?;
 
     let ids = body.data.into_iter().map(|m| m.id).collect();
@@ -155,17 +269,30 @@ fn flush_batches(
     window: &Window,
     token_batch: &mut String,
     thinking_batch: &mut String,
+    generation_id: &Option<String>,
 ) -> Result<(), String> {
     if !token_batch.is_empty() {
         let batch = std::mem::take(token_batch);
         window
-            .emit("ai-token", TokenPayload { token: batch })
+            .emit(
+                "ai-token",
+                TokenPayload {
+                    token: batch,
+                    generation_id: generation_id.clone(),
+                },
+            )
             .map_err(|e| e.to_string())?;
     }
     if !thinking_batch.is_empty() {
         let batch = std::mem::take(thinking_batch);
         window
-            .emit("ai-thinking-token", ThinkingTokenPayload { token: batch })
+            .emit(
+                "ai-thinking-token",
+                ThinkingTokenPayload {
+                    token: batch,
+                    generation_id: generation_id.clone(),
+                },
+            )
             .map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -178,44 +305,70 @@ fn flush_batches(
 /// including during the initial connect, not just once streaming has started.
 #[tauri::command]
 pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), String> {
-    // Replace the global token so stop_generation() targets this request.
+    // Replace the active token so stop_generation() targets this request.
     let token = CancellationToken::new();
-    *CANCEL_TOKEN.lock() = token.clone();
+    let request_id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+    *ACTIVE_CANCELLATION.lock() = Some(ActiveCancellation {
+        request_id,
+        generation_id: payload.generation_id.clone(),
+        token: token.clone(),
+    });
+    // Every return path (success, error, or cancellation) clears this request's
+    // handle, but never a newer request that replaced it in the meantime.
+    let _active_guard = ActiveCancellationGuard { request_id };
+
+    let parameter_flags = load_api_parameter_flags(&window);
 
     let mut body = serde_json::json!({
         "model": payload.model,
         "messages": payload.messages,
-        "temperature": payload.temperature,
         "stream": true
     });
 
-    if let Some(max_tokens) = payload.max_tokens {
-        body["max_tokens"] = serde_json::json!(max_tokens);
+    if parameter_flags.temperature {
+        body["temperature"] = serde_json::json!(payload.temperature);
+    }
+
+    if parameter_flags.max_tokens {
+        if let Some(max_tokens) = payload.max_tokens {
+            body["max_tokens"] = serde_json::json!(max_tokens);
+        }
     }
     // Mapped to "repetition_penalty" (llama.cpp/koboldcpp sampler), not the OpenAI
     // "presence_penalty" semantics — see the doc comment on AiRequest::presence_penalty.
-    if let Some(penalty) = payload.presence_penalty {
-        body["repetition_penalty"] = serde_json::json!(penalty);
+    if parameter_flags.presence_penalty {
+        if let Some(penalty) = payload.presence_penalty {
+            body["repetition_penalty"] = serde_json::json!(penalty);
+        }
     }
-    if let Some(top_p) = payload.top_p {
-        body["top_p"] = serde_json::json!(top_p);
+    if parameter_flags.top_p {
+        if let Some(top_p) = payload.top_p {
+            body["top_p"] = serde_json::json!(top_p);
+        }
     }
-    if let Some(top_k) = payload.top_k {
-        body["top_k"] = serde_json::json!(top_k);
+    if parameter_flags.top_k {
+        if let Some(top_k) = payload.top_k {
+            body["top_k"] = serde_json::json!(top_k);
+        }
     }
-    if let Some(min_p) = payload.min_p {
-        body["min_p"] = serde_json::json!(min_p);
+    if parameter_flags.min_p {
+        if let Some(min_p) = payload.min_p {
+            body["min_p"] = serde_json::json!(min_p);
+        }
     }
-    if let Some(freq_penalty) = payload.frequency_penalty {
-        body["frequency_penalty"] = serde_json::json!(freq_penalty);
+    if parameter_flags.frequency_penalty {
+        if let Some(freq_penalty) = payload.frequency_penalty {
+            body["frequency_penalty"] = serde_json::json!(freq_penalty);
+        }
     }
 
     // Thinking / reasoning models (Gemma 4, Qwen3, ...) are toggled per-request via
     // llama.cpp's chat_template_kwargs. Sending this even when disabled is intentional,
     // so switching a character/model between thinking and non-thinking mid-session
     // doesn't leak the previous request's state.
-    body["chat_template_kwargs"] = serde_json::json!({ "enable_thinking": payload.is_thinking_model });
-    if payload.is_thinking_model {
+    body["chat_template_kwargs"] =
+        serde_json::json!({ "enable_thinking": payload.is_thinking_model });
+    if payload.is_thinking_model && parameter_flags.thinking_budget {
         if let Some(budget) = payload.thinking_budget {
             // 0 = end reasoning immediately, N>0 = token budget, omit for server default (usually unrestricted).
             body["thinking_budget_tokens"] = serde_json::json!(budget);
@@ -295,13 +448,47 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
             }
 
             _ = flush_tick.tick() => {
-                flush_batches(&window, &mut token_batch, &mut thinking_batch)?;
+                flush_batches(
+                    &window,
+                    &mut token_batch,
+                    &mut thinking_batch,
+                    &payload.generation_id,
+                )?;
             }
         }
     }
 
     // Flush whatever was buffered when the stream stopped (DONE, cancel, or close).
-    flush_batches(&window, &mut token_batch, &mut thinking_batch)?;
+    flush_batches(
+        &window,
+        &mut token_batch,
+        &mut thinking_batch,
+        &payload.generation_id,
+    )?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cancellation_matches;
+
+    #[test]
+    fn legacy_stop_matches_the_active_request() {
+        assert!(cancellation_matches(&Some("current".into()), &None));
+        assert!(cancellation_matches(&None, &None));
+    }
+
+    #[test]
+    fn scoped_stop_only_matches_its_generation() {
+        assert!(cancellation_matches(
+            &Some("current".into()),
+            &Some("current".into()),
+        ));
+        assert!(!cancellation_matches(
+            &Some("newer".into()),
+            &Some("older".into()),
+        ));
+        assert!(!cancellation_matches(&None, &Some("multiplayer".into())));
+    }
 }

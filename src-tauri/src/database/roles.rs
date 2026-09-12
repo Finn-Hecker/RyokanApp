@@ -9,14 +9,13 @@ use webp::{Encoder, WebPMemory};
 use std::io::Cursor;
 
 /// Database representation returned to the frontend.
-/// Avatar is a raw WebP BLOB — same pattern as characters.
 #[derive(Serialize)]
 pub struct DbRole {
     pub id: String,
     pub name: String,
     pub bio: String,
     pub pronouns: String,
-    pub avatar: Option<Vec<u8>>,
+    pub has_avatar: bool,
     pub created_at: String,
 }
 
@@ -81,12 +80,12 @@ fn process_avatar(base64_img: &str) -> Result<Vec<u8>, String> {
 
 /// Returns all user-created roles ordered by creation date (newest first).
 #[tauri::command]
-pub fn get_roles(app: AppHandle) -> Result<Vec<DbRole>, String> {
+pub async fn get_roles(app: AppHandle) -> Result<Vec<DbRole>, String> {
     let conn = get_connection(&app)?;
 
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, bio, pronouns, avatar, created_at
+            "SELECT id, name, bio, pronouns, LENGTH(avatar) > 0, created_at
              FROM roles
              ORDER BY created_at DESC",
         )
@@ -94,12 +93,13 @@ pub fn get_roles(app: AppHandle) -> Result<Vec<DbRole>, String> {
 
     let rows = stmt
         .query_map([], |row| {
+            let has_avatar: Option<bool> = row.get(4)?;
             Ok(DbRole {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 bio: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
                 pronouns: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-                avatar: row.get(4)?,
+                has_avatar: has_avatar.unwrap_or(false),
                 created_at: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
             })
         })
@@ -112,10 +112,27 @@ pub fn get_roles(app: AppHandle) -> Result<Vec<DbRole>, String> {
     Ok(list)
 }
 
+/// Lazily fetches a single role's avatar as a Base64 data URL.
+/// Same rationale as characters.rs::get_character_avatar.
+#[tauri::command]
+pub async fn get_role_avatar(app: AppHandle, id: String) -> Result<Option<String>, String> {
+    let conn = get_connection(&app)?;
+
+    let avatar_blob: Option<Vec<u8>> = conn.query_row(
+        "SELECT avatar FROM roles WHERE id = ?1",
+        params![id],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    Ok(avatar_blob.filter(|b| !b.is_empty()).map(|bytes| {
+        format!("data:image/webp;base64,{}", general_purpose::STANDARD.encode(bytes))
+    }))
+}
+
 /// Inserts a new role. Avatar processing runs on a background thread.
 /// Returns the new UUID so the frontend can update its optimistic entry.
 #[tauri::command]
-pub fn create_role(app: AppHandle, payload: RolePayload) -> Result<String, String> {
+pub async fn create_role(app: AppHandle, payload: RolePayload) -> Result<String, String> {
     let conn = get_connection(&app)?;
     let new_id = Uuid::new_v4().to_string();
 
@@ -158,7 +175,7 @@ pub fn create_role(app: AppHandle, payload: RolePayload) -> Result<String, Strin
 /// Updates name, bio, pronouns. If a new avatar is supplied it is re-processed
 /// asynchronously; blob:-URLs (existing avatar) are skipped.
 #[tauri::command]
-pub fn update_role(app: AppHandle, id: String, payload: RolePayload) -> Result<(), String> {
+pub async fn update_role(app: AppHandle, id: String, payload: RolePayload) -> Result<(), String> {
     let conn = get_connection(&app)?;
 
     conn.execute(
@@ -200,7 +217,7 @@ pub fn update_role(app: AppHandle, id: String, payload: RolePayload) -> Result<(
 
 /// Permanently deletes a role.
 #[tauri::command]
-pub fn delete_role(app: AppHandle, id: String) -> Result<(), String> {
+pub async fn delete_role(app: AppHandle, id: String) -> Result<(), String> {
     let conn = get_connection(&app)?;
     conn.execute("DELETE FROM roles WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;

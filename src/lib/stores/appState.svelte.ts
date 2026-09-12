@@ -3,7 +3,6 @@ export interface ApiSettings {
   apiKey: string;
   model: string;
   isThinkingModel: boolean;
-  aiLanguage: string;
   systemPrompt: string;
   temperature: number;
   maxTokens: number;
@@ -18,7 +17,7 @@ export interface ApiSettings {
 }
 
 export const appState = $state({
-  currentView: 'lobby' as 'lobby' | 'chat' | 'create' | 'settings' | 'roleEditor' | 'worldInfoEditor' | 'list',
+  currentView: 'lobby' as 'lobby' | 'chat' | 'create' | 'settings' | 'roleEditor' | 'worldInfoEditor' | 'list' | 'play' | 'multiplayerRoom',
   listInitialTab: 'roles' as 'roles' | 'worldinfo',
   activeCharacter: null as any,
   editingCharacter: null as any,
@@ -29,7 +28,6 @@ export const appState = $state({
     apiKey: "",
     model: "",
     isThinkingModel: false,
-    aiLanguage: "German",
     systemPrompt: "",
     temperature: 0.8,
     thinkingBudget: 2500,

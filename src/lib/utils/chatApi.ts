@@ -12,22 +12,14 @@ export interface GenerationCallbacks {
 
 export interface GenerationOptions {
     character: {
-        name?:           string;
-        desc?:           string;
-        personality?:    string;
-        scenario?:       string;
-        mes_example?:    string;
+        name?: string;
+        prompt?: string;
         world_info_ids?: string[];
     } | null;
     apiSettings:    ApiSettings;
     recentMessages: Message[];
     /** Include a new user prompt at the end (normal send). Omit for retry. */
     userPrompt?:    string;
-    role?: {
-        name?:     string;
-        bio?:      string;
-        pronouns?: string;
-    } | null;
 }
 
 type ChatRole = 'system' | 'user' | 'assistant';
@@ -158,7 +150,7 @@ export function stripThinkingContent(content: string): string {
 }
 
 export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
-    const { character, apiSettings, recentMessages, userPrompt, role } = options;
+    const { character, apiSettings, recentMessages, userPrompt } = options;
 
     const worldInfoIds = character?.world_info_ids ?? [];
     const relevantEntries = worldInfoState.allWorldInfos
@@ -172,21 +164,12 @@ export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
     ].join(' ');
 
     const charName = character?.name || 'Unknown';
-    const userName = role?.name || 'User';
 
-    // Static block: core instructions + character card + user role.
+    // Static block: core instructions + character card.
     // No world info here — see the layout note above.
     const baseSystemPrompt = buildSystemPrompt({
         charName,
-        desc:         character?.desc,
-        personality:  character?.personality,
-        scenario:     character?.scenario,
-        example:      character?.mes_example,
-        lang:         apiSettings.aiLanguage || 'English',
-        userName,
-        userBio:      role?.bio,
-        userPronouns: role?.pronouns,
-        modelType:    'ollama',
+        prompt: character?.prompt,
     });
 
     const { currentSummary, lastSummarizedMessageId } = chatState.summaryMeta;
@@ -231,7 +214,6 @@ export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
         buildWiString(relevantEntries, 'before', recentContext),
         buildWiString(relevantEntries, 'after',  recentContext),
         charName,
-        userName,
         'ollama',
     );
 

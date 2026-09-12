@@ -1,28 +1,23 @@
 <script lang="ts">
   import AvatarPicker from './AvatarPicker.svelte';
   import CharacterFormFields from './CharacterFormFields.svelte';
+  import type { PlayMode } from '$lib/stores/characterStore.svelte';
 
   let {
     name = $bindable(''),
-    description = $bindable(''),
-    personality = $bindable(''),
-    scenario = $bindable(''),
+    prompt = $bindable(''),
     greeting = $bindable(''),
-    mes_example = $bindable(''),
-    creator_notes = $bindable(''),
     alternate_greetings = $bindable([]),
+    playMode = $bindable('solo'),
     worldInfoIds = $bindable([]),
     avatarPreview = null,
     onAvatarFile
   }: {
     name?: string;
-    description?: string;
-    personality?: string;
-    scenario?: string;
+    prompt?: string;
     greeting?: string;
-    mes_example?: string;
-    creator_notes?: string;
     alternate_greetings?: string[];
+    playMode?: PlayMode;
     worldInfoIds?: string[];
     avatarPreview?: string | null;
     onAvatarFile?: (file: File) => void;
@@ -36,14 +31,17 @@
 
 <CharacterFormFields
   bind:name
-  bind:description
-  bind:personality
-  bind:scenario
+  bind:prompt
   bind:greeting
-  bind:mes_example
+  bind:playMode
   bind:worldInfoIds
   alternate_greetings={alternate_greetings}
   onAltGreetingsChange={(updated) => (alternate_greetings = updated)}
-  onAltGreetingsAdd={()     => (alternate_greetings = [...alternate_greetings, ''])}
-  onAltGreetingsRemove={(index) => (alternate_greetings = alternate_greetings.filter((_, i) => i !== index))}
+  onAltGreetingsAdd={() =>
+    (alternate_greetings = [...alternate_greetings, ''])
+  }
+  onAltGreetingsRemove={(index) =>
+    (alternate_greetings =
+      alternate_greetings.filter((_, i) => i !== index))
+  }
 />

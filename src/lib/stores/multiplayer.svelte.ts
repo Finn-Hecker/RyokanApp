@@ -1,0 +1,1432 @@
+/**
+ * Multiplayer client for the zero knowledge relay server.
+ *
+ * Two secrets, kept strictly apart:
+ *  - Room key (`#k=` in the URL fragment): AES-GCM key that never leaves
+ *    the client. Everything content related is encrypted with it, the
+ *    server only relays opaque bytes.
+ *  - Host token (`&h=` in the fragment of the host link): authorization
+ *    secret the client deliberately sends over the WebSocket so the server
+ *    can verify the host role. It also sits in the fragment (so it never
+ *    ends up in the static server's HTTP logs), but unlike the key it is
+ *    actively transmitted.
+ *
+ * The host is also the only LLM executor. It streams the reply from its
+ * local endpoint, encrypts every delta on the client, and feeds it into the
+ * relay as a normal opaque frame. The server never sees LLM content in
+ * plaintext either.
+ */
+
+import { appState } from './appState.svelte';
+import { invoke } from '@tauri-apps/api/core';
+import { processThinkingOutput } from '$lib/utils/chatApi';
+import { getClientLanguageName } from '$lib/utils/clientLanguage';
+import { selectInitialGreeting } from '$lib/utils/characterGreeting';
+import type { Character } from './characterStore.svelte';
+
+// Configuration
+
+export const RELAY_URL: string = (
+  (import.meta as any).env?.VITE_RELAY_URL ?? 'https://ryokan-relay.duckdns.org'
+).replace(/\/+$/, '');
+const RELAY_WS = RELAY_URL.replace(/^http/, 'ws');
+
+const SNAPSHOT_DEBOUNCE_MS = 1200; // batch joins so snapshots don't spam
+const LLM_FLUSH_MS = 150; // batch token deltas instead of one frame per token
+const TYPING_TIMEOUT_MS = 3000;
+const TYPING_SEND_INTERVAL_MS = 1000;
+const MAX_NAME_CHARS = 32;
+const MAX_CHAT_CHARS = 4000;
+const MAX_MESSAGE_ID_CHARS = 128;
+const MAX_LLM_DELTA_CHARS = 64 * 1024;
+const MAX_LLM_FINAL_CHARS = 512 * 1024;
+const MAX_SNAPSHOT_MESSAGES = 1000;
+
+// Types and reactive state
+
+export type MpRole = 'host' | 'guest';
+export type ClosedReason =
+  | ''
+  | 'host_left'
+  | 'expired'
+  | 'not_found'
+  | 'bad_token'
+  | 'host_taken'
+  | 'idle'
+  | 'slow'
+  | 'error'
+  | 'left';
+
+export interface MpMessage {
+  id: string;
+  kind: 'chat' | 'llm' | 'system';
+  author: string;
+  text: string;
+  ts: number;
+  /** true while an LLM stream is still writing into this message */
+  streaming?: boolean;
+}
+
+export interface SessionCharacter {
+  name: string;
+  prompt: string;
+  greeting: string;
+  initials: string;
+  color: string;
+  avatarUrl?: string;
+}
+
+interface PendingJoin {
+  mode: 'create' | 'join' | 'resume';
+  roomId?: string;
+  keyB64?: string;
+  hostToken?: string;
+  guestToken?: string;
+  signingPublicB64?: string;
+  signingPrivateB64?: string;
+}
+
+export const mpState = $state({
+  connected: false,
+  connecting: false,
+  roomId: '',
+  role: 'guest' as MpRole,
+  selfId: 0,
+  count: 0,
+  lockedBy: null as number | null,
+  everyoneCanGenerate: false,
+  generating: false, // true only on the host while it runs the LLM call
+  messages: [] as MpMessage[],
+  remoteTypingName: '',
+  displayName: '',
+  characterName: '',
+  /** Host-authoritative character data for this room; transient on guests. */
+  sessionCharacter: null as SessionCharacter | null,
+  /** Stable local conversation id. Deliberately unrelated to roomId. */
+  conversationId: null as string | null,
+  /** Read-only rendering of a saved session after the relay room is gone. */
+  viewingHistory: false,
+  /** Set right after room creation, used to display the links */
+  shareLink: '',
+  hostLink: '',
+  showLinks: false,
+  closedReason: '' as ClosedReason,
+  error: '' as '' | 'invalid_link' | 'missing_key' | 'create_failed',
+  pending: null as PendingJoin | null,
+});
+
+// Non reactive module state (secrets and handles do not belong in $state)
+
+let ws: WebSocket | null = null;
+let cryptoKey: CryptoKey | null = null;
+let keyB64 = '';
+let hostToken: string | null = null;
+let guestToken = '';
+let signingPrivateKey: CryptoKey | null = null;
+let signingPublicKey: CryptoKey | null = null;
+let signingPublicB64 = '';
+let signingPrivateB64 = '';
+let hostSequence = 0;
+let lastVerifiedHostSequence = 0;
+let hostStateInitialized = false;
+let hostRelayChain = Promise.resolve();
+let generationLockRequested = false;
+const seenGenerationRequests = new Set<string>();
+const seenIds = new Set<string>();
+const completedStreamIds = new Set<string>();
+const persistedIds = new Set<string>();
+const persistenceInFlight = new Map<string, Promise<void>>();
+let snapshotTimer: ReturnType<typeof setTimeout> | null = null;
+let sessionPromise: Promise<string> | null = null;
+let shouldInsertInitialGreeting = false;
+let remoteTypingId: number | null = null;
+let remoteTypingTimer: ReturnType<typeof setTimeout> | null = null;
+let localTyping = false;
+let lastTypingSentAt = 0;
+let typingRelayChain = Promise.resolve();
+
+interface ActiveGeneration {
+  id: string;
+  messageId: string;
+  author: string;
+  timestamp: number;
+  conversationId: string | null;
+  aborted: boolean;
+  /** Explicit user Stop discards the whole streamed message. */
+  discardPartial: boolean;
+  /** Whether this invocation still owns releasing the relay generation lock. */
+  releaseLock: boolean;
+  buffer: string;
+  relayChain: Promise<void>;
+  flushTimer: ReturnType<typeof setInterval> | null;
+  unlisten: (() => void) | null;
+}
+
+let activeGeneration: ActiveGeneration | null = null;
+
+// Crypto (WebCrypto, AES-256-GCM, payload = base64url(iv || ciphertext))
+
+const b64u = {
+  encode(buf: ArrayBuffer | Uint8Array): string {
+    const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  },
+  decode(s: string): Uint8Array {
+    const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  },
+};
+
+function validKeyBytes(bytes: Uint8Array): boolean {
+  return bytes.byteLength === 32;
+}
+
+async function generateKey(): Promise<void> {
+  cryptoKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, [
+    'encrypt',
+    'decrypt',
+  ]);
+  keyB64 = b64u.encode(await crypto.subtle.exportKey('raw', cryptoKey));
+}
+
+async function importKey(b64: string): Promise<void> {
+  const decoded = b64u.decode(b64);
+  if (!validKeyBytes(decoded)) throw new Error('invalid room key');
+  const keyBytes = new Uint8Array(decoded);
+
+  cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+
+  keyB64 = b64;
+}
+
+async function encryptJson(obj: unknown): Promise<string> {
+  if (!cryptoKey) throw new Error('no room key');
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const plain = new TextEncoder().encode(JSON.stringify(obj));
+  const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, plain);
+  const out = new Uint8Array(iv.length + cipher.byteLength);
+  out.set(iv, 0);
+  out.set(new Uint8Array(cipher), iv.length);
+  return b64u.encode(out);
+}
+
+async function decryptJson(p: string): Promise<any | null> {
+  if (!cryptoKey) return null;
+  try {
+    const raw = b64u.decode(p);
+    const plain = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: raw.slice(0, 12) },
+      cryptoKey,
+      raw.slice(12),
+    );
+    return JSON.parse(new TextDecoder().decode(plain));
+  } catch {
+    return null; // wrong key or broken frame, drop it silently
+  }
+}
+
+// Entry points: create, join, deep link
+
+/** "Create room" from the play page: name gate first, then createRoom(). */
+export function prepareCreate(character: Character): void {
+  resetRoomState();
+  shouldInsertInitialGreeting = true;
+  appState.activeCharacter = character;
+  mpState.characterName = character.name;
+  mpState.pending = { mode: 'create' };
+  appState.currentView = 'multiplayerRoom';
+}
+
+/**
+ * Play page input field: accepts a full share or host link.
+ * A bare code is not enough, without `#k=` nothing can be decrypted.
+ */
+export function prepareJoin(input: string): boolean {
+  const parsed = parseLink(input.trim());
+  if (!parsed) {
+    mpState.error = looksLikeBareCode(input) ? 'missing_key' : 'invalid_link';
+    return false;
+  }
+  resetRoomState();
+  appState.activeCharacter = null;
+  mpState.pending = { mode: 'join', ...parsed };
+  appState.currentView = 'multiplayerRoom';
+  return true;
+}
+
+/**
+ * Call once on app start (e.g. from the root layout). Opens a room shared
+ * via link and immediately strips the code and key from the address bar.
+ */
+export function checkJoinLink(): void {
+  if (typeof window === 'undefined') return;
+  const parsed = parseLink(window.location.href);
+  if (!parsed) return;
+  history.replaceState(null, '', window.location.pathname);
+  resetRoomState();
+  appState.activeCharacter = null;
+  mpState.pending = { mode: 'join', ...parsed };
+  appState.currentView = 'multiplayerRoom';
+}
+
+function parseLink(input: string): Omit<PendingJoin, 'mode'> | null {
+  let roomId = '';
+  let key = '';
+  let host = '';
+  let guest = '';
+  let signingPublic = '';
+  let signingPrivate = '';
+  try {
+    const url = new URL(input, window.location.origin);
+    roomId = url.searchParams.get('mp') ?? '';
+    const frag = new URLSearchParams(url.hash.replace(/^#/, ''));
+    key = frag.get('k') ?? '';
+    host = frag.get('h') ?? '';
+    guest = frag.get('g') ?? '';
+    signingPublic = frag.get('s') ?? '';
+    signingPrivate = frag.get('sk') ?? '';
+  } catch {
+    return null;
+  }
+  if (!/^[A-HJ-NP-Z2-9]{6}$/i.test(roomId) || !key || !guest || !signingPublic) return null;
+  if (host && !signingPrivate) return null;
+  return {
+    roomId: roomId.toUpperCase(),
+    keyB64: key,
+    hostToken: host || undefined,
+    guestToken: guest,
+    signingPublicB64: signingPublic,
+    signingPrivateB64: signingPrivate || undefined,
+  };
+}
+
+function looksLikeBareCode(input: string): boolean {
+  return /^[A-Za-z0-9]{4,8}$/.test(input.trim());
+}
+
+/** Called by the room page's name gate once the display name is set. */
+export async function enterRoom(displayName: string): Promise<void> {
+  const pending = mpState.pending;
+  if (!pending || mpState.connecting || mpState.connected) return;
+  mpState.displayName = displayName.trim();
+  mpState.connecting = true;
+  try {
+    if (pending.mode === 'create' || pending.mode === 'resume') {
+      await createRoom();
+    } else {
+      await importKey(pending.keyB64!);
+      hostToken = pending.hostToken ?? null;
+      guestToken = pending.guestToken!;
+      await importSigningKeys(pending.signingPublicB64!, pending.signingPrivateB64);
+      connect(pending.roomId!);
+    }
+  } catch {
+    mpState.connecting = false;
+    mpState.error = 'create_failed';
+  }
+}
+
+interface PersistedMpMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  author: string | null;
+  created_at: string;
+}
+
+/** Opens a saved multiplayer session without attempting to revive its relay room. */
+export async function openPersistentSession(
+  conversationId: string,
+  character: Character | null,
+): Promise<void> {
+  resetRoomState();
+  mpState.conversationId = conversationId;
+  mpState.characterName = character?.name ?? 'AI';
+  if (character) mpState.sessionCharacter = sessionCharacterFrom(character);
+  mpState.viewingHistory = true;
+
+  const rows = await invoke<PersistedMpMessage[]>('get_messages', { chatId: conversationId });
+  mpState.messages = rows.map((row) => ({
+    id: row.id,
+    kind: row.role === 'assistant' ? 'llm' : 'chat',
+    author: row.author || (row.role === 'assistant' ? mpState.characterName : '?'),
+    text: row.content,
+    ts: Date.parse(row.created_at) || 0,
+  }));
+  for (const message of mpState.messages) seenIds.add(message.id);
+}
+
+/**
+ * Turns a saved, read-only session back into a hosted session. Only the
+ * persistent conversation and its messages survive this transition; the
+ * room, credentials and encryption key are always created from scratch.
+ */
+export function prepareResume(): void {
+  if (!mpState.viewingHistory || !mpState.conversationId || !mpState.sessionCharacter) return;
+
+  ws?.close(1000);
+  ws = null;
+  cancelActiveGeneration(false);
+  if (snapshotTimer) clearTimeout(snapshotTimer);
+  snapshotTimer = null;
+  cryptoKey = null;
+  keyB64 = '';
+  hostToken = null;
+  guestToken = '';
+  signingPrivateKey = null;
+  signingPublicKey = null;
+  signingPublicB64 = '';
+  signingPrivateB64 = '';
+  hostSequence = 0;
+  lastVerifiedHostSequence = 0;
+  hostStateInitialized = false;
+  hostRelayChain = Promise.resolve();
+  generationLockRequested = false;
+  seenGenerationRequests.clear();
+
+  Object.assign(mpState, {
+    connected: false,
+    connecting: false,
+    roomId: '',
+    role: 'host',
+    selfId: 0,
+    count: 0,
+    lockedBy: null,
+    everyoneCanGenerate: false,
+    generating: false,
+    viewingHistory: false,
+    shareLink: '',
+    hostLink: '',
+    showLinks: false,
+    closedReason: '',
+    error: '',
+    pending: { mode: 'resume' } satisfies PendingJoin,
+  });
+}
+
+async function ensurePersistentSession(): Promise<string> {
+  if (mpState.conversationId) return mpState.conversationId;
+  if (sessionPromise) return sessionPromise;
+
+  const character = mpState.role === 'host' ? appState.activeCharacter : null;
+  const characterName = character?.name || mpState.characterName || 'Multiplayer';
+  sessionPromise = invoke<string>('create_chat', {
+    characterId: character?.id != null ? String(character.id) : null,
+    characterName,
+    initialMessage: null,
+    mode: 'multiplayer',
+  }).then((id) => {
+    mpState.conversationId = id;
+    return id;
+  }).finally(() => {
+    sessionPromise = null;
+  });
+  return sessionPromise;
+}
+
+function sessionCharacterFrom(character: Character, avatarUrl = character.avatarUrl): SessionCharacter {
+  return {
+    name: character.name,
+    prompt: character.prompt,
+    greeting: character.greeting || '',
+    initials: character.initials || character.name.slice(0, 1).toUpperCase(),
+    color: character.color || 'bg-stone-700',
+    ...(avatarUrl ? { avatarUrl } : {}),
+  };
+}
+
+async function inlineAvatar(url: string): Promise<string | undefined> {
+  if (url.startsWith('data:image/')) return url;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return undefined;
+    const blob = await response.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+async function prepareHostSessionCharacter(): Promise<void> {
+  const character = appState.activeCharacter as Character | null;
+  if (!character) throw new Error('missing multiplayer character');
+
+  let avatarUrl = character.avatarUrl;
+  if (!avatarUrl && character.isCustom && character.has_avatar) {
+    avatarUrl = await invoke<string | null>('get_character_avatar', {
+      id: String(character.id),
+    }) ?? undefined;
+  }
+  if (avatarUrl) avatarUrl = await inlineAvatar(avatarUrl);
+
+  mpState.sessionCharacter = sessionCharacterFrom(character, avatarUrl);
+  mpState.characterName = character.name;
+}
+
+function applySessionCharacter(raw: unknown): void {
+  if (!raw || typeof raw !== 'object') return;
+  const candidate = raw as Partial<SessionCharacter>;
+  if (typeof candidate.name !== 'string' || typeof candidate.prompt !== 'string') return;
+
+  const avatarUrl = typeof candidate.avatarUrl === 'string'
+    && (candidate.avatarUrl.startsWith('data:image/') || candidate.avatarUrl.startsWith('/'))
+      ? candidate.avatarUrl
+      : undefined;
+  const character: SessionCharacter = {
+    name: candidate.name,
+    prompt: candidate.prompt,
+    greeting: typeof candidate.greeting === 'string' ? candidate.greeting : '',
+    initials: typeof candidate.initials === 'string' && candidate.initials
+      ? candidate.initials
+      : candidate.name.slice(0, 1).toUpperCase(),
+    color: typeof candidate.color === 'string' ? candidate.color : 'bg-stone-700',
+    ...(avatarUrl ? { avatarUrl } : {}),
+  };
+
+  mpState.sessionCharacter = character;
+  mpState.characterName = character.name;
+  appState.activeCharacter = { id: 'multiplayer-session', ...character };
+}
+
+async function persistMessage(message: MpMessage, conversationId?: string | null): Promise<void> {
+  if (message.kind === 'system' || message.streaming) return;
+  const chatId = conversationId ?? await ensurePersistentSession();
+  await invoke('add_message', {
+    chatId,
+    role: message.kind === 'llm' ? 'assistant' : 'user',
+    content: message.text,
+    author: message.author || null,
+    // The relay id is only unique within its network history. Namespace it by
+    // the persistent session so rejoining the same ephemeral room can never
+    // collide with a different local conversation.
+    messageId: `${chatId}:${message.id}`,
+    createdAt: new Date(message.ts).toISOString(),
+  });
+}
+
+async function persistMessageOnce(
+  message: MpMessage,
+  conversationId?: string | null,
+): Promise<void> {
+  if (message.kind === 'system' || message.streaming || persistedIds.has(message.id)) return;
+
+  const pending = persistenceInFlight.get(message.id);
+  if (pending) return pending;
+
+  const persistence = persistMessage(message, conversationId)
+    .then(() => { persistedIds.add(message.id); })
+    .finally(() => { persistenceInFlight.delete(message.id); });
+  persistenceInFlight.set(message.id, persistence);
+  return persistence;
+}
+
+async function discardPersistedMessage(
+  messageId: string,
+  conversationId?: string | null,
+): Promise<void> {
+  // If an earlier finalization already started writing this message, wait for
+  // it before deleting so the late INSERT cannot recreate cancelled history.
+  await persistenceInFlight.get(messageId)?.catch(() => undefined);
+
+  const chatId = conversationId ?? mpState.conversationId;
+  if (!chatId) return;
+
+  await invoke('delete_message', { id: `${chatId}:${messageId}` });
+  persistedIds.delete(messageId);
+}
+
+async function insertInitialGreeting(): Promise<void> {
+  const character = appState.activeCharacter as Character | null;
+  if (!character) return;
+  const greeting = selectInitialGreeting(character);
+  if (!greeting) return;
+
+  const message: MpMessage = {
+    id: crypto.randomUUID(),
+    kind: 'llm',
+    author: character.name,
+    text: greeting,
+    ts: Date.now(),
+  };
+  seenIds.add(message.id);
+  insertSorted(message);
+  await persistMessageOnce(message);
+}
+
+async function createRoom(): Promise<void> {
+  await prepareHostSessionCharacter();
+  const res = await fetch(`${RELAY_URL}/api/rooms`, { method: 'POST' });
+  if (!res.ok) throw new Error('create failed');
+  const { room_id, host_token, guest_token } = await res.json();
+  await generateKey();
+  await generateSigningKeys();
+  hostToken = host_token;
+  guestToken = guest_token;
+  mpState.shareLink = `${RELAY_URL}/?mp=${room_id}#k=${keyB64}&g=${guest_token}&s=${signingPublicB64}`;
+  mpState.hostLink = `${mpState.shareLink}&h=${host_token}&sk=${signingPrivateB64}`;
+  mpState.showLinks = true;
+  connect(room_id);
+}
+
+// WebSocket lifecycle
+
+function connect(roomId: string): void {
+  mpState.roomId = roomId;
+  const socket = new WebSocket(`${RELAY_WS}/ws/${roomId}`);
+  let incomingFrameChain = Promise.resolve();
+  ws = socket;
+
+  socket.onopen = () => {
+    ws?.send(JSON.stringify({
+      t: 'hello',
+      host_token: hostToken,
+      guest_token: hostToken ? undefined : guestToken,
+    }));
+  };
+
+  socket.onmessage = (ev) => {
+    let msg: any;
+    try {
+      msg = JSON.parse(ev.data);
+    } catch {
+      return;
+    }
+    incomingFrameChain = incomingFrameChain
+      .then(() => {
+        if (ws !== socket) return;
+        return handleServerMsg(msg);
+      })
+      .catch((error) => {
+        console.error('Failed to process multiplayer frame', error);
+      });
+  };
+
+  socket.onclose = (ev) => {
+    const wasConnected = mpState.connected;
+    mpState.connected = false;
+    mpState.connecting = false;
+    cancelActiveGeneration(false);
+    if (mpState.closedReason) return; // room_closed already carried a reason
+    mpState.closedReason = mapCloseCode(ev.code, wasConnected);
+  };
+
+  ws.onerror = () => {
+    /* onclose fires right after anyway */
+  };
+}
+
+function mapCloseCode(code: number, wasConnected: boolean): ClosedReason {
+  switch (code) {
+    case 4001:
+      return 'host_left';
+    case 4404:
+      return 'not_found';
+    case 4403:
+      return 'bad_token';
+    case 4409:
+      return 'host_taken';
+    case 4008:
+      return 'idle';
+    case 4413:
+      return 'slow';
+    case 1000:
+      return wasConnected ? 'left' : 'error';
+    default:
+      return 'error';
+  }
+}
+
+export function leaveRoom(): void {
+  mpState.closedReason = 'left';
+  ws?.close(1000);
+  ws = null;
+  cancelActiveGeneration(false);
+  appState.activeCharacter = null;
+  appState.currentView = 'play';
+}
+
+function resetRoomState(): void {
+  ws?.close(1000);
+  ws = null;
+  cancelActiveGeneration(false);
+  if (snapshotTimer) clearTimeout(snapshotTimer);
+  snapshotTimer = null;
+  clearRemoteTyping();
+  localTyping = false;
+  lastTypingSentAt = 0;
+  typingRelayChain = Promise.resolve();
+  cryptoKey = null;
+  keyB64 = '';
+  hostToken = null;
+  guestToken = '';
+  signingPrivateKey = null;
+  signingPublicKey = null;
+  signingPublicB64 = '';
+  signingPrivateB64 = '';
+  hostSequence = 0;
+  lastVerifiedHostSequence = 0;
+  hostStateInitialized = false;
+  hostRelayChain = Promise.resolve();
+  generationLockRequested = false;
+  seenGenerationRequests.clear();
+  seenIds.clear();
+  completedStreamIds.clear();
+  persistedIds.clear();
+  persistenceInFlight.clear();
+  sessionPromise = null;
+  shouldInsertInitialGreeting = false;
+  Object.assign(mpState, {
+    connected: false,
+    connecting: false,
+    roomId: '',
+    role: 'guest',
+    selfId: 0,
+    count: 0,
+    lockedBy: null,
+    everyoneCanGenerate: false,
+    generating: false,
+    messages: [],
+    remoteTypingName: '',
+    characterName: '',
+    sessionCharacter: null,
+    conversationId: null,
+    viewingHistory: false,
+    shareLink: '',
+    hostLink: '',
+    showLinks: false,
+    closedReason: '',
+    error: '',
+    pending: null,
+  });
+}
+
+// Incoming server frames
+
+async function handleServerMsg(msg: any): Promise<void> {
+  switch (msg.t) {
+    case 'welcome':
+      mpState.connected = true;
+      mpState.connecting = false;
+      mpState.pending = null;
+      mpState.selfId = msg.you;
+      mpState.role = msg.role;
+      mpState.count = msg.count;
+      mpState.lockedBy = msg.locked_by ?? null;
+      mpState.everyoneCanGenerate = false;
+      if (mpState.role === 'host') {
+        mpState.characterName = appState.activeCharacter?.name ?? '';
+      }
+      const addInitialGreeting = mpState.role === 'host' && shouldInsertInitialGreeting;
+      if (addInitialGreeting) shouldInsertInitialGreeting = false;
+      await ensurePersistentSession();
+      if (addInitialGreeting) await insertInitialGreeting();
+      break;
+
+    case 'joined':
+      mpState.count = msg.count;
+      pushSystem(`__joined:${msg.id}`);
+      if (mpState.role === 'host') scheduleSnapshot();
+      break;
+
+    case 'left':
+      mpState.count = msg.count;
+      clearRemoteTyping(Number(msg.id));
+      pushSystem(`__left:${msg.id}`);
+      break;
+
+    case 'relay': {
+      const inner = await decryptJson(msg.p);
+      if (inner) await handleDecrypted(inner, Number(msg.from));
+      break;
+    }
+
+    case 'locked':
+      mpState.lockedBy = msg.by;
+      // Triggering and running are separate concerns: no matter who grabbed
+      // the lock, generation always happens on the host, since only it has
+      // the key, the context, and the LLM.
+      if (mpState.role === 'host' && generationLockRequested) {
+        generationLockRequested = false;
+        void runGeneration();
+      }
+      break;
+
+    case 'unlocked':
+      mpState.lockedBy = null;
+      generationLockRequested = false;
+      // The relay watchdog already released the lock. Cancel only the matching
+      // host request and let its normal finalizer publish/persist the partial.
+      if (activeGeneration) cancelActiveGeneration(false);
+      break;
+
+    case 'policy':
+      // UI policy is host-signed inside the encrypted channel. The relay uses
+      // this metadata for lock arbitration but is not trusted to set client state.
+      break;
+
+    case 'room_closed':
+      mpState.closedReason = msg.reason === 'expired' ? 'expired' : 'host_left';
+      break;
+
+    case 'error':
+      // "locked" / "not_allowed" / "already_locked": the UI blocks these
+      // anyway, so just ignore defensively here.
+      if (msg.code === 'already_locked' || msg.code === 'not_allowed') {
+        generationLockRequested = false;
+      }
+      break;
+  }
+}
+
+// Decrypted application frames (the actual protocol, opaque to the server)
+
+function safeTimestamp(value: unknown, fallback = Date.now()): number {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp >= 0 && timestamp <= 8.64e15
+    ? timestamp
+    : fallback;
+}
+
+async function handleDecrypted(inner: any, sourceId: number): Promise<void> {
+  if (!inner || typeof inner !== 'object') return;
+  let hostAuthenticated = false;
+  if (inner.k === 'host') {
+    inner = await verifyHostEnvelope(inner);
+    if (!inner || typeof inner !== 'object') return;
+    hostAuthenticated = true;
+  }
+  if (['llm_d', 'llm_e', 'snap', 'policy'].includes(inner.k) && !hostAuthenticated) return;
+
+  switch (inner.k) {
+    case 'chat':
+      if (typeof inner.id !== 'string'
+        || inner.id.length > MAX_MESSAGE_ID_CHARS
+        || seenIds.has(inner.id)
+        || typeof inner.name !== 'string'
+        || inner.name.length > MAX_NAME_CHARS
+        || typeof inner.text !== 'string'
+        || inner.text.length > MAX_CHAT_CHARS) return;
+      seenIds.add(inner.id);
+      const message: MpMessage = {
+        id: inner.id,
+        kind: 'chat',
+        author: String(inner.name ?? '?'),
+        text: String(inner.text ?? ''),
+        ts: safeTimestamp(inner.ts),
+      };
+      insertSorted(message);
+      clearRemoteTyping(sourceId);
+      void persistMessageOnce(message);
+      break;
+
+    case 'typing':
+      if (sourceId === mpState.selfId) return;
+      if (inner.active === false) {
+        clearRemoteTyping(sourceId);
+      } else {
+        if (typeof inner.name === 'string' && inner.name.length <= MAX_NAME_CHARS) {
+          showRemoteTyping(sourceId, inner.name);
+        }
+      }
+      break;
+
+    case 'gen_req': {
+      if (mpState.role !== 'host' || !mpState.everyoneCanGenerate || mpState.lockedBy !== null) return;
+      if (typeof inner.id !== 'string'
+        || inner.id.length > MAX_MESSAGE_ID_CHARS
+        || seenGenerationRequests.has(inner.id)) return;
+      seenGenerationRequests.add(inner.id);
+      generationLockRequested = true;
+      ws?.send(JSON.stringify({ t: 'gen_start' }));
+      break;
+    }
+
+    case 'llm_d': {
+      const mid = String(inner.mid);
+      if (!mid || mid.length > MAX_MESSAGE_ID_CHARS || typeof inner.d !== 'string'
+        || inner.d.length > MAX_LLM_DELTA_CHARS) return;
+      if (completedStreamIds.has(mid) || activeGeneration?.messageId === mid) return;
+      const delta = inner.d;
+
+      let m = mpState.messages.find((x) => x.id === mid);
+
+      if (!m) {
+        const newMsg: MpMessage = {
+          id: mid,
+          kind: 'llm',
+          author: String(inner.name ?? mpState.characterName ?? 'AI'),
+          text: delta,
+          ts: safeTimestamp(inner.ts),
+          streaming: true,
+        };
+
+        seenIds.add(mid);
+        insertSorted(newMsg);
+      } else {
+        m.text += delta;
+      }
+
+      break;
+    }
+
+    case 'llm_e': {
+      const mid = String(inner.mid);
+      if (!mid || mid.length > MAX_MESSAGE_ID_CHARS) return;
+      const cancelled = inner.cancelled === true;
+      if (cancelled) {
+        seenIds.add(mid);
+        completedStreamIds.add(mid);
+        mpState.messages = mpState.messages.filter((message) => message.id !== mid);
+        void discardPersistedMessage(mid).catch((error) => {
+          console.error('Failed to discard cancelled multiplayer generation', error);
+        });
+        break;
+      }
+      if (completedStreamIds.has(mid) || activeGeneration?.messageId === mid) return;
+      completedStreamIds.add(mid);
+      const finalText = typeof inner.text === 'string' && inner.text.length <= MAX_LLM_FINAL_CHARS
+        ? inner.text
+        : null;
+      const finalAuthor = typeof inner.name === 'string' ? inner.name : null;
+      const finalTimestamp = safeTimestamp(inner.ts, 0);
+      let m = mpState.messages.find((x) => x.id === mid);
+      if (!m && finalText !== null) {
+        m = {
+          id: mid,
+          kind: 'llm',
+          author: finalAuthor ?? mpState.characterName ?? 'AI',
+          text: finalText,
+          ts: finalTimestamp || Date.now(),
+        };
+        seenIds.add(mid);
+        insertSorted(m);
+      } else if (m) {
+        if (finalText !== null) m.text = finalText;
+        if (finalAuthor !== null) m.author = finalAuthor;
+        if (finalTimestamp) {
+          m.ts = finalTimestamp;
+          mpState.messages.sort((a, b) => a.ts - b.ts);
+        }
+      }
+      if (m) {
+        m.streaming = false;
+        if (m.text.trim()) {
+          void persistMessageOnce(m);
+        } else {
+          mpState.messages = mpState.messages.filter((x) => x.id !== mid);
+        }
+      }
+      break;
+    }
+
+    case 'snap':
+      // History snapshot from the host for late joiners. Anyone who
+      // already has a message (by id) simply ignores it.
+      if (mpState.role === 'host') return;
+      if (typeof inner.charName === 'string' && !mpState.characterName) {
+        mpState.characterName = inner.charName;
+      }
+      applySessionCharacter(inner.character);
+      if (Array.isArray(inner.msgs) && inner.msgs.length <= MAX_SNAPSHOT_MESSAGES) {
+        let added = false;
+        for (const raw of inner.msgs) {
+          if (typeof raw?.id !== 'string'
+            || raw.id.length > MAX_MESSAGE_ID_CHARS
+            || seenIds.has(raw.id)
+            || typeof raw.author !== 'string'
+            || raw.author.length > MAX_NAME_CHARS
+            || typeof raw.text !== 'string'
+            || raw.text.length > MAX_LLM_FINAL_CHARS) continue;
+          seenIds.add(raw.id);
+          const message: MpMessage = {
+            id: raw.id,
+            kind: raw.kind === 'llm' ? 'llm' : 'chat',
+            author: String(raw.author ?? '?'),
+            text: String(raw.text ?? ''),
+            ts: safeTimestamp(raw.ts, 0),
+          };
+          mpState.messages.push(message);
+          void persistMessageOnce(message);
+          added = true;
+        }
+        if (added) mpState.messages.sort((a, b) => a.ts - b.ts);
+      }
+      break;
+
+    case 'policy':
+      if (typeof inner.everyone === 'boolean') mpState.everyoneCanGenerate = inner.everyone;
+      break;
+  }
+}
+
+function pushSystem(text: string): void {
+  mpState.messages.push({
+    id: crypto.randomUUID(),
+    kind: 'system',
+    author: '',
+    text,
+    ts: Date.now(),
+  });
+}
+
+// Sending
+
+async function sendRelay(obj: unknown): Promise<void> {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ t: 'relay', p: await encryptJson(obj) }));
+}
+
+async function generateSigningKeys(): Promise<void> {
+  const pair = await crypto.subtle.generateKey(
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    true,
+    ['sign', 'verify'],
+  );
+  signingPrivateKey = pair.privateKey;
+  signingPublicKey = pair.publicKey;
+  signingPublicB64 = b64u.encode(await crypto.subtle.exportKey('raw', pair.publicKey));
+  signingPrivateB64 = b64u.encode(await crypto.subtle.exportKey('pkcs8', pair.privateKey));
+}
+
+async function importSigningKeys(publicB64: string, privateB64?: string): Promise<void> {
+  const publicBytes = new Uint8Array(b64u.decode(publicB64));
+  if (publicBytes.byteLength !== 65) throw new Error('invalid host signing key');
+  signingPublicKey = await crypto.subtle.importKey(
+    'raw',
+    publicBytes,
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['verify'],
+  );
+  signingPublicB64 = publicB64;
+  if (privateB64) {
+    signingPrivateKey = await crypto.subtle.importKey(
+      'pkcs8',
+      new Uint8Array(b64u.decode(privateB64)),
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['sign'],
+    );
+    signingPrivateB64 = privateB64;
+  }
+}
+
+function hostSignatureInput(sequence: number, body: unknown): Uint8Array {
+  return new TextEncoder().encode(
+    JSON.stringify({ v: 1, room: mpState.roomId, sequence, body }),
+  );
+}
+
+async function verifyHostEnvelope(envelope: any): Promise<unknown | null> {
+  if (!signingPublicKey || envelope?.v !== 1 || !Number.isSafeInteger(envelope.sequence)) return null;
+  if (envelope.sequence <= lastVerifiedHostSequence || typeof envelope.sig !== 'string') return null;
+  try {
+    const valid = await crypto.subtle.verify(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      signingPublicKey,
+      new Uint8Array(b64u.decode(envelope.sig)),
+      hostSignatureInput(envelope.sequence, envelope.body),
+    );
+    if (!valid) return null;
+    if (!hostStateInitialized && envelope.body?.k !== 'snap') return null;
+    lastVerifiedHostSequence = envelope.sequence;
+    hostStateInitialized = true;
+    return envelope.body;
+  } catch {
+    return null;
+  }
+}
+
+function sendHostRelay(body: unknown): Promise<void> {
+  hostRelayChain = hostRelayChain
+    .catch(() => undefined)
+    .then(async () => {
+      if (!signingPrivateKey || !ws || ws.readyState !== WebSocket.OPEN) return;
+      const sequence = ++hostSequence;
+      const signature = await crypto.subtle.sign(
+        { name: 'ECDSA', hash: 'SHA-256' },
+        signingPrivateKey,
+        hostSignatureInput(sequence, body),
+      );
+      await sendRelay({
+        k: 'host',
+        v: 1,
+        sequence,
+        body,
+        sig: b64u.encode(signature),
+      });
+    });
+  return hostRelayChain;
+}
+
+function clearRemoteTyping(sourceId?: number): void {
+  if (sourceId !== undefined && sourceId !== remoteTypingId) return;
+  if (remoteTypingTimer) clearTimeout(remoteTypingTimer);
+  remoteTypingTimer = null;
+  remoteTypingId = null;
+  mpState.remoteTypingName = '';
+}
+
+function showRemoteTyping(sourceId: number, name: string): void {
+  clearRemoteTyping();
+  remoteTypingId = sourceId;
+  mpState.remoteTypingName = name;
+  remoteTypingTimer = setTimeout(() => clearRemoteTyping(sourceId), TYPING_TIMEOUT_MS);
+}
+
+export function sendTyping(active = true): void {
+  if (!mpState.connected || !ws || ws.readyState !== WebSocket.OPEN) return;
+  const now = Date.now();
+  if (active && localTyping && now - lastTypingSentAt < TYPING_SEND_INTERVAL_MS) return;
+  if (!active && !localTyping) return;
+
+  localTyping = active;
+  lastTypingSentAt = now;
+  const frame = { k: 'typing', name: mpState.displayName || '?', active };
+  typingRelayChain = typingRelayChain.then(() => sendRelay(frame)).catch(() => undefined);
+}
+
+export async function sendChat(text: string): Promise<void> {
+  const trimmed = text.trim();
+  if (!trimmed || mpState.lockedBy !== null) return;
+  sendTyping(false);
+  await typingRelayChain;
+  const msg = {
+    k: 'chat',
+    id: crypto.randomUUID(),
+    name: mpState.displayName || '?',
+    text: trimmed,
+    ts: Date.now(),
+  };
+  seenIds.add(msg.id);
+  const localMessage: MpMessage = {
+    id: msg.id,
+    kind: 'chat',
+    author: msg.name,
+    text: msg.text,
+    ts: msg.ts,
+  };
+  insertSorted(localMessage);
+  await persistMessageOnce(localMessage);
+  await sendRelay(msg);
+}
+
+export function requestGeneration(): void {
+  if (mpState.lockedBy !== null) return;
+  if (!(mpState.role === 'host' || mpState.everyoneCanGenerate)) return;
+  if (mpState.role === 'host') {
+    generationLockRequested = true;
+    ws?.send(JSON.stringify({ t: 'gen_start' }));
+  } else {
+    void sendRelay({ k: 'gen_req', id: crypto.randomUUID() });
+  }
+}
+
+export function setPolicy(everyone: boolean): void {
+  if (mpState.role !== 'host') return;
+  mpState.everyoneCanGenerate = everyone;
+  ws?.send(JSON.stringify({ t: 'policy', everyone }));
+  void sendHostRelay({ k: 'policy', everyone });
+}
+
+/** Host cancels the current generation; its finalizer releases the lock. */
+export function abortGeneration(): void {
+  if (mpState.role !== 'host') return;
+  cancelActiveGeneration(true, true);
+}
+
+// Host: history snapshot for late joiners (client side only, debounced)
+
+function scheduleSnapshot(): void {
+  if (snapshotTimer) clearTimeout(snapshotTimer);
+  snapshotTimer = setTimeout(() => {
+    snapshotTimer = null;
+    void sendHostRelay({
+      k: 'snap',
+      charName: mpState.characterName,
+      character: mpState.sessionCharacter,
+      msgs: mpState.messages
+        .filter((m) => m.kind !== 'system' && !m.streaming)
+        .map(({ id, kind, author, text, ts }) => ({ id, kind, author, text, ts })),
+    });
+    void sendHostRelay({ k: 'policy', everyone: mpState.everyoneCanGenerate });
+  }, SNAPSHOT_DEBOUNCE_MS);
+}
+
+// Host: LLM call
+
+function cleanupGenerationResources(generation: ActiveGeneration): void {
+  generation.unlisten?.();
+  generation.unlisten = null;
+  if (generation.flushTimer) clearInterval(generation.flushTimer);
+  generation.flushTimer = null;
+}
+
+function cancelActiveGeneration(releaseLock: boolean, discardPartial = false): void {
+  const generation = activeGeneration;
+  if (!generation) return;
+
+  generation.aborted = true;
+  generation.releaseLock = releaseLock;
+  generation.discardPartial ||= discardPartial;
+  cleanupGenerationResources(generation);
+  if (generation.discardPartial) {
+    generation.buffer = '';
+    completedStreamIds.add(generation.messageId);
+    mpState.messages = mpState.messages.filter(
+      (message) => message.id !== generation.messageId,
+    );
+  }
+  if (activeGeneration === generation) activeGeneration = null;
+  mpState.generating = false;
+
+  // Rust owns the HTTP stream. The id prevents a delayed abort command from
+  // cancelling a subsequent generation that has already become active.
+  void invoke('stop_generation', { generationId: generation.id }).catch((error) => {
+    console.error('Failed to stop multiplayer generation', error);
+  });
+}
+
+function queueGenerationRelay(generation: ActiveGeneration, payload: unknown): Promise<void> {
+  generation.relayChain = generation.relayChain
+    .catch(() => undefined)
+    .then(() => sendHostRelay(payload));
+  return generation.relayChain;
+}
+
+function flushGeneration(generation: ActiveGeneration): Promise<void> {
+  if (!generation.buffer) return generation.relayChain;
+  const delta = generation.buffer;
+  generation.buffer = '';
+  return queueGenerationRelay(generation, {
+    k: 'llm_d',
+    mid: generation.messageId,
+    name: generation.author,
+    ts: generation.timestamp,
+    d: delta,
+  });
+}
+
+async function runGeneration(): Promise<void> {
+  if (activeGeneration) return;
+  mpState.generating = true;
+
+  const mid = crypto.randomUUID();
+  const generationId = crypto.randomUUID();
+  const author = mpState.characterName || 'AI';
+  const timestamp = Date.now();
+  const generation: ActiveGeneration = {
+    id: generationId,
+    messageId: mid,
+    author,
+    timestamp,
+    conversationId: mpState.conversationId,
+    aborted: false,
+    discardPartial: false,
+    releaseLock: true,
+    buffer: '',
+    relayChain: Promise.resolve(),
+    flushTimer: null,
+    unlisten: null,
+  };
+  activeGeneration = generation;
+  seenIds.add(mid);
+  insertSorted({
+    id: mid,
+    kind: 'llm',
+    author,
+    text: '',
+    ts: timestamp,
+    streaming: true
+  });
+
+  const localMsg = mpState.messages.find((m) => m.id === mid)!;
+
+  let raw = '';
+  const s = appState.apiSettings;
+
+  try {
+    // Capture the stable conversation before generation can finish. This
+    // keeps a late finalizer attached to the original session even if the UI
+    // has already left or reset the ephemeral room.
+    generation.conversationId = await ensurePersistentSession();
+
+    const { listen } = await import('@tauri-apps/api/event');
+    generation.unlisten = await listen<{ token: string; generationId?: string }>(
+      'ai-token',
+      (ev) => {
+        if (generation.aborted || ev.payload.generationId !== generation.id) return;
+        raw += ev.payload.token;
+        const visible = s.isThinkingModel
+          ? processThinkingOutput(raw, false).text
+          : raw;
+        // Diff against the visible text already added to the local message.
+        const delta = visible.slice(localMsg.text.length);
+        if (delta) {
+          localMsg.text += delta;
+          generation.buffer += delta;
+        }
+      },
+    );
+
+    if (generation.aborted) {
+      cleanupGenerationResources(generation);
+    } else {
+      generation.flushTimer = setInterval(
+        () => void flushGeneration(generation),
+        LLM_FLUSH_MS,
+      );
+    }
+
+    if (!generation.aborted) {
+      await invoke('call_ai_api', {
+        payload: {
+          generation_id: generation.id,
+          url: s.url,
+          api_key: s.apiKey,
+          model: s.model,
+          messages: buildLlmMessages(),
+          temperature: s.temperature,
+          max_tokens: s.maxTokens,
+          presence_penalty: s.presencePenalty,
+          top_p: s.topP,
+          top_k: s.topK,
+          min_p: s.minP,
+          frequency_penalty: s.frequencyPenalty,
+          is_thinking_model: s.isThinkingModel,
+        },
+      });
+    }
+    if (s.isThinkingModel) {
+      const { text } = processThinkingOutput(raw, true);
+      const delta = text.slice(localMsg.text.length);
+      if (delta) { localMsg.text = text; generation.buffer += delta; }
+    }
+  } catch (error) {
+    if (!generation.aborted) {
+      console.error('Multiplayer generation failed', error);
+      if (!localMsg.text.trim()) localMsg.text = '⚠';
+    }
+  } finally {
+    cleanupGenerationResources(generation);
+    completedStreamIds.add(mid);
+
+    let meaningful = localMsg.text.trim().length > 0;
+    if (meaningful && !generation.discardPartial) {
+      await flushGeneration(generation).catch(() => undefined);
+    }
+
+    // Stop may be pressed while the final buffered relay is completing, so
+    // decide whether to keep the message only after that await boundary.
+    if (generation.discardPartial || !meaningful) {
+      meaningful = false;
+      generation.buffer = '';
+      if (mpState.messages.includes(localMsg)) {
+        mpState.messages = mpState.messages.filter((message) => message !== localMsg);
+      }
+    }
+
+    if (meaningful) localMsg.streaming = false;
+
+    // Queue the final marker behind any deltas already in flight. A cancelled
+    // marker makes guests remove those deltas instead of persisting them.
+    const completion = generation.discardPartial
+      ? { k: 'llm_e', mid, cancelled: true }
+      : {
+          k: 'llm_e',
+          mid,
+          cancelled: false,
+          text: localMsg.text,
+          name: generation.author,
+          ts: generation.timestamp,
+        };
+    await queueGenerationRelay(generation, completion).catch(() => undefined);
+
+    if (activeGeneration === generation) activeGeneration = null;
+    mpState.generating = activeGeneration !== null;
+    if (generation.releaseLock) ws?.send(JSON.stringify({ t: 'gen_end' }));
+
+    if (generation.discardPartial) {
+      try {
+        await discardPersistedMessage(mid, generation.conversationId);
+      } catch (error) {
+        console.error('Failed to discard cancelled multiplayer generation', error);
+      }
+    } else if (meaningful) {
+      try {
+        await persistMessageOnce(localMsg, generation.conversationId);
+      } catch (error) {
+        console.error('Failed to persist multiplayer generation', error);
+      }
+    }
+  }
+}
+
+function buildLlmMessages(): Array<{ role: string; content: string }> {
+  const s = appState.apiSettings;
+  const char = mpState.sessionCharacter ?? appState.activeCharacter;
+  let system = s.systemPrompt || '';
+  if (char?.prompt) {
+    system += `${system ? '\n\n' : ''}You are ${char.name ?? 'the character'}. ${char.prompt}`;
+  }
+  system += `${system ? '\n' : ''}Respond in ${getClientLanguageName()}.`;
+
+  // 1) collect history as before, walking backwards within a character budget
+  const budget = Math.max(1000, (s.contextLimit || 4096) * 3);
+  let used = 0;
+  const history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  for (let i = mpState.messages.length - 1; i >= 0; i--) {
+    const m = mpState.messages[i];
+    if (m.kind === 'system' || m.streaming) continue;
+    if (!m.text.trim() || m.text === '⚠') continue; // skip empty or broken turns
+    const content = m.kind === 'llm' ? m.text : `${m.author}: ${m.text}`;
+    if (used + content.length > budget) break;
+    used += content.length;
+    history.push({ role: m.kind === 'llm' ? 'assistant' : 'user', content });
+  }
+  history.reverse();
+
+  // 2) merge consecutive turns with the same role into one turn
+  const merged: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  for (const msg of history) {
+    const last = merged[merged.length - 1];
+    if (last && last.role === msg.role) {
+      last.content += `\n${msg.content}`;
+    } else {
+      merged.push({ ...msg });
+    }
+  }
+
+  // 3) enforce template requirements:
+  //    the first and the last turn must both be user turns
+  if (merged[0]?.role === 'assistant') {
+    merged.unshift({ role: 'user', content: '[Start]' });
+  }
+  if (merged.length === 0 || merged[merged.length - 1].role === 'assistant') {
+    merged.push({ role: 'user', content: '[Antworte auf das Gespräch]' });
+  }
+
+  const out: Array<{ role: string; content: string }> = [];
+  if (system) out.push({ role: 'system', content: system });
+  return out.concat(merged);
+}
+
+function insertSorted(msg: MpMessage): void {
+  mpState.messages.push(msg);
+  mpState.messages.sort((a, b) => a.ts - b.ts);
+}

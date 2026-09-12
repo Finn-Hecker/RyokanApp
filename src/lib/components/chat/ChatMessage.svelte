@@ -1,7 +1,6 @@
 <script lang="ts">
   import * as m from '$lib/paraglide/messages';
-  import { marked } from 'marked';
-  import DOMPurify from 'dompurify';
+  import { renderMessageMarkdown } from '$lib/utils/renderMessageMarkdown';
   import { setSwipeIndex } from '$lib/stores/chatStore.svelte';
   import type { DisplayMessage } from '$lib/stores/chatStore.svelte';
 
@@ -47,8 +46,7 @@
   let displayText = $derived(
     isOocMsg ? msg.text.replace(/^\[OOC:\s*/, '').replace(/\]$/, '') : msg.text
   );
-  let rawHtml   = $derived(marked.parse(msg.text || '') as string);
-  let cleanHtml = $derived(DOMPurify.sanitize(rawHtml));
+  let cleanHtml = $derived(renderMessageMarkdown(msg.text));
 
   // Swipe
   let totalVariants = $derived(msg.swipeVariants?.length ?? 1);
@@ -112,7 +110,7 @@
   }
 </script>
 
-<div class="flex {msg.isUser ? 'justify-end mb-6' : 'justify-start mb-8'}">
+<div data-message-id={msg.id} class="flex {msg.isUser ? 'justify-end mb-6' : 'justify-start mb-8'}">
 
 {#if msg.isUser}
   <div class="max-w-[75%] sm:max-w-[65%] group/usermsg">

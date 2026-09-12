@@ -11,6 +11,15 @@ pub mod roles;
 
 const DB_FILENAME: &str = "ryokan.db";
 
+fn normalize_character_play_modes(conn: &Connection) -> rusqlite::Result<usize> {
+    conn.execute(
+        "UPDATE characters
+         SET play_mode = 'solo'
+         WHERE play_mode IS NULL OR play_mode NOT IN ('solo', 'multiplayer')",
+        [],
+    )
+}
+
 /// Establishes a connection to the local SQLite database.
 /// Foreign keys are enabled per-connection, as SQLite disables them by default.
 pub fn get_connection(app: &AppHandle) -> Result<Connection, String> {
@@ -28,8 +37,12 @@ pub fn get_connection(app: &AppHandle) -> Result<Connection, String> {
     let conn = Connection::open(db_path)
         .map_err(|e| format!("Failed to open database: {}", e))?;
 
-    conn.execute_batch("PRAGMA foreign_keys = ON;")
-        .map_err(|e| format!("Failed to enable foreign keys: {}", e))?;
+    conn.execute_batch(
+        "PRAGMA foreign_keys = ON;
+         PRAGMA journal_mode = WAL;
+         PRAGMA synchronous = NORMAL;
+         PRAGMA busy_timeout = 5000;"
+    ).map_err(|e| format!("Failed to configure connection pragmas: {}", e))?;
 
     Ok(conn)
 }
@@ -55,6 +68,7 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             id TEXT PRIMARY KEY,
             title TEXT,
             character_id TEXT,
+            mode TEXT NOT NULL DEFAULT 'singleplayer',
             created_at DATETIME DEFAULT {utc_now},
             updated_at DATETIME DEFAULT {utc_now},
             is_pinned INTEGER NOT NULL DEFAULT 0,
@@ -64,16 +78,23 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
 
         CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at DESC);
 
+        CREATE INDEX IF NOT EXISTS idx_conversations_pinned_updated
+            ON conversations(is_pinned DESC, updated_at DESC);
+
         CREATE TABLE IF NOT EXISTS messages (
             id TEXT PRIMARY KEY,
             conversation_id TEXT,
             role TEXT,
             content TEXT,
+            author TEXT,
             swipe_variants TEXT NOT NULL DEFAULT '[]',
             swipe_index INTEGER NOT NULL DEFAULT 0,
             created_at DATETIME DEFAULT {utc_now},
             FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
         );
+
+        CREATE INDEX IF NOT EXISTS idx_messages_conversation
+            ON messages(conversation_id, created_at);
 
         -- Keeps updated_at current so conversations are sorted by latest activity.
         CREATE TRIGGER IF NOT EXISTS update_conversation_timestamp
@@ -102,6 +123,7 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             v3_spec BOOLEAN,
             initials TEXT,
             color TEXT,
+            play_mode TEXT NOT NULL DEFAULT 'solo',
             avatar BLOB,
             world_info_ids TEXT NOT NULL DEFAULT '[]',
             created_at DATETIME DEFAULT {utc_now}
@@ -154,5 +176,66 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
         "ALTER TABLE conversations ADD COLUMN cloned_from_title TEXT;"
     );
 
+    // Multiplayer sessions reuse the normal conversation/message tables. The
+    // defaults keep every pre-0.5 database and all existing rows singleplayer.
+    let _ = conn.execute_batch(
+        "ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'singleplayer';"
+    );
+    let _ = conn.execute_batch(
+        "ALTER TABLE messages ADD COLUMN author TEXT;"
+    );
+
+    // Characters created before play modes existed default to singleplayer.
+    let _ = conn.execute_batch(
+        "ALTER TABLE characters ADD COLUMN play_mode TEXT NOT NULL DEFAULT 'solo';"
+    );
+
+    // "both" is no longer a supported mode. Normalize it, NULLs, and any
+    // unknown values so older databases remain usable with the stricter model.
+    normalize_character_play_modes(&conn)
+        .map_err(|e| format!("Failed to normalize character play modes: {}", e))?;
+
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_character_play_modes;
+    use rusqlite::{params, Connection};
+
+    #[test]
+    fn legacy_and_invalid_character_play_modes_migrate_to_solo() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE characters (id TEXT PRIMARY KEY, play_mode TEXT);
+             INSERT INTO characters VALUES
+                ('solo', 'solo'),
+                ('multi', 'multiplayer'),
+                ('both', 'both'),
+                ('invalid', 'something-else'),
+                ('missing', NULL);",
+        )
+        .unwrap();
+
+        normalize_character_play_modes(&conn).unwrap();
+
+        for id in ["solo", "both", "invalid", "missing"] {
+            let mode: String = conn
+                .query_row(
+                    "SELECT play_mode FROM characters WHERE id = ?1",
+                    params![id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(mode, "solo", "{id}");
+        }
+        let multiplayer: String = conn
+            .query_row(
+                "SELECT play_mode FROM characters WHERE id = 'multi'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(multiplayer, "multiplayer");
+    }
 }

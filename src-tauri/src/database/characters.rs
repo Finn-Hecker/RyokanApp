@@ -14,18 +14,15 @@ use std::io::Cursor;
 pub struct DbCharacter {
     pub id: String,
     pub name: String,
-    pub desc: String,
-    pub personality: String,
-    pub scenario: String,
+    pub prompt: String,
     pub greeting: String,
     pub alternate_greetings: String,
-    pub mes_example: String,
-    pub creator_notes: String,
     pub tags: String,
     pub v3_spec: bool,
     pub initials: String,
     pub color: String,
-    pub avatar: Option<Vec<u8>>,
+    pub play_mode: String,
+    pub has_avatar: bool,
     pub world_info_ids: Vec<String>,
 }
 
@@ -34,19 +31,22 @@ pub struct DbCharacter {
 #[derive(Deserialize)]
 pub struct CreateCharacterPayload {
     pub name: String,
-    pub desc: String,
-    pub personality: String,
-    pub scenario: String,
+    pub prompt: String,
     pub greeting: String,
     pub alternate_greetings: Vec<String>,
-    pub mes_example: String,
-    pub creator_notes: String,
-    pub tags: Vec<String>,
-    pub v3_spec: bool,
     pub initials: String,
     pub color: String,
+    pub play_mode: Option<String>,
     pub avatar: Option<String>,
     pub world_info_ids: Option<Vec<String>>,
+}
+
+fn normalize_play_mode(play_mode: Option<&str>) -> &'static str {
+    match play_mode {
+        Some("solo") => "solo",
+        Some("multiplayer") => "multiplayer",
+        _ => "solo",
+    }
 }
 
 /// Decodes a Base64 image from the frontend, resizes it if it exceeds 2048×2048,
@@ -98,39 +98,43 @@ fn process_avatar(base64_img: &str) -> Result<Vec<u8>, String> {
     }
 }
 
-/// Returns all saved characters. Avatars are returned as raw bytes.
+/// Returns all saved characters, WITHOUT avatar bytes.
 #[tauri::command]
-pub fn get_custom_characters(app: AppHandle) -> Result<Vec<DbCharacter>, String> {
+pub async fn get_custom_characters(app: AppHandle) -> Result<Vec<DbCharacter>, String> {
     let conn = get_connection(&app)?;
 
     let mut stmt = conn.prepare(
         "SELECT id, name, desc, personality, scenario, greeting,
                 alternate_greetings, mes_example, creator_notes, tags,
-                v3_spec, initials, color, world_info_ids, avatar
+                v3_spec, initials, color, play_mode, world_info_ids,
+                LENGTH(avatar) > 0
          FROM characters ORDER BY created_at DESC"
     ).map_err(|e| e.to_string())?;
 
     let rows = stmt.query_map([], |row| {
-        let avatar_blob: Option<Vec<u8>> = row.get(14)?;
+        let has_avatar: Option<bool> = row.get(15)?;
 
         Ok(DbCharacter {
             id:                 row.get(0)?,
             name:               row.get(1)?,
-            desc:               row.get(2)?,
-            personality:        row.get(3)?,
-            scenario:           row.get(4)?,
+            prompt: crate::import::combine_legacy_prompt(
+                &row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                &row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                &row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                &row.get::<_, Option<String>>(7)?.unwrap_or_default(),
+            ),
             greeting:           row.get(5)?,
             alternate_greetings: row.get(6)?,
-            mes_example:        row.get(7)?,
-            creator_notes:      row.get(8)?,
             tags:               row.get(9)?,
             v3_spec:            row.get(10)?,
             initials:           row.get(11)?,
             color:              row.get(12)?,
+            play_mode:          normalize_play_mode(row.get::<_, Option<String>>(13)?.as_deref())
+                .to_string(),
             world_info_ids: serde_json::from_str(
-                &row.get::<_, Option<String>>(13)?.unwrap_or_default()
+                &row.get::<_, Option<String>>(14)?.unwrap_or_default()
             ).unwrap_or_default(),
-            avatar: avatar_blob,
+            has_avatar: has_avatar.unwrap_or(false),
         })
     }).map_err(|e| e.to_string())?;
 
@@ -139,16 +143,33 @@ pub fn get_custom_characters(app: AppHandle) -> Result<Vec<DbCharacter>, String>
     Ok(list)
 }
 
+/// Lazily fetches a single character's avatar, Base64-encoded as a data URL.
+/// Called on demand by the frontend (e.g. when a character card scrolls into view)
+#[tauri::command]
+pub async fn get_character_avatar(app: AppHandle, id: String) -> Result<Option<String>, String> {
+    let conn = get_connection(&app)?;
+
+    let avatar_blob: Option<Vec<u8>> = conn.query_row(
+        "SELECT avatar FROM characters WHERE id = ?1",
+        params![id],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    Ok(avatar_blob.filter(|b| !b.is_empty()).map(|bytes| {
+        format!("data:image/webp;base64,{}", general_purpose::STANDARD.encode(bytes))
+    }))
+}
+
 /// Inserts a new character. Avatar processing runs on a background thread.
 #[tauri::command]
-pub fn create_character(app: AppHandle, payload: CreateCharacterPayload) -> Result<String, String> {
+pub async fn create_character(app: AppHandle, payload: CreateCharacterPayload) -> Result<String, String> {
     let conn = get_connection(&app)?;
     let new_id = Uuid::new_v4().to_string();
 
     let alt_greetings_json = serde_json::to_string(&payload.alternate_greetings)
         .unwrap_or_else(|_| "[]".to_string());
-    let tags_json = serde_json::to_string(&payload.tags)
-        .unwrap_or_else(|_| "[]".to_string());
+    let tags_json = "[]";
+    let play_mode = normalize_play_mode(payload.play_mode.as_deref());
     let world_info_ids_json = serde_json::to_string(
         &payload.world_info_ids.unwrap_or_default()
     ).unwrap_or_else(|_| "[]".to_string());
@@ -157,22 +178,23 @@ pub fn create_character(app: AppHandle, payload: CreateCharacterPayload) -> Resu
         "INSERT INTO characters
             (id, name, desc, personality, scenario, greeting,
              alternate_greetings, mes_example, creator_notes, tags,
-             v3_spec, initials, color, avatar, world_info_ids)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, NULL, ?14)",
+             v3_spec, initials, color, play_mode, avatar, world_info_ids)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL, ?15)",
         params![
             new_id,
             payload.name,
-            payload.desc,
-            payload.personality,
-            payload.scenario,
+            payload.prompt,
+            "",
+            "",
             payload.greeting,
             alt_greetings_json,
-            payload.mes_example,
-            payload.creator_notes,
+            "",
+            "",
             tags_json,
-            payload.v3_spec,
+            false,
             payload.initials,
             payload.color,
+            play_mode,
             world_info_ids_json,
         ],
     ).map_err(|e| e.to_string())?;
@@ -204,37 +226,31 @@ pub fn create_character(app: AppHandle, payload: CreateCharacterPayload) -> Resu
 /// Updates an existing character. If no new avatar is provided, the existing one is kept.
 /// Avatar processing runs on a background thread.
 #[tauri::command]
-pub fn update_character(app: AppHandle, id: String, payload: CreateCharacterPayload) -> Result<(), String> {
+pub async fn update_character(app: AppHandle, id: String, payload: CreateCharacterPayload) -> Result<(), String> {
     let conn = get_connection(&app)?;
 
     let alt_greetings_json = serde_json::to_string(&payload.alternate_greetings)
         .unwrap_or_else(|_| "[]".to_string());
-    let tags_json = serde_json::to_string(&payload.tags)
-        .unwrap_or_else(|_| "[]".to_string());
     let world_info_ids_json = serde_json::to_string(
         &payload.world_info_ids.unwrap_or_default()
     ).unwrap_or_else(|_| "[]".to_string());
+    let play_mode = normalize_play_mode(payload.play_mode.as_deref());
 
+    // Folded legacy prompt sections now live in desc. Preserve notes and metadata.
     conn.execute(
         "UPDATE characters SET
-            name = ?1, desc = ?2, personality = ?3, scenario = ?4,
-            greeting = ?5, alternate_greetings = ?6, mes_example = ?7,
-            creator_notes = ?8, tags = ?9, v3_spec = ?10,
-            initials = ?11, color = ?12, world_info_ids = ?13
-         WHERE id = ?14",
+            name = ?1, desc = ?2, personality = '', scenario = '',
+            greeting = ?3, alternate_greetings = ?4, mes_example = '',
+            initials = ?5, color = ?6, play_mode = ?7, world_info_ids = ?8
+         WHERE id = ?9",
         params![
             payload.name,
-            payload.desc,
-            payload.personality,
-            payload.scenario,
+            payload.prompt,
             payload.greeting,
             alt_greetings_json,
-            payload.mes_example,
-            payload.creator_notes,
-            tags_json,
-            payload.v3_spec,
             payload.initials,
             payload.color,
+            play_mode,
             world_info_ids_json,
             id,
         ],
@@ -268,7 +284,7 @@ pub fn update_character(app: AppHandle, id: String, payload: CreateCharacterPayl
 /// Permanently deletes a character. Associated chats are removed via ON DELETE CASCADE.
 /// Also cleans up the character's ID from the hidden_character_ids and pinned_character_ids settings.
 #[tauri::command]
-pub fn delete_character(app: AppHandle, id: String) -> Result<(), String> {
+pub async fn delete_character(app: AppHandle, id: String) -> Result<(), String> {
     let conn = get_connection(&app)?;
 
     conn.execute("DELETE FROM characters WHERE id = ?1", params![id])
@@ -317,7 +333,7 @@ pub fn delete_character(app: AppHandle, id: String) -> Result<(), String> {
 
 /// Returns all hidden character IDs. Applies to both custom and static characters.
 #[tauri::command]
-pub fn get_hidden_character_ids(app: AppHandle) -> Result<Vec<String>, String> {
+pub async fn get_hidden_character_ids(app: AppHandle) -> Result<Vec<String>, String> {
     let conn = get_connection(&app)?;
 
     let raw: Option<String> = conn
@@ -336,7 +352,7 @@ pub fn get_hidden_character_ids(app: AppHandle) -> Result<Vec<String>, String> {
 
 /// Hides or unhides a character by updating the hidden_character_ids list in settings.
 #[tauri::command]
-pub fn set_character_hidden(app: AppHandle, id: String, hidden: bool) -> Result<(), String> {
+pub async fn set_character_hidden(app: AppHandle, id: String, hidden: bool) -> Result<(), String> {
     let conn = get_connection(&app)?;
 
     let raw: Option<String> = conn
@@ -370,7 +386,7 @@ pub fn set_character_hidden(app: AppHandle, id: String, hidden: bool) -> Result<
 
 /// Returns all pinned character IDs. Applies to both custom and static characters.
 #[tauri::command]
-pub fn get_pinned_character_ids(app: AppHandle) -> Result<Vec<String>, String> {
+pub async fn get_pinned_character_ids(app: AppHandle) -> Result<Vec<String>, String> {
     let conn = get_connection(&app)?;
 
     let raw: Option<String> = conn
@@ -389,7 +405,7 @@ pub fn get_pinned_character_ids(app: AppHandle) -> Result<Vec<String>, String> {
 
 /// Pins or unpins a character by updating the pinned_character_ids list in settings.
 #[tauri::command]
-pub fn set_character_pinned(app: AppHandle, id: String, pinned: bool) -> Result<(), String> {
+pub async fn set_character_pinned(app: AppHandle, id: String, pinned: bool) -> Result<(), String> {
     let conn = get_connection(&app)?;
 
     let raw: Option<String> = conn
@@ -419,4 +435,18 @@ pub fn set_character_pinned(app: AppHandle, id: String, pinned: bool) -> Result<
     ).map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_play_mode;
+
+    #[test]
+    fn play_mode_defaults_to_solo_and_rejects_unknown_values() {
+        assert_eq!(normalize_play_mode(None), "solo");
+        assert_eq!(normalize_play_mode(Some("both")), "solo");
+        assert_eq!(normalize_play_mode(Some("unknown")), "solo");
+        assert_eq!(normalize_play_mode(Some("solo")), "solo");
+        assert_eq!(normalize_play_mode(Some("multiplayer")), "multiplayer");
+    }
 }

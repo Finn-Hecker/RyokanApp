@@ -1,36 +1,40 @@
 import { invoke } from '@tauri-apps/api/core';
 import { CHARACTERS as STATIC_CHARACTERS } from '$lib/data/characters';
 
-function bytesToUrl(bytes: number[]): string {
-    const uint8 = new Uint8Array(bytes);
-    const blob = new Blob([uint8], { type: 'image/webp' });
-    return URL.createObjectURL(blob);
-}
+export type PlayMode = 'solo' | 'multiplayer';
 
 export interface Character {
     id: string | number;
     name: string;
-    desc: string;
+    /** Short, card-friendly summary. Static characters localize this separately
+     *  from their full prompt; custom characters fall back to their prompt. */
+    description?: string;
+    prompt: string;
     greeting: string;
     initials: string;
     color: string;
+    play_mode: PlayMode;
     isCustom?: boolean;
-    avatar?: number[];
+    /** Whether the DB has an avatar stored for this character. The bytes
+     *  themselves are no longer part of the list payload — see loadCharacterAvatar. */
+    has_avatar?: boolean;
     avatarUrl?: string;
-    personality?: string;
-    scenario?: string;
-    mes_example?: string;
-    creator_notes?: string;
     hidden?: boolean;
     alternate_greetings?: string[];
     world_info_ids?: string[];
 }
+
+export type CharacterInput = Pick<Character, 'name' | 'prompt' | 'greeting' | 'initials' | 'color' | 'play_mode' | 'alternate_greetings' | 'world_info_ids'> & { avatar?: string | null };
 
 export const characterState = $state({
     allCharacters: [] as Character[],
     hiddenCharacterIds: new Set<string | number>(),
     pinnedCharacterIds: new Set<string | number>(),
 });
+
+export function normalizePlayMode(playMode: unknown): PlayMode {
+    return playMode === 'multiplayer' ? 'multiplayer' : 'solo';
+}
 
 export async function loadHiddenIds() {
     try {
@@ -54,40 +58,66 @@ export async function loadCharacters() {
     try {
         const dbChars = await invoke<Character[]>('get_custom_characters');
 
-        const customChars = dbChars.map(c => {
-            let avatarUrl: string | undefined = undefined;
-            if (c.avatar && c.avatar.length > 0) {
-                avatarUrl = bytesToUrl(c.avatar);
-            }
-            return {
-                ...c,
-                isCustom: true,
-                avatarUrl,
-                alternate_greetings: typeof c.alternate_greetings === 'string'
-                    ? JSON.parse(c.alternate_greetings)
-                    : (c.alternate_greetings ?? []),
-                world_info_ids: Array.isArray(c.world_info_ids)
-                    ? c.world_info_ids
-                    : [],
-            };
-        });
+        const customChars = dbChars.map(c => ({
+            ...c,
+            isCustom: true,
+            play_mode: normalizePlayMode(c.play_mode),
+            alternate_greetings: typeof c.alternate_greetings === 'string'
+                ? JSON.parse(c.alternate_greetings)
+                : (c.alternate_greetings ?? []),
+            world_info_ids: Array.isArray(c.world_info_ids)
+                ? c.world_info_ids
+                : [],
+        }));
 
         characterState.allCharacters = [...customChars, ...STATIC_CHARACTERS];
+
+        // Avatars are intentionally NOT fetched here. Each view (grid/list/compact)
+        // renders a <CharacterAvatar> that lazily calls loadCharacterAvatar() via an
+        // IntersectionObserver once a card actually scrolls into view - fetching
+        // eagerly for every character here would defeat that.
 
     } catch (e) {
         console.error("Error loading characters:", e);
     }
 }
 
-export async function createCharacter(charData: any) {
+/**
+ * Fetches a single character's avatar (as a ready-to-use data URL) and merges
+ * it into state once it resolves. Called by <CharacterAvatar> when a card
+ * scrolls into view. Deduplicated against concurrent calls for the same id,
+ * since switching between grid/list/compact view can mount a new
+ * <CharacterAvatar> for the same character before the first fetch lands.
+ */
+const avatarFetchesInFlight = new Set<string>();
+
+export async function loadCharacterAvatar(id: string): Promise<void> {
+    if (avatarFetchesInFlight.has(id)) return;
+    avatarFetchesInFlight.add(id);
+
+    try {
+        const avatarUrl = await invoke<string | null>('get_character_avatar', { id });
+        if (!avatarUrl) return;
+        characterState.allCharacters = characterState.allCharacters.map(c =>
+            String(c.id) === id ? { ...c, avatarUrl } : c
+        );
+    } catch (e) {
+        console.error('Error loading character avatar:', id, e);
+    } finally {
+        avatarFetchesInFlight.delete(id);
+    }
+}
+
+export async function createCharacter(charData: CharacterInput) {
     const tempId = `temp-${Date.now()}`;
     const tempChar: Character = {
         id: tempId,
         name: charData.name,
-        desc: charData.desc,
+        prompt: charData.prompt,
         greeting: charData.greeting || "",
         initials: charData.initials,
         color: charData.color,
+        play_mode: charData.play_mode,
         isCustom: true,
         avatarUrl: charData.avatar || undefined,
         world_info_ids: charData.world_info_ids ?? [],
@@ -103,18 +133,13 @@ export async function createCharacter(charData: any) {
         const realId = await invoke<string>('create_character', {
             payload: {
                 name: charData.name,
-                desc: charData.desc,
-                personality: charData.personality || "",
-                scenario: charData.scenario || "",
+                prompt: charData.prompt,
                 greeting: charData.greeting || "",
                 alternate_greetings: charData.alternate_greetings || [],
-                mes_example: charData.mes_example || "",
-                creator_notes: charData.creator_notes || "",
-                tags: charData.tags || [],
                 avatar: charData.avatar || null,
-                v3_spec: charData.v3_spec || false,
                 initials: charData.initials,
                 color: charData.color,
+                play_mode: charData.play_mode,
                 world_info_ids: charData.world_info_ids ?? [],
             }
         });
@@ -132,24 +157,19 @@ export async function createCharacter(charData: any) {
     }
 }
 
-export async function updateCharacter(id: string, charData: any) {
+export async function updateCharacter(id: string, charData: CharacterInput) {
     try {
         await invoke('update_character', {
             id,
             payload: {
                 name: charData.name,
-                desc: charData.desc,
-                personality: charData.personality || "",
-                scenario: charData.scenario || "",
+                prompt: charData.prompt,
                 greeting: charData.greeting || "",
                 alternate_greetings: charData.alternate_greetings || [],
-                mes_example: charData.mes_example || "",
-                creator_notes: charData.creator_notes || "",
-                tags: charData.tags || [],
                 avatar: charData.avatar || null,
-                v3_spec: charData.v3_spec || false,
                 initials: charData.initials,
                 color: charData.color,
+                play_mode: charData.play_mode,
                 world_info_ids: charData.world_info_ids ?? [],
             }
         });

@@ -2,6 +2,7 @@
   import { characterState } from '$lib/stores/characterStore.svelte';
   import * as m from '$lib/paraglide/messages';
   import CharacterContextMenu from './CharacterContextMenu.svelte';
+  import CharacterAvatar from './CharacterAvatar.svelte';
 
   let {
     characters,
@@ -11,7 +12,8 @@
     onDelete,
     onToggleHide,
     onTogglePin,
-    resolveDesc
+    resolveDesc,
+    menuMode = 'full'
   }: {
     characters: any[];
     showHidden: boolean;
@@ -21,6 +23,7 @@
     onToggleHide: (e: MouseEvent, char: any) => void;
     onTogglePin: (e: MouseEvent, char: any) => void;
     resolveDesc: (char: any) => string;
+    menuMode?: 'full' | 'manage' | 'none';
   } = $props();
 
   // Tracks which card is currently being pressed. Driven by pointer events on
@@ -51,12 +54,12 @@
       ></button>
 
       <div class="relative z-10 w-full aspect-[3/4] bg-white/5 overflow-hidden rounded-t-2xl pointer-events-none">
-        {#if char.avatarUrl}
-          <img src={char.avatarUrl} alt={char.name} class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
-          <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
-        {:else}
-          <div class="w-full h-full {char.color} flex items-center justify-center text-white font-bold text-4xl opacity-80">{char.initials}</div>
-        {/if}
+        <CharacterAvatar
+          {char}
+          imgClass="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+          fallbackTextClass="text-4xl"
+          gradientClass="bg-gradient-to-t from-black/60 via-transparent to-transparent"
+        />
 
         {#if isPinned}
           <div class="absolute top-2.5 left-2.5 z-20 pointer-events-none">
@@ -69,17 +72,29 @@
         {/if}
       </div>
 
-      <div class="absolute top-2.5 right-2.5 z-20 pointer-events-auto transition-all duration-200 opacity-100 translate-y-0 md:opacity-0 md:group-hover:opacity-100 md:translate-y-1 md:group-hover:translate-y-0">
-        <CharacterContextMenu
-          {char} {isHidden} {isPinned}
-          size="lg"
-          {onEdit} {onTogglePin} {onToggleHide} {onDelete}
-        />
-      </div>
+      {#if menuMode !== 'none' && (menuMode === 'full' || char.isCustom)}
+        <div class="absolute top-2.5 right-2.5 z-20 pointer-events-auto transition-all duration-200 opacity-100 translate-y-0 md:opacity-0 md:group-hover:opacity-100 md:translate-y-1 md:group-hover:translate-y-0">
+          {#if menuMode === 'manage'}
+            <button
+              type="button"
+              onclick={(event) => onEdit(event, char)}
+              class="rounded-lg border border-white/[0.07] bg-black/45 px-2.5 py-1.5 text-xs text-gray-300 backdrop-blur-sm transition-colors hover:border-white/15 hover:bg-black/65 hover:text-gray-100"
+            >
+              {m.play_mp_picker_manage()}
+            </button>
+          {:else}
+            <CharacterContextMenu
+              {char} {isHidden} {isPinned}
+              size="lg"
+              {onEdit} {onTogglePin} {onToggleHide} {onDelete}
+            />
+          {/if}
+        </div>
+      {/if}
 
       <div class="relative z-10 px-4 py-3 pointer-events-none">
         <h3 class="text-sm font-semibold text-gray-100 truncate group-hover:text-ryokan-accent transition-colors">{char.name}</h3>
-        <p class="text-xs text-gray-500 mt-0.5 line-clamp-2 leading-snug">{resolveDesc(char)}</p>
+        <p class="text-xs text-gray-400 mt-0.5 line-clamp-2 leading-snug">{resolveDesc(char)}</p>
       </div>
     </div>
   {/each}

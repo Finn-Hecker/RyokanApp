@@ -74,7 +74,7 @@ fn inject_png_text_chunk(png: Vec<u8>, keyword: &[u8], payload: &[u8]) -> Result
 /// Loads character data and avatar from SQLite, builds a V2-spec JSON payload,
 /// re-encodes the avatar to PNG, and injects the Base64 JSON as a tEXt chunk.
 #[tauri::command]
-pub fn export_character_card(app: AppHandle, id: String) -> Result<Vec<u8>, String> {
+pub async fn export_character_card(app: AppHandle, id: String) -> Result<Vec<u8>, String> {
     let conn = get_connection(&app)?;
 
     let row: (String, String, String, String, String, String, String, String, String, Option<Vec<u8>>) =
