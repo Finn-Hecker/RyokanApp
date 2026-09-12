@@ -16,12 +16,12 @@ Powered by Rust, Tauri v2, and Svelte 5.
 
 <table>
   <tr>
-    <td><img width="400" alt="Ryokan Interface" src="https://github.com/user-attachments/assets/075e4ebd-62e1-4d4b-a428-ceaa7635b53e" /></td>
+    <td><img width="400" alt="Ryokan Interface" src="https://github.com/user-attachments/assets/e479b31f-388d-4ac5-8f5e-85681d3198ff" /></td>
     <td><img width="400" alt="Ryokan Chat" src="https://github.com/user-attachments/assets/62517ce6-ad51-4b3d-8787-e50928d58fb5" /></td>
   </tr>
   <tr>
-    <td><img width="400" alt="Ryokan Settings" src="https://github.com/user-attachments/assets/ebe082e7-f21f-4a22-9903-b2d6a461c2b4" /></td>
-    <td><img width="400" alt="Ryokan Editor" src="https://github.com/user-attachments/assets/7d8fa647-6ba4-49a8-a2f8-a0ab4fbab1c8" /></td>
+    <td><img width="400" alt="Ryokan Settings" src="https://github.com/user-attachments/assets/bc1a2dfa-ac00-4735-ace3-71b7ebd4607d" /></td>
+    <td><img width="400" alt="Ryokan Editor" src="https://github.com/user-attachments/assets/67b35fc4-e8ce-451a-a25d-212c5cc6cfe1" /></td>
   </tr>
 </table>
 
