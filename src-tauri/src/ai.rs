@@ -217,13 +217,120 @@ struct ModelsResponse {
 #[derive(Deserialize)]
 struct ModelEntry {
     id: String,
+    #[serde(default)]
+    context_length: Option<u64>,
+    #[serde(default)]
+    pricing: Option<serde_json::Value>,
+    #[serde(default)]
+    architecture: Option<ModelArchitecture>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+pub struct ModelArchitecture {
+    #[serde(default)]
+    input_modalities: Vec<String>,
+    #[serde(default)]
+    output_modalities: Vec<String>,
+    #[serde(default)]
+    modality: Option<String>,
+    #[serde(default)]
+    tokenizer: Option<String>,
+    #[serde(default)]
+    instruct_type: Option<String>,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelInfo {
+    id: String,
+    context_length: Option<u64>,
+    pricing: Option<ModelPricing>,
+    architecture: Option<ModelArchitecture>,
+}
+
+#[derive(Deserialize, Serialize, Debug, PartialEq)]
+pub struct ModelPricing {
+    prompt: Option<String>,
+    completion: Option<String>,
+}
+
+fn normalize_modalities(modalities: Vec<String>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for modality in modalities {
+        let modality = modality.trim().to_ascii_lowercase();
+        if !modality.is_empty() && !normalized.contains(&modality) {
+            normalized.push(modality);
+        }
+    }
+    normalized
+}
+
+fn normalize_architecture(mut architecture: ModelArchitecture) -> ModelArchitecture {
+    architecture.input_modalities = normalize_modalities(architecture.input_modalities);
+    architecture.output_modalities = normalize_modalities(architecture.output_modalities);
+
+    // Older OpenRouter responses may only expose the compact `input->output`
+    // form. Use it as a metadata fallback, never the model name or ID.
+    if let Some((inputs, outputs)) = architecture
+        .modality
+        .as_deref()
+        .and_then(|value| value.split_once("->"))
+    {
+        if architecture.input_modalities.is_empty() {
+            architecture.input_modalities =
+                normalize_modalities(inputs.split('+').map(String::from).collect());
+        }
+        if architecture.output_modalities.is_empty() {
+            architecture.output_modalities =
+                normalize_modalities(outputs.split('+').map(String::from).collect());
+        }
+    }
+
+    architecture
+}
+
+fn is_openrouter_url(url: &str) -> bool {
+    reqwest::Url::parse(url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| host == "openrouter.ai" || host.ends_with(".openrouter.ai"))
+}
+
+fn normalize_models(entries: Vec<ModelEntry>, text_output_only: bool) -> Vec<ModelInfo> {
+    entries
+        .into_iter()
+        .filter_map(|model| {
+            let architecture = model.architecture.map(normalize_architecture);
+            if text_output_only
+                && !architecture
+                    .as_ref()
+                    .is_some_and(|value| value.output_modalities.as_slice() == ["text"])
+            {
+                return None;
+            }
+
+            Some(ModelInfo {
+                id: model.id,
+                context_length: model.context_length,
+                architecture,
+                // OpenRouter normally returns a pricing object. Tiered or otherwise
+                // unfamiliar pricing shapes are deliberately omitted rather than
+                // flattened into a potentially misleading price.
+                pricing: model
+                    .pricing
+                    .and_then(|value| serde_json::from_value::<ModelPricing>(value).ok()),
+            })
+        })
+        .collect()
 }
 
 /// Fetches available models from an OpenAI-compatible /models endpoint.
 /// Uses the shared CLIENT with an optional Bearer token for providers like OpenRouter.
 /// Running the HTTP call on the Rust side avoids CORS issues in the Tauri WebView.
 #[tauri::command]
-pub async fn fetch_models(url: String, api_key: String) -> Result<Vec<String>, String> {
+pub async fn fetch_models(url: String, api_key: String) -> Result<Vec<ModelInfo>, String> {
+    let text_output_only = is_openrouter_url(&url);
     let mut req = CLIENT.get(format!("{}/models", url));
 
     if !api_key.is_empty() {
@@ -255,8 +362,79 @@ pub async fn fetch_models(url: String, api_key: String) -> Result<Vec<String>, S
         )
     })?;
 
-    let ids = body.data.into_iter().map(|m| m.id).collect();
-    Ok(ids)
+    Ok(normalize_models(body.data, text_output_only))
+}
+
+#[cfg(test)]
+mod model_tests {
+    use super::*;
+
+    fn models(json: &str, text_output_only: bool) -> Vec<ModelInfo> {
+        let response: ModelsResponse = serde_json::from_str(json).unwrap();
+        normalize_models(response.data, text_output_only)
+    }
+
+    #[test]
+    fn openrouter_catalog_keeps_only_exclusively_text_output_models() {
+        let result = models(
+            r#"{"data":[
+                {"id":"chat","architecture":{"input_modalities":["text"],"output_modalities":["text"]}},
+                {"id":"vision","architecture":{"input_modalities":["text","image"],"output_modalities":["text"]}},
+                {"id":"text-audio","architecture":{"input_modalities":["text"],"output_modalities":["text","audio"]}},
+                {"id":"text-image","architecture":{"input_modalities":["text"],"output_modalities":["text","image"]}},
+                {"id":"text-video","architecture":{"input_modalities":["text"],"output_modalities":["text","video"]}},
+                {"id":"image-only","architecture":{"input_modalities":["text"],"output_modalities":["image"]}},
+                {"id":"audio-only","architecture":{"input_modalities":["text"],"output_modalities":["audio"]}},
+                {"id":"video-only","architecture":{"input_modalities":["text"],"output_modalities":["video"]}},
+                {"id":"embedding","architecture":{"input_modalities":["text"],"output_modalities":["embeddings"]}},
+                {"id":"unknown"}
+            ]}"#,
+            true,
+        );
+
+        assert_eq!(
+            result
+                .iter()
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["chat", "vision"]
+        );
+        assert_eq!(
+            result[1].architecture.as_ref().unwrap().input_modalities,
+            vec!["text", "image"]
+        );
+    }
+
+    #[test]
+    fn compact_modality_is_normalized_without_inspecting_the_id() {
+        let result = models(
+            r#"{"data":[
+                {"id":"arbitrary-a","architecture":{"modality":"text+image->text"}},
+                {"id":"arbitrary-b","architecture":{"modality":"text->audio"}}
+            ]}"#,
+            true,
+        );
+
+        assert_eq!(result.len(), 1);
+        let architecture = result[0].architecture.as_ref().unwrap();
+        assert_eq!(architecture.input_modalities, vec!["text", "image"]);
+        assert_eq!(architecture.output_modalities, vec!["text"]);
+    }
+
+    #[test]
+    fn compatible_non_openrouter_catalogs_are_not_filtered() {
+        let result = models(r#"{"data":[{"id":"model-without-metadata"}]}"#, false);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn recognizes_openrouter_hosts_without_matching_impostors() {
+        assert!(is_openrouter_url("https://openrouter.ai/api/v1"));
+        assert!(is_openrouter_url("https://eu.openrouter.ai/api/v1/"));
+        assert!(!is_openrouter_url(
+            "https://openrouter.ai.example.com/api/v1"
+        ));
+    }
 }
 
 /// Emits whatever is currently buffered in either batch, then clears both buffers.

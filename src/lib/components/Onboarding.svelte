@@ -95,7 +95,7 @@
         }
       }
 
-      models = await fetchModels(apiUrl, apiKey);
+      models = (await fetchModels(apiUrl, apiKey)).map(model => model.id);
       if (models.length > 0) selectedModel = models[0];
 
     } catch (e: any) {

@@ -31,6 +31,22 @@ export async function getSetting(key: string): Promise<string | null> {
 }
 
 // Does NOT catch — throws the real Rust error string so the UI can display it directly.
-export async function fetchModels(url: string, apiKey: string): Promise<string[]> {
-  return await invoke<string[]>("fetch_models", { url, apiKey });
+export interface ModelInfo {
+  id: string;
+  contextLength?: number | null;
+  architecture?: {
+    inputModalities: string[];
+    outputModalities: string[];
+    modality?: string | null;
+    tokenizer?: string | null;
+    instructType?: string | null;
+  } | null;
+  pricing?: {
+    prompt?: string | null;
+    completion?: string | null;
+  } | null;
+}
+
+export async function fetchModels(url: string, apiKey: string): Promise<ModelInfo[]> {
+  return await invoke<ModelInfo[]>("fetch_models", { url, apiKey });
 }

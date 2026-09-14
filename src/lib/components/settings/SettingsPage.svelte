@@ -9,7 +9,7 @@
   import Button from "$lib/components/ui/Button.svelte";
   import { API_PARAMETER_SETTING_KEYS, createDefaultApiParameterEnabled, readApiParameterEnabled, type ApiParameterKey } from "$lib/utils/apiParameters";
 
-  type SettingsCategory = "provider" | "model" | "parameters" | "language" | "advanced";
+  type SettingsCategory = "provider" | "parameters" | "language" | "advanced";
   type Category = { id: SettingsCategory; label: string; description: string; icon: string };
 
   let powerUser = $state(false);
@@ -17,7 +17,6 @@
 
   const CATEGORIES: Category[] = [
     { id: "provider", label: m.settings_category_provider(), description: m.settings_category_provider_description(), icon: "M4 7h16M6 3h12v18H6zM9 11h6M9 15h6" },
-    { id: "model", label: m.settings_category_model(), description: m.settings_category_model_description(), icon: "M9 3h6v4H9zM6 9h12v10H6zM9 13h.01M12 13h.01M15 13h.01M9 16h6" },
     { id: "parameters", label: m.settings_section_ai_behavior(), description: m.settings_category_parameters_description(), icon: "M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5M14 4v4M6 10v4M11 16v4" },
     { id: "language", label: m.settings_section_language(), description: m.settings_category_language_description(), icon: "M12 21a9 9 0 100-18 9 9 0 000 18zm0 0c2.21 0 4-4.03 4-9s-1.79-9-4-9-4 4.03-4 9 1.79 9 4 9zM3.5 12h17" },
     { id: "advanced", label: m.settings_category_advanced(), description: m.settings_category_advanced_description(), icon: "M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM19 12h2M3 12h2M12 3v2M12 19v2M5.64 5.64l1.42 1.42M16.94 16.94l1.42 1.42M18.36 5.64l-1.42 1.42M7.06 16.94l-1.42 1.42" },
@@ -26,9 +25,9 @@
   let activeSection = $state<SettingsCategory>("provider");
   let mobileCategoryOpen = $state(false);
   let isSaving = $state(false);
+  let settingsReady = $state(false);
   let settingsContentEl: HTMLDivElement;
   const activeCategory = $derived(CATEGORIES.find((item) => item.id === activeSection) ?? CATEGORIES[0]);
-  const apiCategory = $derived(activeSection === "model" ? "model" : "provider");
   const generalCategory = $derived(activeSection === "language" ? "language" : activeSection === "advanced" ? "advanced" : "parameters");
 
   function selectCategory(id: SettingsCategory, mobile = false) {
@@ -89,6 +88,7 @@
         powerUser,
       });
     } catch (err) { console.error("[Settings] Failed to load:", err); }
+    finally { settingsReady = true; }
   }
 
   async function saveSettings() {
@@ -178,8 +178,8 @@
     </div>
 
     <div bind:this={settingsContentEl} class="settings-content" class:settings-content--mobile-hidden={!mobileCategoryOpen}>
-      <div class="content-panel" hidden={activeSection !== "provider" && activeSection !== "model"}><ApiSection powerUser={powerUser} category={apiCategory} /></div>
-      <div class="content-panel" hidden={activeSection === "provider" || activeSection === "model"}>
+      <div class="content-panel" hidden={activeSection !== "provider"}><ApiSection powerUser={powerUser} active={activeSection === "provider"} {settingsReady} /></div>
+      <div class="content-panel" hidden={activeSection === "provider"}>
         {#if activeSection === "advanced"}<div class="advanced-mode">{@render powerToggle()}</div>{/if}
         <GeneralSection powerUser={powerUser} bind:parameterEnabled category={generalCategory} />
       </div>

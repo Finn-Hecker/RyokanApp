@@ -1,16 +1,18 @@
 <script lang="ts">
   import { appState } from "$lib/stores/appState.svelte";
-  import { fetchModels, saveSetting } from "$lib/utils/settings";
+  import { fetchModels, saveSetting, type ModelInfo } from "$lib/utils/settings";
   import * as m from "$lib/paraglide/messages";
-  import Button from '$lib/components/ui/Button.svelte';
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
+  import { onMount } from 'svelte';
 
   let {
     powerUser = false,
-    category = "provider",
+    active = false,
+    settingsReady = false,
   }: {
     powerUser?: boolean;
-    category?: "provider" | "model";
+    active?: boolean;
+    settingsReady?: boolean;
   } = $props();
 
   type ProviderTab = 'local' | 'cloud';
@@ -37,8 +39,101 @@
 
   let customMode      = $state(false);
   let availableModels = $state<string[]>([]);
+  let modelMetadata = $state<Record<string, ModelInfo>>({});
   let modelsLoading   = $state(false);
   let modelsError     = $state("");
+  let modelMenuOpen   = $state(false);
+  let modelSearch     = $state("");
+  let expandedProvider = $state("");
+  let activeModelCategory = $state("all");
+  let favoriteModels = $state<string[]>([]);
+  let lastAttemptedModelConfig = "";
+  let modelLoadRequest = 0;
+
+  type ModelCategory = {
+    id: string;
+    label: string;
+    kind: "all" | "favorites" | "free" | "provider";
+    providerKey?: string;
+  };
+
+  const SPECIAL_MODEL_CATEGORIES: ModelCategory[] = [
+    { id: "all", label: "All", kind: "all" },
+    { id: "favorites", label: "Favorites", kind: "favorites" },
+    { id: "free", label: "Free", kind: "free" },
+  ];
+
+  const FAVORITES_STORAGE_KEY = "ryokan-favorite-models";
+
+  onMount(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(FAVORITES_STORAGE_KEY) ?? "[]");
+      if (Array.isArray(stored)) favoriteModels = stored.filter((value): value is string => typeof value === "string");
+    } catch {
+      favoriteModels = [];
+    }
+  });
+
+  function modelProviderKey(modelId: string): string {
+    const normalized = modelId.trim().toLowerCase();
+    const slashPrefix = normalized.split("/", 1)[0];
+    if (normalized.includes("/") && slashPrefix) return slashPrefix;
+
+    // OpenAI-compatible local APIs often return an unnamespaced model ID. In
+    // that case, use its leading model-family prefix instead of inventing a vendor.
+    const familyPrefix = normalized.match(/^[a-z]+/)?.[0];
+    return familyPrefix || normalized;
+  }
+
+  function modelProviderLabel(providerKey: string): string {
+    return providerKey
+      .split(/[-_.]+/)
+      .filter(Boolean)
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+
+  const modelProviders = $derived.by(() => {
+    const providers = new Map<string, string>();
+    for (const modelId of availableModels) {
+      const key = modelProviderKey(modelId);
+      if (key && !providers.has(key)) providers.set(key, modelProviderLabel(key));
+    }
+    return Array.from(providers, ([key, label]) => ({ key, label }));
+  });
+
+  const modelCategoryTabs = $derived<ModelCategory[]>([
+    ...SPECIAL_MODEL_CATEGORIES,
+    ...modelProviders.map(provider => ({
+      id: `provider:${provider.key}`,
+      label: provider.label,
+      kind: "provider" as const,
+      providerKey: provider.key,
+    })),
+  ]);
+
+  const groupedModels = $derived.by(() => {
+    const query = modelSearch.trim().toLowerCase();
+    return modelProviders.map(provider => ({
+      ...provider,
+      models: availableModels.filter(modelId =>
+        modelProviderKey(modelId) === provider.key && (!query || modelId.toLowerCase().includes(query))
+      ),
+    })).filter(group => group.models.length > 0);
+  });
+
+  const mobileModels = $derived.by(() => {
+    const query = modelSearch.trim().toLowerCase();
+    const category = modelCategoryTabs.find(item => item.id === activeModelCategory) ?? modelCategoryTabs[0];
+    return availableModels.filter(modelId => {
+      const matchesSearch = !query || modelId.toLowerCase().includes(query);
+      const matchesCategory = category.kind === "all"
+        || (category.kind === "favorites" && favoriteModels.includes(modelId))
+        || (category.kind === "free" && isFreeModel(modelId))
+        || (category.kind === "provider" && modelProviderKey(modelId) === category.providerKey);
+      return matchesSearch && matchesCategory;
+    });
+  });
 
   const CONTEXT_STEPS = [
     { label: "4K",   value: 4096   },
@@ -68,6 +163,7 @@
   const showKey = $derived(powerUser || activeTab === 'cloud' || appState.apiSettings.customMode);
 
   const keyPlaceholder = $derived(activeProvider?.keyPlaceholder ?? "sk-...");
+  const isOpenRouter = $derived(appState.apiSettings.url.replace(/\/+$/, "") === "https://openrouter.ai/api/v1");
 
   function switchTab(tab: ProviderTab) {
     if (activeTab === tab) return;
@@ -77,48 +173,174 @@
   }
 
   function selectProvider(provider: Provider) {
+    modelLoadRequest++;
+    lastAttemptedModelConfig = "";
     appState.apiSettings.customMode = false;
     appState.apiSettings.url   = provider.url;
     appState.apiSettings.model = "";
     availableModels = [];
+    modelMetadata   = {};
     modelsError     = "";
+    modelMenuOpen   = false;
+    modelSearch     = "";
+    activeModelCategory = "all";
   }
 
   function selectCustom() {
+    modelLoadRequest++;
+    lastAttemptedModelConfig = "";
     appState.apiSettings.customMode = true;
     appState.apiSettings.url   = "";
     appState.apiSettings.model = "";
     availableModels = [];
+    modelMetadata   = {};
     modelsError     = "";
+    modelMenuOpen   = false;
+    modelSearch     = "";
+    activeModelCategory = "all";
+  }
+
+  function modelConfigKey() {
+    return `${appState.apiSettings.url.trim()}\n${appState.apiSettings.apiKey.trim()}`;
+  }
+
+  function canFetchModels() {
+    if (!appState.apiSettings.url.trim()) return false;
+    return appState.apiSettings.customMode || activeTab === 'local' || Boolean(appState.apiSettings.apiKey.trim());
   }
 
   async function loadModels() {
+    if (!canFetchModels()) return;
+
+    const config = modelConfigKey();
+    const request = ++modelLoadRequest;
+    lastAttemptedModelConfig = config;
     modelsLoading = true;
     modelsError   = "";
     availableModels = [];
+    modelMetadata = {};
+    modelMenuOpen = false;
+    modelSearch = "";
+    activeModelCategory = "all";
     try {
       const models = await fetchModels(appState.apiSettings.url, appState.apiSettings.apiKey);
+      if (request !== modelLoadRequest || config !== modelConfigKey()) return;
       if (models.length === 0) {
         modelsError = m.settings_model_error_no_models();
       } else {
-        availableModels = models;
+        availableModels = models.map(model => model.id);
+        modelMetadata = Object.fromEntries(models.map(model => [model.id, model]));
         if (!availableModels.includes(appState.apiSettings.model)) {
           appState.apiSettings.model = availableModels[0];
         }
+        expandedProvider = modelProviderKey(appState.apiSettings.model);
         await saveSetting("api_model", appState.apiSettings.model);
       }
     } catch (e: any) {
+      if (request !== modelLoadRequest || config !== modelConfigKey()) return;
       modelsError = m.settings_model_error_fetch({ error: e.message || String(e) });
+    } finally {
+      if (request === modelLoadRequest) modelsLoading = false;
     }
-    modelsLoading = false;
+  }
+
+  function retryModels() {
+    lastAttemptedModelConfig = "";
+    void loadModels();
+  }
+
+  $effect(() => {
+    const config = modelConfigKey();
+    if (!active || !settingsReady || !canFetchModels() || config === lastAttemptedModelConfig) return;
+
+    const timeout = window.setTimeout(() => void loadModels(), 400);
+    return () => window.clearTimeout(timeout);
+  });
+
+  async function selectModel(modelId: string) {
+    appState.apiSettings.model = modelId;
+    modelMenuOpen = false;
+    modelSearch = "";
+    await saveSetting("api_model", modelId);
+  }
+
+  function toggleFavorite(modelId: string) {
+    favoriteModels = favoriteModels.includes(modelId)
+      ? favoriteModels.filter(id => id !== modelId)
+      : [...favoriteModels, modelId];
+    try {
+      localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favoriteModels));
+    } catch {
+      // Favorites remain usable for the session if device storage is unavailable.
+    }
+  }
+
+  function pricePerMillion(value: string | null | undefined): number | null {
+    if (value == null || value.trim() === "") return null;
+    const parsed = Number(value) * 1_000_000;
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  }
+
+  function formatPrice(value: number): string {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: value > 0 && value < 1 ? 2 : 0,
+      maximumFractionDigits: value < 1 ? 4 : 2,
+    }).format(value);
+  }
+
+  function modelPriceLabel(modelId: string): string {
+    if (!isOpenRouter) return "";
+    const pricing = modelMetadata[modelId]?.pricing;
+    const input = pricePerMillion(pricing?.prompt);
+    const output = pricePerMillion(pricing?.completion);
+    if (input === null || output === null || (input === 0 && output === 0)) return "";
+    return `${formatPrice(input)}/M input · ${formatPrice(output)}/M output`;
+  }
+
+  function isFreeModel(modelId: string): boolean {
+    const pricing = modelMetadata[modelId]?.pricing;
+    return pricePerMillion(pricing?.prompt) === 0 && pricePerMillion(pricing?.completion) === 0;
+  }
+
+  function contextLabel(modelId: string): string {
+    if (!isOpenRouter) return "";
+    const contextLength = modelMetadata[modelId]?.contextLength;
+    if (!contextLength || contextLength <= 0) return "";
+    if (contextLength >= 1_000_000 && contextLength % 1_000_000 === 0) return `${contextLength / 1_000_000}M context`;
+    if (contextLength >= 1024 && contextLength % 1024 === 0) return `${contextLength / 1024}K context`;
+    return `${contextLength.toLocaleString()} context`;
+  }
+
+  function toggleModelMenu() {
+    modelMenuOpen = !modelMenuOpen;
+    if (modelMenuOpen) activeModelCategory = "all";
+  }
+
+  function closeMobileModelSheet() {
+    modelMenuOpen = false;
+    modelSearch = "";
+  }
+
+  function handleModelMenuKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape" && modelMenuOpen) closeMobileModelSheet();
+  }
+
+  function closeModelMenu(event: FocusEvent) {
+    const next = event.relatedTarget as Node | null;
+    if (!next || !(event.currentTarget as HTMLElement).contains(next)) modelMenuOpen = false;
   }
 </script>
+
+<svelte:window onkeydown={handleModelMenuKeydown} />
 
 <section>
   <span class="settings-section-title">{m.settings_section_api()}</span>
   <div class="settings-card space-y-4">
 
-    {#if category === "provider"}
+    <div class="api-model-section">
+    <h2 class="api-model-section-title">{m.settings_section_api()}</h2>
 
     <div class="tab-switcher">
       <button
@@ -203,7 +425,7 @@
           type="text"
           bind:value={appState.apiSettings.url}
           placeholder={customMode ? "https://my-provider.com/v1" : undefined}
-          onchange={() => { availableModels = []; appState.apiSettings.model = ""; modelsError = ""; }}
+          onchange={() => { availableModels = []; modelMetadata = {}; appState.apiSettings.model = ""; modelsError = ""; }}
           class="settings-input"
         />
       </div>
@@ -229,40 +451,184 @@
       </div>
     {/if}
 
-    {/if}
+    </div>
 
-    {#if category === "model"}
+    <div class="api-model-section api-model-section--model">
+    <h2 class="api-model-section-title">{m.settings_category_model()}</h2>
 
     <div>
       <div class="flex items-center justify-between mb-2">
         <label class="settings-label" for="model-select" style="margin-bottom:0">
           {m.settings_model_label()}
         </label>
-        <Button variant="secondary" size="sm" disabled={modelsLoading} onclick={loadModels}>
-          {#if modelsLoading}
-            <span class="load-dot"></span>
-            <span class="load-dot" style="animation-delay:.15s"></span>
-            <span class="load-dot" style="animation-delay:.3s"></span>
-          {:else}
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-              <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                    stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            {m.settings_model_load_btn()}
-          {/if}
-        </Button>
       </div>
 
-      {#if availableModels.length > 0}
-        <select id="model-select" bind:value={appState.apiSettings.model} class="settings-input select-chevron" onchange={() => saveSetting("api_model", appState.apiSettings.model)}>
-          {#each availableModels as modelId}
-            <option value={modelId}>{modelId}</option>
-          {/each}
-        </select>
+      {#if modelsLoading}
+        <div class="settings-input model-loading-state" role="status" aria-live="polite">
+          <span class="model-loading-spinner" aria-hidden="true"></span>
+          <span>{m.settings_model_loading()}</span>
+        </div>
+      {:else if availableModels.length > 0}
+        <div class="model-picker" onfocusout={closeModelMenu}>
+          <button
+            id="model-select"
+            type="button"
+            class="settings-input model-picker-trigger"
+            aria-haspopup="listbox"
+            aria-expanded={modelMenuOpen}
+            onclick={toggleModelMenu}
+          >
+            <span>{appState.apiSettings.model}</span>
+            <svg class:rotated={modelMenuOpen} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+              <path d="M6 9l6 6 6-6"/>
+            </svg>
+          </button>
+
+          {#if modelMenuOpen}
+            <div class="model-menu desktop-model-menu" role="listbox" aria-label={m.settings_model_label()}>
+              <div class="model-search-wrap">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5" stroke-linecap="round"/>
+                </svg>
+                <input
+                  class="model-search"
+                  type="search"
+                  bind:value={modelSearch}
+                  placeholder={m.settings_model_search_placeholder()}
+                  aria-label={m.settings_model_search_placeholder()}
+                />
+              </div>
+
+              <div class="model-groups">
+                {#each groupedModels as group (group.key)}
+                  <section class="model-group">
+                    <button
+                      type="button"
+                      class="model-group-heading"
+                      aria-expanded={modelSearch.length > 0 || expandedProvider === group.key}
+                      onclick={() => expandedProvider = expandedProvider === group.key ? "" : group.key}
+                    >
+                      <span>{group.label}</span>
+                      <span class="model-count">{group.models.length}</span>
+                      <svg class:rotated={modelSearch.length > 0 || expandedProvider === group.key} width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                        <path d="M6 9l6 6 6-6"/>
+                      </svg>
+                    </button>
+                    <div class="group-models" class:group-models--open={modelSearch.length > 0 || expandedProvider === group.key}>
+                      {#each group.models as modelId (modelId)}
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={appState.apiSettings.model === modelId}
+                          class="model-option"
+                          class:model-option--selected={appState.apiSettings.model === modelId}
+                          onclick={() => selectModel(modelId)}
+                        >
+                          <span class="model-option-copy">
+                            <span class="model-option-name">{modelId}</span>
+                            {#if isOpenRouter && (modelPriceLabel(modelId) || contextLabel(modelId) || isFreeModel(modelId))}
+                              <span class="model-option-meta">
+                                {#if isFreeModel(modelId)}<span class="free-badge">Free</span>{/if}
+                                {#if modelPriceLabel(modelId)}<span>{modelPriceLabel(modelId)}</span>{/if}
+                                {#if contextLabel(modelId)}<span>{contextLabel(modelId)}</span>{/if}
+                              </span>
+                            {/if}
+                          </span>
+                          {#if appState.apiSettings.model === modelId}
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                          {/if}
+                        </button>
+                      {/each}
+                    </div>
+                  </section>
+                {:else}
+                  <div class="model-no-results">{m.settings_model_search_empty()}</div>
+                {/each}
+              </div>
+            </div>
+
+            <div class="model-sheet-backdrop" role="presentation" onclick={closeMobileModelSheet}></div>
+            <div class="mobile-model-sheet" role="dialog" aria-modal="true" aria-labelledby="mobile-model-sheet-title">
+              <div class="model-sheet-handle" aria-hidden="true"></div>
+              <div class="model-sheet-toolbar">
+                <div class="model-sheet-heading">
+                  <h3 id="mobile-model-sheet-title">{m.settings_model_select_title()}</h3>
+                  <button type="button" class="model-sheet-close" aria-label={m.settings_model_close()} onclick={closeMobileModelSheet}>
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" stroke-linecap="round"/></svg>
+                  </button>
+                </div>
+
+                <div class="model-search-wrap model-sheet-search">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5" stroke-linecap="round"/>
+                  </svg>
+                  <input
+                    class="model-search"
+                    type="search"
+                    bind:value={modelSearch}
+                    placeholder={m.settings_model_search_placeholder()}
+                    aria-label={m.settings_model_search_placeholder()}
+                  />
+                </div>
+
+                <div class="model-category-tabs" role="tablist" aria-label={m.settings_model_categories()}>
+                  {#each modelCategoryTabs as category (category.id)}
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={activeModelCategory === category.id}
+                      class="model-category-tab"
+                      class:model-category-tab--active={activeModelCategory === category.id}
+                      onclick={() => activeModelCategory = category.id}
+                    >{category.label}</button>
+                  {/each}
+                </div>
+              </div>
+
+              <div class="mobile-model-list" role="listbox" aria-label={m.settings_model_label()}>
+                {#each mobileModels as modelId (modelId)}
+                  <div class="mobile-model-row" class:mobile-model-row--selected={appState.apiSettings.model === modelId}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={appState.apiSettings.model === modelId}
+                      class="mobile-model-select"
+                      onclick={() => selectModel(modelId)}
+                    >
+                      <span class="mobile-model-name">{modelId}</span>
+                      <span class="mobile-model-details">
+                        <span class="mobile-model-provider">{modelProviderLabel(modelProviderKey(modelId))}</span>
+                        {#if isFreeModel(modelId)}<span class="free-badge">Free</span>{/if}
+                        {#if modelPriceLabel(modelId)}<span class="mobile-model-price">{modelPriceLabel(modelId)}</span>{/if}
+                        {#if contextLabel(modelId)}<span class="mobile-model-context">{contextLabel(modelId)}</span>{/if}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      class="model-favorite-btn"
+                      class:model-favorite-btn--active={favoriteModels.includes(modelId)}
+                      aria-label={favoriteModels.includes(modelId) ? m.settings_model_unfavorite({ model: modelId }) : m.settings_model_favorite({ model: modelId })}
+                      aria-pressed={favoriteModels.includes(modelId)}
+                      onclick={() => toggleFavorite(modelId)}
+                    >
+                      <svg width="19" height="19" viewBox="0 0 24 24" fill={favoriteModels.includes(modelId) ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 3 2.78 5.63 6.22.9-4.5 4.39 1.06 6.2L12 17.2l-5.56 2.92 1.06-6.2L3 9.53l6.22-.9L12 3Z" stroke-linejoin="round"/></svg>
+                    </button>
+                    {#if appState.apiSettings.model === modelId}
+                      <svg class="mobile-selected-check" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    {/if}
+                  </div>
+                {:else}
+                  <div class="model-no-results mobile-model-no-results">{m.settings_model_search_empty()}</div>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        </div>
       {:else}
-        <div class="settings-input cursor-default h-[42px] max-h-[42px] overflow-hidden whitespace-nowrap {modelsError ? 'error-state' : 'empty-state'}">
+        <div class="settings-input cursor-default min-h-[42px] {modelsError ? 'error-state' : 'empty-state'}">
           {#if modelsError}
-            {modelsError}
+            <span class="model-error-text">{modelsError}</span>
+            <button type="button" class="model-retry" onclick={retryModels}>{m.chat_retry()}</button>
           {:else if appState.apiSettings.model}
             {appState.apiSettings.model}
           {:else}
@@ -302,12 +668,24 @@
       </div>
     </div>
 
-    {/if}
+    </div>
 
   </div>
 </section>
 
 <style>
+  .api-model-section-title {
+    margin: 0 0 16px;
+    color: #d8c5a8;
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+  }
+  .api-model-section--model {
+    margin-top: 28px;
+    padding-top: 28px;
+    border-top: 1px solid rgba(255,255,255,0.055);
+  }
   .tab-switcher {
     display: flex;
     gap: 4px;
@@ -404,23 +782,250 @@
     vertical-align: middle;
   }
 
-  .select-chevron {
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a8a8e' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 12px center;
-    padding-right: 36px;
-    color-scheme: dark;
+  .model-picker { position: relative; }
+  .model-picker-trigger { display:flex; align-items:center; justify-content:space-between; gap:12px; text-align:left; cursor:pointer; }
+  .model-picker-trigger span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .model-picker-trigger svg, .model-group-heading svg { flex-shrink:0; transition:transform .15s ease; }
+  svg.rotated { transform:rotate(180deg); }
+  .model-menu { position:absolute; z-index:30; top:calc(100% + 6px); left:0; right:0; overflow:hidden; border:1px solid rgba(255,255,255,.09); border-radius:12px; background:#19191b; box-shadow:0 16px 40px rgba(0,0,0,.45); }
+  .model-search-wrap { display:flex; align-items:center; gap:8px; margin:8px; padding:0 10px; border:1px solid rgba(255,255,255,.07); border-radius:9px; background:rgba(0,0,0,.22); color:#66666b; }
+  .model-search-wrap:focus-within { border-color:rgba(212,180,131,.35); color:#a68d68; }
+  .model-search { width:100%; min-width:0; padding:9px 0; border:0; outline:0; background:transparent; color:#e5e5ea; font:inherit; font-size:12.5px; }
+  .model-search::placeholder { color:#55555a; }
+  .model-search::-webkit-search-cancel-button { filter:invert(.6); }
+  .model-groups { max-height:min(52vh, 410px); overflow-y:auto; padding:0 6px 7px; }
+  .model-group + .model-group { border-top:1px solid rgba(255,255,255,.045); }
+  .model-group-heading { width:100%; display:flex; align-items:center; gap:7px; padding:9px 8px 7px; border:0; background:transparent; color:#a6a6ab; font:inherit; font-size:11px; font-weight:700; letter-spacing:.055em; text-transform:uppercase; text-align:left; cursor:pointer; }
+  .model-group-heading > span:first-child { flex:1; }
+  .model-count { color:#55555a; font-size:10px; font-variant-numeric:tabular-nums; }
+  .group-models { display:none; }
+  .group-models--open { display:block; }
+  .model-option { width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 10px; border:0; border-radius:8px; background:transparent; color:#b9b9be; font:inherit; font-size:12.5px; text-align:left; cursor:pointer; }
+  .model-option span { min-width:0; overflow-wrap:anywhere; }
+  .model-option-copy { display:flex; flex-direction:column; gap:3px; }
+  .model-option-name { color:inherit; }
+  .model-option-meta { display:flex; align-items:center; flex-wrap:wrap; gap:5px 8px; color:#626267; font-size:10px; }
+  .model-option-meta > span + span:not(.free-badge)::before { margin-right:8px; color:#3f3f43; content:"·"; }
+  .free-badge { display:inline-flex; align-items:center; min-height:17px; padding:1px 6px; border-radius:999px; background:rgba(87,181,119,.12); color:#76c991; font-size:9px; font-weight:750; letter-spacing:.04em; text-transform:uppercase; }
+  .model-option:hover, .model-option:focus-visible { outline:none; background:rgba(255,255,255,.055); color:#eeeef1; }
+  .model-option--selected { background:rgba(212,180,131,.075); color:#d4b483; }
+  .model-option svg { flex-shrink:0; }
+  .model-no-results { padding:20px 12px; color:#66666b; font-size:12px; text-align:center; }
+  .model-sheet-backdrop, .mobile-model-sheet { display:none; }
+
+  @media (min-width: 768px) {
+    .model-group-heading { cursor:default; pointer-events:none; }
+    .model-group-heading svg { display:none; }
+    .group-models { display:block; }
   }
-  .select-chevron option { background-color: #1c1c1e; color: #e5e5ea; padding: 8px 12px; font-size: 13px; }
-  .select-chevron option:checked, .select-chevron option:hover { background-color: #2c2c2e; color: #d4b483; }
+
+  @media (max-width: 767px) {
+    .desktop-model-menu { display:none; }
+    .model-sheet-backdrop {
+      position:fixed;
+      z-index:70;
+      inset:0;
+      display:block;
+      background:rgba(0,0,0,.62);
+      backdrop-filter:blur(2px);
+      animation:sheet-fade-in .16s ease-out;
+    }
+    .mobile-model-sheet {
+      position:fixed;
+      z-index:71;
+      right:0;
+      bottom:0;
+      left:0;
+      height:min(86dvh, 760px);
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+      border:1px solid rgba(255,255,255,.09);
+      border-bottom:0;
+      border-radius:24px 24px 0 0;
+      background:#18181a;
+      box-shadow:0 -20px 60px rgba(0,0,0,.55);
+      animation:sheet-slide-in .2s cubic-bezier(.22,.8,.3,1);
+    }
+    .model-sheet-handle {
+      width:38px;
+      height:4px;
+      flex:0 0 auto;
+      margin:9px auto 2px;
+      border-radius:999px;
+      background:rgba(255,255,255,.14);
+    }
+    .model-sheet-toolbar {
+      position:sticky;
+      z-index:1;
+      top:0;
+      flex:0 0 auto;
+      padding:4px 0 10px;
+      border-bottom:1px solid rgba(255,255,255,.055);
+      background:#18181a;
+    }
+    .model-sheet-heading {
+      min-height:47px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+      padding:0 16px 0 20px;
+    }
+    .model-sheet-heading h3 {
+      margin:0;
+      color:#eeeae4;
+      font-size:20px;
+      font-weight:680;
+      letter-spacing:-.025em;
+    }
+    .model-sheet-close {
+      width:40px;
+      height:40px;
+      display:grid;
+      place-items:center;
+      flex:0 0 auto;
+      border:0;
+      border-radius:12px;
+      background:rgba(255,255,255,.045);
+      color:#8b8b90;
+      cursor:pointer;
+    }
+    .model-sheet-close:active { background:rgba(255,255,255,.09); color:#e5e5e9; }
+    .model-sheet-search {
+      height:46px;
+      margin:3px 16px 11px;
+      padding:0 13px;
+      border-radius:13px;
+      background:rgba(0,0,0,.28);
+    }
+    .model-sheet-search .model-search { font-size:16px; }
+    .model-category-tabs {
+      display:flex;
+      gap:7px;
+      overflow-x:auto;
+      padding:0 16px 2px;
+      scrollbar-width:none;
+      overscroll-behavior-x:contain;
+      -webkit-overflow-scrolling:touch;
+    }
+    .model-category-tabs::-webkit-scrollbar { display:none; }
+    .model-category-tab {
+      min-height:38px;
+      flex:0 0 auto;
+      padding:8px 14px;
+      border:1px solid rgba(255,255,255,.065);
+      border-radius:999px;
+      background:rgba(255,255,255,.025);
+      color:#77777c;
+      font:inherit;
+      font-size:12.5px;
+      font-weight:650;
+      white-space:nowrap;
+      cursor:pointer;
+    }
+    .model-category-tab--active {
+      border-color:rgba(212,180,131,.42);
+      background:rgba(212,180,131,.12);
+      color:#dfc69f;
+    }
+    .mobile-model-list {
+      min-height:0;
+      flex:1;
+      overflow-y:auto;
+      padding:8px 10px calc(14px + env(safe-area-inset-bottom));
+      overscroll-behavior:contain;
+      -webkit-overflow-scrolling:touch;
+    }
+    .mobile-model-row {
+      min-height:58px;
+      display:flex;
+      align-items:center;
+      gap:2px;
+      border:1px solid transparent;
+      border-radius:13px;
+      color:#bdbdc2;
+    }
+    .mobile-model-row + .mobile-model-row { margin-top:2px; }
+    .mobile-model-row--selected {
+      border-color:rgba(212,180,131,.23);
+      background:rgba(212,180,131,.085);
+      color:#e1c59a;
+    }
+    .mobile-model-select {
+      min-width:0;
+      min-height:58px;
+      flex:1;
+      display:flex;
+      flex-direction:column;
+      align-items:flex-start;
+      justify-content:center;
+      gap:3px;
+      padding:9px 10px 9px 13px;
+      border:0;
+      background:transparent;
+      color:inherit;
+      text-align:left;
+      cursor:pointer;
+    }
+    .mobile-model-name {
+      max-width:100%;
+      overflow-wrap:anywhere;
+      color:inherit;
+      font-size:14px;
+      font-weight:570;
+      line-height:1.25;
+    }
+    .mobile-model-provider {
+      color:#5f5f64;
+      font-size:10px;
+      font-weight:700;
+      letter-spacing:.055em;
+      text-transform:uppercase;
+    }
+    .mobile-model-details {
+      display:flex;
+      align-items:center;
+      flex-wrap:wrap;
+      gap:4px 7px;
+      color:#66666b;
+      font-size:10.5px;
+      line-height:1.35;
+    }
+    .mobile-model-price, .mobile-model-context { color:#727277; }
+    .mobile-model-price::before, .mobile-model-context::before { margin-right:7px; color:#454549; content:"·"; }
+    .mobile-model-details .free-badge { min-height:16px; padding:0 5px; }
+    .mobile-model-row--selected .mobile-model-provider { color:#8d795c; }
+    .mobile-model-row--selected .mobile-model-price,
+    .mobile-model-row--selected .mobile-model-context { color:#9b8667; }
+    .model-favorite-btn {
+      width:44px;
+      height:44px;
+      display:grid;
+      place-items:center;
+      flex:0 0 auto;
+      border:0;
+      border-radius:11px;
+      background:transparent;
+      color:#4e4e53;
+      cursor:pointer;
+    }
+    .model-favorite-btn:active { background:rgba(255,255,255,.055); }
+    .model-favorite-btn--active { color:#d4b483; }
+    .mobile-selected-check { flex:0 0 auto; margin:0 14px 0 4px; color:#d4b483; }
+    .mobile-model-no-results { padding-top:48px; font-size:13px; }
+    @keyframes sheet-fade-in { from { opacity:0; } }
+    @keyframes sheet-slide-in { from { transform:translateY(28px); opacity:.7; } }
+  }
 
   .empty-state { color: #3a3a3c; }
-  .error-state { color: #f87171; border-color: rgba(248,113,113,0.2); background: rgba(248,113,113,0.04); }
-
-  .load-dot { display: inline-block; width: 4px; height: 4px; border-radius: 50%; background: currentColor; animation: bounce 0.8s ease-in-out infinite; }
-  @keyframes bounce { 0%, 100% { transform: translateY(0); opacity: 0.4; } 50% { transform: translateY(-3px); opacity: 1; } }
-
+  .error-state { display:flex; align-items:center; justify-content:space-between; gap:10px; color:#f87171; border-color:rgba(248,113,113,0.2); background:rgba(248,113,113,0.04); }
+  .model-error-text { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .model-retry { flex:0 0 auto; padding:3px 7px; border-radius:6px; color:#fca5a5; font-size:11px; font-weight:650; cursor:pointer; }
+  .model-retry:hover,.model-retry:focus-visible { outline:none; background:rgba(248,113,113,.1); }
+  .model-loading-state { min-height:42px; display:flex; align-items:center; gap:9px; color:#77777c; cursor:wait; }
+  .model-loading-spinner { width:14px; height:14px; flex:0 0 auto; border:2px solid rgba(255,255,255,.1); border-top-color:#d4b483; border-radius:50%; animation:spin .7s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
   .ctx-row {
     display: flex;
     flex-direction: column;
