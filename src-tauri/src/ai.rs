@@ -185,9 +185,6 @@ pub(crate) struct AiRequest {
     #[serde(alias = "frequencyPenalty")]
     frequency_penalty: Option<f32>,
 
-    // --- Thinking / reasoning model support (Gemma 4, Qwen3, ...) ---
-    #[serde(alias = "isThinkingModel")]
-    is_thinking_model: bool,
     // Token budget for the reasoning phase. Forwarded to llama.cpp's
     // `thinking_budget_tokens` request field. 0 = end reasoning immediately,
     // omitted/None = let the server default (usually unrestricted) apply.
@@ -362,13 +359,10 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
         }
     }
 
-    // Thinking / reasoning models (Gemma 4, Qwen3, ...) are toggled per-request via
-    // llama.cpp's chat_template_kwargs. Sending this even when disabled is intentional,
-    // so switching a character/model between thinking and non-thinking mid-session
-    // doesn't leak the previous request's state.
-    body["chat_template_kwargs"] =
-        serde_json::json!({ "enable_thinking": payload.is_thinking_model });
-    if payload.is_thinking_model && parameter_flags.thinking_budget {
+    // Ask capable chat templates for reasoning output. The frontend detects
+    // inline <think> output automatically; non-thinking models ignore this.
+    body["chat_template_kwargs"] = serde_json::json!({ "enable_thinking": true });
+    if parameter_flags.thinking_budget {
         if let Some(budget) = payload.thinking_budget {
             // 0 = end reasoning immediately, N>0 = token budget, omit for server default (usually unrestricted).
             body["thinking_budget_tokens"] = serde_json::json!(budget);

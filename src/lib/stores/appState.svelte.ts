@@ -2,7 +2,6 @@ export interface ApiSettings {
   url: string;
   apiKey: string;
   model: string;
-  isThinkingModel: boolean;
   systemPrompt: string;
   temperature: number;
   maxTokens: number;
@@ -27,7 +26,6 @@ export const appState = $state({
     url: "http://127.0.0.1:1234/v1",
     apiKey: "",
     model: "",
-    isThinkingModel: false,
     systemPrompt: "",
     temperature: 0.8,
     thinkingBudget: 2500,

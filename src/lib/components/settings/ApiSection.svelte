@@ -5,7 +5,13 @@
   import Button from '$lib/components/ui/Button.svelte';
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
 
-  let { powerUser = false }: { powerUser?: boolean } = $props();
+  let {
+    powerUser = false,
+    category = "provider",
+  }: {
+    powerUser?: boolean;
+    category?: "provider" | "model";
+  } = $props();
 
   type ProviderTab = 'local' | 'cloud';
 
@@ -111,6 +117,8 @@
 <section>
   <span class="settings-section-title">{m.settings_section_api()}</span>
   <div class="settings-card space-y-4">
+
+    {#if category === "provider"}
 
     <div class="tab-switcher">
       <button
@@ -221,7 +229,9 @@
       </div>
     {/if}
 
-    <div class="settings-divider"></div>
+    {/if}
+
+    {#if category === "model"}
 
     <div>
       <div class="flex items-center justify-between mb-2">
@@ -291,6 +301,8 @@
         {/each}
       </div>
     </div>
+
+    {/if}
 
   </div>
 </section>

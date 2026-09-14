@@ -81,9 +81,7 @@ console.debug('[RollingSummary] probeMessages count=%d, contents:',
     probeMessages.map(m => `${m.role}(${m.content.length}chars)`)
 );
     const baseMaxTokens    = appState.apiSettings?.maxTokens ?? 300;
-    const thinkingBudget   = appState.apiSettings?.isThinkingModel
-        ? (appState.apiSettings?.thinkingBudget ?? 2500)
-        : 0;
+    const thinkingBudget   = appState.apiSettings?.thinkingBudget ?? 2500;
     const fixedTokens     = await countMessagesTokens(probeMessages);
     const responseReserve  = baseMaxTokens + thinkingBudget + RESPONSE_RESERVE_EXTRA;
     const budget          = contextLimit - responseReserve - fixedTokens;
@@ -160,12 +158,9 @@ async function generateSummary(
                 model:              apiSettings.model,
                 messages:           summarizeMessages,
                 temperature:        0.3,
-                max_tokens:         apiSettings.isThinkingModel
-                    ? SUMMARY_OUTPUT_TOKENS + THINKING_OVERHEAD
-                    : SUMMARY_OUTPUT_TOKENS,
+                max_tokens:         SUMMARY_OUTPUT_TOKENS + THINKING_OVERHEAD,
                 presence_penalty:   0,
-                is_thinking_model:  apiSettings.isThinkingModel,
-                thinking_budget:    apiSettings.isThinkingModel ? THINKING_OVERHEAD : undefined,
+                thinking_budget:    THINKING_OVERHEAD,
             },
         });
     } finally {
@@ -254,7 +249,7 @@ export async function checkAndSummarizeIfNeeded(
     if (!needsCompression) {
         const contextLimit     = appState.apiSettings?.contextLimit ?? DEFAULT_CONTEXT_LIMIT;
         const responseReserve2 = (appState.apiSettings?.maxTokens ?? 300)
-            + (appState.apiSettings?.isThinkingModel ? (appState.apiSettings?.thinkingBudget ?? 2500) : 0)
+            + (appState.apiSettings?.thinkingBudget ?? 2500)
             + RESPONSE_RESERVE_EXTRA;
         const totalFixed       = (contextLimit - responseReserve2) - middleBudget;
         const totalUsed        = totalFixed + middleTokens;

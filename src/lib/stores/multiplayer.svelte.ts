@@ -1272,9 +1272,7 @@ async function runGeneration(): Promise<void> {
       (ev) => {
         if (generation.aborted || ev.payload.generationId !== generation.id) return;
         raw += ev.payload.token;
-        const visible = s.isThinkingModel
-          ? processThinkingOutput(raw, false).text
-          : raw;
+        const visible = processThinkingOutput(raw, false).text;
         // Diff against the visible text already added to the local message.
         const delta = visible.slice(localMsg.text.length);
         if (delta) {
@@ -1302,21 +1300,19 @@ async function runGeneration(): Promise<void> {
           model: s.model,
           messages: buildLlmMessages(),
           temperature: s.temperature,
-          max_tokens: s.maxTokens,
+          max_tokens: s.maxTokens + (s.thinkingBudget ?? 2500),
           presence_penalty: s.presencePenalty,
           top_p: s.topP,
           top_k: s.topK,
           min_p: s.minP,
           frequency_penalty: s.frequencyPenalty,
-          is_thinking_model: s.isThinkingModel,
+          thinking_budget: s.thinkingBudget,
         },
       });
     }
-    if (s.isThinkingModel) {
-      const { text } = processThinkingOutput(raw, true);
-      const delta = text.slice(localMsg.text.length);
-      if (delta) { localMsg.text = text; generation.buffer += delta; }
-    }
+    const { text } = processThinkingOutput(raw, true);
+    const delta = text.slice(localMsg.text.length);
+    if (delta) { localMsg.text = text; generation.buffer += delta; }
   } catch (error) {
     if (!generation.aborted) {
       console.error('Multiplayer generation failed', error);

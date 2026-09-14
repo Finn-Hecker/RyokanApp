@@ -21,7 +21,6 @@
     if (map.api_key)     appState.apiSettings.apiKey          = map.api_key;
     if (map.api_model)   appState.apiSettings.model           = map.api_model;
     if (map.system_prompt)        appState.apiSettings.systemPrompt    = map.system_prompt;
-    if (map.thinking_mode)        appState.apiSettings.isThinkingModel = map.thinking_mode === "true";
     if (map.api_temperature)      appState.apiSettings.temperature     = parseFloat(map.api_temperature);
     if (map.api_max_tokens)       appState.apiSettings.maxTokens       = parseInt(map.api_max_tokens);
     if (map.api_presence_penalty) appState.apiSettings.presencePenalty = parseFloat(map.api_presence_penalty);

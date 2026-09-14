@@ -4,6 +4,9 @@ import { worldInfoState } from '$lib/stores/worldInfoStore.svelte';
 import { chatState } from '$lib/stores/chatStore.svelte';
 import type { ApiSettings } from '$lib/stores/appState.svelte';
 import type { Message } from '$lib/stores/chatStore.svelte';
+import { processThinkingOutput, stripThinkingContent } from '$lib/utils/thinkingOutput';
+
+export { processThinkingOutput, stripThinkingContent } from '$lib/utils/thinkingOutput';
 
 export interface GenerationCallbacks {
     onStreamUpdate:        (text: string) => void;
@@ -30,124 +33,6 @@ export interface ChatMessage {
 
 const START_ROLEPLAY_MARKER = '[Start Roleplay]';
 const DEFAULT_THINKING_BUDGET = 2500;
-
-/**
- * Escapes a string for safe use inside a RegExp.
- */
-function escapeRegExp(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
- * Removes a tag-delimited block from content. Handles three cases:
- * complete blocks, an orphaned closing tag (keep text after it), and an
- * orphaned opening tag (keep text before it).
- */
-function stripTagBlock(content: string, openTag: string, closeTag: string): string {
-    if (!content || !content.includes(openTag.charAt(0))) return content;
-
-    let result = content.replace(
-        new RegExp(`${escapeRegExp(openTag)}[\\s\\S]*?${escapeRegExp(closeTag)}`, 'gi'),
-        '',
-    );
-
-    const closeIdx = result.indexOf(closeTag);
-    if (closeIdx !== -1) {
-        result = result.slice(closeIdx + closeTag.length);
-    }
-
-    const openIdx = result.indexOf(openTag);
-    if (openIdx !== -1) {
-        result = result.slice(0, openIdx);
-    }
-
-    return result;
-}
-
-/**
- * Pure function — strips thinking/channel tags and returns the visible
- * response text.
- *
- * Handles two tag families:
- *   • <think>…</think>        (reasoning models)
- *   • <|channel>…<channel|>   (channel-style inner monologue)
- *
- * NOTE: with the backend now splitting reasoning into a dedicated
- * "ai-thinking-token" event (delta.reasoning_content), `raw` here will
- * usually already be clean. This function remains as a fallback for
- * backends/models that inline reasoning into the content stream instead.
- */
-export function processThinkingOutput(raw: string, isFinished: boolean): {
-    text:       string;
-    isThinking: boolean;
-} {
-    const thinkEnd = '</think>';
-    if (raw.includes(thinkEnd)) {
-        const parts = raw.split(thinkEnd);
-        const afterThink = parts[parts.length - 1].trimStart();
-        return { text: stripChannelTags(afterThink, isFinished), isThinking: false };
-    }
-
-    // Still inside a <think> block (no closing tag yet)
-    if (raw.includes('<think>')) {
-        if (isFinished) {
-            // Stream ended without </think> — discard the orphaned block
-            const before = raw.slice(0, raw.indexOf('<think>')).trimStart();
-            return { text: stripChannelTags(before, isFinished), isThinking: false };
-        }
-        return { text: '', isThinking: true };
-    }
-
-    const text = stripChannelTags(raw, isFinished);
-
-    if (isFinished) return { text, isThinking: false };
-
-    if (raw.includes('<|channel>') && !raw.includes('<channel|>')) {
-        return { text: '', isThinking: true };
-    }
-
-    return { text, isThinking: false };
-}
-
-/**
- * Strips <|channel>…<channel|> blocks from a string. While streaming, an
- * orphaned opening tag is left untouched since the closing tag may still
- * be on its way.
- */
-function stripChannelTags(content: string, isFinished: boolean): string {
-    if (!content || !content.includes('<')) return content;
-
-    // Complete blocks
-    let result = content.replace(/<\|channel>[\s\S]*?<channel\|>/g, '');
-
-    // Orphaned closing tag — keep only what comes after
-    const closeIdx = result.indexOf('<channel|>');
-    if (closeIdx !== -1) {
-        result = result.slice(closeIdx + '<channel|>'.length);
-    }
-
-    // Orphaned opening tag — only strip once the stream is finished, since
-    // the closing tag may still be on its way while still streaming
-    if (isFinished) {
-        const openIdx = result.indexOf('<|channel>');
-        if (openIdx !== -1) {
-            result = result.slice(0, openIdx);
-        }
-    }
-
-    return result.trimStart();
-}
-
-/**
- * Removes <think>…</think> and <|channel>…<channel|> blocks from a
- * finalized message (used when feeding assistant history back to the API).
- */
-export function stripThinkingContent(content: string): string {
-    if (!content) return content;
-    let result = stripTagBlock(content, '<think>', '</think>');
-    result = stripTagBlock(result, '<|channel>', '<channel|>');
-    return result.trimStart();
-}
 
 export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
     const { character, apiSettings, recentMessages, userPrompt } = options;
@@ -257,15 +142,11 @@ export async function runGeneration(
     const unlistenToken = await listen<{ token: string }>('ai-token', (event) => {
         rawBuffer += event.payload.token;
 
-        if (apiSettings.isThinkingModel) {
-            const { text, isThinking } = processThinkingOutput(rawBuffer, false);
-            // Tag-based detection is a fallback — once the dedicated
-            // reasoning channel below has fired, it takes precedence.
-            if (!thinkingBuffer) callbacks.onThinkingPhaseChange(isThinking);
-            callbacks.onStreamUpdate(text);
-        } else {
-            callbacks.onStreamUpdate(rawBuffer);
-        }
+        const { text, isThinking } = processThinkingOutput(rawBuffer, false);
+        // Tag-based detection is a fallback — once the dedicated reasoning
+        // channel below has fired, it takes precedence.
+        if (!thinkingBuffer) callbacks.onThinkingPhaseChange(isThinking);
+        callbacks.onStreamUpdate(text);
     });
 
     // Backend emits reasoning tokens (delta.reasoning_content) on their own
@@ -277,9 +158,7 @@ export async function runGeneration(
 
     try {
         const thinkingBudget = apiSettings.thinkingBudget ?? DEFAULT_THINKING_BUDGET;
-        const effectiveMaxTokens = apiSettings.isThinkingModel
-            ? apiSettings.maxTokens + thinkingBudget
-            : apiSettings.maxTokens;
+        const effectiveMaxTokens = apiSettings.maxTokens + thinkingBudget;
 
         await invoke('call_ai_api', {
             payload: {
@@ -294,19 +173,13 @@ export async function runGeneration(
                 top_k:              apiSettings.topK,
                 min_p:              apiSettings.minP,
                 frequency_penalty:  apiSettings.frequencyPenalty,
-                is_thinking_model:  apiSettings.isThinkingModel,
-                thinking_budget:    apiSettings.isThinkingModel ? thinkingBudget : undefined,
+                thinking_budget:    thinkingBudget,
             },
         });
 
-        if (apiSettings.isThinkingModel) {
-            const { text } = processThinkingOutput(rawBuffer, true);
-            callbacks.onStreamUpdate(text);
-            return text || rawBuffer;
-        }
-
-        callbacks.onStreamUpdate(rawBuffer);
-        return rawBuffer;
+        const { text } = processThinkingOutput(rawBuffer, true);
+        callbacks.onStreamUpdate(text);
+        return text;
     } finally {
         // Always cleared, even on error — otherwise the UI can get stuck
         // showing a "thinking" state after a failed request.

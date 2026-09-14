@@ -21,6 +21,10 @@ fn normalize_character_play_modes(conn: &Connection) -> rusqlite::Result<usize> 
     )
 }
 
+fn remove_legacy_thinking_setting(conn: &Connection) -> rusqlite::Result<usize> {
+    conn.execute("DELETE FROM settings WHERE key = 'thinking_mode'", [])
+}
+
 /// Establishes a connection to the local SQLite database.
 /// Foreign keys are enabled per-connection, as SQLite disables them by default.
 pub fn get_connection(app: &AppHandle) -> Result<Connection, String> {
@@ -166,6 +170,12 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
     conn.execute_batch(&schema)
         .map_err(|e| format!("Failed to initialize database schema: {}", e))?;
 
+    // Thinking support is detected from streamed output now. Remove the
+    // retired preference so databases created by older versions migrate
+    // cleanly without carrying an unused manual override.
+    remove_legacy_thinking_setting(&conn)
+        .map_err(|e| format!("Failed to remove legacy thinking setting: {}", e))?;
+
     // ── Migration: add is_pinned to existing databases that pre-date this column ──
     // We use a try-ignore pattern to stay compatible with older SQLite versions.
     let _ = conn.execute_batch(
@@ -246,7 +256,7 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_character_play_modes;
+    use super::{normalize_character_play_modes, remove_legacy_thinking_setting};
     use rusqlite::{params, Connection};
 
     #[test]
@@ -283,5 +293,28 @@ mod tests {
             )
             .unwrap();
         assert_eq!(multiplayer, "multiplayer");
+    }
+
+    #[test]
+    fn legacy_thinking_setting_is_removed_without_touching_other_settings() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
+             INSERT INTO settings VALUES ('thinking_mode', 'true');
+             INSERT INTO settings VALUES ('api_thinking_budget', '2500');",
+        )
+        .unwrap();
+
+        assert_eq!(remove_legacy_thinking_setting(&conn).unwrap(), 1);
+        assert_eq!(remove_legacy_thinking_setting(&conn).unwrap(), 0);
+
+        let budget: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'api_thinking_budget'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(budget, "2500");
     }
 }
