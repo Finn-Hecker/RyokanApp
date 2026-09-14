@@ -381,6 +381,12 @@
   "sidebar_action_pin": "Anpinnen",
   "sidebar_action_rename": "Umbenennen",
   "sidebar_action_delete": "Löschen",
+  "sidebar_folders": "Ordner",
+  "sidebar_new_folder": "Neuer Ordner",
+  "sidebar_folder_name": "Ordnername",
+  "sidebar_rename_folder": "Ordner umbenennen",
+  "sidebar_delete_folder": "Ordner löschen",
+  "sidebar_loose_chats": "Chats",
 
   "wi_picker_label": "Welt Info",
   "wi_picker_active_count": "{count} aktiv",

@@ -20,6 +20,8 @@ pub struct Conversation {
     /// Snapshot of the source conversation's title at clone time, so the
     /// badge in the UI still works even if the source chat is later deleted.
     pub cloned_from_title: Option<String>,
+    pub folder_id: Option<String>,
+    pub sort_order: i64,
 }
 
 /// Retrieves all chat sessions, ordered by the most recently active.
@@ -28,9 +30,14 @@ pub async fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, Stri
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare(
         "SELECT id, title, character_id, mode, created_at, updated_at, is_pinned,
-                cloned_from_id, cloned_from_title
+                cloned_from_id, cloned_from_title, folder_id, sort_order
          FROM conversations
-         ORDER BY is_pinned DESC, updated_at DESC"
+         ORDER BY CASE WHEN folder_id IS NULL THEN 1 ELSE 0 END,
+                  CASE WHEN folder_id IS NOT NULL THEN folder_id END ASC,
+                  CASE WHEN folder_id IS NOT NULL THEN sort_order END ASC,
+                  CASE WHEN folder_id IS NULL THEN updated_at END DESC,
+                  CASE WHEN folder_id IS NULL THEN rowid END DESC,
+                  rowid ASC"
     ).map_err(|e| e.to_string())?;
     
     let rows = stmt.query_map([], |row| {
@@ -44,6 +51,8 @@ pub async fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, Stri
             is_pinned: row.get::<_, i64>(6)? != 0,
             cloned_from_id: row.get(7)?,
             cloned_from_title: row.get(8)?,
+            folder_id: row.get(9)?,
+            sort_order: row.get(10)?,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -68,10 +77,15 @@ pub async fn get_conversations_page(
     };
     let mut stmt = conn.prepare(
         "SELECT id, title, character_id, mode, created_at, updated_at, is_pinned,
-                cloned_from_id, cloned_from_title
+                cloned_from_id, cloned_from_title, folder_id, sort_order
          FROM conversations
          WHERE mode = ?1
-         ORDER BY is_pinned DESC, updated_at DESC
+         ORDER BY CASE WHEN folder_id IS NULL THEN 1 ELSE 0 END,
+                  CASE WHEN folder_id IS NOT NULL THEN folder_id END ASC,
+                  CASE WHEN folder_id IS NOT NULL THEN sort_order END ASC,
+                  CASE WHEN folder_id IS NULL THEN updated_at END DESC,
+                  CASE WHEN folder_id IS NULL THEN rowid END DESC,
+                  rowid ASC
          LIMIT ?2 OFFSET ?3"
     ).map_err(|e| e.to_string())?;
 
@@ -86,6 +100,8 @@ pub async fn get_conversations_page(
             is_pinned: row.get::<_, i64>(6)? != 0,
             cloned_from_id: row.get(7)?,
             cloned_from_title: row.get(8)?,
+            folder_id: row.get(9)?,
+            sort_order: row.get(10)?,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -120,7 +136,10 @@ pub async fn create_chat(
     };
 
     tx.execute(
-        "INSERT INTO conversations (id, title, character_id, mode) VALUES (?1, ?2, ?3, ?4)",
+        "INSERT INTO conversations (id, title, character_id, mode, sort_order)
+         VALUES (?1, ?2, ?3, ?4,
+             (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM conversations
+              WHERE mode = ?4 AND folder_id IS NULL))",
         params![new_id, title, character_id, mode],
     ).map_err(|e| e.to_string())?;
     
@@ -188,8 +207,10 @@ pub async fn clone_chat_from_message(
     let new_title = format!("🔗 {}", source_title);
 
     tx.execute(
-        "INSERT INTO conversations (id, title, character_id, mode, cloned_from_id, cloned_from_title)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO conversations (id, title, character_id, mode, cloned_from_id, cloned_from_title, sort_order)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6,
+             (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM conversations
+              WHERE mode = ?4 AND folder_id IS NULL))",
         params![new_chat_id, new_title, character_id, mode, chat_id, source_title],
     ).map_err(|e| e.to_string())?;
 

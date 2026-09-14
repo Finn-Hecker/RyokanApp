@@ -380,6 +380,12 @@
   "sidebar_action_pin": "Pin",
   "sidebar_action_rename": "Rename",
   "sidebar_action_delete": "Delete",
+  "sidebar_folders": "Folders",
+  "sidebar_new_folder": "New folder",
+  "sidebar_folder_name": "Folder name",
+  "sidebar_rename_folder": "Rename folder",
+  "sidebar_delete_folder": "Delete folder",
+  "sidebar_loose_chats": "Chats",
 
   "wi_picker_label": "World Info",
   "wi_picker_active_count": "{count} active",

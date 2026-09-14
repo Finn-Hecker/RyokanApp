@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { flip } from 'svelte/animate';
   import { scale } from 'svelte/transition';
-  import { chatState, openHistoryChat, loadAllConversations, loadMoreConversations, deleteConversation, renameConversation, togglePinConversation, type ConversationMode } from '$lib/stores/chatStore.svelte';
+  import { chatState, openHistoryChat, loadAllConversations, loadMoreConversations, deleteConversation, renameConversation, togglePinConversation, createChatFolder, renameChatFolder, setChatFolderCollapsed, deleteChatFolder, persistSidebarOrganization, type Conversation, type ConversationMode } from '$lib/stores/chatStore.svelte';
   import { appState } from '$lib/stores/appState.svelte';
   import { openPersistentSession } from '$lib/stores/multiplayer.svelte';
   import * as m from '$lib/paraglide/messages';
@@ -30,8 +31,56 @@
   let isLoading = $state(false);
   let sentinel = $state<HTMLDivElement | null>(null);
   let renameInput = $state<HTMLInputElement | null>(null);
+  let newFolderName = $state('');
+  let isCreatingFolder = $state(false);
+  let folderToRename = $state<string | null>(null);
+  let folderRenameValue = $state('');
+  let dragging = $state<{ type: 'chat' | 'folder'; id: string } | null>(null);
+  let chatDrop = $state<{ id: string; position: 'before' | 'after' } | null>(null);
+  let folderDrop = $state<{ id: string; position: 'before' | 'after' } | null>(null);
+  let highlightedFolder = $state<string | null>(null);
+  let looseHighlighted = $state(false);
+  let dragImageElement = $state<HTMLDivElement | null>(null);
+  let dragGhostElement = $state<HTMLDivElement | null>(null);
+  let previewConversationOrder = $state<Conversation[] | null>(null);
+  let previewFolderId = $state<string | null | undefined>(undefined);
+  let dragGhost = $state<{
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+    offsetY: number;
+    minTop: number;
+    maxTop: number;
+    title: string;
+    detail: string;
+  } | null>(null);
+
+  let folders = $derived(chatState.folders.filter(folder => folder.mode === mode));
+  let displayedConversations = $derived(previewConversationOrder ?? chatState.conversations);
+  let looseChats = $derived(displayedConversations
+    .filter(chat => chat.mode === mode && effectiveFolderId(chat) === null)
+    .sort(compareRecentActivity));
 
   let observer: IntersectionObserver | null = null;
+  let ghostFrame: number | null = null;
+  let pendingGhostTop = 0;
+  let chatPreviewFrame: number | null = null;
+  let dragListElement: HTMLElement | null = null;
+  let lastPreviewFolderId: string | null | undefined = undefined;
+  let lastPreviewIndex = -1;
+  let pendingChatPreview: {
+    folderId: string | null;
+    clientY: number;
+  } | null = null;
+  const CHAT_INSERTION_DEAD_ZONE = 6;
+
+  type ChatRowGeometry = {
+    chat: Conversation;
+    top: number;
+    bottom: number;
+    midpoint: number;
+  };
 
   onMount(() => {
     if (alwaysVisible) initializeChats();
@@ -40,6 +89,8 @@
 
   onDestroy(() => {
     if (observer) observer.disconnect();
+    if (ghostFrame !== null) cancelAnimationFrame(ghostFrame);
+    if (chatPreviewFrame !== null) cancelAnimationFrame(chatPreviewFrame);
     document.removeEventListener('click', closeMenuOnOutsideClick);
   });
 
@@ -177,20 +228,386 @@
     appState.currentView = 'list';
     if (!alwaysVisible) close();
   }
+
+  function chatsInFolder(folderId: string) {
+    return displayedConversations.filter(
+      chat => chat.mode === mode && effectiveFolderId(chat) === folderId,
+    );
+  }
+
+  function compareRecentActivity(a: Conversation, b: Conversation) {
+    const activityDifference = new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    return activityDifference || b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id);
+  }
+
+  function effectiveFolderId(chat: Conversation) {
+    return dragging?.type === 'chat' && chat.id === dragging.id && previewFolderId !== undefined
+      ? previewFolderId
+      : chat.folder_id;
+  }
+
+  function chatCountInFolder(folderId: string | null, excludedId: string) {
+    let count = 0;
+    for (const chat of displayedConversations) {
+      if (chat.mode === mode && chat.id !== excludedId && effectiveFolderId(chat) === folderId) count += 1;
+    }
+    return count;
+  }
+
+  function focusInput(node: HTMLInputElement) {
+    node.focus();
+  }
+
+  async function addFolder() {
+    const name = newFolderName.trim();
+    if (!name) { isCreatingFolder = false; return; }
+    try {
+      await createChatFolder(name, mode);
+      newFolderName = '';
+      isCreatingFolder = false;
+    } catch (error) { console.error('[Sidebar] Could not create folder:', error); }
+  }
+
+  async function finishFolderRename() {
+    const id = folderToRename;
+    const name = folderRenameValue.trim();
+    folderToRename = null;
+    if (!id || !name) return;
+    try { await renameChatFolder(id, name); }
+    catch (error) { console.error('[Sidebar] Could not rename folder:', error); }
+  }
+
+  async function toggleFolderCollapse(id: string, isCollapsed: boolean) {
+    try { await setChatFolderCollapsed(id, !isCollapsed); }
+    catch (error) { console.error('[Sidebar] Could not update folder state:', error); }
+  }
+
+  function beginDrag(event: DragEvent, type: 'chat' | 'folder', id: string) {
+    if (chatToRename || folderToRename) { event.preventDefault(); return; }
+    const source = event.currentTarget as HTMLElement;
+    const list = source.closest('[data-sidebar-list]') as HTMLElement | null;
+    const sourceRect = source.getBoundingClientRect();
+    const listRect = list?.getBoundingClientRect() ?? sourceRect;
+    const chatItem = type === 'chat'
+      ? chatState.conversations.find(chat => chat.id === id)
+      : undefined;
+    const folderItem = type === 'folder'
+      ? folders.find(folder => folder.id === id)
+      : undefined;
+
+    previewConversationOrder = null;
+    previewFolderId = undefined;
+    dragListElement = list;
+    lastPreviewFolderId = chatItem?.folder_id;
+    lastPreviewIndex = chatItem
+      ? chatState.conversations
+          .filter(chat => chat.mode === mode && chat.folder_id === chatItem.folder_id)
+          .findIndex(chat => chat.id === chatItem.id)
+      : -1;
+    dragging = { type, id };
+    dragGhost = {
+      top: sourceRect.top,
+      left: sourceRect.left,
+      width: sourceRect.width,
+      height: sourceRect.height,
+      offsetY: event.clientY - sourceRect.top,
+      minTop: listRect.top,
+      maxTop: Math.max(listRect.top, listRect.bottom - sourceRect.height),
+      title: chatItem?.title ?? folderItem?.name ?? '',
+      detail: chatItem?.formattedDate ?? (folderItem ? m.sidebar_folders() : ''),
+    };
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.clearData();
+      event.dataTransfer.setData('application/x-ryokan-sidebar-item', JSON.stringify({ type, id }));
+      event.dataTransfer.setData('text/plain', `${type}:${id}`);
+      if (dragImageElement) event.dataTransfer.setDragImage(dragImageElement, 0, 0);
+    }
+  }
+
+  function updateDragGhost(event: DragEvent) {
+    if (!dragGhost || event.clientY <= 0) return;
+    pendingGhostTop = Math.max(
+      dragGhost.minTop,
+      Math.min(event.clientY - dragGhost.offsetY, dragGhost.maxTop),
+    );
+    if (ghostFrame !== null) return;
+    ghostFrame = requestAnimationFrame(() => {
+      ghostFrame = null;
+      if (!dragGhost || !dragGhostElement) return;
+      const delta = pendingGhostTop - dragGhost.top;
+      dragGhostElement.style.transform = `translate3d(0, ${delta}px, 0)`;
+    });
+  }
+
+  function acceptMove(event: DragEvent) {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    updateDragGhost(event);
+  }
+
+  function clearDragState() {
+    if (ghostFrame !== null) cancelAnimationFrame(ghostFrame);
+    if (chatPreviewFrame !== null) cancelAnimationFrame(chatPreviewFrame);
+    ghostFrame = null;
+    chatPreviewFrame = null;
+    pendingChatPreview = null;
+    dragListElement = null;
+    lastPreviewFolderId = undefined;
+    lastPreviewIndex = -1;
+    dragging = null;
+    chatDrop = null;
+    folderDrop = null;
+    highlightedFolder = null;
+    looseHighlighted = false;
+    dragGhost = null;
+    previewConversationOrder = null;
+    previewFolderId = undefined;
+  }
+
+  function endDrag() {
+    clearDragState();
+  }
+
+  function leaveDropTarget(event: DragEvent, clear: () => void) {
+    const current = event.currentTarget as HTMLElement;
+    if (!(event.relatedTarget instanceof Node) || !current.contains(event.relatedTarget)) clear();
+  }
+
+  function insertionPosition(event: DragEvent): 'before' | 'after' {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    return event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+  }
+
+  function previewChatPosition(folderId: string | null, index: number) {
+    if (dragging?.type !== 'chat') return;
+    if (lastPreviewFolderId === folderId && lastPreviewIndex === index) return;
+    const currentOrder = previewConversationOrder ?? chatState.conversations;
+    const moved = currentOrder.find(chat => chat.id === dragging?.id);
+    if (!moved) return;
+
+    const currentFolderId = effectiveFolderId(moved);
+    const currentGroup = currentOrder.filter(
+      chat => chat.mode === mode && effectiveFolderId(chat) === currentFolderId,
+    );
+    const currentIndex = currentGroup.findIndex(chat => chat.id === moved.id);
+    const remaining = currentOrder.filter(chat => chat.mode === mode && chat.id !== moved.id);
+    const destination = remaining.filter(chat => chat.folder_id === folderId);
+    const insertionIndex = folderId === null
+      ? [...destination, moved].sort(compareRecentActivity).findIndex(chat => chat.id === moved.id)
+      : Math.max(0, Math.min(index, destination.length));
+    lastPreviewFolderId = folderId;
+    lastPreviewIndex = insertionIndex;
+    if (currentFolderId === folderId && currentIndex === insertionIndex) return;
+
+    destination.splice(insertionIndex, 0, moved);
+
+    const ordered = folders.flatMap(folder =>
+      folder.id === folderId
+        ? destination
+        : remaining.filter(chat => chat.folder_id === folder.id)
+    );
+    const nextLoose = folderId === null
+      ? destination
+      : remaining.filter(chat => chat.folder_id === null);
+    previewFolderId = folderId;
+    previewConversationOrder = [
+      ...currentOrder.filter(chat => chat.mode !== mode),
+      ...ordered,
+      ...nextLoose,
+    ];
+  }
+
+  function stableRowGeometry(folderId: string | null): ChatRowGeometry[] {
+    if (dragging?.type !== 'chat' || !dragListElement) return [];
+    const rows: ChatRowGeometry[] = [];
+
+    for (const element of dragListElement.querySelectorAll<HTMLElement>('[data-chat-row][data-chat-id]')) {
+      const id = element.dataset.chatId;
+      if (!id || id === dragging.id || !element.isConnected) continue;
+      const chat = displayedConversations.find(candidate => candidate.id === id);
+      if (!chat || chat.mode !== mode || effectiveFolderId(chat) !== folderId) continue;
+
+      const rect = element.getBoundingClientRect();
+      if (!Number.isFinite(rect.top) || rect.height <= 0) continue;
+
+      // Svelte's FLIP animation temporarily translates row wrappers. Remove those
+      // visual translations so hit-testing uses the settled layout positions.
+      let translateY = 0;
+      let ancestor = element.closest<HTMLElement>('[data-chat-row-layout]');
+      while (ancestor) {
+        const transform = getComputedStyle(ancestor).transform;
+        if (transform !== 'none') {
+          try { translateY += new DOMMatrixReadOnly(transform).m42; }
+          catch { /* Ignore a transient/unparseable transform for this ancestor. */ }
+        }
+        ancestor = ancestor.parentElement?.closest<HTMLElement>('[data-chat-row-layout]') ?? null;
+      }
+
+      const top = rect.top - translateY;
+      rows.push({ chat, top, bottom: top + rect.height, midpoint: top + rect.height / 2 });
+    }
+
+    return rows.sort((a, b) => a.top - b.top);
+  }
+
+  function resolveChatPreview(folderId: string | null, clientY: number) {
+    if (dragging?.type !== 'chat') return;
+    const rows = stableRowGeometry(folderId);
+    const expectedRows = chatCountInFolder(folderId, dragging.id);
+    // DOM reconciliation can leave a row detached for one frame. A partial
+    // snapshot cannot safely distinguish that miss from the end of the list.
+    if (rows.length !== expectedRows) return;
+    if (rows.length === 0) return;
+
+    const hitIndex = rows.findIndex(row => clientY >= row.top && clientY <= row.bottom);
+    let rawIndex: number;
+
+    if (hitIndex >= 0) {
+      const distanceFromMidpoint = clientY - rows[hitIndex].midpoint;
+      if (Math.abs(distanceFromMidpoint) <= CHAT_INSERTION_DEAD_ZONE) return;
+      rawIndex = hitIndex + (distanceFromMidpoint > 0 ? 1 : 0);
+    } else if (clientY > rows[rows.length - 1].bottom + CHAT_INSERTION_DEAD_ZONE) {
+      // A miss is not an append. Only the real area below the final row is.
+      rawIndex = rows.length;
+    } else {
+      return;
+    }
+
+    let nextIndex = rawIndex;
+    if (lastPreviewFolderId === folderId && lastPreviewIndex >= 0) {
+      nextIndex = Math.min(lastPreviewIndex, rows.length);
+      while (nextIndex < rawIndex) {
+        if (clientY <= rows[nextIndex].midpoint + CHAT_INSERTION_DEAD_ZONE) break;
+        nextIndex += 1;
+      }
+      while (nextIndex > rawIndex) {
+        if (clientY >= rows[nextIndex - 1].midpoint - CHAT_INSERTION_DEAD_ZONE) break;
+        nextIndex -= 1;
+      }
+    }
+
+    if (lastPreviewFolderId === folderId && lastPreviewIndex === nextIndex) return;
+    const indicator = nextIndex === 0
+      ? { id: rows[0].chat.id, position: 'before' as const }
+      : { id: rows[nextIndex - 1].chat.id, position: 'after' as const };
+    chatDrop = indicator;
+    previewChatPosition(folderId, nextIndex);
+    highlightedFolder = null;
+    looseHighlighted = false;
+  }
+
+  function scheduleChatPreview(folderId: string | null, event: DragEvent) {
+    pendingChatPreview = {
+      folderId,
+      clientY: event.clientY,
+    };
+    if (chatPreviewFrame !== null) return;
+    chatPreviewFrame = requestAnimationFrame(() => {
+      chatPreviewFrame = null;
+      const pending = pendingChatPreview;
+      pendingChatPreview = null;
+      if (pending) resolveChatPreview(pending.folderId, pending.clientY);
+    });
+  }
+
+  function flushChatPreview(folderId: string | null, event: DragEvent) {
+    if (chatPreviewFrame !== null) cancelAnimationFrame(chatPreviewFrame);
+    chatPreviewFrame = null;
+    pendingChatPreview = null;
+    resolveChatPreview(folderId, event.clientY);
+  }
+
+  function commitChatPreview() {
+    if (dragging?.type !== 'chat' || !previewConversationOrder || previewFolderId === undefined) return;
+    const moved = chatState.conversations.find(chat => chat.id === dragging?.id);
+    if (!moved) return;
+    moved.folder_id = previewFolderId;
+    chatState.conversations = previewConversationOrder;
+  }
+
+  async function persistDrop() {
+    commitChatPreview();
+    try { await persistSidebarOrganization(mode); }
+    catch (error) {
+      console.error('[Sidebar] Could not save organization:', error);
+      await loadAllConversations(mode);
+    } finally { clearDragState(); }
+  }
+
+  async function dropChatInto(folderId: string | null, index: number) {
+    if (dragging?.type !== 'chat') return;
+    previewChatPosition(folderId, index);
+    await persistDrop();
+  }
+
+  async function dropOnChat() {
+    if (dragging?.type !== 'chat') return;
+    await persistDrop();
+  }
+
+  async function dropFolder(targetId: string) {
+    if (dragging?.type !== 'folder' || !folderDrop || dragging.id === targetId) return clearDragState();
+    const moved = folders.find(folder => folder.id === dragging?.id);
+    if (!moved) return;
+    const ordered = folders.filter(folder => folder.id !== moved.id);
+    const targetIndex = ordered.findIndex(folder => folder.id === targetId);
+    ordered.splice(targetIndex + (folderDrop.position === 'after' ? 1 : 0), 0, moved);
+    chatState.folders = ordered;
+    await persistDrop();
+  }
 </script>
 
-{#snippet chatList()}
-  {#if chatState.conversations.length === 0}
-    <p class="text-gray-600 text-sm text-center mt-10">{m.history_no_chats()}</p>
-  {/if}
-
-  {#each chatState.conversations as chat}
+{#snippet chatRow(chat: Conversation)}
     <div
       role="button"
       tabindex="0"
+      data-chat-row
+      data-chat-id={chat.id}
+      draggable={chatToRename !== chat.id}
+      ondragstart={(event) => beginDrag(event, 'chat', chat.id)}
+      ondrag={(event) => updateDragGhost(event)}
+      ondragend={endDrag}
+      ondragenter={(event) => {
+        if (dragging?.type !== 'chat') return;
+        acceptMove(event);
+        event.stopPropagation();
+      }}
+      ondragover={(event) => {
+        if (dragging?.type !== 'chat') return;
+        acceptMove(event);
+        event.stopPropagation();
+        if (dragging.id !== chat.id) {
+          const folderId = effectiveFolderId(chat);
+          if (folderId === null) {
+            chatDrop = null;
+            previewChatPosition(null, 0);
+          } else {
+            scheduleChatPreview(folderId, event);
+          }
+        }
+      }}
+      ondragleave={(event) => leaveDropTarget(event, () => {
+        if (chatDrop?.id === chat.id) chatDrop = null;
+      })}
+      ondrop={(event) => {
+        if (dragging?.type !== 'chat') return;
+        acceptMove(event);
+        event.stopPropagation();
+        if (dragging.id !== chat.id) {
+          const folderId = effectiveFolderId(chat);
+          if (folderId === null) previewChatPosition(null, 0);
+          else flushChatPreview(folderId, event);
+        }
+        void dropOnChat();
+      }}
       onclick={() => loadChat(chat.id)}
       onkeydown={(e) => e.key === 'Enter' && loadChat(chat.id)}
-      class="relative w-full text-left p-3 rounded-lg hover:bg-white/5 group transition-all border border-transparent hover:border-white/5 cursor-pointer"
+      class="relative w-full text-left p-3 rounded-lg hover:bg-white/5 group transition-all border cursor-pointer
+             {dragging?.type === 'chat' && dragging.id === chat.id ? 'opacity-40 border-transparent' : ''}
+             {chatDrop?.id === chat.id && chatDrop.position === 'before' ? 'border-t-ryokan-accent border-x-transparent border-b-transparent' : ''}
+             {chatDrop?.id === chat.id && chatDrop.position === 'after' ? 'border-b-ryokan-accent border-x-transparent border-t-transparent' : ''}
+             {chatDrop?.id !== chat.id ? 'border-transparent hover:border-white/5' : ''}"
     >
       <div class="pr-9">
         {#if chatToRename === chat.id}
@@ -305,12 +722,183 @@
         {/if}
       {/if}
     </div>
-  {/each}
+{/snippet}
+
+{#snippet chatList()}
+  <div data-sidebar-list class="space-y-2">
+    <div class="flex items-center justify-between px-1">
+      <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-600">{m.sidebar_folders()}</span>
+      <button type="button" onclick={() => isCreatingFolder = true} class="w-6 h-6 rounded-md text-gray-500 hover:text-ryokan-accent hover:bg-white/5" aria-label={m.sidebar_new_folder()}>＋</button>
+    </div>
+
+    {#if isCreatingFolder}
+      <input use:focusInput bind:value={newFolderName} onblur={addFolder} onkeydown={(event) => {
+        if (event.key === 'Enter') addFolder();
+        if (event.key === 'Escape') { newFolderName = ''; isCreatingFolder = false; }
+      }} placeholder={m.sidebar_folder_name()} class="w-full rounded-lg border border-ryokan-accent/40 bg-white/10 px-3 py-2 text-sm text-gray-100 outline-none" />
+    {/if}
+
+    {#each folders as folder (folder.id)}
+      <section
+        role="group"
+        data-chat-row-layout
+        animate:flip={{ duration: 160 }}
+        class="rounded-lg transition-colors duration-150 {highlightedFolder === folder.id ? 'bg-ryokan-accent/10 ring-1 ring-ryokan-accent/70' : ''}"
+        ondragenter={(event) => {
+          if (dragging?.type !== 'chat' || (event.target as HTMLElement).closest('[data-chat-row]')) return;
+          acceptMove(event);
+          highlightedFolder = folder.id;
+          folderDrop = null;
+        }}
+        ondragover={(event) => {
+          if (dragging?.type !== 'chat' || (event.target as HTMLElement).closest('[data-chat-row]')) return;
+          acceptMove(event);
+          highlightedFolder = folder.id;
+          folderDrop = null;
+        }}
+        ondragleave={(event) => leaveDropTarget(event, () => {
+          if (highlightedFolder === folder.id) highlightedFolder = null;
+        })}
+        ondrop={(event) => {
+          if (dragging?.type !== 'chat' || (event.target as HTMLElement).closest('[data-chat-row]')) return;
+          acceptMove(event);
+          event.stopPropagation();
+          void dropChatInto(folder.id, chatsInFolder(folder.id).length);
+        }}
+      >
+        <div
+          role="listitem"
+          class="group/folder flex items-center gap-2 rounded-lg border px-2 py-2 text-gray-300 transition-colors
+                 {folderDrop?.id === folder.id && folderDrop.position === 'before' ? 'border-t-ryokan-accent border-x-transparent border-b-transparent' : ''}
+                 {folderDrop?.id === folder.id && folderDrop.position === 'after' ? 'border-b-ryokan-accent border-x-transparent border-t-transparent' : ''}
+                 {folderDrop?.id !== folder.id ? 'border-transparent' : ''}"
+          draggable={folderToRename !== folder.id}
+          ondragstart={(event) => beginDrag(event, 'folder', folder.id)}
+          ondrag={(event) => updateDragGhost(event)}
+          ondragend={endDrag}
+          ondragenter={(event) => {
+            if (dragging?.type !== 'folder') return;
+            acceptMove(event);
+            event.stopPropagation();
+          }}
+          ondragover={(event) => {
+            if (dragging?.type !== 'folder') return;
+            acceptMove(event);
+            event.stopPropagation();
+            const position = insertionPosition(event);
+            if (folderDrop?.id !== folder.id || folderDrop.position !== position) {
+              folderDrop = { id: folder.id, position };
+            }
+            highlightedFolder = null;
+          }}
+          ondragleave={(event) => leaveDropTarget(event, () => {
+            if (folderDrop?.id === folder.id) folderDrop = null;
+          })}
+          ondrop={(event) => {
+            if (dragging?.type !== 'folder') return;
+            acceptMove(event);
+            event.stopPropagation();
+            void dropFolder(folder.id);
+          }}
+        >
+          <svg class="shrink-0 text-gray-500" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H2v16h20V6H12l-2-2z"/></svg>
+          {#if folderToRename === folder.id}
+            <input use:focusInput bind:value={folderRenameValue} onblur={finishFolderRename} onclick={(event) => event.stopPropagation()} onkeydown={(event) => {
+              event.stopPropagation();
+              if (event.key === 'Enter') finishFolderRename();
+              if (event.key === 'Escape') folderToRename = null;
+            }} class="min-w-0 flex-1 rounded bg-white/10 px-1.5 py-0.5 text-sm outline-none ring-1 ring-ryokan-accent/50" />
+          {:else}
+            <button
+              type="button"
+              draggable="false"
+              aria-expanded={!folder.is_collapsed}
+              aria-label={folder.name}
+              onclick={(event) => { event.stopPropagation(); void toggleFolderCollapse(folder.id, folder.is_collapsed); }}
+              ondragstart={(event) => { event.preventDefault(); event.stopPropagation(); }}
+              class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-600 hover:bg-white/5 hover:text-gray-300"
+            >
+              <svg class="transition-transform duration-150 {folder.is_collapsed ? '-rotate-90' : ''}" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <span class="min-w-0 flex-1 truncate text-sm font-medium">{folder.name}</span>
+            <span class="text-[10px] text-gray-600">{chatsInFolder(folder.id).length}</span>
+            <button type="button" onclick={(event) => { event.stopPropagation(); folderToRename = folder.id; folderRenameValue = folder.name; }} class="opacity-70 lg:opacity-0 lg:group-hover/folder:opacity-100 text-gray-600 hover:text-gray-300" aria-label={m.sidebar_rename_folder()}>✎</button>
+            <button type="button" onclick={(event) => { event.stopPropagation(); deleteChatFolder(folder.id); }} class="opacity-70 lg:opacity-0 lg:group-hover/folder:opacity-100 text-gray-600 hover:text-red-400" aria-label={m.sidebar_delete_folder()}>×</button>
+          {/if}
+        </div>
+        {#if !folder.is_collapsed}
+          <div class="ml-3 border-l border-white/5 pl-2 space-y-1 min-h-2">
+            {#each chatsInFolder(folder.id) as chat (chat.id)}
+              <div data-chat-row-layout animate:flip={{ duration: 160 }}>
+                {@render chatRow(chat)}
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </section>
+    {/each}
+
+    <div
+      role="group"
+      aria-label={m.sidebar_loose_chats()}
+      class="mt-3 rounded-lg transition-colors {looseHighlighted ? 'bg-white/[0.04] ring-1 ring-ryokan-accent/50' : ''}"
+      ondragenter={(event) => {
+        if (dragging?.type !== 'chat' || (event.target as HTMLElement).closest('[data-chat-row]')) return;
+        acceptMove(event);
+        looseHighlighted = true;
+        highlightedFolder = null;
+        chatDrop = null;
+      }}
+      ondragover={(event) => {
+        if (dragging?.type !== 'chat' || (event.target as HTMLElement).closest('[data-chat-row]')) return;
+        acceptMove(event);
+        looseHighlighted = true;
+        highlightedFolder = null;
+        previewChatPosition(null, 0);
+      }}
+      ondragleave={(event) => leaveDropTarget(event, () => looseHighlighted = false)}
+      ondrop={(event) => {
+        if (dragging?.type !== 'chat') return;
+        acceptMove(event);
+        previewChatPosition(null, 0);
+        void dropOnChat();
+      }}
+    >
+      <div class="px-1 py-1 text-[10px] font-semibold uppercase tracking-wider text-gray-600">{m.sidebar_loose_chats()}</div>
+      <div class="space-y-1 min-h-8">
+        {#each looseChats as chat (chat.id)}
+          <div data-chat-row-layout animate:flip={{ duration: 160 }}>
+            {@render chatRow(chat)}
+          </div>
+        {/each}
+        {#if looseChats.length === 0 && chatState.conversations.length === 0}
+          <p class="py-8 text-center text-sm text-gray-600">{m.history_no_chats()}</p>
+        {/if}
+      </div>
+    </div>
+  </div>
 
   <div bind:this={sentinel} class="py-2 text-center text-gray-600 text-xs h-8">
     {#if isLoading}<span>…</span>{/if}
   </div>
 {/snippet}
+
+<div bind:this={dragImageElement} class="fixed -left-[9999px] top-0 h-px w-px opacity-0" aria-hidden="true"></div>
+
+{#if dragging && dragGhost}
+  <div
+    bind:this={dragGhostElement}
+    class="pointer-events-none fixed z-[100] rounded-lg border border-ryokan-accent/50 bg-ryokan-surface/95 px-3 py-2 shadow-2xl ring-1 ring-black/30 will-change-transform"
+    style:left={`${dragGhost.left}px`}
+    style:top={`${dragGhost.top}px`}
+    style:width={`${dragGhost.width}px`}
+    style:min-height={`${dragGhost.height}px`}
+    aria-hidden="true"
+  >
+    <div class="truncate text-sm font-medium text-gray-100">{dragGhost.title}</div>
+    {#if dragGhost.detail}<div class="mt-1 truncate text-[10px] text-gray-500">{dragGhost.detail}</div>{/if}
+  </div>
+{/if}
 
 {#snippet navButtons()}
   <div class="p-3 border-t border-white/5 flex gap-2 shrink-0">

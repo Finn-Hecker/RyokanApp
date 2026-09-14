@@ -27,9 +27,19 @@ export interface Conversation {
     cloned_from_id?: string | null;
     /** Title of the source chat at the time it was cloned. */
     cloned_from_title?: string | null;
+    folder_id: string | null;
+    sort_order: number;
 }
 
 export type ConversationMode = Conversation['mode'];
+
+export interface ChatFolder {
+    id: string;
+    name: string;
+    mode: ConversationMode;
+    sort_order: number;
+    is_collapsed: boolean;
+}
 
 export interface DisplayMessage {
     id: string;
@@ -51,6 +61,7 @@ export interface SummaryMeta {
 
 export const chatState = $state({
     conversations:   [] as Conversation[],
+    folders:         [] as ChatFolder[],
     currentMessages: [] as Message[],
     activeChatId:    null as string | null,
     hasMoreMessages: false,
@@ -65,17 +76,17 @@ const dateFormatter = new Intl.DateTimeFormat(getLocale(), {
     timeStyle: 'short'
 });
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 2_147_483_647;
 let loadedConversationMode: ConversationMode = 'singleplayer';
 
 export async function loadAllConversations(mode: ConversationMode = loadedConversationMode) {
     loadedConversationMode = mode;
     try {
-        const result = await invoke<Conversation[]>('get_conversations_page', {
-            limit: PAGE_SIZE,
-            offset: 0,
-            mode,
-        });
+        const [result, folders] = await Promise.all([
+            invoke<Conversation[]>('get_conversations_page', { limit: PAGE_SIZE, offset: 0, mode }),
+            invoke<ChatFolder[]>('get_chat_folders', { mode }),
+        ]);
+        chatState.folders = folders;
         chatState.conversations = result.map(chat => ({
             ...chat,
             formattedDate: dateFormatter.format(new Date(chat.created_at))
@@ -320,4 +331,61 @@ export async function deleteConversation(id: string) {
             };
         }
     } catch (e) { console.error(e); }
+}
+
+export async function createChatFolder(name: string, mode: ConversationMode) {
+    const folder = await invoke<ChatFolder>('create_chat_folder', { name, mode });
+    chatState.folders = [...chatState.folders, folder];
+}
+
+export async function renameChatFolder(id: string, name: string) {
+    await invoke('rename_chat_folder', { id, name });
+    const folder = chatState.folders.find(item => item.id === id);
+    if (folder) folder.name = name.trim();
+}
+
+export async function setChatFolderCollapsed(id: string, isCollapsed: boolean) {
+    await invoke('set_chat_folder_collapsed', { id, isCollapsed });
+    const folder = chatState.folders.find(item => item.id === id);
+    if (folder) folder.is_collapsed = isCollapsed;
+}
+
+export async function deleteChatFolder(id: string) {
+    await invoke('delete_chat_folder', { id });
+    chatState.folders = chatState.folders.filter(folder => folder.id !== id);
+    for (const chat of chatState.conversations) {
+        if (chat.folder_id === id) chat.folder_id = null;
+    }
+    await persistSidebarOrganization(loadedConversationMode);
+}
+
+export async function persistSidebarOrganization(mode: ConversationMode) {
+    const folders = chatState.folders
+        .filter(folder => folder.mode === mode)
+        .map((folder, index) => ({ ...folder, sort_order: index }));
+    chatState.folders = folders;
+
+    const grouped = new Map<string | null, Conversation[]>();
+    for (const chat of chatState.conversations.filter(chat => chat.mode === mode)) {
+        const items = grouped.get(chat.folder_id) ?? [];
+        items.push(chat);
+        grouped.set(chat.folder_id, items);
+    }
+    const chats = [...grouped.entries()].flatMap(([folderId, items]) => {
+        const orderedItems = folderId === null
+            ? [...items].sort((a, b) => {
+                const activityDifference = new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+                return activityDifference || b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id);
+            })
+            : items;
+        return orderedItems.map((chat, index) => {
+            chat.sort_order = index;
+            return { id: chat.id, folder_id: chat.folder_id, sort_order: index };
+        });
+    });
+    await invoke('save_sidebar_organization', {
+        mode,
+        folderIds: folders.map(folder => folder.id),
+        chats,
+    });
 }

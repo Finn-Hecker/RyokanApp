@@ -8,6 +8,7 @@ pub mod settings;
 pub mod characters;
 pub mod world_info;
 pub mod roles;
+pub mod folders;
 
 const DB_FILENAME: &str = "ryokan.db";
 
@@ -73,8 +74,22 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             updated_at DATETIME DEFAULT {utc_now},
             is_pinned INTEGER NOT NULL DEFAULT 0,
             cloned_from_id TEXT,
-            cloned_from_title TEXT
+            cloned_from_title TEXT,
+            folder_id TEXT REFERENCES chat_folders(id) ON DELETE SET NULL,
+            sort_order INTEGER
         );
+
+        CREATE TABLE IF NOT EXISTS chat_folders (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            mode TEXT NOT NULL DEFAULT 'singleplayer',
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_collapsed INTEGER NOT NULL DEFAULT 0,
+            created_at DATETIME DEFAULT {utc_now}
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_chat_folders_mode_order
+            ON chat_folders(mode, sort_order);
 
         CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at DESC);
 
@@ -182,6 +197,21 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
         "ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'singleplayer';"
     );
     let _ = conn.execute_batch(
+        "ALTER TABLE conversations ADD COLUMN folder_id TEXT REFERENCES chat_folders(id) ON DELETE SET NULL;"
+    );
+    let _ = conn.execute_batch(
+        "ALTER TABLE conversations ADD COLUMN sort_order INTEGER;"
+    );
+    // Folder disclosure state is local UI organization and belongs alongside
+    // the folder metadata so it survives restarts.
+    let _ = conn.execute_batch(
+        "ALTER TABLE chat_folders ADD COLUMN is_collapsed INTEGER NOT NULL DEFAULT 0;"
+    );
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_conversations_folder_order
+         ON conversations(mode, folder_id, sort_order);"
+    ).map_err(|e| format!("Failed to index conversation ordering: {}", e))?;
+    let _ = conn.execute_batch(
         "ALTER TABLE messages ADD COLUMN author TEXT;"
     );
 
@@ -194,6 +224,22 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
     // unknown values so older databases remain usable with the stricter model.
     normalize_character_play_modes(&conn)
         .map_err(|e| format!("Failed to normalize character play modes: {}", e))?;
+
+    // Preserve the legacy pinned/recent order for existing chats. Subsequent
+    // drag-and-drop operations write explicit positions.
+    conn.execute_batch(
+        "UPDATE conversations AS conversation
+         SET sort_order = (
+             SELECT COUNT(*) FROM conversations AS preceding
+             WHERE preceding.mode = conversation.mode
+               AND (
+                   preceding.is_pinned > conversation.is_pinned OR
+                   (preceding.is_pinned = conversation.is_pinned AND preceding.updated_at > conversation.updated_at) OR
+                   (preceding.is_pinned = conversation.is_pinned AND preceding.updated_at = conversation.updated_at AND preceding.rowid < conversation.rowid)
+               )
+         )
+         WHERE sort_order IS NULL;"
+    ).map_err(|e| format!("Failed to initialize conversation ordering: {}", e))?;
 
     Ok(())
 }
