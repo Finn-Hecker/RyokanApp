@@ -44,7 +44,6 @@
   let modelsError     = $state("");
   let modelMenuOpen   = $state(false);
   let modelSearch     = $state("");
-  let expandedProvider = $state("");
   let activeModelCategory = $state("all");
   let favoriteModels = $state<string[]>([]);
   let lastAttemptedModelConfig = "";
@@ -76,7 +75,7 @@
 
   function modelProviderKey(modelId: string): string {
     const normalized = modelId.trim().toLowerCase();
-    const slashPrefix = normalized.split("/", 1)[0];
+    const slashPrefix = normalized.split("/", 1)[0].replace(/^~+/, "");
     if (normalized.includes("/") && slashPrefix) return slashPrefix;
 
     // OpenAI-compatible local APIs often return an unnamespaced model ID. In
@@ -86,11 +85,20 @@
   }
 
   function modelProviderLabel(providerKey: string): string {
-    return providerKey
+    const label = providerKey
       .split(/[-_.]+/)
       .filter(Boolean)
       .map(part => part.charAt(0).toUpperCase() + part.slice(1))
       .join(" ");
+    return label.replace(/\bOpenai\b/g, "OpenAI").replace(/\bDeepseek\b/g, "DeepSeek");
+  }
+
+  function scrollDesktopCategories(event: WheelEvent) {
+    if (!window.matchMedia("(min-width: 768px)").matches) return;
+    const categories = event.currentTarget as HTMLElement;
+    if (categories.scrollWidth <= categories.clientWidth || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+    categories.scrollLeft += event.deltaY;
+    event.preventDefault();
   }
 
   const modelProviders = $derived.by(() => {
@@ -112,17 +120,8 @@
     })),
   ]);
 
-  const groupedModels = $derived.by(() => {
-    const query = modelSearch.trim().toLowerCase();
-    return modelProviders.map(provider => ({
-      ...provider,
-      models: availableModels.filter(modelId =>
-        modelProviderKey(modelId) === provider.key && (!query || modelId.toLowerCase().includes(query))
-      ),
-    })).filter(group => group.models.length > 0);
-  });
-
-  const mobileModels = $derived.by(() => {
+  // Shared by both responsive presentations so their filter behavior stays identical.
+  const visibleModels = $derived.by(() => {
     const query = modelSearch.trim().toLowerCase();
     const category = modelCategoryTabs.find(item => item.id === activeModelCategory) ?? modelCategoryTabs[0];
     return availableModels.filter(modelId => {
@@ -233,7 +232,6 @@
         if (!availableModels.includes(appState.apiSettings.model)) {
           appState.apiSettings.model = availableModels[0];
         }
-        expandedProvider = modelProviderKey(appState.apiSettings.model);
         await saveSetting("api_model", appState.apiSettings.model);
       }
     } catch (e: any) {
@@ -318,13 +316,13 @@
     if (modelMenuOpen) activeModelCategory = "all";
   }
 
-  function closeMobileModelSheet() {
+  function closeModelPicker() {
     modelMenuOpen = false;
     modelSearch = "";
   }
 
   function handleModelMenuKeydown(event: KeyboardEvent) {
-    if (event.key === "Escape" && modelMenuOpen) closeMobileModelSheet();
+    if (event.key === "Escape" && modelMenuOpen) closeModelPicker();
   }
 
   function closeModelMenu(event: FocusEvent) {
@@ -485,7 +483,13 @@
           </button>
 
           {#if modelMenuOpen}
-            <div class="model-menu desktop-model-menu" role="listbox" aria-label={m.settings_model_label()}>
+            <div class="desktop-model-backdrop" role="presentation" onclick={closeModelPicker}></div>
+            <div class="desktop-model-browser" role="dialog" aria-modal="true" aria-labelledby="desktop-model-browser-title">
+              <header class="desktop-model-header">
+                <div><h3 id="desktop-model-browser-title">{m.settings_model_select_title()}</h3><p>{availableModels.length} models available</p></div>
+                <button type="button" class="model-sheet-close" aria-label={m.settings_model_close()} onclick={closeModelPicker}><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" stroke-linecap="round"/></svg></button>
+              </header>
+              <div class="desktop-model-controls">
               <div class="model-search-wrap">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5" stroke-linecap="round"/>
@@ -498,62 +502,38 @@
                   aria-label={m.settings_model_search_placeholder()}
                 />
               </div>
-
-              <div class="model-groups">
-                {#each groupedModels as group (group.key)}
-                  <section class="model-group">
-                    <button
-                      type="button"
-                      class="model-group-heading"
-                      aria-expanded={modelSearch.length > 0 || expandedProvider === group.key}
-                      onclick={() => expandedProvider = expandedProvider === group.key ? "" : group.key}
-                    >
-                      <span>{group.label}</span>
-                      <span class="model-count">{group.models.length}</span>
-                      <svg class:rotated={modelSearch.length > 0 || expandedProvider === group.key} width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-                        <path d="M6 9l6 6 6-6"/>
-                      </svg>
+                <div class="model-category-tabs desktop-category-tabs" role="tablist" aria-label={m.settings_model_categories()} onwheel={scrollDesktopCategories}>
+                  {#each modelCategoryTabs as category (category.id)}<button type="button" role="tab" aria-selected={activeModelCategory === category.id} class="model-category-tab" class:model-category-tab--active={activeModelCategory === category.id} onclick={() => activeModelCategory = category.id}>{category.label}</button>{/each}
+                </div>
+              </div>
+              <div class="desktop-model-list" role="listbox" aria-label={m.settings_model_label()}>
+                {#each visibleModels as modelId (modelId)}
+                  <div class="desktop-model-row" class:desktop-model-row--selected={appState.apiSettings.model === modelId}>
+                    <button type="button" role="option" aria-selected={appState.apiSettings.model === modelId} class="desktop-model-select" onclick={() => selectModel(modelId)}>
+                      <span class="desktop-model-identity">
+                        <span class="desktop-model-name">{modelId}</span>
+                        <span class="desktop-model-meta">
+                          <span class="desktop-model-provider">{modelProviderLabel(modelProviderKey(modelId))}</span>
+                          {#if isFreeModel(modelId)}<span class="free-badge">Free</span>{/if}
+                          {#if modelPriceLabel(modelId)}<span class="desktop-meta-badge">{modelPriceLabel(modelId)}</span>{/if}
+                          {#if contextLabel(modelId)}<span class="desktop-meta-badge">{contextLabel(modelId)}</span>{/if}
+                        </span>
+                      </span>
+                      {#if appState.apiSettings.model === modelId}<span class="desktop-selected-mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>{/if}
                     </button>
-                    <div class="group-models" class:group-models--open={modelSearch.length > 0 || expandedProvider === group.key}>
-                      {#each group.models as modelId (modelId)}
-                        <button
-                          type="button"
-                          role="option"
-                          aria-selected={appState.apiSettings.model === modelId}
-                          class="model-option"
-                          class:model-option--selected={appState.apiSettings.model === modelId}
-                          onclick={() => selectModel(modelId)}
-                        >
-                          <span class="model-option-copy">
-                            <span class="model-option-name">{modelId}</span>
-                            {#if isOpenRouter && (modelPriceLabel(modelId) || contextLabel(modelId) || isFreeModel(modelId))}
-                              <span class="model-option-meta">
-                                {#if isFreeModel(modelId)}<span class="free-badge">Free</span>{/if}
-                                {#if modelPriceLabel(modelId)}<span>{modelPriceLabel(modelId)}</span>{/if}
-                                {#if contextLabel(modelId)}<span>{contextLabel(modelId)}</span>{/if}
-                              </span>
-                            {/if}
-                          </span>
-                          {#if appState.apiSettings.model === modelId}
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                          {/if}
-                        </button>
-                      {/each}
-                    </div>
-                  </section>
-                {:else}
-                  <div class="model-no-results">{m.settings_model_search_empty()}</div>
-                {/each}
+                    <button type="button" class="desktop-favorite-btn" class:desktop-favorite-btn--active={favoriteModels.includes(modelId)} aria-label={favoriteModels.includes(modelId) ? m.settings_model_unfavorite({ model: modelId }) : m.settings_model_favorite({ model: modelId })} aria-pressed={favoriteModels.includes(modelId)} onclick={() => toggleFavorite(modelId)}><svg width="19" height="19" viewBox="0 0 24 24" fill={favoriteModels.includes(modelId) ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 3 2.78 5.63 6.22.9-4.5 4.39 1.06 6.2L12 17.2l-5.56 2.92 1.06-6.2L3 9.53l6.22-.9L12 3Z" stroke-linejoin="round"/></svg></button>
+                  </div>
+                {:else}<div class="model-no-results desktop-model-no-results">{m.settings_model_search_empty()}</div>{/each}
               </div>
             </div>
 
-            <div class="model-sheet-backdrop" role="presentation" onclick={closeMobileModelSheet}></div>
+            <div class="model-sheet-backdrop" role="presentation" onclick={closeModelPicker}></div>
             <div class="mobile-model-sheet" role="dialog" aria-modal="true" aria-labelledby="mobile-model-sheet-title">
               <div class="model-sheet-handle" aria-hidden="true"></div>
               <div class="model-sheet-toolbar">
                 <div class="model-sheet-heading">
                   <h3 id="mobile-model-sheet-title">{m.settings_model_select_title()}</h3>
-                  <button type="button" class="model-sheet-close" aria-label={m.settings_model_close()} onclick={closeMobileModelSheet}>
+                  <button type="button" class="model-sheet-close" aria-label={m.settings_model_close()} onclick={closeModelPicker}>
                     <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" stroke-linecap="round"/></svg>
                   </button>
                 </div>
@@ -586,7 +566,7 @@
               </div>
 
               <div class="mobile-model-list" role="listbox" aria-label={m.settings_model_label()}>
-                {#each mobileModels as modelId (modelId)}
+                {#each visibleModels as modelId (modelId)}
                   <div class="mobile-model-row" class:mobile-model-row--selected={appState.apiSettings.model === modelId}>
                     <button
                       type="button"
@@ -785,42 +765,53 @@
   .model-picker { position: relative; }
   .model-picker-trigger { display:flex; align-items:center; justify-content:space-between; gap:12px; text-align:left; cursor:pointer; }
   .model-picker-trigger span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .model-picker-trigger svg, .model-group-heading svg { flex-shrink:0; transition:transform .15s ease; }
+  .model-picker-trigger svg { flex-shrink:0; transition:transform .15s ease; }
   svg.rotated { transform:rotate(180deg); }
-  .model-menu { position:absolute; z-index:30; top:calc(100% + 6px); left:0; right:0; overflow:hidden; border:1px solid rgba(255,255,255,.09); border-radius:12px; background:#19191b; box-shadow:0 16px 40px rgba(0,0,0,.45); }
   .model-search-wrap { display:flex; align-items:center; gap:8px; margin:8px; padding:0 10px; border:1px solid rgba(255,255,255,.07); border-radius:9px; background:rgba(0,0,0,.22); color:#66666b; }
   .model-search-wrap:focus-within { border-color:rgba(212,180,131,.35); color:#a68d68; }
   .model-search { width:100%; min-width:0; padding:9px 0; border:0; outline:0; background:transparent; color:#e5e5ea; font:inherit; font-size:12.5px; }
   .model-search::placeholder { color:#55555a; }
   .model-search::-webkit-search-cancel-button { filter:invert(.6); }
-  .model-groups { max-height:min(52vh, 410px); overflow-y:auto; padding:0 6px 7px; }
-  .model-group + .model-group { border-top:1px solid rgba(255,255,255,.045); }
-  .model-group-heading { width:100%; display:flex; align-items:center; gap:7px; padding:9px 8px 7px; border:0; background:transparent; color:#a6a6ab; font:inherit; font-size:11px; font-weight:700; letter-spacing:.055em; text-transform:uppercase; text-align:left; cursor:pointer; }
-  .model-group-heading > span:first-child { flex:1; }
-  .model-count { color:#55555a; font-size:10px; font-variant-numeric:tabular-nums; }
-  .group-models { display:none; }
-  .group-models--open { display:block; }
-  .model-option { width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 10px; border:0; border-radius:8px; background:transparent; color:#b9b9be; font:inherit; font-size:12.5px; text-align:left; cursor:pointer; }
-  .model-option span { min-width:0; overflow-wrap:anywhere; }
-  .model-option-copy { display:flex; flex-direction:column; gap:3px; }
-  .model-option-name { color:inherit; }
-  .model-option-meta { display:flex; align-items:center; flex-wrap:wrap; gap:5px 8px; color:#626267; font-size:10px; }
-  .model-option-meta > span + span:not(.free-badge)::before { margin-right:8px; color:#3f3f43; content:"·"; }
   .free-badge { display:inline-flex; align-items:center; min-height:17px; padding:1px 6px; border-radius:999px; background:rgba(87,181,119,.12); color:#76c991; font-size:9px; font-weight:750; letter-spacing:.04em; text-transform:uppercase; }
-  .model-option:hover, .model-option:focus-visible { outline:none; background:rgba(255,255,255,.055); color:#eeeef1; }
-  .model-option--selected { background:rgba(212,180,131,.075); color:#d4b483; }
-  .model-option svg { flex-shrink:0; }
   .model-no-results { padding:20px 12px; color:#66666b; font-size:12px; text-align:center; }
   .model-sheet-backdrop, .mobile-model-sheet { display:none; }
 
-  @media (min-width: 768px) {
-    .model-group-heading { cursor:default; pointer-events:none; }
-    .model-group-heading svg { display:none; }
-    .group-models { display:block; }
-  }
+  .desktop-model-backdrop { position:fixed; z-index:70; inset:0; background:rgba(0,0,0,.7); backdrop-filter:blur(4px); animation:sheet-fade-in .16s ease-out; }
+  .desktop-model-browser { position:fixed; z-index:71; top:50%; left:50%; width:min(1080px,calc(100vw - 72px)); height:min(760px,calc(100dvh - 72px)); display:flex; flex-direction:column; overflow:hidden; transform:translate(-50%,-50%); border:1px solid rgba(255,255,255,.1); border-radius:22px; background:#18181a; box-shadow:0 30px 90px rgba(0,0,0,.65); animation:browser-pop-in .18s cubic-bezier(.22,.8,.3,1); }
+  .desktop-model-header { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:22px 24px 16px; border-bottom:1px solid rgba(255,255,255,.055); }
+  .desktop-model-header h3 { margin:0; color:#eeeae4; font-size:22px; font-weight:680; letter-spacing:-.025em; }
+  .desktop-model-header p { margin:4px 0 0; color:#626267; font-size:11.5px; }
+  .model-sheet-close { width:40px; height:40px; display:grid; place-items:center; flex:0 0 auto; border:0; border-radius:12px; background:rgba(255,255,255,.045); color:#8b8b90; cursor:pointer; }
+  .model-sheet-close:hover { background:rgba(255,255,255,.08); color:#e5e5e9; }
+  .desktop-model-controls { flex:0 0 auto; padding:14px 18px 12px; border-bottom:1px solid rgba(255,255,255,.055); }
+  .desktop-model-controls .model-search-wrap { height:44px; margin:0 0 12px; padding:0 13px; border-radius:12px; }
+  .model-category-tabs { display:flex; gap:7px; overflow-x:auto; scrollbar-width:none; }
+  .model-category-tabs::-webkit-scrollbar { display:none; }
+  .model-category-tab { min-height:36px; flex:0 0 auto; padding:7px 14px; border:1px solid rgba(255,255,255,.065); border-radius:999px; background:rgba(255,255,255,.025); color:#77777c; font:inherit; font-size:12px; font-weight:650; white-space:nowrap; cursor:pointer; }
+  .model-category-tab:hover { border-color:rgba(255,255,255,.13); color:#b5b5ba; }
+  .model-category-tab--active { border-color:rgba(212,180,131,.42); background:rgba(212,180,131,.12); color:#dfc69f; }
+  .desktop-category-tabs { padding:1px 25px 2px 2px; overscroll-behavior-x:contain; mask-image:linear-gradient(to right,transparent 0,#000 18px,#000 calc(100% - 34px),transparent 100%); }
+  .desktop-model-list { min-height:0; flex:1; overflow-y:auto; padding:12px 14px 18px; }
+  .desktop-model-row { display:flex; align-items:stretch; border:1px solid rgba(255,255,255,.035); border-radius:14px; background:rgba(255,255,255,.012); color:#d1d1d5; transition:background .14s ease,border-color .14s ease,transform .14s ease; }
+  .desktop-model-row + .desktop-model-row { margin-top:7px; }
+  .desktop-model-row:hover { border-color:rgba(255,255,255,.085); background:rgba(255,255,255,.042); color:#f2f2f4; transform:translateY(-1px); }
+  .desktop-model-row--selected { border-color:rgba(212,180,131,.23); background:rgba(212,180,131,.085); color:#e1c59a; }
+  .desktop-model-select { min-width:0; min-height:78px; flex:1; display:flex; align-items:center; gap:18px; padding:13px 10px 13px 18px; border:0; background:transparent; color:inherit; text-align:left; cursor:pointer; }
+  .desktop-model-identity { min-width:0; flex:1; display:flex; flex-direction:column; gap:8px; }
+  .desktop-model-name { overflow:hidden; text-overflow:ellipsis; color:inherit; font-size:15.5px; font-weight:620; letter-spacing:-.012em; line-height:1.2; white-space:nowrap; }
+  .desktop-model-meta { display:flex; align-items:center; flex-wrap:wrap; gap:6px; min-height:18px; }
+  .desktop-model-provider { margin-right:2px; color:#66666b; font-size:9.5px; font-weight:750; letter-spacing:.065em; text-transform:uppercase; }
+  .desktop-meta-badge { display:inline-flex; align-items:center; min-height:19px; padding:2px 7px; border:1px solid rgba(255,255,255,.055); border-radius:6px; background:rgba(0,0,0,.14); color:#77777c; font-size:10px; font-variant-numeric:tabular-nums; line-height:1.2; }
+  .desktop-model-row--selected .desktop-model-provider, .desktop-model-row--selected .desktop-meta-badge { color:#9b8667; }
+  .desktop-selected-mark { display:grid; place-items:center; flex:0 0 auto; color:#d4b483; }
+  .desktop-favorite-btn { width:52px; flex:0 0 auto; display:grid; place-items:center; margin:8px 7px 8px 0; border:0; border-radius:11px; background:transparent; color:#4e4e53; cursor:pointer; }
+  .desktop-favorite-btn:hover { background:rgba(255,255,255,.055); color:#8d8d92; }
+  .desktop-favorite-btn--active { color:#d4b483; }
+  .desktop-model-no-results { padding-top:70px; font-size:13px; }
+  @keyframes browser-pop-in { from { transform:translate(-50%,-48%) scale(.985); opacity:.65; } }
 
   @media (max-width: 767px) {
-    .desktop-model-menu { display:none; }
+    .desktop-model-backdrop, .desktop-model-browser { display:none; }
     .model-sheet-backdrop {
       position:fixed;
       z-index:70;
