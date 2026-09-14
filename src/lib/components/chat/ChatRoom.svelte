@@ -3,8 +3,9 @@
   import { appState } from '$lib/stores/appState.svelte';
   import { tick, onMount, onDestroy } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { chatState, addMessage, addSwipeVariant, loadMessages, updateMessage, deleteMessage, setSwipeIndex, loadMoreMessages, cloneChatFromMessage } from '$lib/stores/chatStore.svelte';
+  import { chatState, addMessage, addSwipeVariant, loadMessages, updateMessage, deleteMessage, setSwipeIndex, loadMoreMessages, cloneChatFromMessage, type DisplayMessage } from '$lib/stores/chatStore.svelte';
   import { runGeneration } from '$lib/utils/chatApi';
+  import { describeGenerationError, type GenerationErrorInfo } from '$lib/utils/generationError';
   import { positionSentChatMessage } from '$lib/utils/chatScroll';
   import { summaryState, checkAndSummarizeIfNeeded } from '$lib/utils/rollingSummary.svelte';
   import * as m from '$lib/paraglide/messages';
@@ -24,6 +25,8 @@
   let errorMessage = $state('');
   let pendingUserMessage = $state('');
   let retryingMsgId = $state<string | null>(null);
+  let generationError = $state<GenerationErrorInfo | null>(null);
+  let failedRetryMsgId = $state<string | null>(null);
   let isLoadingMore = $state(false);
   let cloneCooldown = $state(false);
   let cloneCooldownTimer: ReturnType<typeof setTimeout> | undefined;
@@ -86,7 +89,7 @@
   }
 
   let displayMessages = $derived((() => {
-    const msgs = chatState.currentMessages.map(msg => {
+    const msgs: DisplayMessage[] = chatState.currentMessages.map(msg => {
       const isBeingRetried = isGenerating && retryingMsgId !== null && msg.id?.toString() === retryingMsgId;
       return {
         id: msg.id?.toString() || Math.random().toString(),
@@ -111,6 +114,13 @@
       });
     }
 
+    if (generationError) {
+      msgs.push({
+        id: 'temp-generation-error', text: '', isUser: false,
+        senderName: appState.activeCharacter?.name || m.chat_sender_ai(),
+        swipeVariants: [''], swipeIndex: 0, generationError,
+      });
+    }
     return msgs;
   })());
 
@@ -167,6 +177,8 @@
 
   async function generate(prompt: string, saveUserMessage: boolean) {
     isGenerating = true;
+    generationError = null;
+    failedRetryMsgId = null;
     resetStreamState();
 
     if (saveUserMessage) {
@@ -208,8 +220,7 @@
       await addMessage('assistant', result);
     } catch (err) {
       console.error(err);
-      errorMessage = m.chat_error_connection();
-      showErrorModal = true;
+      generationError = describeGenerationError(err);
     } finally {
       isGenerating = false;
       streamingText = '';
@@ -247,6 +258,8 @@
 
     retryingMsgId = msgId;
     isGenerating = true;
+    generationError = null;
+    failedRetryMsgId = null;
     resetStreamState();
 
     const historySlice = msgs.slice(0, idx);
@@ -267,8 +280,8 @@
       await addSwipeVariant(msgId, result);
     } catch (err) {
       console.error(err);
-      errorMessage = m.chat_error_connection();
-      showErrorModal = true;
+      generationError = describeGenerationError(err);
+      failedRetryMsgId = msgId;
     } finally {
       retryingMsgId = null;
       isGenerating = false;
@@ -322,6 +335,18 @@
   async function retryAfterError() {
     showErrorModal = false;
     if (pendingUserMessage) await generate(pendingUserMessage, false);
+  }
+
+  async function retryGenerationError() {
+    const msgId = failedRetryMsgId;
+    generationError = null;
+    if (msgId) await handleRetry({ msgId });
+    else if (pendingUserMessage) await generate(pendingUserMessage, false);
+  }
+
+  async function dismissGenerationError() {
+    generationError = null;
+    failedRetryMsgId = null;
   }
 
   async function closeErrorModal() {
@@ -389,6 +414,8 @@
           canCloneFrom={!isBlocked && !msg.isUser && msg.id !== 'temp-stream'}
           cloneDisabled={cloneCooldown}
           onRetry={handleRetry}
+          onGenerationRetry={retryGenerationError}
+          onGenerationDismiss={dismissGenerationError}
           onEditSave={handleEditSave}
           onCloneFrom={handleCloneFromMessage}
         />

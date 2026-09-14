@@ -15,6 +15,8 @@
     cloneDisabled = false,
     character = null,
     onRetry,
+    onGenerationRetry,
+    onGenerationDismiss,
     onEditSave,
     onCloneFrom
   }: {
@@ -28,6 +30,8 @@
     cloneDisabled?: boolean;
     character?: any;
     onRetry?: (data: { msgId: string }) => void;
+    onGenerationRetry?: () => void;
+    onGenerationDismiss?: () => void;
     onEditSave?: (data: { msgId: string; newContent: string }) => void;
     onCloneFrom?: (data: { msgId: string }) => void;
   } = $props();
@@ -230,6 +234,23 @@
           class:swipe-enter={slideDir === 'enter'}
         >
           {@html cleanHtml}
+
+          {#if msg.generationError}
+            <div class="generation-error" role="alert">
+              <p class="generation-error-title">{msg.generationError.title}</p>
+              <details><summary>{m.chat_generation_details()}</summary><dl>
+                {#if msg.generationError.status}<div><dt>{m.chat_generation_http_status()}</dt><dd>{msg.generationError.status}</dd></div>{/if}
+                {#if msg.generationError.code}<div><dt>{m.chat_generation_error_code()}</dt><dd>{msg.generationError.code}</dd></div>{/if}
+                {#if msg.generationError.provider}<div><dt>{m.chat_generation_provider()}</dt><dd>{msg.generationError.provider}</dd></div>{/if}
+                {#if msg.generationError.model}<div><dt>{m.chat_generation_model()}</dt><dd>{msg.generationError.model}</dd></div>{/if}
+                <div><dt>{m.chat_generation_api_message()}</dt><dd>{msg.generationError.message}</dd></div>
+              </dl></details>
+              <div class="generation-error-actions">
+                <button onclick={() => onGenerationRetry?.()}>{m.chat_error_retry()}</button>
+                <button onclick={() => onGenerationDismiss?.()}>{m.chat_error_cancel()}</button>
+              </div>
+            </div>
+          {/if}
 
           {#if showDots}
             <span class="breathe-dots" aria-label="Generiert…" role="status">
@@ -514,6 +535,18 @@
   :global(.prose-custom p:last-child) { margin-bottom: 0; }
   :global(.prose-custom strong)       { color: #ffffff; font-weight: 600; }
   :global(.prose-custom em)           { color: #a39887; font-style: italic; }
+  .generation-error { padding: 12px 14px; border: 1px solid rgba(248,113,113,.25); border-radius: 12px; background: rgba(248,113,113,.07); color: #d1d5db; }
+  .generation-error-title { margin: 0; color: #fca5a5; font-weight: 600; }
+  .generation-error details { margin-top: 7px; font-size: 12px; color: #9ca3af; }
+  .generation-error summary { cursor: pointer; user-select: none; }
+  .generation-error dl { margin: 8px 0 0; display: grid; gap: 5px; }
+  .generation-error dl div { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px; }
+  .generation-error dt { color: #6b7280; }
+  .generation-error dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .generation-error-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .generation-error-actions button { padding: 4px 9px; border-radius: 7px; background: rgba(255,255,255,.06); color: #d1d5db; cursor: pointer; font-size: 12px; }
+  .generation-error-actions button:first-child { color: #fca5a5; }
+  .generation-error-actions button:hover { background: rgba(255,255,255,.1); }
 
   :global(.breathe-dots) {
     display: inline-flex;

@@ -208,6 +208,113 @@ struct ThinkingTokenPayload {
     generation_id: Option<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiApiError {
+    kind: &'static str,
+    message: String,
+    status: Option<u16>,
+    code: Option<String>,
+    provider: Option<String>,
+    model: Option<String>,
+}
+
+fn sanitize_api_error_message(
+    message: &str,
+    api_key: &str,
+    messages: &[serde_json::Value],
+) -> String {
+    let mut safe = if api_key.is_empty() {
+        message.to_string()
+    } else {
+        message.replace(api_key, "[redacted]")
+    };
+    for prompt in messages
+        .iter()
+        .filter_map(|message| message.get("content").and_then(|value| value.as_str()))
+    {
+        if !prompt.is_empty() {
+            safe = safe.replace(prompt, "[prompt redacted]");
+        }
+    }
+    for marker in ["authorization:", "authorization\"", "bearer "] {
+        if let Some(index) = safe.to_ascii_lowercase().find(marker) {
+            safe.truncate(index);
+            safe.push_str("[redacted]");
+        }
+    }
+    safe.chars()
+        .take(1000)
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+fn api_error_from_body(
+    status: u16,
+    body: &str,
+    api_key: &str,
+    model: &str,
+    messages: &[serde_json::Value],
+) -> String {
+    let value = serde_json::from_str::<serde_json::Value>(body).unwrap_or_default();
+    let error = value.get("error").unwrap_or(&value);
+    let raw_message = error
+        .get("message")
+        .and_then(|v| v.as_str())
+        .or_else(|| value.get("message").and_then(|v| v.as_str()))
+        .unwrap_or_else(|| {
+            if body.trim().is_empty() {
+                "The API returned an error."
+            } else {
+                body.trim()
+            }
+        });
+    let code = error
+        .get("code")
+        .or_else(|| value.get("code"))
+        .and_then(|v| {
+            v.as_str()
+                .map(String::from)
+                .or_else(|| v.as_i64().map(|n| n.to_string()))
+        });
+    let provider = error
+        .pointer("/metadata/provider_name")
+        .and_then(|v| v.as_str())
+        .or_else(|| error.pointer("/metadata/provider").and_then(|v| v.as_str()))
+        .or_else(|| value.get("provider").and_then(|v| v.as_str()))
+        .map(String::from);
+    serde_json::to_string(&AiApiError {
+        kind: "api",
+        message: sanitize_api_error_message(raw_message, api_key, messages),
+        status: (status != 0).then_some(status),
+        code,
+        provider,
+        model: Some(model.to_string()),
+    })
+    .unwrap_or_else(|_| "{\"kind\":\"api\",\"message\":\"The API returned an error.\"}".into())
+}
+
+fn transport_error(error: &reqwest::Error, model: &str) -> String {
+    serde_json::to_string(&AiApiError {
+        kind: if error.is_timeout() {
+            "timeout"
+        } else {
+            "network"
+        },
+        message: if error.is_timeout() {
+            "The request timed out.".into()
+        } else {
+            "The API could not be reached.".into()
+        },
+        status: error.status().map(|status| status.as_u16()),
+        code: None,
+        provider: None,
+        model: Some(model.to_string()),
+    })
+    .unwrap()
+}
+
 /// OpenAI-compatible /models response structs.
 #[derive(Deserialize)]
 struct ModelsResponse {
@@ -559,12 +666,20 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
     // first byte arrives, since previously only the streaming loop below watched the
     // token. A server that's slow/unreachable would hang here with no way to abort.
     let res = tokio::select! {
-        result = req.send() => result.map_err(|e| e.to_string())?,
+        result = req.send() => result.map_err(|e| transport_error(&e, &payload.model))?,
         _ = token.cancelled() => return Ok(()),
     };
 
     if !res.status().is_success() {
-        return Err(format!("API error: Status {}", res.status()));
+        let status = res.status().as_u16();
+        let response_body = res.text().await.unwrap_or_default();
+        return Err(api_error_from_body(
+            status,
+            &response_body,
+            &payload.api_key,
+            &payload.model,
+            &payload.messages,
+        ));
     }
 
     let mut stream = res.bytes_stream().eventsource();
@@ -596,6 +711,11 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
                     Ok(event) => {
                         if event.data == "[DONE]" {
                             break;
+                        }
+                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&event.data) {
+                            if value.get("error").is_some() {
+                                return Err(api_error_from_body(0, &event.data, &payload.api_key, &payload.model, &payload.messages));
+                            }
                         }
                         match serde_json::from_str::<StreamChunk>(&event.data) {
                             Ok(chunk) => {
@@ -643,7 +763,7 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
 
 #[cfg(test)]
 mod tests {
-    use super::cancellation_matches;
+    use super::{api_error_from_body, cancellation_matches};
 
     #[test]
     fn legacy_stop_matches_the_active_request() {
@@ -662,5 +782,36 @@ mod tests {
             &Some("older".into()),
         ));
         assert!(!cancellation_matches(&None, &Some("multiplayer".into())));
+    }
+
+    #[test]
+    fn preserves_openrouter_provider_error_metadata() {
+        let error = api_error_from_body(
+            429,
+            r#"{"error":{"message":"Upstream quota exceeded","code":429,"metadata":{"provider_name":"ExampleAI"}}}"#,
+            "secret-key",
+            "example/model",
+            &[],
+        );
+        let value: serde_json::Value = serde_json::from_str(&error).unwrap();
+        assert_eq!(value["message"], "Upstream quota exceeded");
+        assert_eq!(value["provider"], "ExampleAI");
+        assert_eq!(value["model"], "example/model");
+        assert_eq!(value["status"], 429);
+        assert_eq!(value["code"], "429");
+    }
+
+    #[test]
+    fn redacts_keys_and_prompts_from_api_messages() {
+        let messages = vec![serde_json::json!({"role":"user", "content":"private prompt"})];
+        let error = api_error_from_body(
+            400,
+            r#"{"error":{"message":"private prompt Authorization: Bearer secret-key"}}"#,
+            "secret-key",
+            "example/model",
+            &messages,
+        );
+        assert!(!error.contains("private prompt"));
+        assert!(!error.contains("secret-key"));
     }
 }

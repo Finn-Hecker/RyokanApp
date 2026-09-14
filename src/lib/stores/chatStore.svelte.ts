@@ -48,6 +48,7 @@ export interface DisplayMessage {
     senderName: string;
     swipeVariants: string[];
     swipeIndex: number;
+    generationError?: import('$lib/utils/generationError').GenerationErrorInfo;
 }
 
 /**
