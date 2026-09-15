@@ -330,14 +330,14 @@
     modelSearch = "";
   }
 
+  function handleModelBackdropClick(event: MouseEvent) {
+    if (event.target === event.currentTarget) closeModelPicker();
+  }
+
   function handleModelMenuKeydown(event: KeyboardEvent) {
     if (event.key === "Escape" && modelMenuOpen) closeModelPicker();
   }
 
-  function closeModelMenu(event: FocusEvent) {
-    const next = event.relatedTarget as Node | null;
-    if (!next || !(event.currentTarget as HTMLElement).contains(next)) modelMenuOpen = false;
-  }
 </script>
 
 <svelte:window onkeydown={handleModelMenuKeydown} />
@@ -476,7 +476,7 @@
           <span>{m.settings_model_loading()}</span>
         </div>
       {:else if availableModels.length > 0}
-        <div class="model-picker" onfocusout={closeModelMenu}>
+        <div class="model-picker">
           <button
             id="model-select"
             type="button"
@@ -492,7 +492,7 @@
           </button>
 
           {#if modelMenuOpen}
-            <div class="desktop-model-backdrop" role="presentation" onclick={closeModelPicker}></div>
+            <div class="desktop-model-backdrop" role="presentation" onclick={handleModelBackdropClick}></div>
             <div class="desktop-model-browser" role="dialog" aria-modal="true" aria-labelledby="desktop-model-browser-title">
               <header class="desktop-model-header">
                 <div><h3 id="desktop-model-browser-title">{m.settings_model_select_title()}</h3><p>{availableModels.length} models available</p></div>
@@ -536,7 +536,7 @@
               </div>
             </div>
 
-            <div class="model-sheet-backdrop" role="presentation" onclick={closeModelPicker}></div>
+            <div class="model-sheet-backdrop" role="presentation" onclick={handleModelBackdropClick}></div>
             <div class="mobile-model-sheet" role="dialog" aria-modal="true" aria-labelledby="mobile-model-sheet-title">
               <div class="model-sheet-handle" aria-hidden="true"></div>
               <div class="model-sheet-toolbar">

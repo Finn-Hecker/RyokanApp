@@ -13,6 +13,7 @@ export interface ApiSettings {
   contextLimit: number;
   thinkingBudget: number;
   customMode: boolean;
+  additionalApiParameters: string;
 }
 
 export type InteractionMode = 'desktop' | 'mobile';
@@ -39,5 +40,6 @@ export const appState = $state({
     frequencyPenalty: 0,
     contextLimit: 4096,
     customMode: false,
+    additionalApiParameters: "",
   } as ApiSettings
 });

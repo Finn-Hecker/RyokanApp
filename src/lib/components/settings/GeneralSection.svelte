@@ -8,12 +8,27 @@
     createDefaultApiParameterEnabled,
     type ApiParameterKey,
   } from "$lib/utils/apiParameters";
+  import { validateAdditionalApiParameters } from "$lib/utils/additionalApiParameters";
 
   export let powerUser: boolean = false;
   export let category: "parameters" | "advanced" | "language" = "parameters";
 
   export let parameterEnabled: Record<ApiParameterKey, boolean> =
     createDefaultApiParameterEnabled();
+
+  $: additionalApiParametersValidation = validateAdditionalApiParameters(
+    appState.apiSettings.additionalApiParameters,
+  );
+
+  $: additionalApiParametersError = additionalApiParametersValidation.valid
+    ? ""
+    : additionalApiParametersValidation.error === "invalidJson"
+      ? m.settings_additional_api_parameters_error_invalid_json()
+      : additionalApiParametersValidation.error === "rootMustBeObject"
+        ? m.settings_additional_api_parameters_error_object()
+        : m.settings_additional_api_parameters_error_protected({
+            fields: additionalApiParametersValidation.fields?.join(", ") ?? "",
+          });
 
   function toggleParameter(key: ApiParameterKey) {
     parameterEnabled = {
@@ -527,6 +542,35 @@
       {/if}
     </div>
 
+    <div class="settings-divider"></div>
+
+    <div class="additional-parameters-field">
+      <div class="additional-parameters-heading">
+        <label class="settings-label" for="additional-api-parameters" style="margin-bottom:0">
+          {m.settings_additional_api_parameters_label()}
+        </label>
+        <span class="power-user-badge">{m.settings_power_user_label()}</span>
+      </div>
+      <p id="additional-api-parameters-description" class="additional-parameters-description">
+        {m.settings_additional_api_parameters_description()}
+      </p>
+      <textarea
+        id="additional-api-parameters"
+        class="settings-input additional-parameters-input"
+        class:additional-parameters-input--error={additionalApiParametersError}
+        bind:value={appState.apiSettings.additionalApiParameters}
+        placeholder={m.settings_additional_api_parameters_placeholder()}
+        aria-describedby="additional-api-parameters-description additional-api-parameters-error"
+        aria-invalid={additionalApiParametersError ? "true" : "false"}
+        spellcheck="false"
+      ></textarea>
+      {#if additionalApiParametersError}
+        <p id="additional-api-parameters-error" class="additional-parameters-error" role="alert">
+          {additionalApiParametersError}
+        </p>
+      {/if}
+    </div>
+
     {/if}
 
   </div>
@@ -576,6 +620,50 @@
 {/if}
 
 <style>
+  .additional-parameters-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .additional-parameters-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .power-user-badge {
+    padding: 2px 7px;
+    border: 1px solid rgba(212,180,131,.22);
+    border-radius: 999px;
+    background: rgba(212,180,131,.07);
+    color: #a78e69;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+  .additional-parameters-description {
+    margin: 0 0 2px;
+    color: #66666b;
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .additional-parameters-input {
+    min-height: 150px;
+    resize: vertical;
+    font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    line-height: 1.5;
+    tab-size: 2;
+  }
+  .additional-parameters-input--error {
+    border-color: rgba(239, 107, 107, .55) !important;
+    box-shadow: 0 0 0 3px rgba(239, 107, 107, .06);
+  }
+  .additional-parameters-error {
+    margin: 0;
+    color: #e88787;
+    font-size: 11px;
+    line-height: 1.4;
+  }
   .language-settings-card {
     display: flex;
     flex-direction: column;

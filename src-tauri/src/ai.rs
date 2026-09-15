@@ -9,6 +9,9 @@ use std::time::Duration;
 use tauri::{Emitter, Manager, Window};
 use tokio_util::sync::CancellationToken;
 
+const ADDITIONAL_API_PARAMETERS_SETTING: &str = "api_additional_parameters";
+const PROTECTED_API_PARAMETER_KEYS: [&str; 3] = ["messages", "model", "stream"];
+
 // Reusing a single HTTP client across the entire app lifecycle prevents connection
 // exhaustion and takes advantage of internal connection pooling.
 // connect_timeout only bounds how long we wait to establish the TCP/TLS connection -
@@ -117,6 +120,80 @@ fn load_api_parameter_flags(window: &Window) -> ApiParameterFlags {
     }
 
     flags
+}
+
+/// Parses a configured object without coercing any JSON values. Ryokan's core
+/// protocol fields are rejected as a group so a conflict can never partially
+/// apply or depend on merge order.
+fn parse_additional_api_parameters(
+    raw: &str,
+) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+    if raw.trim().is_empty() {
+        return Ok(serde_json::Map::new());
+    }
+
+    let value: serde_json::Value =
+        serde_json::from_str(raw).map_err(|error| format!("invalid JSON: {error}"))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| "the root value is not a JSON object".to_string())?;
+
+    let conflicts: Vec<&str> = PROTECTED_API_PARAMETER_KEYS
+        .iter()
+        .copied()
+        .filter(|key| object.contains_key(*key))
+        .collect();
+    if !conflicts.is_empty() {
+        return Err(format!(
+            "protected fields cannot be overridden: {}",
+            conflicts.join(", ")
+        ));
+    }
+
+    Ok(object.clone())
+}
+
+/// Reads custom request fields at generation time so every caller of the shared
+/// OpenAI-compatible request command gets identical behavior.
+fn load_additional_api_parameters(window: &Window) -> serde_json::Map<String, serde_json::Value> {
+    let Ok(conn) = get_connection(window.app_handle()) else {
+        return serde_json::Map::new();
+    };
+
+    let raw = match conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1",
+        [ADDITIONAL_API_PARAMETERS_SETTING],
+        |row| row.get::<_, String>(0),
+    ) {
+        Ok(value) => value,
+        Err(rusqlite::Error::QueryReturnedNoRows) => return serde_json::Map::new(),
+        Err(error) => {
+            eprintln!("Failed to load additional API parameters: {error}");
+            return serde_json::Map::new();
+        }
+    };
+
+    match parse_additional_api_parameters(&raw) {
+        Ok(parameters) => parameters,
+        Err(error) => {
+            // The settings UI prevents this state; this is a final safety net for
+            // externally modified or legacy databases. Invalid values are omitted.
+            eprintln!("Ignoring additional API parameters: {error}");
+            serde_json::Map::new()
+        }
+    }
+}
+
+fn merge_additional_api_parameters(
+    body: &mut serde_json::Value,
+    parameters: serde_json::Map<String, serde_json::Value>,
+) {
+    let Some(body) = body.as_object_mut() else {
+        return;
+    };
+    // Power-user values intentionally win for non-protected keys. The parser
+    // rejects protocol-critical conflicts before this deterministic merge.
+    body.extend(parameters);
 }
 
 /// Called from the frontend to hard-stop the current stream.
@@ -654,6 +731,8 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
         }
     }
 
+    merge_additional_api_parameters(&mut body, load_additional_api_parameters(&window));
+
     let mut req = CLIENT
         .post(format!("{}/chat/completions", payload.url))
         .json(&body);
@@ -763,7 +842,10 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
 
 #[cfg(test)]
 mod tests {
-    use super::{api_error_from_body, cancellation_matches};
+    use super::{
+        api_error_from_body, cancellation_matches, merge_additional_api_parameters,
+        parse_additional_api_parameters,
+    };
 
     #[test]
     fn legacy_stop_matches_the_active_request() {
@@ -813,5 +895,59 @@ mod tests {
         );
         assert!(!error.contains("private prompt"));
         assert!(!error.contains("secret-key"));
+    }
+
+    #[test]
+    fn additional_parameters_preserve_nested_json_values() {
+        let parameters = parse_additional_api_parameters(
+            r#"{"provider":{"only":["deepinfra"]},"reasoning":{"enabled":true,"effort":2.5},"temperature":0.2,"tag":"custom"}"#,
+        )
+        .unwrap();
+        let mut body = serde_json::json!({
+            "model": "controlled-model",
+            "messages": [],
+            "stream": true,
+            "temperature": 0.8
+        });
+
+        merge_additional_api_parameters(&mut body, parameters);
+
+        assert_eq!(body["provider"]["only"], serde_json::json!(["deepinfra"]));
+        assert_eq!(body["reasoning"]["enabled"], true);
+        assert_eq!(body["reasoning"]["effort"], 2.5);
+        assert_eq!(body["temperature"], 0.2);
+        assert_eq!(body["tag"], "custom");
+    }
+
+    #[test]
+    fn additional_parameters_reject_non_objects_and_invalid_json() {
+        assert!(parse_additional_api_parameters("[").is_err());
+        assert!(parse_additional_api_parameters("[]").is_err());
+        assert!(parse_additional_api_parameters("null").is_err());
+    }
+
+    #[test]
+    fn empty_additional_parameters_leave_the_request_unchanged() {
+        let mut body = serde_json::json!({
+            "model": "controlled-model",
+            "messages": [{"role": "user", "content": "Hello"}],
+            "stream": true
+        });
+        let original = body.clone();
+
+        merge_additional_api_parameters(
+            &mut body,
+            parse_additional_api_parameters("  ").unwrap(),
+        );
+
+        assert_eq!(body, original);
+    }
+
+    #[test]
+    fn additional_parameters_reject_every_protected_field() {
+        for field in ["messages", "model", "stream"] {
+            let raw = format!(r#"{{"{field}":null,"provider":{{"sort":"price"}}}}"#);
+            assert!(parse_additional_api_parameters(&raw).is_err(), "{field}");
+        }
     }
 }

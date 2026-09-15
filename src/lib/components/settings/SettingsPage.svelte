@@ -9,6 +9,7 @@
   import GeneralSection from "./GeneralSection.svelte";
   import Button from "$lib/components/ui/Button.svelte";
   import { API_PARAMETER_SETTING_KEYS, createDefaultApiParameterEnabled, readApiParameterEnabled, type ApiParameterKey } from "$lib/utils/apiParameters";
+  import { validateAdditionalApiParameters } from "$lib/utils/additionalApiParameters";
 
   type SettingsCategory = "provider" | "parameters" | "language" | "advanced";
   type Category = { id: SettingsCategory; label: string; description: string; mobileDescription: string; icon: string };
@@ -30,6 +31,7 @@
   let settingsContentEl: HTMLDivElement;
   const activeCategory = $derived(CATEGORIES.find((item) => item.id === activeSection) ?? CATEGORIES[0]);
   const generalCategory = $derived(activeSection === "language" ? "language" : activeSection === "advanced" ? "advanced" : "parameters");
+  const additionalApiParametersValidation = $derived(validateAdditionalApiParameters(appState.apiSettings.additionalApiParameters));
 
   function selectCategory(id: SettingsCategory, mobile = false) {
     activeSection = id;
@@ -52,6 +54,7 @@
     api_top_k: (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.topK = n; },
     api_min_p: (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.minP = n; },
     api_frequency_penalty: (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.frequencyPenalty = n; },
+    api_additional_parameters: (v) => { appState.apiSettings.additionalApiParameters = v; },
     settings_power_user: (v) => { powerUser = v === "true"; },
   };
 
@@ -93,6 +96,7 @@
   }
 
   async function saveSettings() {
+    if (!additionalApiParametersValidation.valid) return;
     isSaving = true;
     try {
       await Promise.all([
@@ -104,6 +108,7 @@
         saveSetting("api_context_limit", appState.apiSettings.contextLimit ?? 4096), saveSetting("api_top_p", appState.apiSettings.topP ?? 0.9),
         saveSetting("api_top_k", appState.apiSettings.topK ?? 40), saveSetting("api_min_p", appState.apiSettings.minP ?? 0.05),
         saveSetting("api_frequency_penalty", appState.apiSettings.frequencyPenalty ?? 0),
+        saveSetting("api_additional_parameters", appState.apiSettings.additionalApiParameters),
         ...Object.entries(API_PARAMETER_SETTING_KEYS).map(([parameter, key]) => saveSetting(key, parameterEnabled[parameter as ApiParameterKey])),
         saveSetting("settings_power_user", powerUser),
       ]);
@@ -136,7 +141,7 @@
 {/snippet}
 
 {#snippet saveButton()}
-  <Button variant="secondary" disabled={isSaving} onclick={saveSettings}>
+  <Button variant="secondary" disabled={isSaving || !additionalApiParametersValidation.valid} onclick={saveSettings}>
     {#if isSaving}<span class="save-spinner"></span>{:else}{m.settings_btn_save()}{/if}
   </Button>
 {/snippet}

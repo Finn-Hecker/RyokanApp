@@ -53,6 +53,7 @@
     if (map.api_top_k)            appState.apiSettings.topK             = parseInt(map.api_top_k);
     if (map.api_min_p)            appState.apiSettings.minP             = parseFloat(map.api_min_p);
     if (map.api_frequency_penalty) appState.apiSettings.frequencyPenalty = parseFloat(map.api_frequency_penalty);
+    if (map.api_additional_parameters) appState.apiSettings.additionalApiParameters = map.api_additional_parameters;
 
     appState.isOnboarding = map['onboarding_completed'] !== 'true';
     loaded = true;
