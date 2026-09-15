@@ -344,7 +344,6 @@
 
   function handleWorldInfoClick() {
     if (onWorldInfoClick) { onWorldInfoClick(); return; }
-    appState.listInitialTab = 'worldinfo';
     navigateTo('list');
     if (layout === 'drawer') close();
   }

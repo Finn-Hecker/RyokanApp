@@ -19,7 +19,6 @@ export type InteractionMode = 'desktop' | 'mobile';
 
 export const appState = $state({
   currentView: 'lobby' as 'lobby' | 'chat' | 'create' | 'settings' | 'roleEditor' | 'worldInfoEditor' | 'list' | 'play' | 'multiplayerRoom',
-  listInitialTab: 'roles' as 'roles' | 'worldinfo',
   activeCharacter: null as any,
   editingCharacter: null as any,
   isOnboarding: false,

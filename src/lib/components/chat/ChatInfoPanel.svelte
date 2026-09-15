@@ -10,7 +10,7 @@
     onClose
   }: {
     character?: any;
-    activeTab?: 'character' | 'role' | 'chat';
+    activeTab?: 'character' | 'chat';
     onClose: () => void;
   } = $props();
 
@@ -122,13 +122,6 @@
           onclick={() => (activeTab = 'character')}
         >
           Character
-        </button>
-        <button
-          class="info-tab"
-          class:active={activeTab === 'role'}
-          onclick={() => (activeTab = 'role')}
-        >
-          Rolle
         </button>
         <button
           class="info-tab"

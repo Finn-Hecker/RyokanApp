@@ -17,7 +17,7 @@
   } = $props();
 
   let showInfoPanel = $state(false);
-  let infoTab = $state<'character' | 'role' | 'chat'>('character');
+  let infoTab = $state<'character' | 'chat'>('character');
   let showSettingsPanel = $state(false);
 
   $effect(() => {
@@ -29,7 +29,7 @@
     });
   });
 
-  function openInfoPanel(tab: 'character' | 'role' | 'chat' = 'character') {
+  function openInfoPanel(tab: 'character' | 'chat' = 'character') {
     showSettingsPanel = false;
     infoTab = tab;
     showInfoPanel = true;
