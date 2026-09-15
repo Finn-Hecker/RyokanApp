@@ -2,6 +2,7 @@
   import * as m from '$lib/paraglide/messages';
   import ChatInfoPanel from './ChatInfoPanel.svelte';
   import ChatSettingsPanel from './ChatSettingsPanel.svelte';
+  import { registerBackHandler } from '$lib/stores/navigation';
 
   let {
     character = null,
@@ -18,6 +19,15 @@
   let showInfoPanel = $state(false);
   let infoTab = $state<'character' | 'role' | 'chat'>('character');
   let showSettingsPanel = $state(false);
+
+  $effect(() => {
+    if (!showInfoPanel && !showSettingsPanel) return;
+    return registerBackHandler(() => {
+      showInfoPanel = false;
+      showSettingsPanel = false;
+      return true;
+    });
+  });
 
   function openInfoPanel(tab: 'character' | 'role' | 'chat' = 'character') {
     showSettingsPanel = false;

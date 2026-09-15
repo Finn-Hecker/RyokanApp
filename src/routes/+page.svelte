@@ -10,10 +10,28 @@
   import PlayHub   from '$lib/components/play/PlayLobby.svelte';
   import Multiplayer   from '$lib/components/play/MultiplayerRoom.svelte';
   import { getAllSettings } from '$lib/utils/settings';
+  import { onBackButtonPress } from '@tauri-apps/api/app';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { handleBackNavigation } from '$lib/stores/navigation';
 
   let loaded = $state(false); 
 
-  onMount(async () => {
+  onMount(() => {
+    let backButtonListener: { unregister: () => Promise<void> } | undefined;
+    void onBackButtonPress(({ canGoBack }) => {
+      if (handleBackNavigation()) return;
+      if (canGoBack) {
+        window.history.back();
+      } else {
+        void getCurrentWindow().destroy();
+      }
+    }).then(listener => { backButtonListener = listener; });
+
+    void loadApp();
+    return () => { void backButtonListener?.unregister(); };
+  });
+
+  async function loadApp() {
     const settings = await getAllSettings();
     const map = Object.fromEntries(settings.map(s => [s.key, s.value]));
 
@@ -33,7 +51,8 @@
 
     appState.isOnboarding = map['onboarding_completed'] !== 'true';
     loaded = true;
-  });
+
+  }
 </script>
 
 {#if !loaded}

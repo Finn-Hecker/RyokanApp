@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
   import { appState } from '$lib/stores/appState.svelte';
+  import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { tick, onMount, onDestroy } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { chatState, addMessage, addSwipeVariant, loadMessages, updateMessage, deleteMessage, setSwipeIndex, loadMoreMessages, cloneChatFromMessage, type DisplayMessage } from '$lib/stores/chatStore.svelte';
@@ -40,6 +41,14 @@
   let clonedFromTitle = $derived(activeConversation?.cloned_from_title ?? null);
 
   let unlistenClose: (() => void) | undefined;
+
+  $effect(() => {
+    if (!showErrorModal) return;
+    return registerBackHandler(() => {
+      void closeErrorModal();
+      return true;
+    });
+  });
 
   onMount(async () => {
     if (chatState.activeChatId) await loadMessages(chatState.activeChatId);
@@ -374,7 +383,7 @@
       chatState.currentMessages = [];
       chatState.hasMoreMessages = false;
       appState.activeCharacter = null;
-      appState.currentView = 'lobby';
+      returnTo('lobby');
     }}
   />
 

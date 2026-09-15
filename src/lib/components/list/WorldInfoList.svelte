@@ -5,6 +5,7 @@
   import { worldInfoState, loadWorldInfos, type WorldInfo } from '$lib/stores/worldInfoStore.svelte';
   import { deleteWorldInfo }  from '$lib/components/editor/worldinfo/worldInfoLogic';
   import { appState } from '$lib/stores/appState.svelte';
+  import { navigateTo } from '$lib/stores/navigation';
   import { DEFAULT_WORLD_INFOS } from '$lib/data/worldInfo';
 
   let deletingId = $state<string | null>(null);
@@ -17,7 +18,7 @@
 
   function openEdit(wi: WorldInfo) {
     appState.editingCharacter = (wi as any);
-    appState.currentView = 'worldInfoEditor';
+    navigateTo('worldInfoEditor');
   }
 
   async function handleDelete(id: string, e: MouseEvent) {

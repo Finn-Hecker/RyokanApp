@@ -4,6 +4,7 @@
   import * as m from "$lib/paraglide/messages";
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
   import { onMount } from 'svelte';
+  import { registerBackHandler } from '$lib/stores/navigation';
 
   let {
     powerUser = false,
@@ -48,6 +49,14 @@
   let favoriteModels = $state<string[]>([]);
   let lastAttemptedModelConfig = "";
   let modelLoadRequest = 0;
+
+  $effect(() => {
+    if (!modelMenuOpen) return;
+    return registerBackHandler(() => {
+      closeModelPicker();
+      return true;
+    });
+  });
 
   type ModelCategory = {
     id: string;

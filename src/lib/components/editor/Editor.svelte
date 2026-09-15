@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
   import { appState } from '$lib/stores/appState.svelte';
+  import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { characterState, normalizePlayMode, toggleHideCharacter } from '$lib/stores/characterStore.svelte';
   import type { PlayMode } from '$lib/stores/characterStore.svelte';
   import * as m from '$lib/paraglide/messages';
@@ -76,6 +77,15 @@
   let toastTimeout: ReturnType<typeof setTimeout>;
   let fromRoleManager = $state(false);
 
+  $effect(() => {
+    if (!showDeleteConfirm && !menuOpen) return;
+    return registerBackHandler(() => {
+      if (showDeleteConfirm) showDeleteConfirm = false;
+      else menuOpen = false;
+      return true;
+    });
+  });
+
   onMount(() => {
     if (appState.currentView === 'worldInfoEditor') {
       activeTab = 'worldinfo';
@@ -128,7 +138,7 @@
 
   function goBack() {
     appState.editingCharacter =  null;
-    appState.currentView = fromRoleManager ? 'list' : 'lobby';
+    returnTo(fromRoleManager ? 'list' : 'lobby');
   }
 
   function toggleMenu() { menuOpen = !menuOpen; }

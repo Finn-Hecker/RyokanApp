@@ -6,6 +6,7 @@
   import Button         from '$lib/components/ui/Button.svelte';
   import WorldInfoList  from './WorldInfoList.svelte';
   import { appState } from '$lib/stores/appState.svelte';
+  import { navigateTo, returnTo } from '$lib/stores/navigation';
 
   type Tab = 'roles' | 'worldinfo';
   
@@ -15,11 +16,11 @@
     activeTab = appState.listInitialTab;
   });
 
-  function goBack() { appState.currentView = 'lobby'; }
+  function goBack() { returnTo('lobby'); }
 
   function openCreate() {
     appState.editingCharacter = null;
-    appState.currentView = activeTab === 'roles' ? 'roleEditor' : 'worldInfoEditor';
+    navigateTo(activeTab === 'roles' ? 'roleEditor' : 'worldInfoEditor');
   }
 
   let createLabel = $derived(activeTab === 'roles' ? m.list_create_role() : m.list_create_wi());

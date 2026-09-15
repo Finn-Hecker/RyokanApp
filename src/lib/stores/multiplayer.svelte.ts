@@ -18,6 +18,7 @@
  */
 
 import { appState } from './appState.svelte';
+import { navigateTo, returnTo } from './navigation';
 import { invoke } from '@tauri-apps/api/core';
 import { processThinkingOutput } from '$lib/utils/chatApi';
 import { getClientLanguageName } from '$lib/utils/clientLanguage';
@@ -244,7 +245,7 @@ export function prepareCreate(character: Character): void {
   appState.activeCharacter = character;
   mpState.characterName = character.name;
   mpState.pending = { mode: 'create' };
-  appState.currentView = 'multiplayerRoom';
+  navigateTo('multiplayerRoom');
 }
 
 /**
@@ -260,7 +261,7 @@ export function prepareJoin(input: string): boolean {
   resetRoomState();
   appState.activeCharacter = null;
   mpState.pending = { mode: 'join', ...parsed };
-  appState.currentView = 'multiplayerRoom';
+  navigateTo('multiplayerRoom');
   return true;
 }
 
@@ -276,7 +277,7 @@ export function checkJoinLink(): void {
   resetRoomState();
   appState.activeCharacter = null;
   mpState.pending = { mode: 'join', ...parsed };
-  appState.currentView = 'multiplayerRoom';
+  navigateTo('multiplayerRoom');
 }
 
 function parseLink(input: string): Omit<PendingJoin, 'mode'> | null {
@@ -657,7 +658,7 @@ export function leaveRoom(): void {
   ws = null;
   cancelActiveGeneration(false);
   appState.activeCharacter = null;
-  appState.currentView = 'play';
+  returnTo('play');
 }
 
 function resetRoomState(): void {

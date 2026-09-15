@@ -1,5 +1,6 @@
 <script lang="ts">
   import { appState } from '$lib/stores/appState.svelte';
+  import { navigateTo, registerBackHandler } from '$lib/stores/navigation';
   import { characterState, loadCharacters, toggleHideCharacter, togglePinCharacter, deleteCharacter, loadHiddenIds, loadPinnedIds } from '$lib/stores/characterStore.svelte';
   import { startNewChat } from '$lib/stores/chatStore.svelte';
   import { onMount } from 'svelte';
@@ -22,6 +23,14 @@
 
   let deleteTarget = $state<{ id: string; name: string } | null>(null);
 
+  $effect(() => {
+    if (!deleteTarget) return;
+    return registerBackHandler(() => {
+      deleteTarget = null;
+      return true;
+    });
+  });
+
   onMount(async () => {
     await loadHiddenIds();
     await loadPinnedIds();
@@ -35,26 +44,26 @@
   async function onSelectChar(char: any) {
     appState.activeCharacter = char;
     await startNewChat(char);
-    appState.currentView = 'chat';
+    navigateTo('chat');
   }
 
   function onOpenCreate() {
     appState.editingCharacter = null;
-    appState.currentView = 'create';
+    navigateTo('create');
   }
 
   function onOpenGroups() {
-    appState.currentView = 'play';
+    navigateTo('play');
   }
 
   function onOpenSettings() {
-    appState.currentView = 'settings';
+    navigateTo('settings');
   }
 
   function onEditChar(e: MouseEvent, char: any) {
     e.stopPropagation();
     appState.editingCharacter = char;
-    appState.currentView = 'create';
+    navigateTo('create');
   }
 
   function onToggleHide(e: MouseEvent, char: any) {

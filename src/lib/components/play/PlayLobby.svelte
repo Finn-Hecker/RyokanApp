@@ -1,5 +1,6 @@
 <script lang="ts">
   import { appState } from '$lib/stores/appState.svelte';
+  import { navigateTo, registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { mpState, enterRoom, prepareCreate, prepareJoin } from '$lib/stores/multiplayer.svelte';
   import {
     characterState,
@@ -22,6 +23,14 @@
   let joinModalOpen = $state(false);
   let displayNameInput = $state<HTMLInputElement>();
   let joinCodeInput = $state<HTMLInputElement>();
+
+  $effect(() => {
+    if (!selectedScenario && !joinModalOpen) return;
+    return registerBackHandler(() => {
+      closeModal();
+      return true;
+    });
+  });
 
   let availableScenarios = $derived(
     characterState.allCharacters.filter(
@@ -73,7 +82,7 @@
   function manageScenario(event: MouseEvent, character: Character) {
     event.stopPropagation();
     appState.editingCharacter = character;
-    appState.currentView = 'create';
+    navigateTo('create');
   }
 
   function ignoreScenarioAction(event: MouseEvent) {
@@ -102,13 +111,13 @@
 
 {#snippet header()}
   <div class="flex items-center gap-3">
-    <Button variant="icon" ariaLabel={m.play_btn_back()} onclick={() => (appState.currentView = 'lobby')}>
+    <Button variant="icon" ariaLabel={m.play_btn_back()} onclick={() => returnTo('lobby')}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>
       </svg>
     </Button>
     <div class="h-6 w-px bg-white/10"></div>
-    <Button variant="icon" ariaLabel={m.lobby_btn_open_settings()} onclick={() => (appState.currentView = 'settings')}>
+    <Button variant="icon" ariaLabel={m.lobby_btn_open_settings()} onclick={() => navigateTo('settings')}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="3"/>
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.18V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 7.1 19.73l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 3.09 14H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.27 7.1l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 10 3.09V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 2.9 1.18l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 20.91 10H21a2 2 0 0 1 0 4h-.09A1.65 1.65 0 0 0 19.4 15z"/>

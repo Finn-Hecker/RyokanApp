@@ -1,5 +1,6 @@
 <script lang="ts">
   import { appState } from "$lib/stores/appState.svelte";
+  import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { getAllSettings, saveSetting } from "$lib/utils/settings";
   import { onMount } from "svelte";
   import { setLocale } from "$lib/paraglide/runtime";
@@ -10,16 +11,16 @@
   import { API_PARAMETER_SETTING_KEYS, createDefaultApiParameterEnabled, readApiParameterEnabled, type ApiParameterKey } from "$lib/utils/apiParameters";
 
   type SettingsCategory = "provider" | "parameters" | "language" | "advanced";
-  type Category = { id: SettingsCategory; label: string; description: string; icon: string };
+  type Category = { id: SettingsCategory; label: string; description: string; mobileDescription: string; icon: string };
 
   let powerUser = $state(false);
   let parameterEnabled = $state<Record<ApiParameterKey, boolean>>(createDefaultApiParameterEnabled());
 
   const CATEGORIES: Category[] = [
-    { id: "provider", label: m.settings_category_provider(), description: m.settings_category_provider_description(), icon: "M4 7h16M6 3h12v18H6zM9 11h6M9 15h6" },
-    { id: "parameters", label: m.settings_section_ai_behavior(), description: m.settings_category_parameters_description(), icon: "M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5M14 4v4M6 10v4M11 16v4" },
-    { id: "language", label: m.settings_section_language(), description: m.settings_category_language_description(), icon: "M12 21a9 9 0 100-18 9 9 0 000 18zm0 0c2.21 0 4-4.03 4-9s-1.79-9-4-9-4 4.03-4 9 1.79 9 4 9zM3.5 12h17" },
-    { id: "advanced", label: m.settings_category_advanced(), description: m.settings_category_advanced_description(), icon: "M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM19 12h2M3 12h2M12 3v2M12 19v2M5.64 5.64l1.42 1.42M16.94 16.94l1.42 1.42M18.36 5.64l-1.42 1.42M7.06 16.94l-1.42 1.42" },
+    { id: "provider", label: m.settings_category_provider(), description: m.settings_category_provider_description(), mobileDescription: m.settings_category_provider_mobile_description(), icon: "M4 7h16M6 3h12v18H6zM9 11h6M9 15h6" },
+    { id: "parameters", label: m.settings_section_ai_behavior(), description: m.settings_category_parameters_description(), mobileDescription: m.settings_category_parameters_mobile_description(), icon: "M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5M14 4v4M6 10v4M11 16v4" },
+    { id: "language", label: m.settings_section_language(), description: m.settings_category_language_description(), mobileDescription: m.settings_category_language_description(), icon: "M12 21a9 9 0 100-18 9 9 0 000 18zm0 0c2.21 0 4-4.03 4-9s-1.79-9-4-9-4 4.03-4 9 1.79 9 4 9zM3.5 12h17" },
+    { id: "advanced", label: m.settings_category_advanced(), description: m.settings_category_advanced_description(), mobileDescription: m.settings_category_advanced_mobile_description(), icon: "M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM19 12h2M3 12h2M12 3v2M12 19v2M5.64 5.64l1.42 1.42M16.94 16.94l1.42 1.42M18.36 5.64l-1.42 1.42M7.06 16.94l-1.42 1.42" },
   ];
 
   let activeSection = $state<SettingsCategory>("provider");
@@ -113,7 +114,15 @@
     finally { isSaving = false; }
   }
 
-  function goBack() { appState.currentView = "lobby"; }
+  function goBack() { returnTo('lobby'); }
+
+  $effect(() => {
+    if (!mobileCategoryOpen) return;
+    return registerBackHandler(() => {
+      mobileCategoryOpen = false;
+      return true;
+    });
+  });
 </script>
 
 {#snippet backIcon()}
@@ -170,7 +179,7 @@
         {#each CATEGORIES as item}
           <button type="button" class="mobile-category-row" onclick={() => selectCategory(item.id, true)}>
             <span class="mobile-category-icon">{@render categoryIcon(item)}</span>
-            <span class="mobile-category-copy"><span class="mobile-category-label">{item.label}</span><span class="mobile-category-description">{item.description}</span></span>
+            <span class="mobile-category-copy"><span class="mobile-category-label">{item.label}</span><span class="mobile-category-description">{item.mobileDescription}</span></span>
             <svg class="mobile-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>
         {/each}
@@ -191,8 +200,8 @@
   .settings-shell { height:100%; width:100%; display:flex; overflow:hidden; background:var(--color-ryokan-bg,#111); }
   .desktop-sidebar,.desktop-header { display:none; }
   .settings-main { min-width:0; flex:1; display:flex; flex-direction:column; overflow:hidden; }
-  .mobile-header { flex:0 0 auto; min-height:68px; padding:calc(12px + env(safe-area-inset-top)) 16px 12px; display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:12px; border-bottom:1px solid rgba(255,255,255,.05); }
-  .mobile-header h1 { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#e7e2da; font-size:17px; font-weight:650; letter-spacing:-.01em; }
+  .mobile-header { flex:0 0 auto; min-height:68px; padding:calc(12px + env(safe-area-inset-top)) 16px 12px; display:grid; grid-template-columns:40px minmax(0,1fr) auto; align-items:center; gap:8px; border-bottom:1px solid rgba(255,255,255,.05); }
+  .mobile-header h1 { min-width:0; color:#e7e2da; font-size:17px; font-weight:650; letter-spacing:-.01em; overflow-wrap:anywhere; }
   .mobile-overview { flex:1; overflow-y:auto; padding:12px 16px calc(28px + env(safe-area-inset-bottom)); }
   .mobile-overview--hidden,.settings-content--mobile-hidden { display:none; }
   .mobile-category-list { overflow:hidden; border-radius:15px; background:rgba(255,255,255,.025); }
@@ -202,7 +211,7 @@
   .mobile-category-icon { width:32px; height:32px; flex:0 0 auto; display:grid; place-items:center; border-radius:9px; color:#d4b483; background:rgba(212,180,131,.09); }
   .mobile-category-copy { min-width:0; flex:1; display:flex; flex-direction:column; gap:2px; }
   .mobile-category-label { font-size:14px; font-weight:620; color:#e1dfe2; }
-  .mobile-category-description { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; color:#65656a; }
+  .mobile-category-description { font-size:11px; line-height:1.35; color:#65656a; }
   .mobile-chevron { flex:0 0 auto; color:#444448; }
   .settings-content { flex:1; overflow-y:auto; overflow-x:hidden; padding:22px 18px calc(36px + env(safe-area-inset-bottom)); }
   .content-panel { width:100%; max-width:660px; margin:0 auto; }

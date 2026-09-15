@@ -3,6 +3,7 @@
   import { scale } from 'svelte/transition';
   import { chatState, openHistoryChat, loadAllConversations, loadMoreConversations, deleteConversation, renameConversation, togglePinConversation, createChatFolder, renameChatFolder, setChatFolderCollapsed, deleteChatFolder, persistSidebarOrganization, type Conversation, type ConversationMode } from '$lib/stores/chatStore.svelte';
   import { appState } from '$lib/stores/appState.svelte';
+  import { navigateTo, registerBackHandler } from '$lib/stores/navigation';
   import { openPersistentSession } from '$lib/stores/multiplayer.svelte';
   import * as m from '$lib/paraglide/messages';
   import { onMount, onDestroy, untrack } from 'svelte';
@@ -26,6 +27,16 @@
   let chatToRename      = $state<string | null>(null);
   let renameValue       = $state('');
   let isConfirmingRename = false;
+
+  $effect(() => {
+    if (!chatToDelete && !chatToRename && !openMenuId) return;
+    return registerBackHandler(() => {
+      if (chatToDelete) chatToDelete = null;
+      else if (chatToRename) cancelRename();
+      else openMenuId = null;
+      return true;
+    });
+  });
 
   let hasMore  = $state(true);
   let isLoading = $state(false);
@@ -148,9 +159,9 @@
     await openHistoryChat(id);
     if (conversation?.mode === 'multiplayer') {
       await openPersistentSession(id, appState.activeCharacter);
-      appState.currentView = 'multiplayerRoom';
+      navigateTo('multiplayerRoom');
     } else {
-      appState.currentView = 'chat';
+      navigateTo('chat');
     }
     if (!alwaysVisible) close();
   }
@@ -225,7 +236,7 @@
   function handleWorldInfoClick() {
     if (onWorldInfoClick) { onWorldInfoClick(); return; }
     appState.listInitialTab = 'worldinfo';
-    appState.currentView = 'list';
+    navigateTo('list');
     if (!alwaysVisible) close();
   }
 
