@@ -184,6 +184,62 @@ fn load_additional_api_parameters(window: &Window) -> serde_json::Map<String, se
     }
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectiveApiParameterConfig {
+    max_tokens_enabled: bool,
+    thinking_budget_enabled: bool,
+    max_tokens: u32,
+    thinking_budget: u32,
+    additional_parameters: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RequestApiParameterConfig {
+    max_tokens_enabled: bool,
+    thinking_budget_enabled: bool,
+    max_tokens: u32,
+    thinking_budget: u32,
+    additional_parameters: serde_json::Map<String, serde_json::Value>,
+}
+
+fn bind_request_parameter_config(
+    parameter_flags: &mut ApiParameterFlags,
+    forwarded_max_tokens: &mut Option<u32>,
+    forwarded_thinking_budget: &mut Option<u32>,
+    config: &RequestApiParameterConfig,
+) {
+    parameter_flags.max_tokens = config.max_tokens_enabled;
+    parameter_flags.thinking_budget = config.thinking_budget_enabled;
+    *forwarded_thinking_budget = Some(config.thinking_budget);
+    *forwarded_max_tokens = Some(config.max_tokens.saturating_add(
+        if config.thinking_budget_enabled {
+            config.thinking_budget
+        } else {
+            0
+        },
+    ));
+}
+
+/// Binds the current numeric values to the same persisted switches and validated
+/// custom fields that `call_ai_api` will use for this solo request.
+#[tauri::command]
+pub fn get_effective_api_parameter_config(
+    window: Window,
+    max_tokens: u32,
+    thinking_budget: u32,
+) -> EffectiveApiParameterConfig {
+    let flags = load_api_parameter_flags(&window);
+    EffectiveApiParameterConfig {
+        max_tokens_enabled: flags.max_tokens,
+        thinking_budget_enabled: flags.thinking_budget,
+        max_tokens,
+        thinking_budget,
+        additional_parameters: load_additional_api_parameters(&window),
+    }
+}
+
 fn merge_additional_api_parameters(
     body: &mut serde_json::Value,
     parameters: serde_json::Map<String, serde_json::Value>,
@@ -239,6 +295,8 @@ struct Delta {
 pub(crate) struct AiRequest {
     #[serde(alias = "generationId")]
     generation_id: Option<String>,
+    #[serde(alias = "requestParameterConfig")]
+    request_parameter_config: Option<RequestApiParameterConfig>,
     url: String,
     api_key: String,
     model: String,
@@ -676,7 +734,31 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
     // handle, but never a newer request that replaced it in the meantime.
     let _active_guard = ActiveCancellationGuard { request_id };
 
-    let parameter_flags = load_api_parameter_flags(&window);
+    let mut parameter_flags = load_api_parameter_flags(&window);
+    let mut forwarded_max_tokens = payload.max_tokens;
+    let mut forwarded_thinking_budget = payload.thinking_budget;
+    let additional_parameters = if let Some(config) = &payload.request_parameter_config {
+        let conflicts: Vec<&str> = PROTECTED_API_PARAMETER_KEYS
+            .iter()
+            .copied()
+            .filter(|key| config.additional_parameters.contains_key(*key))
+            .collect();
+        if !conflicts.is_empty() {
+            return Err(format!(
+                "protected fields cannot be overridden: {}",
+                conflicts.join(", ")
+            ));
+        }
+        bind_request_parameter_config(
+            &mut parameter_flags,
+            &mut forwarded_max_tokens,
+            &mut forwarded_thinking_budget,
+            config,
+        );
+        config.additional_parameters.clone()
+    } else {
+        load_additional_api_parameters(&window)
+    };
 
     let mut body = serde_json::json!({
         "model": payload.model,
@@ -689,7 +771,7 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
     }
 
     if parameter_flags.max_tokens {
-        if let Some(max_tokens) = payload.max_tokens {
+        if let Some(max_tokens) = forwarded_max_tokens {
             body["max_tokens"] = serde_json::json!(max_tokens);
         }
     }
@@ -725,13 +807,13 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
     // inline <think> output automatically; non-thinking models ignore this.
     body["chat_template_kwargs"] = serde_json::json!({ "enable_thinking": true });
     if parameter_flags.thinking_budget {
-        if let Some(budget) = payload.thinking_budget {
+        if let Some(budget) = forwarded_thinking_budget {
             // 0 = end reasoning immediately, N>0 = token budget, omit for server default (usually unrestricted).
             body["thinking_budget_tokens"] = serde_json::json!(budget);
         }
     }
 
-    merge_additional_api_parameters(&mut body, load_additional_api_parameters(&window));
+    merge_additional_api_parameters(&mut body, additional_parameters);
 
     let mut req = CLIENT
         .post(format!("{}/chat/completions", payload.url))
@@ -843,9 +925,62 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
 #[cfg(test)]
 mod tests {
     use super::{
-        api_error_from_body, cancellation_matches, merge_additional_api_parameters,
-        parse_additional_api_parameters,
+        api_error_from_body, bind_request_parameter_config, cancellation_matches,
+        merge_additional_api_parameters, parse_additional_api_parameters, ApiParameterFlags,
+        RequestApiParameterConfig,
     };
+
+    #[test]
+    fn bound_request_uses_snapshotted_token_values_instead_of_live_payload_values() {
+        let config = RequestApiParameterConfig {
+            max_tokens_enabled: true,
+            thinking_budget_enabled: true,
+            max_tokens: 300,
+            thinking_budget: 2500,
+            additional_parameters: serde_json::Map::new(),
+        };
+        let mut flags = ApiParameterFlags::default();
+        let mut max_tokens = Some(999);
+        let mut thinking_budget = Some(999);
+
+        bind_request_parameter_config(
+            &mut flags,
+            &mut max_tokens,
+            &mut thinking_budget,
+            &config,
+        );
+
+        assert!(flags.max_tokens);
+        assert!(flags.thinking_budget);
+        assert_eq!(max_tokens, Some(2800));
+        assert_eq!(thinking_budget, Some(2500));
+    }
+
+    #[test]
+    fn bound_request_does_not_add_a_disabled_thinking_budget_to_max_tokens() {
+        let config = RequestApiParameterConfig {
+            max_tokens_enabled: true,
+            thinking_budget_enabled: false,
+            max_tokens: 300,
+            thinking_budget: 2500,
+            additional_parameters: serde_json::Map::new(),
+        };
+        let mut flags = ApiParameterFlags::default();
+        let mut max_tokens = None;
+        let mut thinking_budget = None;
+
+        bind_request_parameter_config(
+            &mut flags,
+            &mut max_tokens,
+            &mut thinking_budget,
+            &config,
+        );
+
+        assert!(flags.max_tokens);
+        assert!(!flags.thinking_budget);
+        assert_eq!(max_tokens, Some(300));
+        assert_eq!(thinking_budget, Some(2500));
+    }
 
     #[test]
     fn legacy_stop_matches_the_active_request() {

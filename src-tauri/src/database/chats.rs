@@ -294,6 +294,54 @@ pub async fn save_summary_meta(
     Ok(())
 }
 
+fn compare_and_swap_summary_meta_row(
+    conn: &rusqlite::Connection,
+    chat_id: &str,
+    expected_summary: Option<&str>,
+    expected_last_summarized_message_id: Option<&str>,
+    summary: Option<&str>,
+    last_summarized_message_id: Option<&str>,
+) -> Result<bool, rusqlite::Error> {
+    let changed = conn.execute(
+        "UPDATE conversations
+         SET summary_text = ?1, summary_last_message_id = ?2
+         WHERE id = ?3
+           AND summary_text IS ?4
+           AND summary_last_message_id IS ?5",
+        params![
+            summary,
+            last_summarized_message_id,
+            chat_id,
+            expected_summary,
+            expected_last_summarized_message_id,
+        ],
+    )?;
+    Ok(changed == 1)
+}
+
+/// Atomically replaces summary metadata only when the caller's previously
+/// loaded value is still current. This lets cancelled frontend work roll back
+/// without overwriting a newer summary from another operation.
+#[tauri::command]
+pub async fn compare_and_swap_summary_meta(
+    app: AppHandle,
+    chat_id: String,
+    expected_summary: Option<String>,
+    expected_last_summarized_message_id: Option<String>,
+    summary: Option<String>,
+    last_summarized_message_id: Option<String>,
+) -> Result<bool, String> {
+    let conn = get_connection(&app)?;
+    compare_and_swap_summary_meta_row(
+        &conn,
+        &chat_id,
+        expected_summary.as_deref(),
+        expected_last_summarized_message_id.as_deref(),
+        summary.as_deref(),
+        last_summarized_message_id.as_deref(),
+    ).map_err(|error| error.to_string())
+}
+
 /// Loads the persisted rolling-summary metadata for a conversation.
 /// Returns null fields when no summary has been generated yet.
 #[derive(Serialize)]
@@ -314,4 +362,53 @@ pub async fn get_summary_meta(app: AppHandle, chat_id: String) -> Result<Summary
         }),
     ).map_err(|e| e.to_string())?;
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compare_and_swap_summary_meta_row;
+    use rusqlite::{params, Connection};
+
+    #[test]
+    fn summary_compare_and_swap_is_null_safe_and_rejects_stale_writers() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE conversations (
+                id TEXT PRIMARY KEY,
+                summary_text TEXT,
+                summary_last_message_id TEXT
+            )",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO conversations (id, summary_text, summary_last_message_id)
+             VALUES (?1, NULL, NULL)",
+            params!["chat-a"],
+        ).unwrap();
+
+        assert!(compare_and_swap_summary_meta_row(
+            &conn,
+            "chat-a",
+            None,
+            None,
+            Some("candidate"),
+            Some("message-a"),
+        ).unwrap());
+        assert!(!compare_and_swap_summary_meta_row(
+            &conn,
+            "chat-a",
+            None,
+            None,
+            Some("stale"),
+            Some("message-b"),
+        ).unwrap());
+        assert!(compare_and_swap_summary_meta_row(
+            &conn,
+            "chat-a",
+            Some("candidate"),
+            Some("message-a"),
+            None,
+            None,
+        ).unwrap());
+    }
 }

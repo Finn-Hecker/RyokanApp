@@ -4,6 +4,11 @@ import { worldInfoState } from '$lib/stores/worldInfoStore.svelte';
 import { chatState } from '$lib/stores/chatStore.svelte';
 import type { ApiSettings } from '$lib/stores/appState.svelte';
 import type { Message } from '$lib/stores/chatStore.svelte';
+import {
+    deriveEffectiveTokenBudget,
+    type ApiRequestParameterConfig,
+    type SummaryMarkerState,
+} from '$lib/utils/rollingSummaryCore';
 import { processThinkingOutput, stripThinkingContent } from '$lib/utils/thinkingOutput';
 
 export { processThinkingOutput, stripThinkingContent } from '$lib/utils/thinkingOutput';
@@ -23,6 +28,12 @@ export interface GenerationOptions {
     recentMessages: Message[];
     /** Include a new user prompt at the end (normal send). Omit for retry. */
     userPrompt?:    string;
+    /** Stable summary snapshot used for this request. */
+    summaryMeta?:   SummaryMarkerState;
+    /** Scopes global Tauri stream events and cancellation to this request. */
+    generationId?: string;
+    /** Bound switches, token values, and custom fields for this exact request. */
+    requestParameterConfig?: ApiRequestParameterConfig;
 }
 
 type ChatRole = 'system' | 'user' | 'assistant';
@@ -57,7 +68,7 @@ export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
         prompt: character?.prompt,
     });
 
-    const { currentSummary, lastSummarizedMessageId } = chatState.summaryMeta;
+    const { currentSummary, lastSummarizedMessageId } = options.summaryMeta ?? chatState.summaryMeta;
 
     // Append the rolling summary to the single system message instead of
     // injecting a second system turn — avoids "No user query found" errors
@@ -131,6 +142,7 @@ export async function runGeneration(
     callbacks: GenerationCallbacks,
 ): Promise<string> {
     const { apiSettings } = options;
+    const generationId = options.generationId ?? crypto.randomUUID();
 
     const messages = buildApiMessages(options);
 
@@ -139,7 +151,8 @@ export async function runGeneration(
 
     const { listen } = await import('@tauri-apps/api/event');
 
-    const unlistenToken = await listen<{ token: string }>('ai-token', (event) => {
+    const unlistenToken = await listen<{ token: string; generationId?: string }>('ai-token', (event) => {
+        if (event.payload.generationId !== generationId) return;
         rawBuffer += event.payload.token;
 
         const { text, isThinking } = processThinkingOutput(rawBuffer, false);
@@ -151,17 +164,26 @@ export async function runGeneration(
 
     // Backend emits reasoning tokens (delta.reasoning_content) on their own
     // event so the UI can know it's "thinking" without relying on tag-parsing.
-    const unlistenThinking = await listen<{ token: string }>('ai-thinking-token', (event) => {
+    const unlistenThinking = await listen<{ token: string; generationId?: string }>('ai-thinking-token', (event) => {
+        if (event.payload.generationId !== generationId) return;
         thinkingBuffer += event.payload.token;
         callbacks.onThinkingPhaseChange(true);
     });
 
     try {
-        const thinkingBudget = apiSettings.thinkingBudget ?? DEFAULT_THINKING_BUDGET;
-        const effectiveMaxTokens = apiSettings.maxTokens + thinkingBudget;
+        const configuredThinkingBudget = apiSettings.thinkingBudget ?? DEFAULT_THINKING_BUDGET;
+        const effectiveBudget = options.requestParameterConfig
+            ? deriveEffectiveTokenBudget(options.requestParameterConfig)
+            : null;
+        const thinkingBudget = effectiveBudget?.payloadThinkingBudget
+            ?? configuredThinkingBudget;
+        const effectiveMaxTokens = effectiveBudget?.payloadMaxTokens
+            ?? apiSettings.maxTokens + configuredThinkingBudget;
 
         await invoke('call_ai_api', {
             payload: {
+                generation_id:      generationId,
+                request_parameter_config: options.requestParameterConfig,
                 url:                apiSettings.url,
                 api_key:            apiSettings.apiKey,
                 model:              apiSettings.model,

@@ -111,6 +111,12 @@
     slideDir = null;
   }
 
+  function startSwipe(direction: 'left' | 'right') {
+    void navigateSwipe(direction).catch(() => {
+      slideDir = null;
+    });
+  }
+
   async function handleEditOpen() {
     if (msgEl) {
       editWidth  = msgEl.offsetWidth;
@@ -191,7 +197,7 @@
 
   function openMobileSwipe(direction: 'left' | 'right') {
     closeMobileActions();
-    void navigateSwipe(direction);
+    startSwipe(direction);
   }
 
   function openMobileRetry() {
@@ -371,7 +377,7 @@
                 class="ctrl-btn"
                 class:ctrl-btn--dim={!canGoLeft}
                 disabled={!canGoLeft}
-                onclick={() => navigateSwipe('left')}
+                onclick={() => startSwipe('left')}
                 aria-label="Vorherige Variante"
               >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
@@ -388,7 +394,7 @@
                   class="ctrl-btn"
                   class:ctrl-btn--accent={!canGoRight && canRetry}
                   disabled={isGenerating}
-                  onclick={() => canGoRight ? navigateSwipe('right') : onRetry?.({ msgId: msg.id })}
+                  onclick={() => canGoRight ? startSwipe('right') : onRetry?.({ msgId: msg.id })}
                   aria-label={canGoRight ? 'Nächste Variante' : m.chat_retry()}
                   title={canGoRight ? undefined : m.chat_retry()}
                 >

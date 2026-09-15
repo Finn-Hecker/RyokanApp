@@ -3,6 +3,7 @@ import { selectInitialGreeting } from '$lib/utils/characterGreeting';
 import { appState } from './appState.svelte';
 import { characterState, loadCharacters } from './characterStore.svelte';
 import { getLocale } from '$lib/paraglide/runtime';
+import { isMessageCoveredBySummary } from '$lib/utils/rollingSummaryCore';
 
 export interface Message {
     id?: string;
@@ -51,10 +52,7 @@ export interface DisplayMessage {
     generationError?: import('$lib/utils/generationError').GenerationErrorInfo;
 }
 
-/**
- * Soft-summary metadata for the active chat session.
- * Lives purely in memory — the DB is never mutated by the summarizer.
- */
+/** Persisted rolling-summary metadata for the active chat session. */
 export interface SummaryMeta {
     currentSummary:          string | null;
     lastSummarizedMessageId: string | null;
@@ -269,40 +267,81 @@ export async function addMessage(role: 'user' | 'assistant', content: string) {
     } catch (e) { console.error(e); }
 }
 
+async function invalidateSummaryIfCovered(chatId: string, messageId: string): Promise<void> {
+    const meta = await invoke<{ summary: string | null; last_id: string | null }>(
+        'get_summary_meta',
+        { chatId },
+    );
+    if (!meta.summary && !meta.last_id) return;
+
+    const messages = await invoke<Array<{ id: string }>>('get_messages', { chatId });
+    const inconsistent = Boolean(meta.summary) !== Boolean(meta.last_id);
+    if (!inconsistent && !isMessageCoveredBySummary(messages, meta.last_id, messageId)) return;
+
+    await invoke('save_summary_meta', {
+        chatId,
+        summary: null,
+        lastSummarizedMessageId: null,
+    });
+    if (chatState.activeChatId === chatId) {
+        chatState.summaryMeta = {
+            currentSummary: null,
+            lastSummarizedMessageId: null,
+        };
+    }
+}
+
 export async function addSwipeVariant(messageId: string, content: string): Promise<void> {
     const chatId = chatState.activeChatId;
     try {
+        if (chatId) await invalidateSummaryIfCovered(chatId, messageId);
         await invoke('add_swipe_variant', { messageId, content });
         if (chatId) await loadMessages(chatId);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+        console.error(e);
+        throw e;
+    }
 }
 
 export async function setSwipeIndex(messageId: string, index: number): Promise<void> {
     const msg = chatState.currentMessages.find(m => m.id === messageId);
-    if (msg) {
-        const clamped = Math.max(0, Math.min(index, msg.swipe_variants.length - 1));
-        msg.swipe_index = clamped;
-        msg.content = msg.swipe_variants[clamped];
-    }
+    const chatId = chatState.activeChatId;
     try {
+        if (chatId) await invalidateSummaryIfCovered(chatId, messageId);
         await invoke('set_swipe_index', { messageId, index });
-    } catch (e) { console.error(e); }
+        if (msg) {
+            const clamped = Math.max(0, Math.min(index, msg.swipe_variants.length - 1));
+            msg.swipe_index = clamped;
+            msg.content = msg.swipe_variants[clamped];
+        }
+    } catch (e) {
+        console.error(e);
+        throw e;
+    }
 }
 
 export async function updateMessage(id: string, content: string) {
     const chatId = chatState.activeChatId;
     try {
+        if (chatId) await invalidateSummaryIfCovered(chatId, id);
         await invoke('update_message', { id, content });
         if (chatId) await loadMessages(chatId);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+        console.error(e);
+        throw e;
+    }
 }
 
 export async function deleteMessage(id: string) {
     const chatId = chatState.activeChatId;
     try {
+        if (chatId) await invalidateSummaryIfCovered(chatId, id);
         await invoke('delete_message', { id });
         if (chatId) await loadMessages(chatId);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+        console.error(e);
+        throw e;
+    }
 }
 
 export async function renameConversation(id: string, title: string) {
