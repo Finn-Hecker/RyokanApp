@@ -15,6 +15,8 @@ export interface ApiSettings {
   customMode: boolean;
 }
 
+export type InteractionMode = 'desktop' | 'mobile';
+
 export const appState = $state({
   currentView: 'lobby' as 'lobby' | 'chat' | 'create' | 'settings' | 'roleEditor' | 'worldInfoEditor' | 'list' | 'play' | 'multiplayerRoom',
   listInitialTab: 'roles' as 'roles' | 'worldinfo',
@@ -22,6 +24,7 @@ export const appState = $state({
   editingCharacter: null as any,
   isOnboarding: false,
   pendingUiLocale: '',
+  interactionMode: 'desktop' as InteractionMode,
   apiSettings: {
     url: "http://127.0.0.1:1234/v1",
     apiKey: "",

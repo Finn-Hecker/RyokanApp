@@ -13,6 +13,7 @@
   import { onBackButtonPress } from '@tauri-apps/api/app';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { handleBackNavigation } from '$lib/stores/navigation';
+  import { invoke } from '@tauri-apps/api/core';
 
   let loaded = $state(false); 
 
@@ -32,7 +33,11 @@
   });
 
   async function loadApp() {
-    const settings = await getAllSettings();
+    const [settings, interactionMode] = await Promise.all([
+      getAllSettings(),
+      invoke<'desktop' | 'mobile'>('get_interaction_mode'),
+    ]);
+    appState.interactionMode = interactionMode;
     const map = Object.fromEntries(settings.map(s => [s.key, s.value]));
 
     if (map.api_url)     appState.apiSettings.url             = map.api_url;

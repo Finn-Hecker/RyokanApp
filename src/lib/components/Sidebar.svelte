@@ -11,29 +11,42 @@
   let {
     isOpen,
     close,
-    alwaysVisible = false,
+    layout,
+    interactionMode,
     onWorldInfoClick,
     mode = 'singleplayer'
   }: {
     isOpen: boolean;
     close: () => void;
-    alwaysVisible?: boolean;
+    layout: 'inline' | 'drawer';
+    interactionMode: 'desktop' | 'mobile';
     onWorldInfoClick?: () => void;
     mode?: ConversationMode;
   } = $props();
 
   let chatToDelete      = $state<string | null>(null);
   let openMenuId        = $state<string | null>(null);
+  let chatMenuPosition  = $state<{ x: number; y: number } | null>(null);
+  let revealedChatId    = $state<string | null>(null);
+  let suppressChatClick = $state<string | null>(null);
+  let chatSwipe = $state<{
+    id: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    direction: 'none' | 'left' | 'right';
+  } | null>(null);
   let chatToRename      = $state<string | null>(null);
   let renameValue       = $state('');
   let isConfirmingRename = false;
 
   $effect(() => {
-    if (!chatToDelete && !chatToRename && !openMenuId) return;
+    if (!chatToDelete && !chatToRename && !openMenuId && !revealedChatId) return;
     return registerBackHandler(() => {
       if (chatToDelete) chatToDelete = null;
       else if (chatToRename) cancelRename();
-      else openMenuId = null;
+      else closeChatMenu();
+      revealedChatId = null;
       return true;
     });
   });
@@ -72,6 +85,9 @@
   let looseChats = $derived(displayedConversations
     .filter(chat => chat.mode === mode && effectiveFolderId(chat) === null)
     .sort(compareRecentActivity));
+  let openMenuChat = $derived(openMenuId
+    ? chatState.conversations.find(chat => chat.id === openMenuId && chat.mode === mode) ?? null
+    : null);
 
   let observer: IntersectionObserver | null = null;
   let ghostFrame: number | null = null;
@@ -94,7 +110,7 @@
   };
 
   onMount(() => {
-    if (alwaysVisible) initializeChats();
+    if (layout === 'inline') initializeChats();
     document.addEventListener('click', closeMenuOnOutsideClick);
   });
 
@@ -106,11 +122,11 @@
   });
 
   $effect(() => {
-    if (!alwaysVisible && isOpen) untrack(() => initializeChats());
+    if (layout === 'drawer' && isOpen) untrack(() => initializeChats());
   });
 
   $effect(() => {
-    if (!alwaysVisible && !isOpen && observer) observer.disconnect();
+    if (layout === 'drawer' && !isOpen && observer) observer.disconnect();
   });
 
   // Focus the rename input whenever it appears
@@ -163,27 +179,111 @@
     } else {
       navigateTo('chat');
     }
-    if (!alwaysVisible) close();
+    if (layout === 'drawer') close();
   }
 
   function toggleMenu(id: string, event: Event) {
+    if (interactionMode !== 'mobile') return;
     event.stopPropagation();
-    openMenuId = openMenuId === id ? null : id;
+    revealedChatId = null;
+    if (openMenuId === id) {
+      closeChatMenu();
+      return;
+    }
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    openMenuId = id;
+    chatMenuPosition = {
+      x: Math.max(8, Math.min(rect.right - 148, window.innerWidth - 156)),
+      y: Math.min(rect.bottom + 6, window.innerHeight - 190),
+    };
   }
 
   function closeMenuOnOutsideClick() {
+    closeChatMenu();
+    revealedChatId = null;
+  }
+
+  function closeChatMenu() {
     openMenuId = null;
+    chatMenuPosition = null;
+  }
+
+  function openChatMenuFromContext(id: string, event: MouseEvent) {
+    if (interactionMode !== 'desktop') return;
+    event.preventDefault();
+    event.stopPropagation();
+    revealedChatId = null;
+    openMenuId = id;
+    chatMenuPosition = {
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - 156)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 190)),
+    };
+  }
+
+  function beginChatSwipe(id: string, event: PointerEvent) {
+    if (interactionMode !== 'mobile' || event.pointerType !== 'touch') return;
+    chatSwipe = {
+      id,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      direction: 'none',
+    };
+  }
+
+  function updateChatSwipe(id: string, event: PointerEvent) {
+    const swipe = chatSwipe;
+    if (!swipe || swipe.id !== id || swipe.pointerId !== event.pointerId) return;
+
+    const horizontal = event.clientX - swipe.startX;
+    const vertical = event.clientY - swipe.startY;
+    if (swipe.direction === 'none') {
+      // Let the drawer and normal vertical scrolling own ambiguous gestures.
+      if (Math.abs(horizontal) < 24 || Math.abs(horizontal) <= Math.abs(vertical) * 1.35) return;
+      // A rightward gesture belongs to the drawer unless this row is already
+      // open and the gesture is explicitly closing its action reveal.
+      if (horizontal > 0 && revealedChatId !== id) return;
+      swipe.direction = horizontal < 0 ? 'left' : 'right';
+      (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    if (swipe.direction === 'left') revealedChatId = id;
+    else if (revealedChatId === id) revealedChatId = null;
+  }
+
+  function endChatSwipe(id: string, event: PointerEvent) {
+    const swipe = chatSwipe;
+    if (!swipe || swipe.id !== id || swipe.pointerId !== event.pointerId) return;
+    if (swipe.direction !== 'none') {
+      event.preventDefault();
+      suppressChatClick = id;
+      setTimeout(() => { if (suppressChatClick === id) suppressChatClick = null; }, 0);
+    }
+    const row = event.currentTarget as HTMLElement;
+    if (row.hasPointerCapture(event.pointerId)) row.releasePointerCapture(event.pointerId);
+    chatSwipe = null;
+  }
+
+  function handleChatClick(id: string) {
+    if (suppressChatClick === id) return;
+    if (revealedChatId !== null) {
+      revealedChatId = null;
+      return;
+    }
+    void loadChat(id);
   }
 
   async function handlePin(id: string, event: Event) {
     event.stopPropagation();
-    openMenuId = null;
+    closeChatMenu();
     await togglePinConversation(id);
   }
 
   function startRename(id: string, currentTitle: string, event: Event) {
     event.stopPropagation();
-    openMenuId = null;
+    closeChatMenu();
     chatToRename = id;
     renameValue = currentTitle;
   }
@@ -218,7 +318,7 @@
 
   function promptDelete(id: string, event: Event) {
     event.stopPropagation();
-    openMenuId = null;
+    closeChatMenu();
     chatToDelete = id;
   }
 
@@ -233,11 +333,20 @@
     chatToDelete = null;
   }
 
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        node.remove();
+      },
+    };
+  }
+
   function handleWorldInfoClick() {
     if (onWorldInfoClick) { onWorldInfoClick(); return; }
     appState.listInitialTab = 'worldinfo';
     navigateTo('list');
-    if (!alwaysVisible) close();
+    if (layout === 'drawer') close();
   }
 
   function chatsInFolder(folderId: string) {
@@ -570,6 +679,17 @@
 </script>
 
 {#snippet chatRow(chat: Conversation)}
+  <div class="relative w-full rounded-lg {interactionMode === 'mobile' ? 'overflow-hidden' : ''}">
+    {#if interactionMode === 'mobile' && revealedChatId === chat.id}
+      <button
+        type="button"
+        onclick={(event) => toggleMenu(chat.id, event)}
+        class="absolute inset-y-0 right-0 flex w-[72px] items-center justify-center rounded-r-lg border-l border-white/[0.06] bg-white/[0.035] text-xs font-medium text-gray-400 transition-colors active:bg-white/[0.08]"
+        aria-label={m.sidebar_aria_options()}
+      >
+        {m.sidebar_action_more()}
+      </button>
+    {/if}
     <div
       role="button"
       tabindex="0"
@@ -612,15 +732,22 @@
         }
         void dropOnChat();
       }}
-      onclick={() => loadChat(chat.id)}
+      oncontextmenu={interactionMode === 'desktop' ? (event) => openChatMenuFromContext(chat.id, event) : undefined}
+      onpointerdown={interactionMode === 'mobile' ? (event) => beginChatSwipe(chat.id, event) : undefined}
+      onpointermove={interactionMode === 'mobile' ? (event) => updateChatSwipe(chat.id, event) : undefined}
+      onpointerup={interactionMode === 'mobile' ? (event) => endChatSwipe(chat.id, event) : undefined}
+      onpointercancel={interactionMode === 'mobile' ? (event) => endChatSwipe(chat.id, event) : undefined}
+      onclick={() => handleChatClick(chat.id)}
       onkeydown={(e) => e.key === 'Enter' && loadChat(chat.id)}
-      class="relative w-full text-left p-3 rounded-lg hover:bg-white/5 group transition-all border cursor-pointer
+      class="relative z-10 w-full text-left p-3 rounded-lg group transition-[transform,background-color,border-color,opacity] duration-150 border cursor-pointer
+             {interactionMode === 'mobile' ? 'touch-pan-y bg-ryokan-sidebar' : 'hover:bg-white/5'}
+             {interactionMode === 'mobile' && revealedChatId === chat.id ? '-translate-x-[72px]' : 'translate-x-0'}
              {dragging?.type === 'chat' && dragging.id === chat.id ? 'opacity-40 border-transparent' : ''}
              {chatDrop?.id === chat.id && chatDrop.position === 'before' ? 'border-t-ryokan-accent border-x-transparent border-b-transparent' : ''}
              {chatDrop?.id === chat.id && chatDrop.position === 'after' ? 'border-b-ryokan-accent border-x-transparent border-t-transparent' : ''}
              {chatDrop?.id !== chat.id ? 'border-transparent hover:border-white/5' : ''}"
     >
-      <div class="pr-9">
+      <div class={chat.is_pinned && interactionMode === 'desktop' ? 'pr-9' : ''}>
         {#if chatToRename === chat.id}
           <div class="flex items-center gap-1.5" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
             <input
@@ -656,83 +783,53 @@
         {/if}
       </div>
 
-      {#if chatToRename !== chat.id}
+      {#if chatToRename !== chat.id && chat.is_pinned && interactionMode === 'desktop'}
         <div class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7">
-
-          {#if chat.is_pinned}
-            <span
-              class="hidden lg:flex absolute inset-0 items-center justify-center text-ryokan-accent
-                     pointer-events-none transition-opacity duration-150
-                     {openMenuId === chat.id ? 'opacity-0' : 'opacity-70 group-hover:opacity-0'}"
-              title={m.sidebar_title_pinned()}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
-              </svg>
-            </span>
-          {/if}
-
-          <button
-            onclick={(e) => toggleMenu(chat.id, e)}
-            class="absolute inset-0 flex flex-col items-center justify-center gap-[3.5px]
-                   text-gray-500 hover:text-gray-300 hover:bg-white/10 rounded-md
-                   transition-opacity duration-150
-                   {openMenuId === chat.id ? 'opacity-100' : 'opacity-100 lg:opacity-0 lg:group-hover:opacity-100'}"
-            aria-label={m.sidebar_aria_options()}
+          <span
+            class="pointer-events-none absolute inset-0 flex items-center justify-center text-ryokan-accent opacity-70"
+            title={m.sidebar_title_pinned()}
           >
-            <span class="block w-[3.5px] h-[3.5px] rounded-full bg-current"></span>
-            <span class="block w-[3.5px] h-[3.5px] rounded-full bg-current"></span>
-            <span class="block w-[3.5px] h-[3.5px] rounded-full bg-current"></span>
-          </button>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
+            </svg>
+          </span>
         </div>
-
-        {#if openMenuId === chat.id}
-          <div
-            class="absolute right-1 top-full mt-1 z-50 min-w-[148px]
-                   bg-ryokan-surface border border-white/10 rounded-lg shadow-xl
-                   overflow-hidden text-sm"
-            transition:scale={{ duration: 100, start: 0.95 }}
-          >
-            <button
-              onclick={(e) => handlePin(chat.id, e)}
-              class="w-full flex items-center gap-2.5 px-3 py-2.5
-                     text-gray-300 hover:text-white hover:bg-white/[0.08] transition-colors text-left"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="shrink-0 text-ryokan-accent/80">
-                <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
-              </svg>
-              {chat.is_pinned ? m.sidebar_action_unpin() : m.sidebar_action_pin()}
-            </button>
-
-            <button
-              onclick={(e) => startRename(chat.id, chat.title, e)}
-              class="w-full flex items-center gap-2.5 px-3 py-2.5
-                     text-gray-300 hover:text-white hover:bg-white/[0.08] transition-colors text-left"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-              </svg>
-              {m.sidebar_action_rename()}
-            </button>
-
-            <div class="border-t border-white/5 mx-2 my-0.5"></div>
-
-            <button
-              onclick={(e) => promptDelete(chat.id, e)}
-              class="w-full flex items-center gap-2.5 px-3 py-2.5
-                     text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors text-left"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
-                <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-              </svg>
-              {m.sidebar_action_delete()}
-            </button>
-          </div>
-        {/if}
       {/if}
     </div>
+  </div>
+{/snippet}
+
+{#snippet chatActions(chat: Conversation)}
+  <button
+    onclick={(e) => handlePin(chat.id, e)}
+    class="w-full flex items-center gap-2.5 px-3 py-2.5 text-gray-300 hover:text-white hover:bg-white/[0.08] transition-colors text-left"
+  >
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="shrink-0 text-ryokan-accent/80">
+      <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
+    </svg>
+    {chat.is_pinned ? m.sidebar_action_unpin() : m.sidebar_action_pin()}
+  </button>
+  <button
+    onclick={(e) => startRename(chat.id, chat.title, e)}
+    class="w-full flex items-center gap-2.5 px-3 py-2.5 text-gray-300 hover:text-white hover:bg-white/[0.08] transition-colors text-left"
+  >
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+    </svg>
+    {m.sidebar_action_rename()}
+  </button>
+  <div class="border-t border-white/5 mx-2 my-0.5"></div>
+  <button
+    onclick={(e) => promptDelete(chat.id, e)}
+    class="w-full flex items-center gap-2.5 px-3 py-2.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors text-left"
+  >
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+      <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+    </svg>
+    {m.sidebar_action_delete()}
+  </button>
 {/snippet}
 
 {#snippet chatList()}
@@ -931,7 +1028,7 @@
   </div>
 {/snippet}
 
-{#if alwaysVisible}
+{#if layout === 'inline'}
   <aside class="w-64 h-full border-r border-white/5 flex flex-col shrink-0">
     <div class="p-6 border-b border-white/5">
       <h2 class="text-lg font-medium text-ryokan-accent">{m.history_title()}</h2>
@@ -960,6 +1057,18 @@
     </div>
     {@render navButtons()}
   </aside>
+{/if}
+
+{#if openMenuChat && chatMenuPosition}
+  <div
+    use:portal
+    class="fixed z-[1000] min-w-[148px] overflow-hidden rounded-lg border border-white/10 bg-ryokan-surface text-sm shadow-xl"
+    style:left={`${chatMenuPosition.x}px`}
+    style:top={`${chatMenuPosition.y}px`}
+    transition:scale={{ duration: 100, start: 0.95 }}
+  >
+    {@render chatActions(openMenuChat)}
+  </div>
 {/if}
 
 {#if chatToDelete}

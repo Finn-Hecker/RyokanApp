@@ -103,9 +103,9 @@
 
 <svelte:window onkeydown={(event) => event.key === 'Escape' && closeModal()} />
 
-{#snippet sidebar({ isMobileSidebarOpen, close }: { isMobileSidebarOpen: boolean, close: () => void })}
+{#snippet sidebar({ layout, interactionMode, isOpen, close }: { layout: 'inline' | 'drawer', interactionMode: 'desktop' | 'mobile', isOpen: boolean, close: () => void })}
   <div class="flex h-full flex-col overflow-hidden">
-    <Sidebar isOpen={isMobileSidebarOpen} {close} alwaysVisible={!isMobileSidebarOpen} mode="multiplayer" />
+    <Sidebar {layout} {interactionMode} {isOpen} {close} mode="multiplayer" />
   </div>
 {/snippet}
 

@@ -4,6 +4,15 @@ mod import;
 mod export;
 mod tokenizer;
 
+#[tauri::command]
+fn get_interaction_mode() -> &'static str {
+    if cfg!(any(target_os = "android", target_os = "ios")) {
+        "mobile"
+    } else {
+        "desktop"
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -12,6 +21,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            get_interaction_mode,
             ai::call_ai_api,
             ai::fetch_models,
             ai::stop_generation,
