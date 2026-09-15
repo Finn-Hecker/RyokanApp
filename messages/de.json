@@ -235,6 +235,8 @@
   "chat_stop_generating": "Antwort stoppen",
   "chat_edit": "Bearbeiten",
   "chat_retry": "Erneut versuchen",
+  "chat_previous_variant": "Vorherige Variante",
+  "chat_next_variant": "Nächste Variante",
   "chat_save": "Speichern",
   "chat_cancel": "Abbrechen",
   "chat_edit_shortcut": "Strg+Enter",

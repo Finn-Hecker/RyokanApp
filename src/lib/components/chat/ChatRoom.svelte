@@ -31,6 +31,7 @@
   let isLoadingMore = $state(false);
   let cloneCooldown = $state(false);
   let cloneCooldownTimer: ReturnType<typeof setTimeout> | undefined;
+  let mobileActionMessageId = $state<string | null>(null);
 
   let isBlocked = $derived(isGenerating || summaryState.isSummarizing);
 
@@ -46,6 +47,14 @@
     if (!showErrorModal) return;
     return registerBackHandler(() => {
       void closeErrorModal();
+      return true;
+    });
+  });
+
+  $effect(() => {
+    if (!mobileActionMessageId) return;
+    return registerBackHandler(() => {
+      mobileActionMessageId = null;
       return true;
     });
   });
@@ -346,6 +355,14 @@
     if (pendingUserMessage) await generate(pendingUserMessage, false);
   }
 
+  function showMobileActions(msgId: string) {
+    mobileActionMessageId = msgId;
+  }
+
+  function closeMobileActions() {
+    mobileActionMessageId = null;
+  }
+
   async function retryGenerationError() {
     const msgId = failedRetryMsgId;
     generationError = null;
@@ -422,6 +439,10 @@
           )}
           canCloneFrom={!isBlocked && !msg.isUser && msg.id !== 'temp-stream'}
           cloneDisabled={cloneCooldown}
+          interactionMode={appState.interactionMode}
+          mobileActionsOpen={mobileActionMessageId === msg.id}
+          onMobileActionsOpen={showMobileActions}
+          onMobileActionsClose={closeMobileActions}
           onRetry={handleRetry}
           onGenerationRetry={retryGenerationError}
           onGenerationDismiss={dismissGenerationError}
