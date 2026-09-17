@@ -4,29 +4,20 @@
   import { loadRoles, roleState } from '$lib/stores/roleStore.svelte';
   import type { BundledRoleSnapshot, RolePolicy } from '$lib/stores/characterStore.svelte';
 
-  let {
-    rolePolicy = $bindable('open'),
-    bundledRoles = [],
-    onAdd,
-    onRemove,
-  }: {
-    rolePolicy?: RolePolicy;
-    bundledRoles?: BundledRoleSnapshot[];
+  let { rolePolicy = $bindable('open'), bundledRoles = [], onAdd, onRemove }: {
+    rolePolicy?: RolePolicy; bundledRoles?: BundledRoleSnapshot[];
     onAdd?: (roleId: string) => Promise<void> | void;
     onRemove?: (snapshotId: string) => Promise<void> | void;
   } = $props();
 
-  let selectedRoleId = $state('');
+  let pickerOpen = $state(false);
   let busy = $state(false);
   onMount(() => loadRoles());
 
-  async function addSelected() {
-    if (!selectedRoleId || busy) return;
+  async function add(roleId: string) {
+    if (busy) return;
     busy = true;
-    try {
-      await onAdd?.(selectedRoleId);
-      selectedRoleId = '';
-    } finally { busy = false; }
+    try { await onAdd?.(roleId); pickerOpen = false; } finally { busy = false; }
   }
 
   async function remove(snapshotId: string) {
@@ -36,72 +27,115 @@
   }
 </script>
 
-<section class="roles-section">
-  <div class="mb-4">
-    <h3 class="text-sm font-semibold text-gray-300">{m.character_roles_title()}</h3>
-    <p class="mt-1 text-xs leading-relaxed text-gray-600">{m.character_roles_subtitle()}</p>
-  </div>
+<svelte:window onkeydown={(event) => event.key === 'Escape' && (pickerOpen = false)} />
 
-  <div class="policy-grid">
-    <label class:active={rolePolicy === 'open'}>
-      <input type="radio" bind:group={rolePolicy} value="open" />
-      <span><strong>{m.character_roles_open()}</strong><small>{m.character_roles_open_desc()}</small></span>
-    </label>
-    <label class:active={rolePolicy === 'restricted'}>
-      <input type="radio" bind:group={rolePolicy} value="restricted" />
-      <span><strong>{m.character_roles_restricted()}</strong><small>{m.character_roles_restricted_desc()}</small></span>
+<section class="roles-section">
+  <div class="section-heading">
+    <div class="min-w-0">
+      <h3>{m.character_roles_title()}</h3>
+      <p>{m.character_roles_subtitle()}</p>
+    </div>
+    <label class="policy-select">
+      <span class="sr-only">{m.character_roles_title()}</span>
+      <select bind:value={rolePolicy}>
+        <option value="open">{m.character_roles_open()}</option>
+        <option value="restricted">{m.character_roles_restricted()}</option>
+      </select>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round" /></svg>
     </label>
   </div>
 
   {#if bundledRoles.length > 0}
-    <div class="mt-4 flex flex-col gap-2">
+    <div class="role-list">
       {#each bundledRoles as role (role.id)}
-        <div class="snapshot-row">
-          <div class="snapshot-avatar">{role.name.slice(0, 1).toUpperCase()}</div>
-          <div class="min-w-0 flex-1">
-            <p class="truncate text-sm font-medium text-gray-300">{role.name}</p>
-            <p class="truncate text-xs text-gray-600">{role.prompt || m.role_editor_empty_prompt()}</p>
+        <div class="role-row">
+          <div class="role-avatar">
+            {#if role.avatarUrl}<img src={role.avatarUrl} alt="" />{:else}{role.name.slice(0, 1).toUpperCase()}{/if}
           </div>
-          <button type="button" aria-label={m.character_roles_remove()} onclick={() => remove(role.id)} disabled={busy}>×</button>
+          <p>{role.name}</p>
+          <button type="button" aria-label={m.character_roles_remove()} onclick={() => remove(role.id)} disabled={busy}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" stroke-linecap="round" /></svg>
+          </button>
         </div>
       {/each}
     </div>
-  {:else}
-    <p class="mt-4 rounded-lg border border-dashed border-white/[.07] px-3 py-3 text-center text-xs text-gray-600">{m.character_roles_empty()}</p>
   {/if}
 
-  {#if roleState.roles.length > 0}
-    <div class="mt-3 flex flex-col gap-2 sm:flex-row">
-      <select bind:value={selectedRoleId} class="role-select">
-        <option value="">{m.character_roles_choose()}</option>
-        {#each roleState.roles as role (role.id)}<option value={role.id}>{role.name}</option>{/each}
-      </select>
-      <button type="button" class="add-btn" disabled={!selectedRoleId || busy} onclick={addSelected}>{m.character_roles_add()}</button>
-    </div>
-  {:else}
-    <p class="mt-3 text-xs text-gray-600">{m.character_roles_no_global()}</p>
-  {/if}
+  <button type="button" class="add-role" onclick={() => (pickerOpen = true)}><span aria-hidden="true">+</span> {m.character_roles_add()}</button>
 
   {#if rolePolicy === 'restricted' && bundledRoles.length === 0}
-    <p class="mt-3 text-xs font-medium text-amber-400">{m.character_roles_restricted_error()}</p>
+    <p class="validation-message">{m.character_roles_restricted_error()}</p>
   {/if}
 </section>
 
+{#if pickerOpen}
+  <div class="picker-backdrop">
+    <button class="backdrop-dismiss" type="button" aria-label={m.create_char_close_aria()} onclick={() => (pickerOpen = false)}></button>
+    <div class="role-picker" role="dialog" aria-modal="true" aria-labelledby="role-picker-title" tabindex="-1">
+      <div class="picker-heading">
+        <div><h3 id="role-picker-title">{m.character_roles_add()}</h3><p>{m.character_roles_choose()}</p></div>
+        <button type="button" class="picker-close" aria-label={m.create_char_close_aria()} onclick={() => (pickerOpen = false)}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" stroke-linecap="round" /></svg>
+        </button>
+      </div>
+      {#if roleState.roles.length > 0}
+        <div class="picker-list">
+          {#each roleState.roles as role (role.id)}
+            <button type="button" class="picker-role" disabled={busy} onclick={() => add(role.id)}>
+              <div class="role-avatar role-avatar--large">{#if role.avatarUrl}<img src={role.avatarUrl} alt="" />{:else}{role.name.slice(0, 1).toUpperCase()}{/if}</div>
+              <span>{role.name}</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </button>
+          {/each}
+        </div>
+      {:else}
+        <p class="picker-empty">{m.character_roles_no_global()}</p>
+      {/if}
+    </div>
+  </div>
+{/if}
+
 <style>
-  .roles-section { margin-top:8px; padding:16px; border:1px solid rgba(255,255,255,.06); border-radius:16px; background:rgba(255,255,255,.02); }
-  .policy-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
-  .policy-grid label { display:flex; gap:9px; padding:11px; border:1px solid rgba(255,255,255,.07); border-radius:11px; cursor:pointer; background:rgba(255,255,255,.02); }
-  .policy-grid label.active { border-color:rgba(212,180,131,.32); background:rgba(212,180,131,.07); }
-  .policy-grid input { margin-top:3px; accent-color:#d4b483; }
-  .policy-grid span { display:flex; flex-direction:column; min-width:0; }
-  .policy-grid strong { color:#d1d5db; font-size:12px; }
-  .policy-grid small { margin-top:2px; color:#4b5563; font-size:10px; line-height:1.4; }
-  .snapshot-row { display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:10px; background:rgba(255,255,255,.035); }
-  .snapshot-avatar { width:34px; height:34px; flex:none; display:flex; align-items:center; justify-content:center; border-radius:9px; color:#d4b483; background:rgba(212,180,131,.09); font-size:12px; font-weight:700; }
-  .snapshot-row button { width:28px; height:28px; border:0; border-radius:7px; color:#6b7280; background:transparent; cursor:pointer; font-size:18px; }
-  .snapshot-row button:hover { color:#f87171; background:rgba(239,68,68,.1); }
-  .role-select { min-width:0; flex:1; border:1px solid rgba(255,255,255,.08); border-radius:9px; padding:8px 10px; color:#d1d5db; background:#18181b; font:inherit; font-size:12px; }
-  .add-btn { border:1px solid rgba(212,180,131,.25); border-radius:9px; padding:8px 13px; color:#d4b483; background:rgba(212,180,131,.08); font-size:12px; font-weight:600; cursor:pointer; }
-  .add-btn:disabled { opacity:.4; cursor:default; }
-  @media(max-width:520px) { .policy-grid { grid-template-columns:1fr; } }
+  .roles-section { margin-top:8px; padding:18px; border:1px solid rgba(255,255,255,.06); border-radius:16px; background:rgba(255,255,255,.02); }
+  .section-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+  .section-heading h3 { color:#d1d5db; font-size:14px; font-weight:600; }
+  .section-heading p { margin-top:4px; color:#5f6570; font-size:12px; line-height:1.5; }
+  .policy-select { position:relative; flex:none; color:#aeb3bc; }
+  .policy-select select { min-width:112px; height:36px; appearance:none; border:1px solid rgba(255,255,255,.09); border-radius:9px; padding:0 32px 0 11px; color:#d1d5db; background:#202024; font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+  .policy-select svg { position:absolute; top:12px; right:10px; pointer-events:none; }
+  .role-list { display:flex; flex-direction:column; gap:7px; margin-top:15px; }
+  .role-row { display:flex; align-items:center; gap:10px; min-width:0; padding:8px 9px; border:1px solid rgba(255,255,255,.05); border-radius:11px; background:rgba(255,255,255,.025); }
+  .role-row p { min-width:0; flex:1; overflow:hidden; color:#d1d5db; font-size:13px; font-weight:500; text-overflow:ellipsis; white-space:nowrap; }
+  .role-avatar { width:32px; height:32px; flex:none; display:flex; align-items:center; justify-content:center; overflow:hidden; border-radius:9px; color:#d4b483; background:rgba(212,180,131,.09); font-size:12px; font-weight:700; }
+  .role-avatar img { width:100%; height:100%; object-fit:cover; }
+  .role-avatar--large { width:38px; height:38px; }
+  .role-row button, .picker-close { display:flex; align-items:center; justify-content:center; width:36px; height:36px; flex:none; border:0; border-radius:9px; color:#6b7280; background:transparent; cursor:pointer; }
+  .role-row button:hover, .picker-close:hover { color:#f3f4f6; background:rgba(255,255,255,.06); }
+  .add-role { display:inline-flex; align-items:center; gap:7px; min-height:38px; margin-top:13px; border:1px solid rgba(212,180,131,.22); border-radius:9px; padding:8px 13px; color:#d4b483; background:rgba(212,180,131,.065); font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+  .add-role:hover { border-color:rgba(212,180,131,.38); background:rgba(212,180,131,.1); }
+  .add-role span { font-size:17px; font-weight:400; line-height:1; }
+  .validation-message { margin-top:10px; color:#fbbf24; font-size:12px; font-weight:500; }
+  .picker-backdrop { position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(0,0,0,.58); backdrop-filter:blur(3px); }
+  .backdrop-dismiss { position:absolute; inset:0; width:100%; height:100%; border:0; background:transparent; cursor:default; }
+  .role-picker { position:relative; width:min(420px,100%); max-height:min(560px,calc(100dvh - 40px)); display:flex; flex-direction:column; overflow:hidden; border:1px solid rgba(255,255,255,.09); border-radius:16px; background:#19191c; box-shadow:0 20px 60px rgba(0,0,0,.55); }
+  .picker-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:18px 18px 14px; border-bottom:1px solid rgba(255,255,255,.06); }
+  .picker-heading h3 { color:#e5e7eb; font-size:15px; font-weight:600; }
+  .picker-heading p { margin-top:3px; color:#626873; font-size:12px; line-height:1.45; }
+  .picker-close { margin:-6px -6px 0 0; }
+  .picker-list { min-height:0; overflow-y:auto; padding:7px; }
+  .picker-role { width:100%; min-height:52px; display:flex; align-items:center; gap:11px; border:0; border-radius:10px; padding:7px 9px; color:#d1d5db; background:transparent; font:inherit; font-size:13px; font-weight:500; text-align:left; cursor:pointer; }
+  .picker-role:hover { color:#f3f4f6; background:rgba(255,255,255,.055); }
+  .picker-role span { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .picker-role > svg { flex:none; color:#555b65; }
+  .picker-empty { padding:28px 20px; color:#6b7280; font-size:13px; line-height:1.5; text-align:center; }
+  button:disabled { opacity:.45; cursor:default; }
+  @media(max-width:520px) {
+    .roles-section { padding:16px; }
+    .section-heading { flex-direction:column; gap:12px; }
+    .policy-select, .policy-select select { width:100%; }
+    .add-role { width:100%; justify-content:center; min-height:44px; }
+    .picker-backdrop { align-items:flex-end; padding:12px; }
+    .role-picker { max-height:calc(100dvh - 24px); border-radius:18px; }
+    .picker-role { min-height:56px; }
+  }
 </style>

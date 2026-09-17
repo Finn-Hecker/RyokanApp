@@ -473,7 +473,7 @@
     </div>
   {/snippet}
 
-  <SimpleFormPage {actions}>
+  <SimpleFormPage maxWidth="max-w-[704px]" {actions}>
 
   {#if !isAnyEditMode}
     <div class="page-heading text-center">
