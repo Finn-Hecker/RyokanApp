@@ -216,10 +216,10 @@
   {sidebar}
   {header}
 >
-  <header class="mb-4 md:mb-6">
-    <h1 class="text-2xl sm:text-3xl md:text-4xl font-medium text-gray-100 mb-2 md:mb-3 tracking-tight">{m.welcome_title()}</h1>
-    <p class="text-gray-500 text-base md:text-lg">
-      {m.lobby_subtitle_pre()} <span class="text-ryokan-accent">{m.lobby_subtitle_highlight()}</span> {m.lobby_subtitle_post()}
+  <header class="mb-3 sm:mb-5 md:mb-7">
+    <h1 class="mb-1 text-[1.375rem] font-medium leading-tight tracking-tight text-gray-100 sm:mb-1.5 sm:text-3xl md:mb-2 md:text-4xl">{m.welcome_title()}</h1>
+    <p class="text-[0.9375rem] leading-6 text-gray-500 md:text-base">
+      {m.lobby_subtitle()}
     </p>
   </header>
 

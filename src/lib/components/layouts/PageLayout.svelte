@@ -67,7 +67,7 @@
   <div class="flex-1 overflow-y-auto min-w-0 scrollbar-hide">
     <div class="{maxContentWidth} mx-auto w-full {contentPadding}">
       
-      <div class="flex items-center justify-between pt-[calc(1rem+env(safe-area-inset-top))] mb-6 md:pt-6">
+      <div class="flex items-center justify-between pt-[calc(1rem+env(safe-area-inset-top))] mb-3 sm:mb-6 md:pt-6">
         {#if showSidebar}
           <button
             onclick={() => isMobileSidebarOpen = true}
