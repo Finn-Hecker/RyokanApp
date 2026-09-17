@@ -25,28 +25,28 @@
   } = $props();
 
   let chatToDelete      = $state<string | null>(null);
-  let openMenuId        = $state<string | null>(null);
-  let chatMenuPosition  = $state<{ x: number; y: number } | null>(null);
-  let revealedChatId    = $state<string | null>(null);
-  let suppressChatClick = $state<string | null>(null);
-  let chatSwipe = $state<{
-    id: string;
+  let contextTarget     = $state<{ type: 'chat' | 'folder'; id: string } | null>(null);
+  let contextMenuPosition = $state<{ x: number; y: number } | null>(null);
+  let pressedItemKey    = $state<string | null>(null);
+  let suppressActivationKey = $state<string | null>(null);
+  let longPress = $state<{
+    key: string;
     pointerId: number;
     startX: number;
     startY: number;
-    direction: 'none' | 'left' | 'right';
+    timer: ReturnType<typeof setTimeout>;
   } | null>(null);
   let chatToRename      = $state<string | null>(null);
   let renameValue       = $state('');
   let isConfirmingRename = false;
 
   $effect(() => {
-    if (!chatToDelete && !chatToRename && !openMenuId && !revealedChatId) return;
+    if (!chatToDelete && !chatToRename && !folderToRename && !contextTarget) return;
     return registerBackHandler(() => {
       if (chatToDelete) chatToDelete = null;
       else if (chatToRename) cancelRename();
-      else closeChatMenu();
-      revealedChatId = null;
+      else if (folderToRename) folderToRename = null;
+      else closeContextMenu();
       return true;
     });
   });
@@ -84,9 +84,12 @@
   let displayedConversations = $derived(previewConversationOrder ?? chatState.conversations);
   let looseChats = $derived(displayedConversations
     .filter(chat => chat.mode === mode && effectiveFolderId(chat) === null)
-    .sort(compareRecentActivity));
-  let openMenuChat = $derived(openMenuId
-    ? chatState.conversations.find(chat => chat.id === openMenuId && chat.mode === mode) ?? null
+    .sort(compareLooseChatOrder));
+  let contextMenuChat = $derived(contextTarget?.type === 'chat'
+    ? chatState.conversations.find(chat => chat.id === contextTarget?.id && chat.mode === mode) ?? null
+    : null);
+  let contextMenuFolder = $derived(contextTarget?.type === 'folder'
+    ? folders.find(folder => folder.id === contextTarget?.id) ?? null
     : null);
 
   let observer: IntersectionObserver | null = null;
@@ -101,6 +104,8 @@
     clientY: number;
   } | null = null;
   const CHAT_INSERTION_DEAD_ZONE = 6;
+  const LONG_PRESS_DURATION = 525;
+  const LONG_PRESS_MOVE_TOLERANCE = 10;
 
   type ChatRowGeometry = {
     chat: Conversation;
@@ -112,13 +117,16 @@
   onMount(() => {
     if (layout === 'inline') initializeChats();
     document.addEventListener('click', closeMenuOnOutsideClick);
+    document.addEventListener('keydown', closeMenuOnEscape);
   });
 
   onDestroy(() => {
     if (observer) observer.disconnect();
     if (ghostFrame !== null) cancelAnimationFrame(ghostFrame);
     if (chatPreviewFrame !== null) cancelAnimationFrame(chatPreviewFrame);
+    cancelLongPress();
     document.removeEventListener('click', closeMenuOnOutsideClick);
+    document.removeEventListener('keydown', closeMenuOnEscape);
   });
 
   $effect(() => {
@@ -182,108 +190,111 @@
     if (layout === 'drawer') close();
   }
 
-  function toggleMenu(id: string, event: Event) {
-    if (interactionMode !== 'mobile') return;
-    event.stopPropagation();
-    revealedChatId = null;
-    if (openMenuId === id) {
-      closeChatMenu();
-      return;
-    }
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    openMenuId = id;
-    chatMenuPosition = {
-      x: Math.max(8, Math.min(rect.right - 148, window.innerWidth - 156)),
-      y: Math.min(rect.bottom + 6, window.innerHeight - 190),
-    };
-  }
-
   function closeMenuOnOutsideClick() {
-    closeChatMenu();
-    revealedChatId = null;
+    if (interactionMode === 'desktop') closeContextMenu();
   }
 
-  function closeChatMenu() {
-    openMenuId = null;
-    chatMenuPosition = null;
+  function closeMenuOnEscape(event: KeyboardEvent) {
+    if (event.key === 'Escape') closeContextMenu();
   }
 
-  function openChatMenuFromContext(id: string, event: MouseEvent) {
+  function closeContextMenu() {
+    contextTarget = null;
+    contextMenuPosition = null;
+  }
+
+  function itemKey(type: 'chat' | 'folder', id: string) {
+    return `${type}:${id}`;
+  }
+
+  function openContextMenuFromPointer(type: 'chat' | 'folder', id: string, event: MouseEvent) {
     if (interactionMode !== 'desktop') return;
     event.preventDefault();
     event.stopPropagation();
-    revealedChatId = null;
-    openMenuId = id;
-    chatMenuPosition = {
-      x: Math.max(8, Math.min(event.clientX, window.innerWidth - 156)),
-      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 190)),
+    contextTarget = { type, id };
+    contextMenuPosition = {
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - 176)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - (type === 'chat' ? 174 : 120))),
     };
   }
 
-  function beginChatSwipe(id: string, event: PointerEvent) {
-    if (interactionMode !== 'mobile' || event.pointerType !== 'touch') return;
-    chatSwipe = {
-      id,
+  function openContextMenuFromKeyboard(type: 'chat' | 'folder', id: string, event: KeyboardEvent) {
+    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    contextTarget = { type, id };
+    contextMenuPosition = interactionMode === 'desktop'
+      ? { x: Math.min(rect.left + 24, window.innerWidth - 176), y: Math.min(rect.bottom, window.innerHeight - 174) }
+      : null;
+  }
+
+  function beginLongPress(type: 'chat' | 'folder', id: string, event: PointerEvent) {
+    if (interactionMode !== 'mobile' || event.pointerType === 'mouse') return;
+    cancelLongPress();
+    const key = itemKey(type, id);
+    pressedItemKey = key;
+    longPress = {
+      key,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      direction: 'none',
+      timer: setTimeout(() => {
+        contextTarget = { type, id };
+        contextMenuPosition = null;
+        suppressActivationKey = key;
+        setTimeout(() => { if (suppressActivationKey === key) suppressActivationKey = null; }, 700);
+        pressedItemKey = null;
+        longPress = null;
+      }, LONG_PRESS_DURATION),
     };
   }
 
-  function updateChatSwipe(id: string, event: PointerEvent) {
-    const swipe = chatSwipe;
-    if (!swipe || swipe.id !== id || swipe.pointerId !== event.pointerId) return;
-
-    const horizontal = event.clientX - swipe.startX;
-    const vertical = event.clientY - swipe.startY;
-    if (swipe.direction === 'none') {
-      // Let the drawer and normal vertical scrolling own ambiguous gestures.
-      if (Math.abs(horizontal) < 24 || Math.abs(horizontal) <= Math.abs(vertical) * 1.35) return;
-      // A rightward gesture belongs to the drawer unless this row is already
-      // open and the gesture is explicitly closing its action reveal.
-      if (horizontal > 0 && revealedChatId !== id) return;
-      swipe.direction = horizontal < 0 ? 'left' : 'right';
-      (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  function updateLongPress(event: PointerEvent) {
+    if (!longPress || longPress.pointerId !== event.pointerId) return;
+    if (Math.hypot(event.clientX - longPress.startX, event.clientY - longPress.startY) > LONG_PRESS_MOVE_TOLERANCE) {
+      cancelLongPress();
     }
-
-    event.preventDefault();
-    event.stopPropagation();
-    if (swipe.direction === 'left') revealedChatId = id;
-    else if (revealedChatId === id) revealedChatId = null;
   }
 
-  function endChatSwipe(id: string, event: PointerEvent) {
-    const swipe = chatSwipe;
-    if (!swipe || swipe.id !== id || swipe.pointerId !== event.pointerId) return;
-    if (swipe.direction !== 'none') {
-      event.preventDefault();
-      suppressChatClick = id;
-      setTimeout(() => { if (suppressChatClick === id) suppressChatClick = null; }, 0);
-    }
-    const row = event.currentTarget as HTMLElement;
-    if (row.hasPointerCapture(event.pointerId)) row.releasePointerCapture(event.pointerId);
-    chatSwipe = null;
+  function cancelLongPress(event?: PointerEvent) {
+    if (event && longPress?.pointerId !== event.pointerId) return;
+    if (longPress) clearTimeout(longPress.timer);
+    longPress = null;
+    pressedItemKey = null;
+  }
+
+  function handleContextBackdropClick(event: MouseEvent) {
+    if (event.target === event.currentTarget) closeContextMenu();
   }
 
   function handleChatClick(id: string) {
-    if (suppressChatClick === id) return;
-    if (revealedChatId !== null) {
-      revealedChatId = null;
+    const key = itemKey('chat', id);
+    if (suppressActivationKey === key) {
+      suppressActivationKey = null;
       return;
     }
     void loadChat(id);
   }
 
+  function handleFolderClick(id: string, isCollapsed: boolean) {
+    const key = itemKey('folder', id);
+    if (suppressActivationKey === key) {
+      suppressActivationKey = null;
+      return;
+    }
+    void toggleFolderCollapse(id, isCollapsed);
+  }
+
   async function handlePin(id: string, event: Event) {
     event.stopPropagation();
-    closeChatMenu();
+    closeContextMenu();
     await togglePinConversation(id);
   }
 
   function startRename(id: string, currentTitle: string, event: Event) {
     event.stopPropagation();
-    closeChatMenu();
+    closeContextMenu();
     chatToRename = id;
     renameValue = currentTitle;
   }
@@ -318,7 +329,7 @@
 
   function promptDelete(id: string, event: Event) {
     event.stopPropagation();
-    closeChatMenu();
+    closeContextMenu();
     chatToDelete = id;
   }
 
@@ -358,7 +369,15 @@
   function chatsInFolder(folderId: string) {
     return displayedConversations.filter(
       chat => chat.mode === mode && effectiveFolderId(chat) === folderId,
-    );
+    ).sort(comparePinnedState);
+  }
+
+  function comparePinnedState(a: Conversation, b: Conversation) {
+    return Number(b.is_pinned) - Number(a.is_pinned);
+  }
+
+  function compareLooseChatOrder(a: Conversation, b: Conversation) {
+    return comparePinnedState(a, b) || compareRecentActivity(a, b);
   }
 
   function compareRecentActivity(a: Conversation, b: Conversation) {
@@ -401,6 +420,20 @@
     if (!id || !name) return;
     try { await renameChatFolder(id, name); }
     catch (error) { console.error('[Sidebar] Could not rename folder:', error); }
+  }
+
+  function startFolderRename(id: string, currentName: string, event: Event) {
+    event.stopPropagation();
+    closeContextMenu();
+    folderToRename = id;
+    folderRenameValue = currentName;
+  }
+
+  async function handleFolderDelete(id: string, event: Event) {
+    event.stopPropagation();
+    closeContextMenu();
+    try { await deleteChatFolder(id); }
+    catch (error) { console.error('[Sidebar] Could not delete folder:', error); }
   }
 
   async function toggleFolderCollapse(id: string, isCollapsed: boolean) {
@@ -685,23 +718,13 @@
 </script>
 
 {#snippet chatRow(chat: Conversation)}
-  <div class="relative w-full rounded-lg {interactionMode === 'mobile' ? 'overflow-hidden' : ''}">
-    {#if interactionMode === 'mobile' && revealedChatId === chat.id}
-      <button
-        type="button"
-        onclick={(event) => toggleMenu(chat.id, event)}
-        class="absolute inset-y-0 right-0 flex w-[72px] items-center justify-center rounded-r-lg border-l border-white/[0.06] bg-white/[0.035] text-xs font-medium text-gray-400 transition-colors active:bg-white/[0.08]"
-        aria-label={m.sidebar_aria_options()}
-      >
-        {m.sidebar_action_more()}
-      </button>
-    {/if}
+  <div class="relative w-full rounded-[10px]">
     <div
       role="button"
       tabindex="0"
       data-chat-row
       data-chat-id={chat.id}
-      draggable={chatToRename !== chat.id}
+      draggable={interactionMode === 'desktop' && chatToRename !== chat.id}
       ondragstart={(event) => beginDrag(event, 'chat', chat.id)}
       ondrag={(event) => updateDragGhost(event)}
       ondragend={endDrag}
@@ -738,22 +761,31 @@
         }
         void dropOnChat();
       }}
-      oncontextmenu={interactionMode === 'desktop' ? (event) => openChatMenuFromContext(chat.id, event) : undefined}
-      onpointerdown={interactionMode === 'mobile' ? (event) => beginChatSwipe(chat.id, event) : undefined}
-      onpointermove={interactionMode === 'mobile' ? (event) => updateChatSwipe(chat.id, event) : undefined}
-      onpointerup={interactionMode === 'mobile' ? (event) => endChatSwipe(chat.id, event) : undefined}
-      onpointercancel={interactionMode === 'mobile' ? (event) => endChatSwipe(chat.id, event) : undefined}
+      oncontextmenu={(event) => interactionMode === 'desktop' ? openContextMenuFromPointer('chat', chat.id, event) : event.preventDefault()}
+      onpointerdown={(event) => beginLongPress('chat', chat.id, event)}
+      onpointermove={updateLongPress}
+      onpointerup={cancelLongPress}
+      onpointercancel={cancelLongPress}
       onclick={() => handleChatClick(chat.id)}
-      onkeydown={(e) => e.key === 'Enter' && loadChat(chat.id)}
-      class="relative z-10 w-full text-left p-3 rounded-lg group transition-[transform,background-color,border-color,opacity] duration-150 border cursor-pointer
-             {interactionMode === 'mobile' ? 'touch-pan-y bg-ryokan-sidebar' : 'hover:bg-white/5'}
-             {interactionMode === 'mobile' && revealedChatId === chat.id ? '-translate-x-[72px]' : 'translate-x-0'}
+      onkeydown={(event) => {
+        openContextMenuFromKeyboard('chat', chat.id, event);
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); handleChatClick(chat.id); }
+      }}
+      aria-current={chatState.activeChatId === chat.id ? 'page' : undefined}
+      class="sidebar-item chat-row relative z-10 w-full text-left border cursor-pointer
+             {chatState.activeChatId === chat.id ? 'sidebar-item--active' : ''}
+             {pressedItemKey === itemKey('chat', chat.id) ? 'sidebar-item--pressed' : ''}
              {dragging?.type === 'chat' && dragging.id === chat.id ? 'opacity-40 border-transparent' : ''}
              {chatDrop?.id === chat.id && chatDrop.position === 'before' ? 'border-t-ryokan-accent border-x-transparent border-b-transparent' : ''}
              {chatDrop?.id === chat.id && chatDrop.position === 'after' ? 'border-b-ryokan-accent border-x-transparent border-t-transparent' : ''}
-             {chatDrop?.id !== chat.id ? 'border-transparent hover:border-white/5' : ''}"
+             {chatDrop?.id !== chat.id ? 'border-transparent' : ''}"
     >
-      <div class={chat.is_pinned && interactionMode === 'desktop' ? 'pr-9' : ''}>
+      <span class="chat-row-icon" class:chat-row-icon--pinned={chat.is_pinned} aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/>
+        </svg>
+      </span>
+      <div class="chat-row-copy">
         {#if chatToRename === chat.id}
           <div class="flex items-center gap-1.5" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
             <input
@@ -780,26 +812,19 @@
             </button>
           </div>
         {:else}
-          <div class="text-gray-200 text-sm font-medium group-hover:text-ryokan-accent truncate">
+          <div class="chat-row-title">
             {chat.title}
           </div>
-          <div class="text-gray-600 text-[10px] mt-1">
+          <div class="chat-row-date">
             {chat.formattedDate}
           </div>
         {/if}
       </div>
 
-      {#if chatToRename !== chat.id && chat.is_pinned && interactionMode === 'desktop'}
-        <div class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7">
-          <span
-            class="pointer-events-none absolute inset-0 flex items-center justify-center text-ryokan-accent opacity-70"
-            title={m.sidebar_title_pinned()}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
-            </svg>
-          </span>
-        </div>
+      {#if chatToRename !== chat.id && chat.is_pinned}
+        <span class="chat-pin" title={m.sidebar_title_pinned()} aria-label={m.sidebar_title_pinned()}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
+        </span>
       {/if}
     </div>
   </div>
@@ -808,7 +833,7 @@
 {#snippet chatActions(chat: Conversation)}
   <button
     onclick={(e) => handlePin(chat.id, e)}
-    class="w-full flex items-center gap-2.5 px-3 py-2.5 text-gray-300 hover:text-white hover:bg-white/[0.08] transition-colors text-left"
+    class="context-action"
   >
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="shrink-0 text-ryokan-accent/80">
       <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
@@ -817,7 +842,7 @@
   </button>
   <button
     onclick={(e) => startRename(chat.id, chat.title, e)}
-    class="w-full flex items-center gap-2.5 px-3 py-2.5 text-gray-300 hover:text-white hover:bg-white/[0.08] transition-colors text-left"
+    class="context-action"
   >
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
       <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -825,10 +850,10 @@
     </svg>
     {m.sidebar_action_rename()}
   </button>
-  <div class="border-t border-white/5 mx-2 my-0.5"></div>
+  <div class="context-separator"></div>
   <button
     onclick={(e) => promptDelete(chat.id, e)}
-    class="w-full flex items-center gap-2.5 px-3 py-2.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors text-left"
+    class="context-action context-action--danger"
   >
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
       <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
@@ -838,11 +863,27 @@
   </button>
 {/snippet}
 
+{#snippet folderActions(folder: { id: string; name: string })}
+  <button onclick={(event) => startFolderRename(folder.id, folder.name, event)} class="context-action">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+    </svg>
+    {m.sidebar_action_rename()}
+  </button>
+  <div class="context-separator"></div>
+  <button onclick={(event) => handleFolderDelete(folder.id, event)} class="context-action context-action--danger">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+      <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+    </svg>
+    {m.sidebar_action_delete()}
+  </button>
+{/snippet}
+
 {#snippet chatList()}
-  <div data-sidebar-list class="space-y-2">
-    <div class="flex items-center justify-between px-1">
-      <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-600">{m.sidebar_folders()}</span>
-      <button type="button" onclick={() => isCreatingFolder = true} class="w-6 h-6 rounded-md text-gray-500 hover:text-ryokan-accent hover:bg-white/5" aria-label={m.sidebar_new_folder()}>＋</button>
+  <div data-sidebar-list class="sidebar-list">
+    <div class="section-heading">
+      <span>{m.sidebar_folders()}</span>
+      <button type="button" onclick={() => isCreatingFolder = true} class="add-folder-button" aria-label={m.sidebar_new_folder()}>＋</button>
     </div>
 
     {#if isCreatingFolder}
@@ -881,12 +922,15 @@
         }}
       >
         <div
-          role="listitem"
-          class="group/folder flex items-center gap-2 rounded-lg border px-2 py-2 text-gray-300 transition-colors
+          role="button"
+          tabindex="0"
+          aria-expanded={!folder.is_collapsed}
+          class="sidebar-item folder-row border text-gray-300
+                 {pressedItemKey === itemKey('folder', folder.id) ? 'sidebar-item--pressed' : ''}
                  {folderDrop?.id === folder.id && folderDrop.position === 'before' ? 'border-t-ryokan-accent border-x-transparent border-b-transparent' : ''}
                  {folderDrop?.id === folder.id && folderDrop.position === 'after' ? 'border-b-ryokan-accent border-x-transparent border-t-transparent' : ''}
                  {folderDrop?.id !== folder.id ? 'border-transparent' : ''}"
-          draggable={folderToRename !== folder.id}
+          draggable={interactionMode === 'desktop' && folderToRename !== folder.id}
           ondragstart={(event) => beginDrag(event, 'folder', folder.id)}
           ondrag={(event) => updateDragGhost(event)}
           ondragend={endDrag}
@@ -914,8 +958,23 @@
             event.stopPropagation();
             void dropFolder(folder.id);
           }}
+          oncontextmenu={(event) => interactionMode === 'desktop' ? openContextMenuFromPointer('folder', folder.id, event) : event.preventDefault()}
+          onpointerdown={(event) => beginLongPress('folder', folder.id, event)}
+          onpointermove={updateLongPress}
+          onpointerup={cancelLongPress}
+          onpointercancel={cancelLongPress}
+          onclick={() => folderToRename !== folder.id && handleFolderClick(folder.id, folder.is_collapsed)}
+          onkeydown={(event) => {
+            openContextMenuFromKeyboard('folder', folder.id, event);
+            if (folderToRename !== folder.id && (event.key === 'Enter' || event.key === ' ')) {
+              event.preventDefault();
+              handleFolderClick(folder.id, folder.is_collapsed);
+            }
+          }}
         >
-          <svg class="shrink-0 text-gray-500" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H2v16h20V6H12l-2-2z"/></svg>
+          <span class="folder-row-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H2v16h20V6H12l-2-2z"/></svg>
+          </span>
           {#if folderToRename === folder.id}
             <input use:focusInput bind:value={folderRenameValue} onblur={finishFolderRename} onclick={(event) => event.stopPropagation()} onkeydown={(event) => {
               event.stopPropagation();
@@ -923,21 +982,9 @@
               if (event.key === 'Escape') folderToRename = null;
             }} class="min-w-0 flex-1 rounded bg-white/10 px-1.5 py-0.5 text-sm outline-none ring-1 ring-ryokan-accent/50" />
           {:else}
-            <button
-              type="button"
-              draggable="false"
-              aria-expanded={!folder.is_collapsed}
-              aria-label={folder.name}
-              onclick={(event) => { event.stopPropagation(); void toggleFolderCollapse(folder.id, folder.is_collapsed); }}
-              ondragstart={(event) => { event.preventDefault(); event.stopPropagation(); }}
-              class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-600 hover:bg-white/5 hover:text-gray-300"
-            >
-              <svg class="transition-transform duration-150 {folder.is_collapsed ? '-rotate-90' : ''}" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-            <span class="min-w-0 flex-1 truncate text-sm font-medium">{folder.name}</span>
-            <span class="text-[10px] text-gray-600">{chatsInFolder(folder.id).length}</span>
-            <button type="button" onclick={(event) => { event.stopPropagation(); folderToRename = folder.id; folderRenameValue = folder.name; }} class="opacity-70 lg:opacity-0 lg:group-hover/folder:opacity-100 text-gray-600 hover:text-gray-300" aria-label={m.sidebar_rename_folder()}>✎</button>
-            <button type="button" onclick={(event) => { event.stopPropagation(); deleteChatFolder(folder.id); }} class="opacity-70 lg:opacity-0 lg:group-hover/folder:opacity-100 text-gray-600 hover:text-red-400" aria-label={m.sidebar_delete_folder()}>×</button>
+            <span class="folder-row-name">{folder.name}</span>
+            <span class="folder-row-count">{chatsInFolder(folder.id).length}</span>
+            <svg class="folder-chevron {folder.is_collapsed ? '-rotate-90' : ''}" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
           {/if}
         </div>
         {#if !folder.is_collapsed}
@@ -978,7 +1025,7 @@
         void dropOnChat();
       }}
     >
-      <div class="px-1 py-1 text-[10px] font-semibold uppercase tracking-wider text-gray-600">{m.sidebar_loose_chats()}</div>
+      <div class="section-heading section-heading--chats">{m.sidebar_loose_chats()}</div>
       <div class="space-y-1 min-h-8">
         {#each looseChats as chat (chat.id)}
           <div data-chat-row-layout animate:flip={{ duration: 160 }}>
@@ -1048,11 +1095,11 @@
 {/snippet}
 
 {#if layout === 'inline'}
-  <aside class="w-64 h-full border-r border-white/5 flex flex-col shrink-0">
-    <div class="p-6 border-b border-white/5">
+  <aside class="sidebar-shell w-64 h-full border-r border-white/5 flex flex-col shrink-0">
+    <div class="sidebar-header">
       <h2 class="text-lg font-medium text-ryokan-accent">{m.history_title()}</h2>
     </div>
-    <div class="flex-1 overflow-y-auto p-4 space-y-2 min-h-0">
+    <div class="sidebar-scroll flex-1 overflow-y-auto min-h-0">
       {@render chatList()}
     </div>
     {@render navButtons()}
@@ -1066,27 +1113,43 @@
     class="fixed inset-0 w-full h-full bg-black/60 z-40 cursor-pointer border-none"
   ></button>
 
-  <aside class="fixed left-0 top-0 bottom-0 w-72 border-r border-white/5 shadow-2xl z-50 flex flex-col bg-ryokan-sidebar">
-    <div class="p-6 pt-[calc(1.5rem+env(safe-area-inset-top))] border-b border-white/5 flex justify-between items-center shrink-0">
+  <aside class="sidebar-shell fixed left-0 top-0 bottom-0 w-72 border-r border-white/5 shadow-2xl z-50 flex flex-col bg-ryokan-sidebar">
+    <div class="sidebar-header sidebar-header--drawer flex justify-between items-center shrink-0">
       <h2 class="text-lg font-medium text-ryokan-accent">{m.history_title()}</h2>
-      <button onclick={close} aria-label={m.history_close_label()} class="text-gray-500 hover:text-white">✕</button>
+      <button onclick={close} aria-label={m.history_close_label()} class="sidebar-close-button">✕</button>
     </div>
-    <div class="flex-1 overflow-y-auto p-4 space-y-2 min-h-0">
+    <div class="sidebar-scroll flex-1 overflow-y-auto min-h-0">
       {@render chatList()}
     </div>
     {@render navButtons()}
   </aside>
 {/if}
 
-{#if openMenuChat && chatMenuPosition}
+{#if interactionMode === 'desktop' && contextMenuPosition && (contextMenuChat || contextMenuFolder)}
   <div
     use:portal
-    class="fixed z-[1000] min-w-[148px] overflow-hidden rounded-lg border border-white/10 bg-ryokan-surface text-sm shadow-xl"
-    style:left={`${chatMenuPosition.x}px`}
-    style:top={`${chatMenuPosition.y}px`}
+    role="menu"
+    tabindex="-1"
+    class="context-menu fixed z-[1000]"
+    style:left={`${contextMenuPosition.x}px`}
+    style:top={`${contextMenuPosition.y}px`}
     transition:scale={{ duration: 100, start: 0.95 }}
   >
-    {@render chatActions(openMenuChat)}
+    {#if contextMenuChat}{@render chatActions(contextMenuChat)}
+    {:else if contextMenuFolder}{@render folderActions(contextMenuFolder)}{/if}
+  </div>
+{/if}
+
+{#if interactionMode === 'mobile' && (contextMenuChat || contextMenuFolder)}
+  <div use:portal class="context-sheet-backdrop" role="presentation" onclick={handleContextBackdropClick}>
+    <div class="context-sheet" role="dialog" tabindex="-1" aria-modal="true" aria-label={m.sidebar_aria_options()} transition:scale={{ duration: 120, start: 0.97 }}>
+      <div class="context-sheet-handle" aria-hidden="true"></div>
+      <div class="context-sheet-title">{contextMenuChat?.title ?? contextMenuFolder?.name}</div>
+      <div class="context-sheet-actions">
+        {#if contextMenuChat}{@render chatActions(contextMenuChat)}
+        {:else if contextMenuFolder}{@render folderActions(contextMenuFolder)}{/if}
+      </div>
+    </div>
   </div>
 {/if}
 
@@ -1119,3 +1182,67 @@
     </div>
   </div>
 {/if}
+
+<style>
+  .sidebar-shell { background:var(--color-ryokan-sidebar,#1e1f20); }
+  .sidebar-header { min-height:76px; display:flex; align-items:center; padding:16px 24px; border-bottom:1px solid rgba(255,255,255,.045); }
+  .sidebar-header--drawer { padding-top:calc(16px + env(safe-area-inset-top)); }
+  .sidebar-scroll { padding:16px 12px 22px; overflow-x:hidden; }
+  .sidebar-list { display:flex; flex-direction:column; gap:5px; }
+  .section-heading { min-height:32px; display:flex; align-items:center; justify-content:space-between; padding:0 8px; color:#626267; font-size:10px; font-weight:650; letter-spacing:.09em; text-transform:uppercase; }
+  .section-heading--chats { margin-top:8px; }
+  .add-folder-button,.sidebar-close-button { width:36px; height:36px; display:grid; place-items:center; border-radius:9px; color:#6d6d72; cursor:pointer; transition:color .15s,background .15s,transform .1s; }
+  .add-folder-button { margin-right:-6px; font-size:18px; font-weight:350; }
+  .add-folder-button:hover,.sidebar-close-button:hover { color:#d4b483; background:rgba(255,255,255,.04); }
+  .add-folder-button:active,.sidebar-close-button:active { transform:scale(.96); background:rgba(255,255,255,.07); }
+  .sidebar-item { box-sizing:border-box; border-radius:10px; user-select:none; -webkit-user-select:none; transition:background .14s ease,color .14s ease,border-color .14s ease,opacity .14s ease; }
+  .sidebar-item:active,.sidebar-item--pressed { background:rgba(212,180,131,.075); }
+  .sidebar-item--active { background:rgba(212,180,131,.07); }
+  .sidebar-item:focus-visible { outline:1px solid rgba(212,180,131,.48); outline-offset:-1px; }
+  .folder-row { width:100%; min-height:44px; display:flex; align-items:center; gap:10px; padding:6px 9px; cursor:pointer; touch-action:pan-y; }
+  .folder-row-icon { width:30px; height:30px; flex:0 0 auto; display:grid; place-items:center; border-radius:9px; color:#a99473; background:rgba(212,180,131,.065); }
+  .folder-row-name { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#d4d1ce; font-size:13px; font-weight:610; }
+  .folder-row-count { min-width:16px; color:#5e5e63; font-size:10px; text-align:right; font-variant-numeric:tabular-nums; }
+  .folder-chevron { flex:0 0 auto; color:#55555a; transition:transform .16s ease,color .14s ease; }
+  .folder-row:hover .folder-chevron { color:#858589; }
+  .chat-row { min-height:48px; display:flex; align-items:center; gap:10px; padding:7px 9px; touch-action:pan-y; }
+  .chat-row-icon { width:30px; height:30px; flex:0 0 auto; display:grid; place-items:center; border-radius:9px; color:#64646a; background:rgba(255,255,255,.025); }
+  .chat-row-icon--pinned { color:#b79b71; background:rgba(212,180,131,.055); }
+  .chat-row-copy { min-width:0; flex:1; }
+  .chat-row-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#cfcdca; font-size:13px; font-weight:570; line-height:1.25; transition:color .14s; }
+  .chat-row:hover .chat-row-title,.sidebar-item--active .chat-row-title { color:#e4d8c6; }
+  .chat-row-date { margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#5a5a60; font-size:10px; line-height:1.2; }
+  .chat-pin { width:20px; height:20px; flex:0 0 auto; display:grid; place-items:center; color:#a88e67; opacity:.72; }
+  :global(.context-menu) { min-width:168px; overflow:hidden; padding:5px; border:1px solid rgba(255,255,255,.085); border-radius:11px; background:#29292b; color:#d3d1d0; font-size:12px; box-shadow:0 16px 38px rgba(0,0,0,.42),0 1px 0 rgba(255,255,255,.035) inset; }
+  :global(.context-action) { width:100%; min-height:36px; display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:8px; color:#c3c1c0; text-align:left; cursor:pointer; transition:color .12s,background .12s; }
+  :global(.context-action:hover) { color:#f0eeeb; background:rgba(255,255,255,.065); }
+  :global(.context-action--danger) { color:#dd8585; }
+  :global(.context-action--danger:hover) { color:#f09a9a; background:rgba(239,68,68,.09); }
+  :global(.context-separator) { height:1px; margin:4px 7px; background:rgba(255,255,255,.055); }
+  :global(.context-sheet-backdrop) { position:fixed; inset:0; z-index:1000; display:flex; align-items:flex-end; padding:12px; padding-bottom:calc(12px + env(safe-area-inset-bottom)); background:rgba(0,0,0,.56); backdrop-filter:blur(2px); }
+  :global(.context-sheet) { width:100%; overflow:hidden; padding:7px 7px 8px; border:1px solid rgba(255,255,255,.075); border-radius:17px; background:#262628; box-shadow:0 -12px 38px rgba(0,0,0,.36); transform-origin:bottom center; }
+  :global(.context-sheet-handle) { width:34px; height:4px; margin:1px auto 8px; border-radius:99px; background:rgba(255,255,255,.14); }
+  :global(.context-sheet-title) { padding:5px 12px 10px; overflow:hidden; color:#747479; font-size:11px; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
+  :global(.context-sheet-actions .context-action) { min-height:48px; padding:11px 13px; border-radius:11px; font-size:14px; }
+  @media (hover:hover) and (pointer:fine) {
+    .sidebar-item:hover { background:rgba(255,255,255,.05); }
+    .sidebar-item--active:hover { background:rgba(212,180,131,.095); }
+  }
+  @media (max-width:767px) {
+    .sidebar-scroll { padding:15px 12px 24px; }
+    .section-heading { min-height:38px; padding-left:10px; }
+    .add-folder-button,.sidebar-close-button { width:44px; height:44px; }
+    .add-folder-button { margin-right:-8px; }
+    .folder-row { min-height:54px; gap:11px; padding:7px 10px; }
+    .folder-row-icon { width:36px; height:36px; border-radius:10px; }
+    .folder-row-icon svg { width:22px; height:22px; }
+    .folder-row-name { font-size:14px; }
+    .folder-row-count { font-size:11px; }
+    .chat-row { min-height:54px; gap:11px; padding:7px 10px; }
+    .chat-row-icon { width:34px; height:34px; }
+    .chat-row-title { font-size:13.5px; }
+    .chat-row-date { font-size:10.5px; }
+    .sidebar-item--active,.sidebar-item--active:hover { background:rgba(212,180,131,.07); }
+    .sidebar-item:active,.sidebar-item--pressed { background:rgba(212,180,131,.09); }
+  }
+</style>
