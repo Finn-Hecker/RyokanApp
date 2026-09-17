@@ -4,6 +4,10 @@ use crate::database::get_connection;
 use base64::{engine::general_purpose, Engine as _};
 use image::ImageFormat;
 use std::io::Cursor;
+use serde_json::{json, Value};
+use crate::database::characters::{parse_bundled_roles, StoredBundledRoleSnapshot};
+
+const RYOKAN_EXTENSION_KEY: &str = "ryokan";
 
 static CRC_TABLE: [u32; 256] = generate_crc32_table();
 
@@ -69,48 +73,47 @@ fn inject_png_text_chunk(png: Vec<u8>, keyword: &[u8], payload: &[u8]) -> Result
     Ok(result)
 }
 
-/// Exports a character as a SillyTavern-compatible V2 character card (PNG).
-///
-/// Loads character data and avatar from SQLite, builds a V2-spec JSON payload,
-/// re-encodes the avatar to PNG, and injects the Base64 JSON as a tEXt chunk.
-#[tauri::command]
-pub async fn export_character_card(app: AppHandle, id: String) -> Result<Vec<u8>, String> {
-    let conn = get_connection(&app)?;
+fn role_avatar_data_url(encoded: &str) -> String {
+    let mime = general_purpose::STANDARD.decode(encoded)
+        .ok()
+        .and_then(|bytes| image::guess_format(&bytes).ok())
+        .map(|format| match format {
+            ImageFormat::Png => "image/png",
+            ImageFormat::Jpeg => "image/jpeg",
+            ImageFormat::WebP => "image/webp",
+            ImageFormat::Gif => "image/gif",
+            _ => "application/octet-stream",
+        })
+        .unwrap_or("application/octet-stream");
+    format!("data:{mime};base64,{encoded}")
+}
 
-    let row: (String, String, String, String, String, String, String, String, String, Option<Vec<u8>>) =
-        conn.query_row(
-            "SELECT name, desc, personality, scenario, greeting, \
-                    alternate_greetings, mes_example, creator_notes, tags, avatar \
-             FROM characters WHERE id = ?1",
-            params![id],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, String>(5)?,
-                    row.get::<_, String>(6)?,
-                    row.get::<_, String>(7)?,
-                    row.get::<_, String>(8)?,
-                    row.get::<_, Option<Vec<u8>>>(9)?,
-                ))
-            },
-        )
-        .map_err(|e| format!("Database error: {}", e))?;
+fn portable_roles(roles: &[StoredBundledRoleSnapshot]) -> Value {
+    Value::Array(roles.iter().map(|role| {
+        let mut value = json!({
+            "id": role.id,
+            "name": role.name,
+            "prompt": role.prompt,
+        });
+        let object = value.as_object_mut().expect("role JSON is an object");
+        if let Some(source_role_id) = role.source_role_id.as_ref() {
+            object.insert("source_role_id".into(), json!(source_role_id));
+        }
+        if let Some(avatar) = role.avatar.as_deref().filter(|avatar| !avatar.is_empty()) {
+            object.insert("avatar".into(), json!(role_avatar_data_url(avatar)));
+        }
+        value
+    }).collect())
+}
 
-    let (name, desc, personality, scenario, greeting,
-         alt_greetings_json, mes_example, creator_notes, tags_json, avatar_blob) = row;
-
-    let alternate_greetings: Vec<String> =
-        serde_json::from_str(&alt_greetings_json).unwrap_or_default();
-    let tags: Vec<String> =
-        serde_json::from_str(&tags_json).unwrap_or_default();
-
-    let card_json = serde_json::json!({
-        "spec": "chara_card_v2",
-        "spec_version": "2.0",
+pub(crate) fn build_card_json(
+    name: &str, desc: &str, personality: &str, scenario: &str, greeting: &str,
+    alternate_greetings: Vec<String>, mes_example: &str, creator_notes: &str,
+    tags: Vec<String>, role_policy: &str, bundled_roles: &[StoredBundledRoleSnapshot],
+) -> Value {
+    json!({
+        "spec": "chara_card_v3",
+        "spec_version": "3.0",
         "data": {
             "name": name,
             "description": desc,
@@ -125,9 +128,66 @@ pub async fn export_character_card(app: AppHandle, id: String) -> Result<Vec<u8>
             "creator": "",
             "system_prompt": "",
             "post_history_instructions": "",
-            "extensions": {}
+            "group_only_greetings": [],
+            "assets": [{ "type": "icon", "uri": "ccdefault:", "name": "main", "ext": "png" }],
+            "extensions": {
+                (RYOKAN_EXTENSION_KEY): {
+                    "version": 1,
+                    "role_policy": role_policy,
+                    "bundled_roles": portable_roles(bundled_roles)
+                }
+            }
         }
-    });
+    })
+}
+
+/// Exports a character as a standards-compatible Character Card V3 PNG.
+///
+/// Loads character data and avatar from SQLite, builds a V3-spec JSON payload,
+/// re-encodes the avatar to PNG, and injects the Base64 JSON as a tEXt chunk.
+#[tauri::command]
+pub async fn export_character_card(app: AppHandle, id: String) -> Result<Vec<u8>, String> {
+    let conn = get_connection(&app)?;
+
+    let row: (String, String, String, String, String, String, String, String, String, Option<Vec<u8>>, String, String) =
+        conn.query_row(
+            "SELECT name, desc, personality, scenario, greeting, \
+                    alternate_greetings, mes_example, creator_notes, tags, avatar, role_policy, bundled_roles \
+             FROM characters WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, String>(8)?,
+                    row.get::<_, Option<Vec<u8>>>(9)?,
+                    row.get::<_, String>(10)?,
+                    row.get::<_, String>(11)?,
+                ))
+            },
+        )
+        .map_err(|e| format!("Database error: {}", e))?;
+
+    let (name, desc, personality, scenario, greeting,
+         alt_greetings_json, mes_example, creator_notes, tags_json, avatar_blob,
+         role_policy, bundled_roles_json) = row;
+
+    let alternate_greetings: Vec<String> =
+        serde_json::from_str(&alt_greetings_json).unwrap_or_default();
+    let tags: Vec<String> =
+        serde_json::from_str(&tags_json).unwrap_or_default();
+
+    let bundled_roles = parse_bundled_roles(&bundled_roles_json)?;
+    let card_json = build_card_json(
+        &name, &desc, &personality, &scenario, &greeting, alternate_greetings,
+        &mes_example, &creator_notes, tags, &role_policy, &bundled_roles,
+    );
 
     let json_str = serde_json::to_string(&card_json)
         .map_err(|e| format!("JSON serialization error: {}", e))?;
@@ -153,5 +213,5 @@ pub async fn export_character_card(app: AppHandle, id: String) -> Result<Vec<u8>
         }
     };
 
-    inject_png_text_chunk(png_bytes, b"chara", base64_payload.as_bytes())
+    inject_png_text_chunk(png_bytes, b"ccv3", base64_payload.as_bytes())
 }

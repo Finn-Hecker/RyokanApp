@@ -11,15 +11,15 @@ use std::io::Cursor;
 const ROLE_POLICY_OPEN: &str = "open";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct StoredBundledRoleSnapshot {
-    id: String,
-    source_role_id: Option<String>,
-    name: String,
-    prompt: String,
+pub(crate) struct StoredBundledRoleSnapshot {
+    pub(crate) id: String,
+    pub(crate) source_role_id: Option<String>,
+    pub(crate) name: String,
+    pub(crate) prompt: String,
     /// Base64-encoded persisted image bytes. Kept inside the Card JSON so the
     /// snapshot owns the avatar even after its source Role is deleted.
     #[serde(skip_serializing_if = "Option::is_none")]
-    avatar: Option<String>,
+    pub(crate) avatar: Option<String>,
 }
 
 /// Lightweight representation used by normal Character reads. Avatar bytes
@@ -52,7 +52,7 @@ fn validate_role_policy(policy: &str) -> Result<(), String> {
     }
 }
 
-fn parse_bundled_roles(raw: &str) -> Result<Vec<StoredBundledRoleSnapshot>, String> {
+pub(crate) fn parse_bundled_roles(raw: &str) -> Result<Vec<StoredBundledRoleSnapshot>, String> {
     serde_json::from_str(raw).map_err(|e| format!("Invalid bundled_roles data: {e}"))
 }
 
@@ -179,6 +179,9 @@ pub struct CreateCharacterPayload {
     pub avatar: Option<String>,
     pub world_info_ids: Option<Vec<String>>,
     pub role_policy: Option<String>,
+    /// Used by Character Card imports. These are already independent snapshots;
+    /// they must not be resolved through the receiving installation's Roles.
+    pub bundled_roles: Option<Vec<StoredBundledRoleSnapshot>>,
 }
 
 fn normalize_play_mode(play_mode: Option<&str>) -> &'static str {
@@ -236,6 +239,16 @@ fn process_avatar(base64_img: &str) -> Result<Vec<u8>, String> {
     } else {
         Ok(img_bytes)
     }
+}
+
+fn image_data_url(bytes: Vec<u8>) -> String {
+    let mime = match image::guess_format(&bytes).ok() {
+        Some(ImageFormat::Png) => "image/png",
+        Some(ImageFormat::Jpeg) => "image/jpeg",
+        Some(ImageFormat::Gif) => "image/gif",
+        _ => "image/webp",
+    };
+    format!("data:{mime};base64,{}", general_purpose::STANDARD.encode(bytes))
 }
 
 /// Returns all saved characters, WITHOUT avatar bytes.
@@ -305,7 +318,7 @@ pub async fn get_character_avatar(app: AppHandle, id: String) -> Result<Option<S
     ).map_err(|e| e.to_string())?;
 
     Ok(avatar_blob.filter(|b| !b.is_empty()).map(|bytes| {
-        format!("data:image/webp;base64,{}", general_purpose::STANDARD.encode(bytes))
+        image_data_url(bytes)
     }))
 }
 
@@ -321,8 +334,8 @@ pub async fn get_bundled_role_avatar(
         .find(|snapshot| snapshot.id == snapshot_id)
         .ok_or_else(|| "Bundled Role snapshot not found".to_string())?;
     Ok(snapshot.avatar.filter(|avatar| !avatar.is_empty()).map(|avatar| {
-        format!("data:image/webp;base64,{avatar}")
-    }))
+        general_purpose::STANDARD.decode(avatar).ok().map(image_data_url)
+    }).flatten())
 }
 
 #[tauri::command]
@@ -346,6 +359,9 @@ pub async fn create_character(app: AppHandle, payload: CreateCharacterPayload) -
     let play_mode = normalize_play_mode(payload.play_mode.as_deref());
     let role_policy = payload.role_policy.as_deref().unwrap_or(ROLE_POLICY_OPEN);
     validate_role_policy(role_policy)?;
+    let bundled_roles_json = serde_json::to_string(
+        &payload.bundled_roles.unwrap_or_default()
+    ).map_err(|e| format!("Invalid bundled Role snapshots: {e}"))?;
     let world_info_ids_json = serde_json::to_string(
         &payload.world_info_ids.unwrap_or_default()
     ).unwrap_or_else(|_| "[]".to_string());
@@ -355,7 +371,7 @@ pub async fn create_character(app: AppHandle, payload: CreateCharacterPayload) -
             (id, name, desc, personality, scenario, greeting,
              alternate_greetings, mes_example, creator_notes, tags,
              v3_spec, initials, color, play_mode, avatar, world_info_ids, role_policy, bundled_roles)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL, ?15, ?16, '[]')",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL, ?15, ?16, ?17)",
         params![
             new_id,
             payload.name,
@@ -373,6 +389,7 @@ pub async fn create_character(app: AppHandle, payload: CreateCharacterPayload) -
             play_mode,
             world_info_ids_json,
             role_policy,
+            bundled_roles_json,
         ],
     ).map_err(|e| e.to_string())?;
 

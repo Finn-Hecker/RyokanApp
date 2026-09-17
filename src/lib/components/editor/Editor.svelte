@@ -4,7 +4,7 @@
   import { appState } from '$lib/stores/appState.svelte';
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { addBundledRoleSnapshot, characterState, normalizePlayMode, removeBundledRoleSnapshot, setCharacterRolePolicy, toggleHideCharacter } from '$lib/stores/characterStore.svelte';
-  import type { BundledRoleSnapshot, PlayMode, RolePolicy } from '$lib/stores/characterStore.svelte';
+  import type { BundledRoleSnapshot, PlayMode, PortableBundledRoleSnapshot, RolePolicy } from '$lib/stores/characterStore.svelte';
   import { roleState } from '$lib/stores/roleStore.svelte';
   import * as m from '$lib/paraglide/messages';
 
@@ -66,6 +66,7 @@
   let rolePolicy = $state<RolePolicy>('open');
   let bundledRoles = $state<BundledRoleSnapshot[]>([]);
   let pendingBundledRoles = $state<Array<{ tempId: string; roleId: string }>>([]);
+  let importedBundledRoles = $state<PortableBundledRoleSnapshot[]>([]);
   let avatarPreview = $state<string | null>(null);
   let avatarChanged = $state(true);
 
@@ -219,6 +220,7 @@
       await removeBundledRoleSnapshot(String(editChar.id), snapshotId);
     }
     pendingBundledRoles = pendingBundledRoles.filter((pending) => pending.tempId !== snapshotId);
+    importedBundledRoles = importedBundledRoles.filter((role) => role.id !== snapshotId);
     bundledRoles = bundledRoles.filter((role) => role.id !== snapshotId);
   }
 
@@ -248,6 +250,15 @@
       }
 
       charPlayMode = result.play_mode ?? 'solo';
+      rolePolicy = result.role_policy ?? 'open';
+      importedBundledRoles = result.bundled_roles ?? [];
+      bundledRoles = importedBundledRoles.map((role) => ({
+        id: role.id,
+        source_role_id: role.source_role_id,
+        name: role.name,
+        prompt: role.prompt,
+        has_avatar: !!role.avatar,
+      }));
     } catch (err) {
       console.warn('Import failed:', err);
     }
@@ -269,6 +280,7 @@
             // New restricted Characters are first created open, then their
             // snapshots are persisted, and only then made restricted.
             role_policy: editChar?.isCustom ? rolePolicy : 'open',
+            bundled_roles: editChar?.isCustom ? undefined : importedBundledRoles,
           },
           editChar,
           avatarPreview,

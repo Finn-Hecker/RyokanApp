@@ -13,6 +13,15 @@ export interface BundledRoleSnapshot {
     avatarUrl?: string;
 }
 
+export interface PortableBundledRoleSnapshot {
+    id: string;
+    source_role_id: string | null;
+    name: string;
+    prompt: string;
+    /** Base64 image bytes returned only while importing a portable card. */
+    avatar?: string | null;
+}
+
 export interface Character {
     id: string | number;
     name: string;
@@ -39,6 +48,7 @@ export interface Character {
 export type CharacterInput = Pick<Character, 'name' | 'prompt' | 'greeting' | 'initials' | 'color' | 'play_mode' | 'alternate_greetings' | 'world_info_ids'> & {
     avatar?: string | null;
     role_policy?: RolePolicy;
+    bundled_roles?: PortableBundledRoleSnapshot[];
 };
 
 export const characterState = $state({
@@ -139,7 +149,10 @@ export async function createCharacter(charData: CharacterInput) {
         avatarUrl: charData.avatar || undefined,
         world_info_ids: charData.world_info_ids ?? [],
         role_policy: charData.role_policy ?? 'open',
-        bundled_roles: [],
+        bundled_roles: (charData.bundled_roles ?? []).map(role => ({
+            ...role,
+            has_avatar: !!role.avatar,
+        })),
     };
 
     characterState.allCharacters = [
@@ -161,6 +174,7 @@ export async function createCharacter(charData: CharacterInput) {
                 play_mode: charData.play_mode,
                 world_info_ids: charData.world_info_ids ?? [],
                 role_policy: charData.role_policy ?? 'open',
+                bundled_roles: charData.bundled_roles ?? [],
             }
         });
 
@@ -196,9 +210,10 @@ export async function updateCharacter(id: string, charData: CharacterInput) {
             }
         });
 
+        const { bundled_roles: _portableBundledRoles, ...displayData } = charData;
         characterState.allCharacters = characterState.allCharacters.map(c =>
             c.id === id
-                ? { ...c, ...charData, role_policy: charData.role_policy ?? c.role_policy, id, isCustom: true }
+                ? { ...c, ...displayData, role_policy: charData.role_policy ?? c.role_policy, id, isCustom: true }
                 : c
         );
 

@@ -2,6 +2,10 @@ use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::command;
+use crate::database::characters::StoredBundledRoleSnapshot;
+use std::collections::HashSet;
+
+const RYOKAN_EXTENSION_KEY: &str = "ryokan";
 
 /// Extracted metadata from AI character cards, mapping to community formats (e.g., V2/V3).
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -17,6 +21,8 @@ pub struct CharacterMetadata {
     pub tags: Vec<String>,
     pub v3_spec: bool,
     pub prompt: String,
+    pub role_policy: String,
+    pub bundled_roles: Vec<StoredBundledRoleSnapshot>,
 }
 
 // Manually parses PNG chunks to avoid heavy image dependencies and ensure zero-lag extraction.
@@ -56,11 +62,11 @@ pub async fn parse_character_card(image_data: Vec<u8>) -> Result<CharacterMetada
         return Err("No text data found in the PNG.".to_string());
     }
 
-    // Keywords used by V2/V3 character card standards to prefix the payload.
-    let keywords = ["chara\0", "chara", "ccv3\0", "ccv3", "character", "data", "json", "persona"];
+    // Prefer a V3 chunk when a compatibility V2 chunk is also present, as CCv3 requires.
+    let keywords = ["ccv3\0", "ccv3", "chara\0", "chara", "character", "data", "json", "persona"];
 
-    for text in text_chunks {
-        for keyword in keywords.iter() {
+    for keyword in keywords.iter() {
+        for text in &text_chunks {
             if text.to_lowercase().starts_with(keyword) {
                 let raw_data = text[keyword.len()..].trim_matches('\0');
 
@@ -85,7 +91,7 @@ pub async fn parse_character_card(image_data: Vec<u8>) -> Result<CharacterMetada
 
 // Maps JSON fields to CharacterMetadata, handling legacy and nested formats.
 fn map_json_to_metadata(json: &Value) -> Option<CharacterMetadata> {
-    let mut meta = CharacterMetadata::default();
+    let mut meta = CharacterMetadata { role_policy: "open".into(), ..Default::default() };
     let mut found_any = false;
 
     // V2 cards often wrap the actual metadata inside a "data" object.
@@ -129,8 +135,19 @@ fn map_json_to_metadata(json: &Value) -> Option<CharacterMetadata> {
         }
     }
 
-    if root.get("spec").is_some() || root.get("spec_version").is_some() {
-        meta.v3_spec = true;
+    meta.v3_spec = json.get("spec").and_then(Value::as_str) == Some("chara_card_v3")
+        || json.get("spec_version").and_then(Value::as_str) == Some("3.0");
+
+    if let Some(extension) = root.get("extensions").and_then(|value| value.get(RYOKAN_EXTENSION_KEY)) {
+        if let Ok(mut role_data) = serde_json::from_value::<RyokanRoleExtension>(extension.clone()) {
+            if valid_role_extension(&role_data) {
+                for role in &mut role_data.bundled_roles {
+                    role.avatar = role.avatar.take().and_then(normalize_role_avatar);
+                }
+                meta.role_policy = role_data.role_policy;
+                meta.bundled_roles = role_data.bundled_roles;
+            }
+        }
     }
 
     meta.prompt = combine_legacy_prompt(
@@ -147,6 +164,37 @@ fn map_json_to_metadata(json: &Value) -> Option<CharacterMetadata> {
     }
 
     if found_any { Some(meta) } else { None }
+}
+
+#[derive(Deserialize)]
+struct RyokanRoleExtension {
+    version: u32,
+    role_policy: String,
+    #[serde(default)]
+    bundled_roles: Vec<StoredBundledRoleSnapshot>,
+}
+
+fn valid_role_extension(extension: &RyokanRoleExtension) -> bool {
+    if extension.version != 1
+        || !matches!(extension.role_policy.as_str(), "open" | "restricted")
+        || (extension.role_policy == "restricted" && extension.bundled_roles.is_empty())
+    {
+        return false;
+    }
+    let mut ids = HashSet::new();
+    extension.bundled_roles.iter().all(|role| {
+        !role.id.trim().is_empty() && !role.name.trim().is_empty() && ids.insert(role.id.as_str())
+    })
+}
+
+fn normalize_role_avatar(avatar: String) -> Option<String> {
+    let encoded = avatar.split_once(",")
+        .filter(|(prefix, _)| prefix.starts_with("data:") && prefix.ends_with(";base64"))
+        .map(|(_, encoded)| encoded)
+        .unwrap_or(&avatar);
+    general_purpose::STANDARD.decode(encoded).ok()
+        .filter(|bytes| !bytes.is_empty() && image::guess_format(bytes).is_ok())
+        .map(|_| encoded.to_string())
 }
 
 /// Adapts legacy rows and imported cards without changing the database schema.
@@ -168,6 +216,23 @@ pub fn combine_legacy_prompt(description: &str, personality: &str, scenario: &st
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::characters::StoredBundledRoleSnapshot;
+    use crate::export::build_card_json;
+
+    fn v3_card(extension: Value) -> Value {
+        serde_json::json!({
+            "spec": "chara_card_v3",
+            "spec_version": "3.0",
+            "data": {
+                "name": "Rin", "description": "Free prompt", "personality": "",
+                "scenario": "", "first_mes": "Hello", "mes_example": "",
+                "creator_notes": "", "alternate_greetings": [], "tags": [],
+                "character_version": "", "creator": "", "system_prompt": "",
+                "post_history_instructions": "", "group_only_greetings": [],
+                "extensions": extension
+            }
+        })
+    }
 
     #[test]
     fn combines_legacy_content_without_greetings_or_notes() {
@@ -193,6 +258,92 @@ mod tests {
         assert_eq!(meta.first_mes.as_deref(), Some("Hi"));
         assert_eq!(combine_legacy_prompt(prompt, "", " ", ""), prompt);
         assert_eq!(combine_legacy_prompt("", "Kind", "", ""), "Personality\nKind");
+    }
+
+    #[test]
+    fn ordinary_v3_card_keeps_normal_role_defaults() {
+        let meta = map_json_to_metadata(&v3_card(serde_json::json!({
+            "foreign_app": { "preserved_by_that_app": true }
+        }))).unwrap();
+        assert!(meta.v3_spec);
+        assert_eq!(meta.prompt, "Free prompt");
+        assert_eq!(meta.role_policy, "open");
+        assert!(meta.bundled_roles.is_empty());
+    }
+
+    #[test]
+    fn open_character_without_roles_round_trips() {
+        let card = build_card_json(
+            "Rin", "Free prompt", "", "", "Hello", vec![], "", "", vec![],
+            "open", &[],
+        );
+        let meta = map_json_to_metadata(&card).unwrap();
+        assert!(meta.v3_spec);
+        assert_eq!(meta.role_policy, "open");
+        assert!(meta.bundled_roles.is_empty());
+    }
+
+    #[test]
+    fn bundled_roles_round_trip_with_identity_duplicate_names_and_avatar() {
+        let avatar = general_purpose::STANDARD.encode([
+            137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82,
+            0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137,
+        ]);
+        let roles = vec![
+            StoredBundledRoleSnapshot {
+                id: "snapshot-a".into(), source_role_id: Some("local-a".into()),
+                name: "Guide".into(), prompt: "First prompt".into(), avatar: Some(avatar.clone()),
+            },
+            StoredBundledRoleSnapshot {
+                id: "snapshot-b".into(), source_role_id: None,
+                name: "Guide".into(), prompt: "Second prompt".into(), avatar: None,
+            },
+        ];
+        let card = build_card_json(
+            "Rin", "Free prompt", "", "", "Hello", vec![], "", "", vec![],
+            "open", &roles,
+        );
+        let meta = map_json_to_metadata(&card).unwrap();
+        assert_eq!(meta.role_policy, "open");
+        assert_eq!(meta.bundled_roles.len(), 2);
+        assert_eq!(meta.bundled_roles[0].id, "snapshot-a");
+        assert_eq!(meta.bundled_roles[0].source_role_id.as_deref(), Some("local-a"));
+        assert_eq!(meta.bundled_roles[0].name, "Guide");
+        assert_eq!(meta.bundled_roles[0].prompt, "First prompt");
+        assert_eq!(meta.bundled_roles[0].avatar.as_deref(), Some(avatar.as_str()));
+        assert_eq!(meta.bundled_roles[1].id, "snapshot-b");
+        assert_eq!(meta.bundled_roles[1].name, "Guide");
+        assert_eq!(meta.bundled_roles[1].prompt, "Second prompt");
+    }
+
+    #[test]
+    fn restricted_character_with_bundled_role_round_trips() {
+        let roles = vec![StoredBundledRoleSnapshot {
+            id: "standalone".into(), source_role_id: None, name: "Player".into(),
+            prompt: "Act independently".into(), avatar: None,
+        }];
+        let card = build_card_json(
+            "Rin", "Free prompt", "", "", "Hello", vec![], "", "", vec![],
+            "restricted", &roles,
+        );
+        let meta = map_json_to_metadata(&card).unwrap();
+        assert_eq!(meta.role_policy, "restricted");
+        assert_eq!(meta.bundled_roles[0].source_role_id, None);
+        assert_eq!(meta.bundled_roles[0].prompt, "Act independently");
+    }
+
+    #[test]
+    fn malformed_ryokan_metadata_does_not_break_standard_card() {
+        for malformed in [
+            serde_json::json!({ "ryokan": "not an object" }),
+            serde_json::json!({ "ryokan": { "version": 1, "role_policy": "invalid", "bundled_roles": [] } }),
+            serde_json::json!({ "ryokan": { "version": 1, "role_policy": "restricted", "bundled_roles": [{ "name": "missing fields" }] } }),
+        ] {
+            let meta = map_json_to_metadata(&v3_card(malformed)).unwrap();
+            assert_eq!(meta.name.as_deref(), Some("Rin"));
+            assert_eq!(meta.role_policy, "open");
+            assert!(meta.bundled_roles.is_empty());
+        }
     }
 
     #[tokio::test]
