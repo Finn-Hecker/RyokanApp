@@ -1065,26 +1065,18 @@
   <div class="p-3 border-t border-white/5 flex gap-2 shrink-0">
     <button
       onclick={handleRolesClick}
-      class="flex-1 flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl
-             bg-white/[0.03] hover:bg-white/[0.07]
-             border border-white/[0.06] hover:border-ryokan-accent/40
-             text-gray-500 hover:text-ryokan-accent
-             transition-all duration-200 active:scale-[0.97]"
+      class="bottom-nav-button"
     >
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>
       </svg>
       <span class="text-[10px] font-medium leading-none tracking-wide text-current opacity-70">{m.sidebar_roles()}</span>
     </button>
     <button
       onclick={handleWorldInfoClick}
-      class="flex-1 flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl
-             bg-white/[0.03] hover:bg-white/[0.07]
-             border border-white/[0.06] hover:border-ryokan-accent/40
-             text-gray-500 hover:text-ryokan-accent
-             transition-all duration-200 active:scale-[0.97]"
+      class="bottom-nav-button"
     >
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"/>
         <line x1="2" y1="12" x2="22" y2="12"/>
         <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
@@ -1195,6 +1187,8 @@
   .add-folder-button { margin-right:-6px; font-size:18px; font-weight:350; }
   .add-folder-button:hover,.sidebar-close-button:hover { color:#d4b483; background:rgba(255,255,255,.04); }
   .add-folder-button:active,.sidebar-close-button:active { transform:scale(.96); background:rgba(255,255,255,.07); }
+  .bottom-nav-button { min-height:50px; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; padding:8px 6px; border:1px solid rgba(255,255,255,.025); border-radius:10px; background:rgba(255,255,255,.012); color:#66666b; cursor:pointer; transition:background .14s ease,color .14s ease; }
+  .bottom-nav-button:active { background:rgba(212,180,131,.075); }
   .sidebar-item { box-sizing:border-box; border-radius:10px; user-select:none; -webkit-user-select:none; transition:background .14s ease,color .14s ease,border-color .14s ease,opacity .14s ease; }
   .sidebar-item:active,.sidebar-item--pressed { background:rgba(212,180,131,.075); }
   .sidebar-item--active { background:rgba(212,180,131,.07); }
@@ -1227,6 +1221,7 @@
   @media (hover:hover) and (pointer:fine) {
     .sidebar-item:hover { background:rgba(255,255,255,.05); }
     .sidebar-item--active:hover { background:rgba(212,180,131,.095); }
+    .bottom-nav-button:hover { background:rgba(255,255,255,.05); color:#b9a17d; }
   }
   @media (max-width:767px) {
     .sidebar-scroll { padding:15px 12px 24px; }
