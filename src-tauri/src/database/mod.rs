@@ -25,6 +25,30 @@ fn remove_legacy_thinking_setting(conn: &Connection) -> rusqlite::Result<usize> 
     conn.execute("DELETE FROM settings WHERE key = 'thinking_mode'", [])
 }
 
+fn migrate_roles_prompt(conn: &Connection) -> rusqlite::Result<usize> {
+    let has_prompt = conn
+        .prepare("PRAGMA table_info(roles)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .iter()
+        .any(|column| column == "prompt");
+
+    if has_prompt {
+        return Ok(0);
+    }
+
+    // Keep the legacy columns for compatibility, but make prompt the canonical
+    // description for all new Role reads and writes.
+    conn.execute_batch("ALTER TABLE roles ADD COLUMN prompt TEXT NOT NULL DEFAULT '';")?;
+
+    conn.execute(
+        "UPDATE roles
+         SET prompt = bio
+         WHERE TRIM(prompt) = '' AND TRIM(bio) <> ''",
+        [],
+    )
+}
+
 /// Establishes a connection to the local SQLite database.
 /// Foreign keys are enabled per-connection, as SQLite disables them by default.
 pub fn get_connection(app: &AppHandle) -> Result<Connection, String> {
@@ -151,6 +175,7 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
         CREATE TABLE IF NOT EXISTS roles (
             id       TEXT PRIMARY KEY,
             name     TEXT NOT NULL,
+            prompt   TEXT NOT NULL DEFAULT '',
             bio      TEXT NOT NULL DEFAULT '',
             pronouns TEXT NOT NULL DEFAULT '',
             avatar   BLOB,
@@ -175,6 +200,11 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
     // cleanly without carrying an unused manual override.
     remove_legacy_thinking_setting(&conn)
         .map_err(|e| format!("Failed to remove legacy thinking setting: {}", e))?;
+
+    // Roles are reusable global templates. Existing bio text is migrated once
+    // when prompt is empty; subsequent Role writes use prompt only.
+    migrate_roles_prompt(&conn)
+        .map_err(|e| format!("Failed to migrate Role prompts: {}", e))?;
 
     // ── Migration: add is_pinned to existing databases that pre-date this column ──
     // We use a try-ignore pattern to stay compatible with older SQLite versions.
@@ -256,7 +286,9 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_character_play_modes, remove_legacy_thinking_setting};
+    use super::{
+        migrate_roles_prompt, normalize_character_play_modes, remove_legacy_thinking_setting,
+    };
     use rusqlite::{params, Connection};
 
     #[test]
@@ -316,5 +348,85 @@ mod tests {
             )
             .unwrap();
         assert_eq!(budget, "2500");
+    }
+
+    #[test]
+    fn role_prompt_migration_preserves_data_and_is_idempotent() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE roles (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                bio TEXT NOT NULL DEFAULT '',
+                pronouns TEXT NOT NULL DEFAULT '',
+                avatar BLOB
+             );
+             INSERT INTO roles (id, name, bio, pronouns, avatar)
+             VALUES ('role-id', 'Detective', 'Investigates mysteries', 'they/them', X'010203');",
+        )
+        .unwrap();
+
+        assert_eq!(migrate_roles_prompt(&conn).unwrap(), 1);
+        assert_eq!(migrate_roles_prompt(&conn).unwrap(), 0);
+
+        let migrated: (String, String, String, String, Vec<u8>) = conn
+            .query_row(
+                "SELECT id, name, prompt, pronouns, avatar FROM roles WHERE id = 'role-id'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            migrated,
+            (
+                "role-id".into(),
+                "Detective".into(),
+                "Investigates mysteries".into(),
+                "they/them".into(),
+                vec![1, 2, 3],
+            )
+        );
+
+        conn.execute("UPDATE roles SET prompt = '' WHERE id = 'role-id'", [])
+            .unwrap();
+        assert_eq!(migrate_roles_prompt(&conn).unwrap(), 0);
+        let intentionally_empty: String = conn
+            .query_row("SELECT prompt FROM roles WHERE id = 'role-id'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(intentionally_empty, "");
+    }
+
+    #[test]
+    fn role_prompt_migration_does_not_overwrite_an_existing_prompt() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE roles (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                prompt TEXT NOT NULL DEFAULT '',
+                bio TEXT NOT NULL DEFAULT ''
+             );
+             INSERT INTO roles (id, name, prompt, bio)
+             VALUES ('role-id', 'Detective', 'Canonical prompt', 'Legacy bio');",
+        )
+        .unwrap();
+
+        assert_eq!(migrate_roles_prompt(&conn).unwrap(), 0);
+        let prompt: String = conn
+            .query_row("SELECT prompt FROM roles WHERE id = 'role-id'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(prompt, "Canonical prompt");
     }
 }

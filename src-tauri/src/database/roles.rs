@@ -13,8 +13,7 @@ use std::io::Cursor;
 pub struct DbRole {
     pub id: String,
     pub name: String,
-    pub bio: String,
-    pub pronouns: String,
+    pub prompt: String,
     pub has_avatar: bool,
     pub created_at: String,
 }
@@ -23,10 +22,72 @@ pub struct DbRole {
 #[derive(Deserialize)]
 pub struct RolePayload {
     pub name: String,
-    pub bio: Option<String>,
-    pub pronouns: Option<String>,
+    #[serde(default)]
+    pub prompt: String,
     /// Base64 data-URL or null if no avatar was set / changed.
     pub avatar: Option<String>,
+}
+
+fn validate_role_name(name: &str) -> Result<(), String> {
+    if name.trim().is_empty() {
+        Err("Role name must not be empty".into())
+    } else {
+        Ok(())
+    }
+}
+
+fn list_roles(conn: &rusqlite::Connection) -> rusqlite::Result<Vec<DbRole>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, prompt, LENGTH(avatar) > 0, created_at
+         FROM roles
+         ORDER BY created_at DESC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        let has_avatar: Option<bool> = row.get(3)?;
+        Ok(DbRole {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            prompt: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+            has_avatar: has_avatar.unwrap_or(false),
+            created_at: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+        })
+    })?;
+
+    rows.collect()
+}
+
+fn insert_role(
+    conn: &rusqlite::Connection,
+    id: &str,
+    name: &str,
+    prompt: &str,
+) -> Result<(), String> {
+    validate_role_name(name)?;
+    conn.execute(
+        "INSERT INTO roles (id, name, prompt) VALUES (?1, ?2, ?3)",
+        params![id, name, prompt],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn update_role_fields(
+    conn: &rusqlite::Connection,
+    id: &str,
+    name: &str,
+    prompt: &str,
+) -> Result<(), String> {
+    validate_role_name(name)?;
+    conn.execute(
+        "UPDATE roles SET name = ?1, prompt = ?2 WHERE id = ?3",
+        params![name, prompt, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn delete_role_by_id(conn: &rusqlite::Connection, id: &str) -> rusqlite::Result<usize> {
+    conn.execute("DELETE FROM roles WHERE id = ?1", params![id])
 }
 
 /// Re-uses the same resize + WebP logic as characters.rs.
@@ -82,34 +143,7 @@ fn process_avatar(base64_img: &str) -> Result<Vec<u8>, String> {
 #[tauri::command]
 pub async fn get_roles(app: AppHandle) -> Result<Vec<DbRole>, String> {
     let conn = get_connection(&app)?;
-
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, name, bio, pronouns, LENGTH(avatar) > 0, created_at
-             FROM roles
-             ORDER BY created_at DESC",
-        )
-        .map_err(|e| e.to_string())?;
-
-    let rows = stmt
-        .query_map([], |row| {
-            let has_avatar: Option<bool> = row.get(4)?;
-            Ok(DbRole {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                bio: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-                pronouns: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-                has_avatar: has_avatar.unwrap_or(false),
-                created_at: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
-            })
-        })
-        .map_err(|e| e.to_string())?;
-
-    let mut list = Vec::new();
-    for row in rows {
-        list.push(row.map_err(|e| e.to_string())?);
-    }
-    Ok(list)
+    list_roles(&conn).map_err(|e| e.to_string())
 }
 
 /// Lazily fetches a single role's avatar as a Base64 data URL.
@@ -136,17 +170,7 @@ pub async fn create_role(app: AppHandle, payload: RolePayload) -> Result<String,
     let conn = get_connection(&app)?;
     let new_id = Uuid::new_v4().to_string();
 
-    conn.execute(
-        "INSERT INTO roles (id, name, bio, pronouns, avatar)
-         VALUES (?1, ?2, ?3, ?4, NULL)",
-        params![
-            new_id,
-            payload.name,
-            payload.bio.unwrap_or_default(),
-            payload.pronouns.unwrap_or_default(),
-        ],
-    )
-    .map_err(|e| e.to_string())?;
+    insert_role(&conn, &new_id, &payload.name, &payload.prompt)?;
 
     if let Some(avatar_b64) = payload.avatar {
         if !avatar_b64.is_empty() {
@@ -172,24 +196,13 @@ pub async fn create_role(app: AppHandle, payload: RolePayload) -> Result<String,
     Ok(new_id)
 }
 
-/// Updates name, bio, pronouns. If a new avatar is supplied it is re-processed
+/// Updates name and prompt. If a new avatar is supplied it is re-processed
 /// asynchronously; blob:-URLs (existing avatar) are skipped.
 #[tauri::command]
 pub async fn update_role(app: AppHandle, id: String, payload: RolePayload) -> Result<(), String> {
     let conn = get_connection(&app)?;
 
-    conn.execute(
-        "UPDATE roles
-         SET name = ?1, bio = ?2, pronouns = ?3
-         WHERE id = ?4",
-        params![
-            payload.name,
-            payload.bio.unwrap_or_default(),
-            payload.pronouns.unwrap_or_default(),
-            id,
-        ],
-    )
-    .map_err(|e| e.to_string())?;
+    update_role_fields(&conn, &id, &payload.name, &payload.prompt)?;
 
     if let Some(avatar_b64) = payload.avatar {
         if !avatar_b64.is_empty() && !avatar_b64.starts_with("blob:") {
@@ -219,7 +232,93 @@ pub async fn update_role(app: AppHandle, id: String, payload: RolePayload) -> Re
 #[tauri::command]
 pub async fn delete_role(app: AppHandle, id: String) -> Result<(), String> {
     let conn = get_connection(&app)?;
-    conn.execute("DELETE FROM roles WHERE id = ?1", params![id])
-        .map_err(|e| e.to_string())?;
+    delete_role_by_id(&conn, &id).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{delete_role_by_id, insert_role, list_roles, update_role_fields};
+    use rusqlite::{params, Connection};
+    use uuid::Uuid;
+
+    fn roles_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE roles (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                prompt TEXT NOT NULL DEFAULT '',
+                bio TEXT NOT NULL DEFAULT '',
+                pronouns TEXT NOT NULL DEFAULT '',
+                avatar BLOB,
+                created_at TEXT NOT NULL DEFAULT 'now'
+             );",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn role_crud_uses_prompt_and_keeps_uuid_identity_stable() {
+        let conn = roles_db();
+        let id = Uuid::new_v4().to_string();
+
+        insert_role(&conn, &id, "Traveler", "").unwrap();
+        let created = list_roles(&conn).unwrap();
+        assert_eq!(created.len(), 1);
+        assert_eq!(created[0].id, id);
+        assert_eq!(created[0].prompt, "");
+
+        update_role_fields(&conn, &id, "Traveler", "Seeks lost places").unwrap();
+        let updated = list_roles(&conn).unwrap();
+        assert_eq!(updated[0].id, id);
+        assert_eq!(updated[0].prompt, "Seeks lost places");
+
+        let legacy_bio: String = conn
+            .query_row("SELECT bio FROM roles WHERE id = ?1", params![id], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(legacy_bio, "");
+
+        assert_eq!(delete_role_by_id(&conn, &id).unwrap(), 1);
+        assert!(list_roles(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn duplicate_names_are_allowed_and_empty_names_are_rejected() {
+        let conn = roles_db();
+        insert_role(&conn, "first", "Traveler", "First prompt").unwrap();
+        insert_role(&conn, "second", "Traveler", "Second prompt").unwrap();
+        assert_eq!(list_roles(&conn).unwrap().len(), 2);
+
+        assert_eq!(
+            insert_role(&conn, "third", "   ", "Prompt").unwrap_err(),
+            "Role name must not be empty"
+        );
+    }
+
+    #[test]
+    fn role_avatar_metadata_survives_prompt_updates() {
+        let conn = roles_db();
+        insert_role(&conn, "with-avatar", "Portrait role", "Old prompt").unwrap();
+        conn.execute(
+            "UPDATE roles SET avatar = ?1 WHERE id = 'with-avatar'",
+            params![vec![1_u8, 2, 3]],
+        )
+        .unwrap();
+
+        update_role_fields(&conn, "with-avatar", "Portrait role", "New prompt").unwrap();
+        let role = list_roles(&conn).unwrap().pop().unwrap();
+        assert!(role.has_avatar);
+        let avatar: Vec<u8> = conn
+            .query_row(
+                "SELECT avatar FROM roles WHERE id = 'with-avatar'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(avatar, vec![1, 2, 3]);
+    }
 }
