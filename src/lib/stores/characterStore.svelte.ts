@@ -169,6 +169,7 @@ export async function createCharacter(charData: CharacterInput) {
         );
 
         setTimeout(() => loadCharacters(), 800);
+        return realId;
 
     } catch (e) {
         console.error("Error creating character:", e);
@@ -202,6 +203,7 @@ export async function updateCharacter(id: string, charData: CharacterInput) {
         );
 
         setTimeout(() => loadCharacters(), 800);
+        return id;
 
     } catch (e) {
         console.error("Error updating character:", e);

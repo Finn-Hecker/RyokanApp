@@ -3,20 +3,23 @@ export type ModelType = 'claude' | 'gpt' | 'ollama' | 'openrouter';
 export interface PromptBuilderOptions {
   charName: string;
   prompt?: string | null;
+  role?: { name: string; prompt: string } | null;
 }
 
 function replacePlaceholders(
   text: string,
-  charName: string
+  charName: string,
+  userName = 'User'
 ): string {
   return text
     .replace(/\{\{char\}\}/gi, charName)
-    .replace(/\{\{user\}\}/gi, 'User');
+    .replace(/\{\{user\}\}/gi, userName);
 }
 
 export function buildSystemPrompt({
   charName,
   prompt,
+  role,
 }: PromptBuilderOptions): string {
   const coreInstructions = `You are ${charName}.
 
@@ -30,9 +33,13 @@ If a message is prefixed with [OOC:], treat it as a director's instruction. Do N
     ? replacePlaceholders(prompt.trim(), charName)
     : '';
 
-  return cardPrompt
-    ? `${coreInstructions}\n\n${cardPrompt}`
-    : coreInstructions;
+  const sections = [coreInstructions];
+  if (cardPrompt) sections.push(cardPrompt);
+  if (role) {
+    const rolePrompt = replacePlaceholders(role.prompt.trim(), charName, role.name);
+    sections.push(`[Player Role: ${role.name}]${rolePrompt ? `\n${rolePrompt}` : ''}`);
+  }
+  return sections.join('\n\n');
 }
 
 export function buildWorldInfoBlock(

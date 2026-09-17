@@ -4,7 +4,7 @@ import {
   updateCharacter,
   deleteCharacter as storeDeleteCharacter
 } from '$lib/stores/characterStore.svelte';
-import type { PlayMode } from '$lib/stores/characterStore.svelte';
+import type { PlayMode, RolePolicy } from '$lib/stores/characterStore.svelte';
 
 export interface CharFormData {
   name: string;
@@ -13,6 +13,7 @@ export interface CharFormData {
   alternate_greetings: string[];
   play_mode: PlayMode;
   world_info_ids?: string[];
+  role_policy?: RolePolicy;
 }
 
 export interface ImportResult extends Partial<CharFormData> {
@@ -24,7 +25,7 @@ export async function saveCharacter(
   editChar: any | null,
   avatarPreview: string | null,
   avatarChanged: boolean
-): Promise<void> {
+): Promise<string> {
   const validAltGreetings = formData.alternate_greetings
     .filter(g => g.trim().length > 0);
 
@@ -37,13 +38,14 @@ export async function saveCharacter(
     world_info_ids: formData.world_info_ids ?? [],
     initials: formData.name.substring(0, 1).toUpperCase(),
     color: editChar?.color ?? 'bg-indigo-600',
-    avatar: avatarChanged ? (avatarPreview ?? null) : null
+    avatar: avatarChanged ? (avatarPreview ?? null) : null,
+    role_policy: formData.role_policy ?? 'open'
   };
 
   if (editChar?.isCustom) {
-    await updateCharacter(String(editChar.id), charData);
+    return updateCharacter(String(editChar.id), charData);
   } else {
-    await createCharacter(charData);
+    return createCharacter(charData);
   }
 }
 

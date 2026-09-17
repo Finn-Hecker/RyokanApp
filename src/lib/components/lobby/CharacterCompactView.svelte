@@ -11,7 +11,8 @@
     onEdit,
     onDelete,
     onToggleHide,
-    onTogglePin
+    onTogglePin,
+    onStartAs
   }: {
     characters: any[];
     showHidden: boolean;
@@ -20,6 +21,7 @@
     onDelete: (e: MouseEvent, char: any) => void;
     onToggleHide: (e: MouseEvent, char: any) => void;
     onTogglePin: (e: MouseEvent, char: any) => void;
+    onStartAs: (e: MouseEvent, char: any) => void;
   } = $props();
 
   // Tracks which card is currently being pressed. Driven by pointer events on
@@ -72,7 +74,7 @@
         <CharacterContextMenu
           {char} {isHidden} {isPinned}
           size="sm"
-          {onEdit} {onTogglePin} {onToggleHide} {onDelete}
+          {onEdit} {onTogglePin} {onToggleHide} {onDelete} {onStartAs}
         />
       </div>
 

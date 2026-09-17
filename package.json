@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:summary": "node --experimental-strip-types --test src/lib/utils/rollingSummaryCore.test.mjs",
+    "test:prompt": "node --experimental-strip-types --test src/lib/utils/promptBuilder.test.mjs",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",

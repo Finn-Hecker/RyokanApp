@@ -3,8 +3,9 @@
   import { fade } from 'svelte/transition';
   import { appState } from '$lib/stores/appState.svelte';
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
-  import { characterState, normalizePlayMode, toggleHideCharacter } from '$lib/stores/characterStore.svelte';
-  import type { PlayMode } from '$lib/stores/characterStore.svelte';
+  import { addBundledRoleSnapshot, characterState, normalizePlayMode, removeBundledRoleSnapshot, setCharacterRolePolicy, toggleHideCharacter } from '$lib/stores/characterStore.svelte';
+  import type { BundledRoleSnapshot, PlayMode, RolePolicy } from '$lib/stores/characterStore.svelte';
+  import { roleState } from '$lib/stores/roleStore.svelte';
   import * as m from '$lib/paraglide/messages';
 
   import SimpleFormPage from '$lib/components/layouts/SimpleFormPage.svelte';
@@ -13,9 +14,11 @@
   import DeleteConfirmDialog from '$lib/components/editor/shared/DeleteConfirmDialog.svelte';
 
   import CharacterTab from '$lib/components/editor/character/CharacterTab.svelte';
+  import RoleTab from '$lib/components/editor/role/RoleTab.svelte';
   import WorldInfoTab from '$lib/components/editor/worldinfo/WorldInfoTab.svelte';
   import type { WorldInfoEntry } from '$lib/components/editor/worldinfo/worldInfoLogic';
   import { createWorldInfo, updateWorldInfo } from '$lib/components/editor/worldinfo/worldInfoLogic';
+  import { createRole, updateRole } from '$lib/stores/roleStore.svelte';
 
   import {
     saveCharacter,
@@ -25,7 +28,7 @@
     readImageAsDataUrl
   } from '$lib/components/editor/character/characterLogic';
 
-  type Tab = 'character' | 'worldinfo';
+  type Tab = 'character' | 'role' | 'worldinfo';
 
   let activeTab = $state<Tab>('character');
 
@@ -34,6 +37,11 @@
       id: 'character',
       label: m.creator_tab_character(),
       icon: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z'
+    },
+    {
+      id: 'role',
+      label: m.creator_tab_role(),
+      icon: 'M20 21a8 8 0 0 0-16 0 M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z'
     },
     {
       id: 'worldinfo',
@@ -55,8 +63,17 @@
   let charAltGreetings = $state<string[]>([]);
   let charPlayMode = $state<PlayMode>('solo');
   let worldInfoIds = $state<string[]>([]);
+  let rolePolicy = $state<RolePolicy>('open');
+  let bundledRoles = $state<BundledRoleSnapshot[]>([]);
+  let pendingBundledRoles = $state<Array<{ tempId: string; roleId: string }>>([]);
   let avatarPreview = $state<string | null>(null);
   let avatarChanged = $state(true);
+
+  // Role States
+  let roleName = $state('');
+  let rolePrompt = $state('');
+  let roleAvatarPreview = $state<string | null>(null);
+  let roleAvatarChanged = $state(true);
 
   // WorldInfo States
   let worldInfoName = $state('');
@@ -87,8 +104,8 @@
   });
 
   onMount(() => {
-    if (appState.currentView === 'worldInfoEditor') {
-      activeTab = 'worldinfo';
+    if (appState.currentView === 'worldInfoEditor' || appState.currentView === 'roleEditor') {
+      activeTab = appState.currentView === 'roleEditor' ? 'role' : 'worldinfo';
       fromRoleManager = true;
     }
 
@@ -103,10 +120,22 @@
     charAltGreetings = Array.isArray(current.alternate_greetings) ? current.alternate_greetings : [];
     charPlayMode = normalizePlayMode(current.play_mode);
     worldInfoIds = Array.isArray(current.world_info_ids) ? current.world_info_ids : [];
+    rolePolicy = current.role_policy ?? 'open';
+    bundledRoles = Array.isArray(current.bundled_roles) ? current.bundled_roles : [];
 
     if (current.avatarUrl) {
-      avatarPreview = current.avatarUrl;
-      avatarChanged = false;
+      if (activeTab === 'role') {
+        roleAvatarPreview = current.avatarUrl;
+        roleAvatarChanged = false;
+      } else {
+        avatarPreview = current.avatarUrl;
+        avatarChanged = false;
+      }
+    }
+
+    if (activeTab === 'role') {
+      roleName = current.name ?? '';
+      rolePrompt = current.prompt ?? '';
     }
 
     if (appState.currentView === 'worldInfoEditor') {
@@ -124,8 +153,10 @@
 
   let canSave = $derived(
     activeTab === 'character'
-      ? !!(charName.trim() && charPrompt.trim())
-      : !!worldInfoName
+      ? !!(charName.trim() && charPrompt.trim() && (rolePolicy === 'open' || bundledRoles.length > 0))
+      : activeTab === 'role'
+        ? !!roleName.trim()
+        : !!worldInfoName
   );
 
   let saveLabel = $derived(m.create_page_btn_done());
@@ -154,6 +185,41 @@
       avatarPreview = await readImageAsDataUrl(file);
       avatarChanged = true;
     } catch { /* not an image */ }
+  }
+
+  async function handleRoleAvatarFile(file: File) {
+    try {
+      roleAvatarPreview = await readImageAsDataUrl(file);
+      roleAvatarChanged = true;
+    } catch { /* not an image */ }
+  }
+
+  async function handleAddBundledRole(roleId: string) {
+    if (editChar?.isCustom) {
+      const snapshot = await addBundledRoleSnapshot(String(editChar.id), roleId);
+      bundledRoles = [...bundledRoles, snapshot];
+      return;
+    }
+    const source = roleState.roles.find((role) => role.id === roleId);
+    if (!source) return;
+    const tempId = `pending-${crypto.randomUUID()}`;
+    pendingBundledRoles = [...pendingBundledRoles, { tempId, roleId }];
+    bundledRoles = [...bundledRoles, {
+      id: tempId,
+      source_role_id: roleId,
+      name: source.name,
+      prompt: source.prompt,
+      has_avatar: source.has_avatar,
+      avatarUrl: source.avatarUrl,
+    }];
+  }
+
+  async function handleRemoveBundledRole(snapshotId: string) {
+    if (!snapshotId.startsWith('pending-') && editChar?.isCustom) {
+      await removeBundledRoleSnapshot(String(editChar.id), snapshotId);
+    }
+    pendingBundledRoles = pendingBundledRoles.filter((pending) => pending.tempId !== snapshotId);
+    bundledRoles = bundledRoles.filter((role) => role.id !== snapshotId);
   }
 
   async function handleImportFile(file: File) {
@@ -192,7 +258,7 @@
     isSaving = true;
     try {
       if (activeTab === 'character') {
-        await saveCharacter(
+        const characterId = await saveCharacter(
           {
             name: charName,
             prompt: charPrompt,
@@ -200,11 +266,31 @@
             alternate_greetings: charAltGreetings,
             play_mode: charPlayMode,
             world_info_ids: worldInfoIds,
+            // New restricted Characters are first created open, then their
+            // snapshots are persisted, and only then made restricted.
+            role_policy: editChar?.isCustom ? rolePolicy : 'open',
           },
           editChar,
           avatarPreview,
           avatarChanged
         );
+        if (!editChar?.isCustom) {
+          for (const pending of pendingBundledRoles) {
+            await addBundledRoleSnapshot(characterId, pending.roleId);
+          }
+          if (rolePolicy === 'restricted') {
+            await setCharacterRolePolicy(characterId, rolePolicy);
+          }
+        }
+        goBack();
+      } else if (activeTab === 'role') {
+        const data = {
+          name: roleName.trim(),
+          prompt: rolePrompt,
+          avatar: roleAvatarChanged ? roleAvatarPreview : null,
+        };
+        if (editChar?.id) await updateRole(String(editChar.id), data);
+        else await createRole(data);
         goBack();
       } else {
         const data = {
@@ -394,13 +480,15 @@
       <h1 class="page-title">
         {activeTab === 'character'
           ? (isEditMode ? m.creator_title_edit_character() : m.creator_title_new_character())
-          : m.creator_title_new_lorebook()}
+          : activeTab === 'role'
+            ? (isEditMode ? m.role_editor_edit_title() : m.creator_title_new_role())
+            : m.creator_title_new_lorebook()}
       </h1>
 
       <p class="page-subtitle">
         {activeTab === 'character'
           ? m.creator_subtitle_character()
-          : m.creator_subtitle_lorebook()}
+          : activeTab === 'role' ? m.creator_subtitle_role() : m.creator_subtitle_lorebook()}
       </p>
     </div>
 
@@ -433,8 +521,19 @@
               bind:alternate_greetings={charAltGreetings}
               bind:playMode={charPlayMode}
               bind:worldInfoIds={worldInfoIds}
+              bind:rolePolicy
+              {bundledRoles}
               {avatarPreview}
               onAvatarFile={handleCharAvatarFile}
+              onAddRole={handleAddBundledRole}
+              onRemoveRole={handleRemoveBundledRole}
+            />
+          {:else if activeTab === 'role'}
+            <RoleTab
+              bind:name={roleName}
+              bind:prompt={rolePrompt}
+              avatarPreview={roleAvatarPreview}
+              onAvatarFile={handleRoleAvatarFile}
             />
           {:else}
             <WorldInfoTab

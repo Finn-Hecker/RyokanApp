@@ -25,6 +25,7 @@ export const appState = $state({
   isOnboarding: false,
   pendingUiLocale: '',
   interactionMode: 'desktop' as InteractionMode,
+  listTab: 'worldinfo' as 'roles' | 'worldinfo',
   apiSettings: {
     url: "http://127.0.0.1:1234/v1",
     apiKey: "",

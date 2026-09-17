@@ -3,6 +3,8 @@
   import { navigateTo, registerBackHandler } from '$lib/stores/navigation';
   import { characterState, loadCharacters, toggleHideCharacter, togglePinCharacter, deleteCharacter, loadHiddenIds, loadPinnedIds } from '$lib/stores/characterStore.svelte';
   import { startNewChat } from '$lib/stores/chatStore.svelte';
+  import type { RoleSelection } from '$lib/stores/chatStore.svelte';
+  import { loadRoles, roleState } from '$lib/stores/roleStore.svelte';
   import { onMount } from 'svelte';
 
   import Sidebar from '$lib/components/Sidebar.svelte';
@@ -22,11 +24,16 @@
   let showHidden = $state(false);
 
   let deleteTarget = $state<{ id: string; name: string } | null>(null);
+  let startTarget = $state<any | null>(null);
+  let selectedRole = $state('none');
+  let isStarting = $state(false);
+  let startError = $state('');
 
   $effect(() => {
-    if (!deleteTarget) return;
+    if (!deleteTarget && !startTarget) return;
     return registerBackHandler(() => {
-      deleteTarget = null;
+      if (deleteTarget) deleteTarget = null;
+      else startTarget = null;
       return true;
     });
   });
@@ -35,6 +42,7 @@
     await loadHiddenIds();
     await loadPinnedIds();
     await loadCharacters();
+    await loadRoles();
     const saved = localStorage.getItem('ryokan-view-mode');
     if (saved === 'grid' || saved === 'compact' || saved === 'list') {
       viewMode = saved;
@@ -42,9 +50,53 @@
   });
 
   async function onSelectChar(char: any) {
+    const bundledRoles = char.bundled_roles ?? [];
+    if (char.role_policy === 'restricted') {
+      if (bundledRoles.length === 1) {
+        await beginChat(char, { source: 'bundled', id: bundledRoles[0].id });
+        return;
+      }
+      openRoleChooser(char);
+      return;
+    }
+
+    const defaultSelection: RoleSelection | null = roleState.defaultRoleId
+      ? { source: 'global', id: roleState.defaultRoleId }
+      : null;
+    await beginChat(char, defaultSelection);
+  }
+
+  function openRoleChooser(char: any) {
+    startTarget = char;
+    selectedRole = char.role_policy === 'restricted' && char.bundled_roles?.length
+      ? `bundled:${char.bundled_roles[0].id}`
+      : 'none';
+    startError = '';
+  }
+
+  function onStartAs(e: MouseEvent, char: any) {
+    e.stopPropagation();
+    openRoleChooser(char);
+  }
+
+  function selectionFromValue(): RoleSelection | null {
+    if (selectedRole === 'none') return null;
+    const [source, id] = selectedRole.split(':', 2);
+    return { source: source as RoleSelection['source'], id };
+  }
+
+  async function beginChat(char = startTarget, selection = selectionFromValue()) {
+    if (!char || isStarting) return;
+    isStarting = true;
+    startError = '';
     appState.activeCharacter = char;
-    await startNewChat(char);
-    navigateTo('chat');
+    try {
+      await startNewChat(char, selection);
+      startTarget = null;
+      navigateTo('chat');
+    } catch {
+      startError = m.role_start_error();
+    } finally { isStarting = false; }
   }
 
   function onOpenCreate() {
@@ -180,6 +232,7 @@
       onSelect={onSelectChar}
       onEdit={onEditChar}
       onDelete={onDeleteChar}
+      {onStartAs}
       {onToggleHide}
       {onTogglePin}
       {resolveDesc}
@@ -191,6 +244,7 @@
       onSelect={onSelectChar}
       onEdit={onEditChar}
       onDelete={onDeleteChar}
+      {onStartAs}
       {onToggleHide}
       {onTogglePin}
     />
@@ -201,6 +255,7 @@
       onSelect={onSelectChar}
       onEdit={onEditChar}
       onDelete={onDeleteChar}
+      {onStartAs}
       {onToggleHide}
       {onTogglePin}
       {resolveDesc}
@@ -219,3 +274,68 @@
     onCancel={() => (deleteTarget = null)}
   />
 {/if}
+
+{#if startTarget}
+  <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center sm:p-4" role="presentation" onclick={(event) => event.target === event.currentTarget && (startTarget = null)}>
+    <div role="dialog" aria-modal="true" aria-labelledby="role-start-title" class="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#12121a] p-5 shadow-2xl sm:p-6">
+      <div class="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <h2 id="role-start-title" class="font-medium text-gray-100">{m.role_start_title({ character: startTarget.name })}</h2>
+          <p class="mt-1 text-sm text-gray-500">{startTarget.role_policy === 'restricted' ? m.role_start_restricted_desc() : m.role_start_open_desc()}</p>
+        </div>
+        <button class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-white/[.06] hover:text-gray-200" aria-label={m.create_char_close_aria()} onclick={() => (startTarget = null)}>×</button>
+      </div>
+
+      <div class="space-y-2">
+        {#if startTarget.role_policy === 'open'}
+          <label class="role-option" class:active={selectedRole === 'none'}>
+            <input type="radio" bind:group={selectedRole} value="none" />
+            <span><strong>{m.role_start_none()}</strong><small>{m.role_start_none_desc()}</small></span>
+          </label>
+        {/if}
+
+        {#if startTarget.bundled_roles?.length}
+          <p class="group-label">{m.role_start_bundled_group()}</p>
+          {#each startTarget.bundled_roles as role (role.id)}
+            <label class="role-option" class:active={selectedRole === `bundled:${role.id}`}>
+              <input type="radio" bind:group={selectedRole} value={`bundled:${role.id}`} />
+              <span><strong>{role.name}</strong><small>{role.prompt || m.role_editor_empty_prompt()}</small></span>
+              <em>{m.role_start_bundled_badge()}</em>
+            </label>
+          {/each}
+        {/if}
+
+        {#if startTarget.role_policy === 'open' && roleState.roles.length}
+          <p class="group-label">{m.role_start_global_group()}</p>
+          {#each roleState.roles as role (role.id)}
+            <label class="role-option" class:active={selectedRole === `global:${role.id}`}>
+              <input type="radio" bind:group={selectedRole} value={`global:${role.id}`} />
+              <span><strong>{role.name}</strong><small>{role.prompt || m.role_editor_empty_prompt()}</small></span>
+            </label>
+          {/each}
+        {/if}
+      </div>
+
+      {#if startTarget.role_policy === 'restricted' && !startTarget.bundled_roles?.length}
+        <p class="mt-4 text-sm text-amber-400">{m.role_start_restricted_empty()}</p>
+      {/if}
+      {#if startError}<p class="mt-3 text-sm text-red-400">{startError}</p>{/if}
+
+      <div class="mt-5 flex justify-end gap-2">
+        <Button variant="secondary" onclick={() => (startTarget = null)}>{m.delete_confirm_cancel()}</Button>
+        <Button disabled={isStarting || (startTarget.role_policy === 'restricted' && !selectedRole.startsWith('bundled:'))} onclick={() => beginChat()}>{isStarting ? m.role_start_starting() : m.role_start_button()}</Button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<style>
+  .group-label { padding:10px 2px 2px; color:#6b7280; font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
+  .role-option { display:flex; align-items:center; gap:10px; padding:11px 12px; border:1px solid rgba(255,255,255,.07); border-radius:11px; background:rgba(255,255,255,.025); cursor:pointer; }
+  .role-option.active { border-color:rgba(212,180,131,.32); background:rgba(212,180,131,.07); }
+  .role-option input { accent-color:#d4b483; }
+  .role-option span { min-width:0; flex:1; display:flex; flex-direction:column; }
+  .role-option strong { color:#d1d5db; font-size:13px; }
+  .role-option small { overflow:hidden; color:#4b5563; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+  .role-option em { flex:none; border:1px solid rgba(212,180,131,.18); border-radius:6px; padding:2px 6px; color:rgba(212,180,131,.75); background:rgba(212,180,131,.08); font-size:9px; font-style:normal; font-weight:700; text-transform:uppercase; }
+</style>

@@ -344,6 +344,13 @@
 
   function handleWorldInfoClick() {
     if (onWorldInfoClick) { onWorldInfoClick(); return; }
+    appState.listTab = 'worldinfo';
+    navigateTo('list');
+    if (layout === 'drawer') close();
+  }
+
+  function handleRolesClick() {
+    appState.listTab = 'roles';
     navigateTo('list');
     if (layout === 'drawer') close();
   }
@@ -1009,6 +1016,19 @@
 
 {#snippet navButtons()}
   <div class="p-3 border-t border-white/5 flex gap-2 shrink-0">
+    <button
+      onclick={handleRolesClick}
+      class="flex-1 flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl
+             bg-white/[0.03] hover:bg-white/[0.07]
+             border border-white/[0.06] hover:border-ryokan-accent/40
+             text-gray-500 hover:text-ryokan-accent
+             transition-all duration-200 active:scale-[0.97]"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>
+      </svg>
+      <span class="text-[10px] font-medium leading-none tracking-wide text-current opacity-70">{m.sidebar_roles()}</span>
+    </button>
     <button
       onclick={handleWorldInfoClick}
       class="flex-1 flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl

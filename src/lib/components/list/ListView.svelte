@@ -4,17 +4,20 @@
   import SimpleFormPage from '$lib/components/layouts/SimpleFormPage.svelte';
   import Button         from '$lib/components/ui/Button.svelte';
   import WorldInfoList  from './WorldInfoList.svelte';
+  import RoleList from './RoleList.svelte';
   import { appState } from '$lib/stores/appState.svelte';
   import { navigateTo, returnTo } from '$lib/stores/navigation';
 
   function goBack() { returnTo('lobby'); }
 
+  let activeTab = $derived(appState.listTab);
+
   function openCreate() {
     appState.editingCharacter = null;
-    navigateTo('worldInfoEditor');
+    navigateTo(activeTab === 'roles' ? 'roleEditor' : 'worldInfoEditor');
   }
 
-  let createLabel = $derived(m.list_create_wi());
+  let createLabel = $derived(activeTab === 'roles' ? m.list_create_role() : m.list_create_wi());
 </script>
 
 <div class="h-full w-full" in:fade={{ duration: 160 }}>
@@ -43,8 +46,15 @@
 
   <SimpleFormPage maxWidth="max-w-2xl" {actions}>
 
+    <div class="tab-row">
+      <div class="tab-bar">
+        <button class:active={activeTab === 'roles'} onclick={() => (appState.listTab = 'roles')}>{m.list_tab_roles()}</button>
+        <button class:active={activeTab === 'worldinfo'} onclick={() => (appState.listTab = 'worldinfo')}>{m.list_tab_wi()}</button>
+      </div>
+    </div>
+
     <div in:fade={{ duration: 140, delay: 30 }}>
-      <WorldInfoList />
+      {#if activeTab === 'roles'}<RoleList />{:else}<WorldInfoList />{/if}
     </div>
 
   </SimpleFormPage>
@@ -83,4 +93,8 @@
   }
 
   .create-btn:active { transform: translateY(0); }
+  .tab-row { display:flex; justify-content:center; margin-bottom:28px; }
+  .tab-bar { display:inline-flex; gap:2px; padding:4px; border:1px solid rgba(255,255,255,.07); border-radius:14px; background:rgba(255,255,255,.04); }
+  .tab-bar button { padding:7px 18px; min-height:34px; border:0; border-radius:10px; background:transparent; color:rgba(255,255,255,.35); font:500 13px inherit; cursor:pointer; }
+  .tab-bar button.active { background:rgba(255,255,255,.09); color:#f9fafb; box-shadow:0 1px 3px rgba(0,0,0,.35); }
 </style>

@@ -24,6 +24,8 @@ export interface GenerationOptions {
         prompt?: string;
         world_info_ids?: string[];
     } | null;
+    /** Persisted, chat-owned player Role snapshot. Defaults to the active chat. */
+    role?: { name: string; prompt: string } | null;
     apiSettings:    ApiSettings;
     recentMessages: Message[];
     /** Include a new user prompt at the end (normal send). Omit for retry. */
@@ -66,6 +68,7 @@ export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
     const baseSystemPrompt = buildSystemPrompt({
         charName,
         prompt: character?.prompt,
+        role: options.role === undefined ? chatState.activeRoleSnapshot : options.role,
     });
 
     const { currentSummary, lastSummarizedMessageId } = options.summaryMeta ?? chatState.summaryMeta;

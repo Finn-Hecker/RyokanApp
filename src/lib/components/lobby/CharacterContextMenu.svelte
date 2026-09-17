@@ -13,7 +13,8 @@
     onEdit,
     onTogglePin,
     onToggleHide,
-    onDelete
+    onDelete,
+    onStartAs
   }: {
     char: any;
     isHidden: boolean;
@@ -23,6 +24,7 @@
     onTogglePin: (e: MouseEvent, char: any) => void;
     onToggleHide: (e: MouseEvent, char: any) => void;
     onDelete: (e: MouseEvent, char: any) => void;
+    onStartAs: (e: MouseEvent, char: any) => void;
   } = $props();
 
   let menuId = $derived(String(char.id));
@@ -81,6 +83,20 @@
     class="absolute right-0 top-full mt-1.5 w-44 max-w-[calc(100vw-2rem)] bg-[#16161f] border border-ryokan-accent/[0.22] rounded-xl z-30 py-1 overflow-hidden"
     style="box-shadow: 0 20px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(212,180,131,0.04) inset;"
   >
+    {#if char.role_policy !== 'restricted' || char.bundled_roles?.length !== 1}
+      <button
+        type="button"
+        role="menuitem"
+        onclick={(e) => { close(); onStartAs(e, char); }}
+        class="w-full flex items-center gap-2.5 px-3.5 py-2.5 touch-manipulation [-webkit-tap-highlight-color:transparent] text-sm text-gray-200 hover:text-white hover:bg-white/[0.06] transition-colors text-left"
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>
+        </svg>
+        {m.role_start_as()}
+      </button>
+    {/if}
+
     {#if char.isCustom}
       <button
         type="button"

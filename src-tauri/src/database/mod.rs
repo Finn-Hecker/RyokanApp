@@ -126,7 +126,8 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             cloned_from_id TEXT,
             cloned_from_title TEXT,
             folder_id TEXT REFERENCES chat_folders(id) ON DELETE SET NULL,
-            sort_order INTEGER
+            sort_order INTEGER,
+            role_snapshot TEXT
         );
 
         CREATE TABLE IF NOT EXISTS chat_folders (
@@ -266,6 +267,11 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
     );
     let _ = conn.execute_batch(
         "ALTER TABLE conversations ADD COLUMN sort_order INTEGER;"
+    );
+    // A selected player Role is copied into the conversation at creation
+    // time. Existing conversations remain NULL and keep their old prompts.
+    let _ = conn.execute_batch(
+        "ALTER TABLE conversations ADD COLUMN role_snapshot TEXT;"
     );
     // Folder disclosure state is local UI organization and belongs alongside
     // the folder metadata so it survives restarts.

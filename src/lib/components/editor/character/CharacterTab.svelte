@@ -2,6 +2,8 @@
   import AvatarPicker from './AvatarPicker.svelte';
   import CharacterFormFields from './CharacterFormFields.svelte';
   import type { PlayMode } from '$lib/stores/characterStore.svelte';
+  import type { BundledRoleSnapshot, RolePolicy } from '$lib/stores/characterStore.svelte';
+  import BundledRolesPicker from './BundledRolesPicker.svelte';
 
   let {
     name = $bindable(''),
@@ -10,8 +12,12 @@
     alternate_greetings = $bindable([]),
     playMode = $bindable('solo'),
     worldInfoIds = $bindable([]),
+    rolePolicy = $bindable('open'),
+    bundledRoles = [],
     avatarPreview = null,
-    onAvatarFile
+    onAvatarFile,
+    onAddRole,
+    onRemoveRole,
   }: {
     name?: string;
     prompt?: string;
@@ -19,8 +25,12 @@
     alternate_greetings?: string[];
     playMode?: PlayMode;
     worldInfoIds?: string[];
+    rolePolicy?: RolePolicy;
+    bundledRoles?: BundledRoleSnapshot[];
     avatarPreview?: string | null;
     onAvatarFile?: (file: File) => void;
+    onAddRole?: (roleId: string) => Promise<void> | void;
+    onRemoveRole?: (snapshotId: string) => Promise<void> | void;
   } = $props();
 </script>
 
@@ -45,3 +55,5 @@
       alternate_greetings.filter((_, i) => i !== index))
   }
 />
+
+<BundledRolesPicker bind:rolePolicy {bundledRoles} onAdd={onAddRole} onRemove={onRemoveRole} />

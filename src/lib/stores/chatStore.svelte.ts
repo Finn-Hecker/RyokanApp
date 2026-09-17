@@ -30,6 +30,17 @@ export interface Conversation {
     cloned_from_title?: string | null;
     folder_id: string | null;
     sort_order: number;
+    role_snapshot: ChatRoleSnapshot | null;
+}
+
+export interface ChatRoleSnapshot {
+    name: string;
+    prompt: string;
+}
+
+export interface RoleSelection {
+    source: 'global' | 'bundled';
+    id: string;
 }
 
 export type ConversationMode = Conversation['mode'];
@@ -68,6 +79,7 @@ export const chatState = $state({
         currentSummary:          null,
         lastSummarizedMessageId: null,
     } as SummaryMeta,
+    activeRoleSnapshot: null as ChatRoleSnapshot | null,
 });
 
 const dateFormatter = new Intl.DateTimeFormat(getLocale(), {
@@ -122,7 +134,7 @@ export async function loadMoreConversations(mode: ConversationMode = loadedConve
     }
 }
 
-export async function startNewChat(character: any) {
+export async function startNewChat(character: any, roleSelection: RoleSelection | null = null) {
     try {
         const selectedGreeting = selectInitialGreeting(character);
         const newId = await invoke<string>('create_chat', {
@@ -130,10 +142,14 @@ export async function startNewChat(character: any) {
             characterName: character.name,
             initialMessage: selectedGreeting,
             mode: 'singleplayer',
+            roleSelection,
         });
         await loadAllConversations('singleplayer');
         await loadMessages(newId);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+        console.error(e);
+        throw e;
+    }
 }
 
 export async function openHistoryChat(chatId: string) {
@@ -179,6 +195,9 @@ export async function loadMessages(chatId: string) {
         // Chat was switched: clear local history to avoid flickering
         chatState.currentMessages = [];
         chatState.hasMoreMessages = false;
+        chatState.activeRoleSnapshot = chatState.conversations.find(
+            (conversation) => conversation.id === chatId
+        )?.role_snapshot ?? null;
         
         try {
             const meta = await invoke<{ summary: string | null; last_id: string | null }>(

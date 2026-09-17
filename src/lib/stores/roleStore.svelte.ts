@@ -1,4 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
+import { getSetting } from '$lib/utils/settings';
+
+const DEFAULT_ROLE_SETTING = 'default_role_id';
 
 export interface Role {
     id: string;
@@ -15,6 +18,7 @@ export type RoleInput = Pick<Role, 'name' | 'prompt'> & {
 
 export const roleState = $state({
     roles: [] as Role[],
+    defaultRoleId: null as string | null,
 });
 
 export async function loadRoles(): Promise<void> {
@@ -29,10 +33,19 @@ export async function loadRoles(): Promise<void> {
             const avatarUrl = avatarUrls.get(role.id);
             return avatarUrl ? { ...role, avatarUrl } : role;
         });
+        const savedDefaultId = await getSetting(DEFAULT_ROLE_SETTING);
+        roleState.defaultRoleId = roles.some((role) => role.id === savedDefaultId)
+            ? savedDefaultId
+            : null;
     } catch (error) {
         console.error('Error loading roles:', error);
         throw error;
     }
+}
+
+export async function setDefaultRole(id: string | null): Promise<void> {
+    await invoke('save_setting', { key: DEFAULT_ROLE_SETTING, value: id ?? '' });
+    roleState.defaultRoleId = id;
 }
 
 const avatarFetchesInFlight = new Set<string>();
@@ -57,7 +70,10 @@ export async function loadRoleAvatar(id: string): Promise<void> {
 
 export async function createRole(input: RoleInput): Promise<string> {
     try {
+        await loadRoles();
+        const isFirstRole = roleState.roles.length === 0;
         const id = await invoke<string>('create_role', { payload: input });
+        if (isFirstRole) await setDefaultRole(id);
         await loadRoles();
         if (input.avatar) {
             roleState.roles = roleState.roles.map((role) =>
@@ -96,6 +112,7 @@ export async function deleteRole(id: string): Promise<void> {
     try {
         await invoke('delete_role', { id });
         roleState.roles = roleState.roles.filter((role) => role.id !== id);
+        if (roleState.defaultRoleId === id) roleState.defaultRoleId = null;
     } catch (error) {
         console.error('Error deleting role:', error);
         throw error;

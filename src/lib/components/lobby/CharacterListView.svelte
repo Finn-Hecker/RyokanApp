@@ -12,6 +12,7 @@
     onDelete,
     onToggleHide,
     onTogglePin,
+    onStartAs,
     resolveDesc
   }: {
     characters: any[];
@@ -21,6 +22,7 @@
     onDelete: (e: MouseEvent, char: any) => void;
     onToggleHide: (e: MouseEvent, char: any) => void;
     onTogglePin: (e: MouseEvent, char: any) => void;
+    onStartAs: (e: MouseEvent, char: any) => void;
     resolveDesc: (char: any) => string;
   } = $props();
 
@@ -73,7 +75,7 @@
         <CharacterContextMenu
           {char} {isHidden} {isPinned}
           size="md"
-          {onEdit} {onTogglePin} {onToggleHide} {onDelete}
+          {onEdit} {onTogglePin} {onToggleHide} {onDelete} {onStartAs}
         />
       </div>
     </div>

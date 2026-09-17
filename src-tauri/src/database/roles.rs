@@ -87,7 +87,12 @@ fn update_role_fields(
 }
 
 fn delete_role_by_id(conn: &rusqlite::Connection, id: &str) -> rusqlite::Result<usize> {
-    conn.execute("DELETE FROM roles WHERE id = ?1", params![id])
+    let deleted = conn.execute("DELETE FROM roles WHERE id = ?1", params![id])?;
+    conn.execute(
+        "DELETE FROM settings WHERE key = 'default_role_id' AND value = ?1",
+        params![id],
+    )?;
+    Ok(deleted)
 }
 
 /// Re-uses the same resize + WebP logic as characters.rs.
@@ -222,7 +227,8 @@ mod tests {
     fn roles_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
-            "CREATE TABLE roles (
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             CREATE TABLE roles (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 prompt TEXT NOT NULL DEFAULT '',
@@ -274,6 +280,25 @@ mod tests {
             insert_role(&conn, "third", "   ", "Prompt").unwrap_err(),
             "Role name must not be empty"
         );
+    }
+
+    #[test]
+    fn deleting_the_default_role_clears_its_preference() {
+        let conn = roles_db();
+        insert_role(&conn, "default-id", "Traveler", "Prompt").unwrap();
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('default_role_id', 'default-id')",
+            [],
+        ).unwrap();
+
+        delete_role_by_id(&conn, "default-id").unwrap();
+
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM settings WHERE key = 'default_role_id'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count, 0);
     }
 
     #[test]
