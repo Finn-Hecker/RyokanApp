@@ -49,6 +49,28 @@ fn migrate_roles_prompt(conn: &Connection) -> rusqlite::Result<usize> {
     )
 }
 
+fn migrate_character_roles(conn: &Connection) -> rusqlite::Result<usize> {
+    let columns = conn
+        .prepare("PRAGMA table_info(characters)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut added = 0;
+    if !columns.iter().any(|column| column == "role_policy") {
+        conn.execute_batch(
+            "ALTER TABLE characters ADD COLUMN role_policy TEXT NOT NULL DEFAULT 'open'
+                CHECK (role_policy IN ('open', 'restricted'));",
+        )?;
+        added += 1;
+    }
+    if !columns.iter().any(|column| column == "bundled_roles") {
+        conn.execute_batch(
+            "ALTER TABLE characters ADD COLUMN bundled_roles TEXT NOT NULL DEFAULT '[]';",
+        )?;
+        added += 1;
+    }
+    Ok(added)
+}
+
 /// Establishes a connection to the local SQLite database.
 /// Foreign keys are enabled per-connection, as SQLite disables them by default.
 pub fn get_connection(app: &AppHandle) -> Result<Connection, String> {
@@ -169,6 +191,9 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             play_mode TEXT NOT NULL DEFAULT 'solo',
             avatar BLOB,
             world_info_ids TEXT NOT NULL DEFAULT '[]',
+            role_policy TEXT NOT NULL DEFAULT 'open'
+                CHECK (role_policy IN ('open', 'restricted')),
+            bundled_roles TEXT NOT NULL DEFAULT '[]',
             created_at DATETIME DEFAULT {utc_now}
         );
 
@@ -260,6 +285,11 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
         "ALTER TABLE characters ADD COLUMN play_mode TEXT NOT NULL DEFAULT 'solo';"
     );
 
+    // Card-local Role snapshots are embedded so they remain independent from
+    // the reusable global Role library. Defaults preserve every existing Card.
+    migrate_character_roles(&conn)
+        .map_err(|e| format!("Failed to migrate Character Role snapshots: {}", e))?;
+
     // "both" is no longer a supported mode. Normalize it, NULLs, and any
     // unknown values so older databases remain usable with the stricter model.
     normalize_character_play_modes(&conn)
@@ -287,7 +317,8 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        migrate_roles_prompt, normalize_character_play_modes, remove_legacy_thinking_setting,
+        migrate_character_roles, migrate_roles_prompt, normalize_character_play_modes,
+        remove_legacy_thinking_setting,
     };
     use rusqlite::{params, Connection};
 
@@ -325,6 +356,29 @@ mod tests {
             )
             .unwrap();
         assert_eq!(multiplayer, "multiplayer");
+    }
+
+    #[test]
+    fn existing_characters_get_open_policy_and_empty_bundled_roles_idempotently() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE characters (id TEXT PRIMARY KEY, name TEXT NOT NULL);
+             INSERT INTO characters VALUES ('existing', 'Existing Card');",
+        ).unwrap();
+
+        assert_eq!(migrate_character_roles(&conn).unwrap(), 2);
+        assert_eq!(migrate_character_roles(&conn).unwrap(), 0);
+
+        let migrated: (String, String) = conn.query_row(
+            "SELECT role_policy, bundled_roles FROM characters WHERE id = 'existing'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap();
+        assert_eq!(migrated, ("open".into(), "[]".into()));
+        assert!(conn.execute(
+            "UPDATE characters SET role_policy = 'invalid' WHERE id = 'existing'",
+            [],
+        ).is_err());
     }
 
     #[test]

@@ -17,6 +17,8 @@ export const SOLO_CHARACTERS = [
     avatarUrl: scenarioBadPlan,
     alternate_greetings: [],
     world_info_ids: [],
+    role_policy: 'open' as const,
+    bundled_roles: [],
   },
   {
     id: 2,
@@ -30,6 +32,8 @@ export const SOLO_CHARACTERS = [
     avatarUrl: scenarioNightShift,
     alternate_greetings: [],
     world_info_ids: [],
+    role_policy: 'open' as const,
+    bundled_roles: [],
   }
 ];
 
@@ -46,6 +50,8 @@ export const MULTIPLAYER_CHARACTERS = [
     avatarUrl: scenarioIslandPrison,
     alternate_greetings: [],
     world_info_ids: [],
+    role_policy: 'open' as const,
+    bundled_roles: [],
   }
 ];
 

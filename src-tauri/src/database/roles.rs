@@ -163,7 +163,8 @@ pub async fn get_role_avatar(app: AppHandle, id: String) -> Result<Option<String
     }))
 }
 
-/// Inserts a new role. Avatar processing runs on a background thread.
+/// Inserts a new role. Avatar processing completes before this command returns,
+/// so a subsequent Card snapshot can always copy the persisted bytes.
 /// Returns the new UUID so the frontend can update its optimistic entry.
 #[tauri::command]
 pub async fn create_role(app: AppHandle, payload: RolePayload) -> Result<String, String> {
@@ -172,57 +173,33 @@ pub async fn create_role(app: AppHandle, payload: RolePayload) -> Result<String,
 
     insert_role(&conn, &new_id, &payload.name, &payload.prompt)?;
 
-    if let Some(avatar_b64) = payload.avatar {
-        if !avatar_b64.is_empty() {
-            let app_clone = app.clone();
-            let id_clone = new_id.clone();
-
-            std::thread::spawn(move || {
-                match process_avatar(&avatar_b64) {
-                    Ok(bytes) => {
-                        if let Ok(conn) = get_connection(&app_clone) {
-                            let _ = conn.execute(
-                                "UPDATE roles SET avatar = ?1 WHERE id = ?2",
-                                params![bytes, id_clone],
-                            );
-                        }
-                    }
-                    Err(e) => eprintln!("Role avatar processing failed: {}", e),
-                }
-            });
-        }
+    if let Some(avatar_b64) = payload.avatar.filter(|avatar| !avatar.is_empty()) {
+        let bytes = process_avatar(&avatar_b64)?;
+        conn.execute(
+            "UPDATE roles SET avatar = ?1 WHERE id = ?2",
+            params![bytes, new_id],
+        ).map_err(|e| e.to_string())?;
     }
 
     Ok(new_id)
 }
 
 /// Updates name and prompt. If a new avatar is supplied it is re-processed
-/// asynchronously; blob:-URLs (existing avatar) are skipped.
+/// before the command returns; blob:-URLs (existing avatar) are skipped.
 #[tauri::command]
 pub async fn update_role(app: AppHandle, id: String, payload: RolePayload) -> Result<(), String> {
     let conn = get_connection(&app)?;
 
     update_role_fields(&conn, &id, &payload.name, &payload.prompt)?;
 
-    if let Some(avatar_b64) = payload.avatar {
-        if !avatar_b64.is_empty() && !avatar_b64.starts_with("blob:") {
-            let app_clone = app.clone();
-            let id_clone = id.clone();
-
-            std::thread::spawn(move || {
-                match process_avatar(&avatar_b64) {
-                    Ok(bytes) => {
-                        if let Ok(conn) = get_connection(&app_clone) {
-                            let _ = conn.execute(
-                                "UPDATE roles SET avatar = ?1 WHERE id = ?2",
-                                params![bytes, id_clone],
-                            );
-                        }
-                    }
-                    Err(e) => eprintln!("Role avatar update failed: {}", e),
-                }
-            });
-        }
+    if let Some(avatar_b64) = payload.avatar.filter(|avatar| {
+        !avatar.is_empty() && !avatar.starts_with("blob:")
+    }) {
+        let bytes = process_avatar(&avatar_b64)?;
+        conn.execute(
+            "UPDATE roles SET avatar = ?1 WHERE id = ?2",
+            params![bytes, id],
+        ).map_err(|e| e.to_string())?;
     }
 
     Ok(())

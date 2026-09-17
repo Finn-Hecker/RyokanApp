@@ -2,6 +2,16 @@ import { invoke } from '@tauri-apps/api/core';
 import { CHARACTERS as STATIC_CHARACTERS } from '$lib/data/characters';
 
 export type PlayMode = 'solo' | 'multiplayer';
+export type RolePolicy = 'open' | 'restricted';
+
+export interface BundledRoleSnapshot {
+    id: string;
+    source_role_id: string | null;
+    name: string;
+    prompt: string;
+    has_avatar: boolean;
+    avatarUrl?: string;
+}
 
 export interface Character {
     id: string | number;
@@ -22,9 +32,14 @@ export interface Character {
     hidden?: boolean;
     alternate_greetings?: string[];
     world_info_ids?: string[];
+    role_policy: RolePolicy;
+    bundled_roles: BundledRoleSnapshot[];
 }
 
-export type CharacterInput = Pick<Character, 'name' | 'prompt' | 'greeting' | 'initials' | 'color' | 'play_mode' | 'alternate_greetings' | 'world_info_ids'> & { avatar?: string | null };
+export type CharacterInput = Pick<Character, 'name' | 'prompt' | 'greeting' | 'initials' | 'color' | 'play_mode' | 'alternate_greetings' | 'world_info_ids'> & {
+    avatar?: string | null;
+    role_policy?: RolePolicy;
+};
 
 export const characterState = $state({
     allCharacters: [] as Character[],
@@ -68,6 +83,8 @@ export async function loadCharacters() {
             world_info_ids: Array.isArray(c.world_info_ids)
                 ? c.world_info_ids
                 : [],
+            role_policy: c.role_policy ?? 'open',
+            bundled_roles: Array.isArray(c.bundled_roles) ? c.bundled_roles : [],
         }));
 
         characterState.allCharacters = [...customChars, ...STATIC_CHARACTERS];
@@ -121,6 +138,8 @@ export async function createCharacter(charData: CharacterInput) {
         isCustom: true,
         avatarUrl: charData.avatar || undefined,
         world_info_ids: charData.world_info_ids ?? [],
+        role_policy: charData.role_policy ?? 'open',
+        bundled_roles: [],
     };
 
     characterState.allCharacters = [
@@ -141,6 +160,7 @@ export async function createCharacter(charData: CharacterInput) {
                 color: charData.color,
                 play_mode: charData.play_mode,
                 world_info_ids: charData.world_info_ids ?? [],
+                role_policy: charData.role_policy ?? 'open',
             }
         });
 
@@ -171,11 +191,14 @@ export async function updateCharacter(id: string, charData: CharacterInput) {
                 color: charData.color,
                 play_mode: charData.play_mode,
                 world_info_ids: charData.world_info_ids ?? [],
+                role_policy: charData.role_policy,
             }
         });
 
         characterState.allCharacters = characterState.allCharacters.map(c =>
-            c.id === id ? { ...c, ...charData, id, isCustom: true } : c
+            c.id === id
+                ? { ...c, ...charData, role_policy: charData.role_policy ?? c.role_policy, id, isCustom: true }
+                : c
         );
 
         setTimeout(() => loadCharacters(), 800);
@@ -184,6 +207,76 @@ export async function updateCharacter(id: string, charData: CharacterInput) {
         console.error("Error updating character:", e);
         throw e;
     }
+}
+
+export async function setCharacterRolePolicy(id: string, rolePolicy: RolePolicy): Promise<void> {
+    await invoke('set_character_role_policy', { characterId: id, rolePolicy });
+    characterState.allCharacters = characterState.allCharacters.map((character) =>
+        String(character.id) === id ? { ...character, role_policy: rolePolicy } : character
+    );
+}
+
+export async function addBundledRoleSnapshot(
+    characterId: string,
+    roleId: string
+): Promise<BundledRoleSnapshot> {
+    const snapshot = await invoke<BundledRoleSnapshot>('add_bundled_role_snapshot', {
+        characterId,
+        roleId,
+    });
+    characterState.allCharacters = characterState.allCharacters.map((character) =>
+        String(character.id) === characterId
+            ? { ...character, bundled_roles: [...character.bundled_roles, snapshot] }
+            : character
+    );
+    return snapshot;
+}
+
+export async function loadBundledRoleSnapshots(characterId: string): Promise<void> {
+    const snapshots = await invoke<BundledRoleSnapshot[]>('get_bundled_role_snapshots', {
+        characterId,
+    });
+    characterState.allCharacters = characterState.allCharacters.map((character) =>
+        String(character.id) === characterId
+            ? { ...character, bundled_roles: snapshots }
+            : character
+    );
+}
+
+export async function removeBundledRoleSnapshot(
+    characterId: string,
+    snapshotId: string
+): Promise<void> {
+    await invoke('remove_bundled_role_snapshot', { characterId, snapshotId });
+    characterState.allCharacters = characterState.allCharacters.map((character) =>
+        String(character.id) === characterId
+            ? {
+                ...character,
+                bundled_roles: character.bundled_roles.filter((snapshot) => snapshot.id !== snapshotId),
+            }
+            : character
+    );
+}
+
+export async function loadBundledRoleAvatar(
+    characterId: string,
+    snapshotId: string
+): Promise<void> {
+    const avatarUrl = await invoke<string | null>('get_bundled_role_avatar', {
+        characterId,
+        snapshotId,
+    });
+    if (!avatarUrl) return;
+    characterState.allCharacters = characterState.allCharacters.map((character) =>
+        String(character.id) === characterId
+            ? {
+                ...character,
+                bundled_roles: character.bundled_roles.map((snapshot) =>
+                    snapshot.id === snapshotId ? { ...snapshot, avatarUrl } : snapshot
+                ),
+            }
+            : character
+    );
 }
 
 export async function deleteCharacter(id: string) {
