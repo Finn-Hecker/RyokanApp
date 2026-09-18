@@ -1,6 +1,7 @@
 <script lang="ts">
   import { flip } from 'svelte/animate';
-  import { scale } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
+  import { scale, slide } from 'svelte/transition';
   import { chatState, openHistoryChat, loadAllConversations, loadMoreConversations, loadMoreFolderConversations, deleteConversation, renameConversation, togglePinConversation, createChatFolder, renameChatFolder, setChatFolderCollapsed, deleteChatFolder, persistSidebarOrganization, type Conversation, type ConversationMode } from '$lib/stores/chatStore.svelte';
   import { appState } from '$lib/stores/appState.svelte';
   import { navigateTo, registerBackHandler } from '$lib/stores/navigation';
@@ -540,7 +541,7 @@
     ghostFrame = requestAnimationFrame(() => {
       ghostFrame = null;
       if (!dragGhost || !dragGhostElement) return;
-      const delta = pendingGhostTop - dragGhost.top;
+      const delta = Math.round(pendingGhostTop - dragGhost.top);
       dragGhostElement.style.transform = `translate3d(0, ${delta}px, 0)`;
     });
   }
@@ -823,7 +824,7 @@
       class="sidebar-item chat-row relative z-10 w-full text-left border cursor-pointer
              {chatState.activeChatId === chat.id ? 'sidebar-item--active' : ''}
              {pressedItemKey === itemKey('chat', chat.id) ? 'sidebar-item--pressed' : ''}
-             {dragging?.type === 'chat' && dragging.id === chat.id ? 'opacity-40 border-transparent' : ''}
+             {dragging?.type === 'chat' && dragging.id === chat.id ? 'sidebar-item--drag-source border-transparent' : ''}
              {chatDrop?.id === chat.id && chatDrop.position === 'before' ? 'border-t-ryokan-accent border-x-transparent border-b-transparent' : ''}
              {chatDrop?.id === chat.id && chatDrop.position === 'after' ? 'border-b-ryokan-accent border-x-transparent border-t-transparent' : ''}
              {chatDrop?.id !== chat.id ? 'border-transparent' : ''}"
@@ -928,24 +929,30 @@
 {/snippet}
 
 {#snippet chatList()}
-  <div data-sidebar-list class="sidebar-list">
+  <div
+    data-sidebar-list
+    class="sidebar-list"
+    class:sidebar-list--dragging-chat={dragging?.type === 'chat'}
+  >
     <div class="section-heading">
       <span>{m.sidebar_folders()}</span>
       <button type="button" onclick={() => isCreatingFolder = true} class="add-folder-button" aria-label={m.sidebar_new_folder()}>＋</button>
     </div>
 
     {#if isCreatingFolder}
-      <input use:focusInput bind:value={newFolderName} onblur={addFolder} onkeydown={(event) => {
-        if (event.key === 'Enter') addFolder();
-        if (event.key === 'Escape') { newFolderName = ''; isCreatingFolder = false; }
-      }} placeholder={m.sidebar_folder_name()} class="w-full rounded-lg border border-ryokan-accent/40 bg-white/10 px-3 py-2 text-sm text-gray-100 outline-none" />
+      <div transition:slide={{ duration: 180, easing: cubicOut }}>
+        <input use:focusInput bind:value={newFolderName} onblur={addFolder} onkeydown={(event) => {
+          if (event.key === 'Enter') addFolder();
+          if (event.key === 'Escape') { newFolderName = ''; isCreatingFolder = false; }
+        }} placeholder={m.sidebar_folder_name()} class="w-full rounded-lg border border-ryokan-accent/40 bg-white/10 px-3 py-2 text-sm text-gray-100 outline-none" />
+      </div>
     {/if}
 
     {#each folders as folder (folder.id)}
       <section
         role="group"
         data-chat-row-layout
-        animate:flip={{ duration: 90 }}
+        animate:flip={{ duration: 190, easing: cubicOut }}
         class="rounded-lg transition-colors duration-150 {highlightedFolder === folder.id ? 'bg-ryokan-accent/10 ring-1 ring-ryokan-accent/70' : ''}"
         ondragenter={(event) => {
           if (dragging?.type !== 'chat' || (event.target as HTMLElement).closest('[data-chat-row]')) return;
@@ -1035,10 +1042,16 @@
             <svg class="folder-chevron {folder.is_collapsed ? '-rotate-90' : ''}" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
           {/if}
         </div>
-        {#if !folder.is_collapsed}
-          <div class="ml-3 border-l border-white/5 pl-2 space-y-1 min-h-2">
+        <div
+          class="folder-contents"
+          class:folder-contents--expanded={!folder.is_collapsed}
+          aria-hidden={folder.is_collapsed}
+          inert={folder.is_collapsed}
+        >
+          <div class="folder-contents-inner ml-3 border-l border-white/5 pl-2">
+            <div class="space-y-1 min-h-2">
             {#each chatsInFolder(folder.id) as chat (chat.id)}
-              <div data-chat-row-layout animate:flip={{ duration: 90 }}>
+              <div data-chat-row-layout animate:flip={{ duration: 170, easing: cubicOut }}>
                 {@render chatRow(chat)}
               </div>
             {/each}
@@ -1047,8 +1060,9 @@
                 {#if folderLoading[folder.id]}…{/if}
               </div>
             {/if}
+            </div>
           </div>
-        {/if}
+        </div>
       </section>
     {/each}
 
@@ -1081,7 +1095,7 @@
       <div class="section-heading section-heading--chats">{m.sidebar_loose_chats()}</div>
       <div class="space-y-1 min-h-8">
         {#each looseChats as chat (chat.id)}
-          <div data-chat-row-layout animate:flip={{ duration: 90 }}>
+          <div data-chat-row-layout animate:flip={{ duration: 170, easing: cubicOut }}>
             {@render chatRow(chat)}
           </div>
         {/each}
@@ -1246,19 +1260,25 @@
   .sidebar-item { box-sizing:border-box; border-radius:10px; user-select:none; -webkit-user-select:none; transition:background .09s ease,color .09s ease,border-color .09s ease,opacity .09s ease; }
   .sidebar-item:active,.sidebar-item--pressed { background:rgba(212,180,131,.075); }
   .sidebar-item--active { background:rgba(212,180,131,.07); }
+  .sidebar-item--drag-source { opacity:0; transition:none; }
   .sidebar-item:focus-visible { outline:1px solid rgba(212,180,131,.48); outline-offset:-1px; }
   .folder-row { width:100%; min-height:44px; display:flex; align-items:center; gap:10px; padding:6px 9px; cursor:pointer; touch-action:pan-y; }
   .folder-row-icon { width:30px; height:30px; flex:0 0 auto; display:grid; place-items:center; border-radius:9px; color:#a99473; background:rgba(212,180,131,.065); }
   .folder-row-name { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#d4d1ce; font-size:13px; font-weight:610; }
   .folder-row-count { min-width:16px; color:#5e5e63; font-size:10px; text-align:right; font-variant-numeric:tabular-nums; }
-  .folder-chevron { flex:0 0 auto; color:#55555a; transition:transform .09s ease-out,color .09s ease; }
+  .folder-chevron { flex:0 0 auto; color:#55555a; transition:transform .2s cubic-bezier(.22,1,.36,1),color .14s ease; will-change:transform; }
   .folder-row:hover .folder-chevron { color:#858589; }
+  .folder-contents { display:grid; grid-template-rows:0fr; opacity:0; transition:grid-template-rows .22s cubic-bezier(.22,1,.36,1),opacity .14s ease; }
+  .folder-contents--expanded { grid-template-rows:1fr; opacity:1; }
+  .folder-contents-inner { min-height:0; overflow:hidden; }
   .chat-row { min-height:48px; display:flex; align-items:center; gap:10px; padding:7px 9px; touch-action:pan-y; }
   .chat-row-icon { width:30px; height:30px; flex:0 0 auto; display:grid; place-items:center; border-radius:9px; color:#64646a; background:rgba(255,255,255,.025); }
   .chat-row-icon--pinned { color:#b79b71; background:rgba(212,180,131,.055); }
   .chat-row-copy { min-width:0; flex:1; }
   .chat-row-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#cfcdca; font-size:13px; font-weight:570; line-height:1.25; transition:color .14s; }
   .chat-row:hover .chat-row-title,.sidebar-item--active .chat-row-title { color:#e4d8c6; }
+  .sidebar-list--dragging-chat .chat-row-title { transition:none; }
+  .sidebar-list--dragging-chat .chat-row:not(.sidebar-item--active):hover .chat-row-title { color:#cfcdca; }
   .chat-row-date { margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#5a5a60; font-size:10px; line-height:1.2; }
   .chat-pin { width:20px; height:20px; flex:0 0 auto; display:grid; place-items:center; color:#a88e67; opacity:.72; }
   :global(.context-menu) { min-width:168px; overflow:hidden; padding:5px; border:1px solid rgba(255,255,255,.085); border-radius:11px; background:#29292b; color:#d3d1d0; font-size:12px; box-shadow:0 16px 38px rgba(0,0,0,.42),0 1px 0 rgba(255,255,255,.035) inset; }
@@ -1293,5 +1313,8 @@
     .chat-row-date { font-size:10.5px; }
     .sidebar-item--active,.sidebar-item--active:hover { background:rgba(212,180,131,.07); }
     .sidebar-item:active,.sidebar-item--pressed { background:rgba(212,180,131,.09); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .folder-contents,.folder-chevron { transition-duration:.01ms; }
   }
 </style>
