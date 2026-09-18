@@ -140,6 +140,7 @@ pub async fn get_conversations_page(
     limit: i64,
     offset: i64,
     mode: Option<String>,
+    folder_id: Option<String>,
 ) -> Result<Vec<Conversation>, String> {
     let conn = get_connection(&app)?;
     let mode = match mode.as_deref() {
@@ -151,8 +152,8 @@ pub async fn get_conversations_page(
                 cloned_from_id, cloned_from_title, folder_id, sort_order, role_snapshot
          FROM conversations
          WHERE mode = ?1
-         ORDER BY CASE WHEN folder_id IS NULL THEN 1 ELSE 0 END,
-                  CASE WHEN folder_id IS NOT NULL THEN folder_id END ASC,
+           AND ((?4 IS NULL AND folder_id IS NULL) OR folder_id = ?4)
+         ORDER BY is_pinned DESC,
                   CASE WHEN folder_id IS NOT NULL THEN sort_order END ASC,
                   CASE WHEN folder_id IS NULL THEN updated_at END DESC,
                   CASE WHEN folder_id IS NULL THEN rowid END DESC,
@@ -160,7 +161,7 @@ pub async fn get_conversations_page(
          LIMIT ?2 OFFSET ?3"
     ).map_err(|e| e.to_string())?;
 
-    let rows = stmt.query_map(params![mode, limit, offset], |row| {
+    let rows = stmt.query_map(params![mode, limit, offset, folder_id], |row| {
         Ok(Conversation {
             id: row.get(0)?,
             title: row.get(1)?,

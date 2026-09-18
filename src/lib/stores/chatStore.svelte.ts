@@ -51,6 +51,7 @@ export interface ChatFolder {
     mode: ConversationMode;
     sort_order: number;
     is_collapsed: boolean;
+    chat_count: number;
 }
 
 export interface DisplayMessage {
@@ -87,21 +88,52 @@ const dateFormatter = new Intl.DateTimeFormat(getLocale(), {
     timeStyle: 'short'
 });
 
-const PAGE_SIZE = 2_147_483_647;
+const PAGE_SIZE = 10;
 let loadedConversationMode: ConversationMode = 'singleplayer';
+
+function formatConversations(conversations: Conversation[]) {
+    return conversations.map(chat => ({
+        ...chat,
+        formattedDate: dateFormatter.format(new Date(chat.created_at))
+    }));
+}
+
+function replaceModeConversations(mode: ConversationMode, conversations: Conversation[]) {
+    chatState.conversations = [
+        ...chatState.conversations.filter(chat => chat.mode !== mode),
+        ...formatConversations(conversations),
+    ];
+}
 
 export async function loadAllConversations(mode: ConversationMode = loadedConversationMode) {
     loadedConversationMode = mode;
     try {
-        const [result, folders] = await Promise.all([
-            invoke<Conversation[]>('get_conversations_page', { limit: PAGE_SIZE, offset: 0, mode }),
+        const [looseChats, folders] = await Promise.all([
+            invoke<Conversation[]>('get_conversations_page', {
+                limit: PAGE_SIZE,
+                offset: 0,
+                mode,
+                folderId: null,
+            }),
             invoke<ChatFolder[]>('get_chat_folders', { mode }),
         ]);
-        chatState.folders = folders;
-        chatState.conversations = result.map(chat => ({
-            ...chat,
-            formattedDate: dateFormatter.format(new Date(chat.created_at))
-        }));
+        chatState.folders = [
+            ...chatState.folders.filter(folder => folder.mode !== mode),
+            ...folders,
+        ];
+        replaceModeConversations(mode, looseChats);
+
+        const openFolderPages = await Promise.all(
+            folders
+                .filter(folder => !folder.is_collapsed)
+                .map(folder => invoke<Conversation[]>('get_conversations_page', {
+                    limit: PAGE_SIZE,
+                    offset: 0,
+                    mode,
+                    folderId: folder.id,
+                })),
+        );
+        replaceModeConversations(mode, [...openFolderPages.flat(), ...looseChats]);
     } catch (e) {
         console.error(e);
     }
@@ -110,28 +142,56 @@ export async function loadAllConversations(mode: ConversationMode = loadedConver
 export async function loadMoreConversations(mode: ConversationMode = loadedConversationMode): Promise<boolean> {
     if (mode !== loadedConversationMode) {
         await loadAllConversations(mode);
-        return chatState.conversations.length === PAGE_SIZE;
+        return chatState.conversations.filter(
+            chat => chat.mode === mode && chat.folder_id === null,
+        ).length === PAGE_SIZE;
     }
     try {
-        const currentLength = chatState.conversations.length;
+        const currentLength = chatState.conversations.filter(
+            chat => chat.mode === mode && chat.folder_id === null,
+        ).length;
         const result = await invoke<Conversation[]>('get_conversations_page', {
             limit: PAGE_SIZE,
             offset: currentLength,
             mode,
+            folderId: null,
         });
         if (result.length === 0) return false;
         chatState.conversations = [
             ...chatState.conversations,
-            ...result.map(chat => ({
-                ...chat,
-                formattedDate: dateFormatter.format(new Date(chat.created_at))
-            }))
+            ...formatConversations(result)
         ];
         return result.length === PAGE_SIZE;
     } catch (e) {
         console.error(e);
         return false;
     }
+}
+
+export async function loadMoreFolderConversations(folderId: string, reset = false): Promise<boolean> {
+    const folder = chatState.folders.find(item => item.id === folderId);
+    if (!folder) return false;
+    const loaded = chatState.conversations.filter(chat => chat.folder_id === folderId);
+    const offset = reset ? 0 : loaded.length;
+    const result = await invoke<Conversation[]>('get_conversations_page', {
+        limit: PAGE_SIZE,
+        offset,
+        mode: folder.mode,
+        folderId,
+    });
+    const otherChats = reset
+        ? chatState.conversations.filter(chat => chat.folder_id !== folderId)
+        : chatState.conversations;
+    const knownIds = new Set(otherChats.map(chat => chat.id));
+    chatState.conversations = [
+        ...otherChats,
+        ...formatConversations(result).filter(chat => !knownIds.has(chat.id)),
+    ];
+    return offset + result.length < folder.chat_count;
+}
+
+export function unloadFolderConversations(folderId: string) {
+    chatState.conversations = chatState.conversations.filter(chat => chat.folder_id !== folderId);
 }
 
 export async function startNewChat(character: any, roleSelection: RoleSelection | null = null) {
@@ -403,19 +463,39 @@ export async function renameChatFolder(id: string, name: string) {
     if (folder) folder.name = name.trim();
 }
 
-export async function setChatFolderCollapsed(id: string, isCollapsed: boolean) {
-    await invoke('set_chat_folder_collapsed', { id, isCollapsed });
+export async function setChatFolderCollapsed(id: string, isCollapsed: boolean): Promise<boolean> {
     const folder = chatState.folders.find(item => item.id === id);
-    if (folder) folder.is_collapsed = isCollapsed;
+    if (!folder) return false;
+    const previousState = folder.is_collapsed;
+    folder.is_collapsed = isCollapsed;
+    const persistence = invoke('set_chat_folder_collapsed', { id, isCollapsed });
+    if (isCollapsed) {
+        unloadFolderConversations(id);
+        try {
+            await persistence;
+            return false;
+        } catch (error) {
+            folder.is_collapsed = previousState;
+            await loadMoreFolderConversations(id, true);
+            throw error;
+        }
+    }
+    const [persistenceResult, pageResult] = await Promise.allSettled([
+        persistence,
+        loadMoreFolderConversations(id, true),
+    ]);
+    if (persistenceResult.status === 'rejected') {
+        folder.is_collapsed = previousState;
+        unloadFolderConversations(id);
+        throw persistenceResult.reason;
+    }
+    if (pageResult.status === 'rejected') throw pageResult.reason;
+    return pageResult.value;
 }
 
 export async function deleteChatFolder(id: string) {
     await invoke('delete_chat_folder', { id });
-    chatState.folders = chatState.folders.filter(folder => folder.id !== id);
-    for (const chat of chatState.conversations) {
-        if (chat.folder_id === id) chat.folder_id = null;
-    }
-    await persistSidebarOrganization(loadedConversationMode);
+    await loadAllConversations(loadedConversationMode);
 }
 
 export async function persistSidebarOrganization(mode: ConversationMode) {

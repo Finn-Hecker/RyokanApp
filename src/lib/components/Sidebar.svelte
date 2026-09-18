@@ -1,7 +1,7 @@
 <script lang="ts">
   import { flip } from 'svelte/animate';
   import { scale } from 'svelte/transition';
-  import { chatState, openHistoryChat, loadAllConversations, loadMoreConversations, deleteConversation, renameConversation, togglePinConversation, createChatFolder, renameChatFolder, setChatFolderCollapsed, deleteChatFolder, persistSidebarOrganization, type Conversation, type ConversationMode } from '$lib/stores/chatStore.svelte';
+  import { chatState, openHistoryChat, loadAllConversations, loadMoreConversations, loadMoreFolderConversations, deleteConversation, renameConversation, togglePinConversation, createChatFolder, renameChatFolder, setChatFolderCollapsed, deleteChatFolder, persistSidebarOrganization, type Conversation, type ConversationMode } from '$lib/stores/chatStore.svelte';
   import { appState } from '$lib/stores/appState.svelte';
   import { navigateTo, registerBackHandler } from '$lib/stores/navigation';
   import { openPersistentSession } from '$lib/stores/multiplayer.svelte';
@@ -53,6 +53,8 @@
 
   let hasMore  = $state(true);
   let isLoading = $state(false);
+  let folderHasMore = $state<Record<string, boolean>>({});
+  let folderLoading = $state<Record<string, boolean>>({});
   let sentinel = $state<HTMLDivElement | null>(null);
   let renameInput = $state<HTMLInputElement | null>(null);
   let newFolderName = $state('');
@@ -152,6 +154,14 @@
     hasMore = true;
     try {
       await loadAllConversations(mode);
+      hasMore = chatState.conversations.filter(
+        chat => chat.mode === mode && chat.folder_id === null,
+      ).length === 10;
+      folderHasMore = Object.fromEntries(
+        chatState.folders
+          .filter(folder => folder.mode === mode && !folder.is_collapsed)
+          .map(folder => [folder.id, chatsInFolder(folder.id).length < folder.chat_count]),
+      );
     } catch (error) {
       console.error("[Sidebar] Error loading chats:", error);
     } finally {
@@ -192,6 +202,27 @@
 
   function closeMenuOnOutsideClick() {
     if (interactionMode === 'desktop') closeContextMenu();
+  }
+
+  async function loadMoreFromFolder(folderId: string) {
+    if (folderLoading[folderId] || !folderHasMore[folderId]) return;
+    folderLoading = { ...folderLoading, [folderId]: true };
+    try {
+      const moreAvailable = await loadMoreFolderConversations(folderId);
+      folderHasMore = { ...folderHasMore, [folderId]: moreAvailable };
+    } catch (error) {
+      console.error('[Sidebar] Error loading more folder chats:', error);
+    } finally {
+      folderLoading = { ...folderLoading, [folderId]: false };
+    }
+  }
+
+  function observeFolderSentinel(node: HTMLElement, folderId: string) {
+    const folderObserver = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) void loadMoreFromFolder(folderId);
+    }, { threshold: 0.1 });
+    folderObserver.observe(node);
+    return { destroy: () => folderObserver.disconnect() };
   }
 
   function closeMenuOnEscape(event: KeyboardEvent) {
@@ -437,8 +468,23 @@
   }
 
   async function toggleFolderCollapse(id: string, isCollapsed: boolean) {
-    try { await setChatFolderCollapsed(id, !isCollapsed); }
-    catch (error) { console.error('[Sidebar] Could not update folder state:', error); }
+    if (folderLoading[id]) return;
+    folderLoading = { ...folderLoading, [id]: true };
+    try {
+      const moreAvailable = await setChatFolderCollapsed(id, !isCollapsed);
+      folderHasMore = { ...folderHasMore, [id]: moreAvailable };
+    }
+    catch (error) {
+      const folder = folders.find(item => item.id === id);
+      if (folder && !folder.is_collapsed) {
+        folderHasMore = {
+          ...folderHasMore,
+          [id]: chatsInFolder(id).length < folder.chat_count,
+        };
+      }
+      console.error('[Sidebar] Could not update folder state:', error);
+    }
+    finally { folderLoading = { ...folderLoading, [id]: false }; }
   }
 
   function beginDrag(event: DragEvent, type: 'chat' | 'folder', id: string) {
@@ -690,8 +736,10 @@
     try { await persistSidebarOrganization(mode); }
     catch (error) {
       console.error('[Sidebar] Could not save organization:', error);
-      await loadAllConversations(mode);
-    } finally { clearDragState(); }
+    } finally {
+      clearDragState();
+      await initializeChats();
+    }
   }
 
   async function dropChatInto(folderId: string | null, index: number) {
@@ -897,7 +945,7 @@
       <section
         role="group"
         data-chat-row-layout
-        animate:flip={{ duration: 160 }}
+        animate:flip={{ duration: 90 }}
         class="rounded-lg transition-colors duration-150 {highlightedFolder === folder.id ? 'bg-ryokan-accent/10 ring-1 ring-ryokan-accent/70' : ''}"
         ondragenter={(event) => {
           if (dragging?.type !== 'chat' || (event.target as HTMLElement).closest('[data-chat-row]')) return;
@@ -983,17 +1031,22 @@
             }} class="min-w-0 flex-1 rounded bg-white/10 px-1.5 py-0.5 text-sm outline-none ring-1 ring-ryokan-accent/50" />
           {:else}
             <span class="folder-row-name">{folder.name}</span>
-            <span class="folder-row-count">{chatsInFolder(folder.id).length}</span>
+            <span class="folder-row-count">{folder.chat_count}</span>
             <svg class="folder-chevron {folder.is_collapsed ? '-rotate-90' : ''}" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
           {/if}
         </div>
         {#if !folder.is_collapsed}
           <div class="ml-3 border-l border-white/5 pl-2 space-y-1 min-h-2">
             {#each chatsInFolder(folder.id) as chat (chat.id)}
-              <div data-chat-row-layout animate:flip={{ duration: 160 }}>
+              <div data-chat-row-layout animate:flip={{ duration: 90 }}>
                 {@render chatRow(chat)}
               </div>
             {/each}
+            {#if folderLoading[folder.id] || folderHasMore[folder.id]}
+              <div use:observeFolderSentinel={folder.id} class="h-6 text-center text-xs text-gray-600">
+                {#if folderLoading[folder.id]}…{/if}
+              </div>
+            {/if}
           </div>
         {/if}
       </section>
@@ -1028,7 +1081,7 @@
       <div class="section-heading section-heading--chats">{m.sidebar_loose_chats()}</div>
       <div class="space-y-1 min-h-8">
         {#each looseChats as chat (chat.id)}
-          <div data-chat-row-layout animate:flip={{ duration: 160 }}>
+          <div data-chat-row-layout animate:flip={{ duration: 90 }}>
             {@render chatRow(chat)}
           </div>
         {/each}
@@ -1062,26 +1115,26 @@
 {/if}
 
 {#snippet navButtons()}
-  <div class="p-3 border-t border-white/5 flex gap-2 shrink-0">
+  <div class="sidebar-footer border-t border-white/5 flex gap-2 shrink-0">
     <button
       onclick={handleRolesClick}
       class="bottom-nav-button"
     >
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>
       </svg>
-      <span class="text-[10px] font-medium leading-none tracking-wide text-current opacity-70">{m.sidebar_roles()}</span>
+      <span>{m.sidebar_roles()}</span>
     </button>
     <button
       onclick={handleWorldInfoClick}
       class="bottom-nav-button"
     >
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"/>
         <line x1="2" y1="12" x2="22" y2="12"/>
         <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
       </svg>
-      <span class="text-[10px] font-medium leading-none tracking-wide text-current opacity-70">{m.sidebar_worldinfo()}</span>
+      <span>{m.sidebar_worldinfo()}</span>
     </button>
   </div>
 {/snippet}
@@ -1187,9 +1240,10 @@
   .add-folder-button { margin-right:-6px; font-size:18px; font-weight:350; }
   .add-folder-button:hover,.sidebar-close-button:hover { color:#d4b483; background:rgba(255,255,255,.04); }
   .add-folder-button:active,.sidebar-close-button:active { transform:scale(.96); background:rgba(255,255,255,.07); }
-  .bottom-nav-button { min-height:50px; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; padding:8px 6px; border:1px solid rgba(255,255,255,.025); border-radius:10px; background:rgba(255,255,255,.012); color:#66666b; cursor:pointer; transition:background .14s ease,color .14s ease; }
+  .sidebar-footer { padding:8px 10px; }
+  .bottom-nav-button { min-height:40px; flex:1; display:flex; align-items:center; justify-content:center; gap:8px; padding:8px 10px; border:0; border-radius:8px; background:transparent; color:#737378; font-size:12px; font-weight:550; line-height:1; cursor:pointer; transition:background .14s ease,color .14s ease; }
   .bottom-nav-button:active { background:rgba(212,180,131,.075); }
-  .sidebar-item { box-sizing:border-box; border-radius:10px; user-select:none; -webkit-user-select:none; transition:background .14s ease,color .14s ease,border-color .14s ease,opacity .14s ease; }
+  .sidebar-item { box-sizing:border-box; border-radius:10px; user-select:none; -webkit-user-select:none; transition:background .09s ease,color .09s ease,border-color .09s ease,opacity .09s ease; }
   .sidebar-item:active,.sidebar-item--pressed { background:rgba(212,180,131,.075); }
   .sidebar-item--active { background:rgba(212,180,131,.07); }
   .sidebar-item:focus-visible { outline:1px solid rgba(212,180,131,.48); outline-offset:-1px; }
@@ -1197,7 +1251,7 @@
   .folder-row-icon { width:30px; height:30px; flex:0 0 auto; display:grid; place-items:center; border-radius:9px; color:#a99473; background:rgba(212,180,131,.065); }
   .folder-row-name { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#d4d1ce; font-size:13px; font-weight:610; }
   .folder-row-count { min-width:16px; color:#5e5e63; font-size:10px; text-align:right; font-variant-numeric:tabular-nums; }
-  .folder-chevron { flex:0 0 auto; color:#55555a; transition:transform .16s ease,color .14s ease; }
+  .folder-chevron { flex:0 0 auto; color:#55555a; transition:transform .09s ease-out,color .09s ease; }
   .folder-row:hover .folder-chevron { color:#858589; }
   .chat-row { min-height:48px; display:flex; align-items:center; gap:10px; padding:7px 9px; touch-action:pan-y; }
   .chat-row-icon { width:30px; height:30px; flex:0 0 auto; display:grid; place-items:center; border-radius:9px; color:#64646a; background:rgba(255,255,255,.025); }
