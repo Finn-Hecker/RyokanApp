@@ -34,7 +34,7 @@
   aria-label={pageTitle}
 >
   <nav class="hidden md:flex flex-col w-64 shrink-0 border-r border-white/[0.06] bg-ryokan-sidebar" aria-label="Page navigation">
-    <div class="p-6 border-b border-white/5 flex items-center gap-3">
+    <div class="app-page-header border-b border-white/5 flex items-center gap-3">
       {@render navHeader?.({ mobile: false })}
     </div>
 
@@ -64,7 +64,7 @@
   </nav>
 
   <div class="flex flex-col flex-1 min-w-0 overflow-hidden">
-    <div class="flex items-center justify-between px-4 md:px-8 pt-[calc(1rem+env(safe-area-inset-top))] md:pt-6 pb-4">
+    <div class="app-page-header flex items-center justify-between border-b border-white/5">
       <div class="md:hidden flex items-center gap-3">
         {@render navHeader?.({ mobile: true })}
       </div>

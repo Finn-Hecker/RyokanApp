@@ -168,12 +168,12 @@
   </aside>
 
   <main class="settings-main">
-    <header class="desktop-header">
+    <header class="app-page-header desktop-header">
       <div><h1>{activeCategory.label}</h1><p>{activeCategory.description}</p></div>
       <div class="header-actions"><Button variant="icon" ariaLabel={m.create_page_aria_back()} onclick={goBack}>{@render backIcon()}</Button>{@render saveButton()}</div>
     </header>
 
-    <header class="mobile-header">
+    <header class="app-page-header mobile-header">
       <Button variant="icon" ariaLabel={mobileCategoryOpen ? m.settings_back_to_overview() : m.create_page_aria_back()} onclick={() => mobileCategoryOpen ? (mobileCategoryOpen = false) : goBack()}>{@render backIcon()}</Button>
       <h1>{mobileCategoryOpen ? activeCategory.label : m.settings_title()}</h1>
       {@render saveButton()}
@@ -205,9 +205,9 @@
   .settings-shell { height:100%; width:100%; display:flex; overflow:hidden; background:var(--color-ryokan-bg,#111); }
   .desktop-sidebar,.desktop-header { display:none; }
   .settings-main { min-width:0; flex:1; display:flex; flex-direction:column; overflow:hidden; }
-  .mobile-header { flex:0 0 auto; min-height:68px; padding:calc(12px + env(safe-area-inset-top)) 16px 12px; display:grid; grid-template-columns:40px minmax(0,1fr) auto; align-items:center; gap:8px; border-bottom:1px solid rgba(255,255,255,.05); }
+  .mobile-header { flex:0 0 auto; display:grid; grid-template-columns:40px minmax(0,1fr) auto; align-items:center; gap:8px; border-bottom:1px solid rgba(255,255,255,.05); }
   .mobile-header h1 { min-width:0; color:#e7e2da; font-size:17px; font-weight:650; letter-spacing:-.01em; overflow-wrap:anywhere; }
-  .mobile-overview { flex:1; overflow-y:auto; padding:12px 16px calc(28px + env(safe-area-inset-bottom)); }
+  .mobile-overview { flex:1; overflow-y:auto; padding:var(--page-content-top) var(--page-gutter) calc(28px + env(safe-area-inset-bottom)); }
   .mobile-overview--hidden,.settings-content--mobile-hidden { display:none; }
   .mobile-category-list { overflow:hidden; border-radius:15px; background:rgba(255,255,255,.025); }
   .mobile-category-row { width:100%; min-height:64px; display:flex; align-items:center; gap:13px; padding:10px 14px; color:#c9c7ca; text-align:left; cursor:pointer; transition:background 140ms ease; }
@@ -218,7 +218,7 @@
   .mobile-category-label { font-size:14px; font-weight:620; color:#e1dfe2; }
   .mobile-category-description { font-size:11px; line-height:1.35; color:#65656a; }
   .mobile-chevron { flex:0 0 auto; color:#444448; }
-  .settings-content { flex:1; overflow-y:auto; overflow-x:hidden; padding:22px 18px calc(36px + env(safe-area-inset-bottom)); }
+  .settings-content { flex:1; overflow-y:auto; overflow-x:hidden; padding:var(--page-content-top) var(--page-gutter) calc(36px + env(safe-area-inset-bottom)); }
   .content-panel { width:100%; max-width:660px; margin:0 auto; }
   .content-panel[hidden] { display:none; }
   .advanced-mode { margin-bottom:22px; padding-bottom:22px; border-bottom:1px solid rgba(255,255,255,.055); }
@@ -243,17 +243,17 @@
   :global(.settings-input::placeholder) { color:#3a3a3c; }
   :global(.settings-divider) { height:1px; margin:20px 0; background:rgba(255,255,255,.05); }
   @media (min-width:768px) {
-    .desktop-sidebar { width:224px; flex:0 0 auto; display:flex; flex-direction:column; border-right:1px solid rgba(255,255,255,.055); background:var(--color-ryokan-sidebar,#151515); }
-    .sidebar-title { height:76px; display:flex; align-items:center; padding:0 24px; color:#d4b483; font-size:18px; font-weight:650; border-bottom:1px solid rgba(255,255,255,.045); }
+    .desktop-sidebar { width:256px; flex:0 0 auto; display:flex; flex-direction:column; border-right:1px solid rgba(255,255,255,.055); background:var(--color-ryokan-sidebar,#151515); }
+    .sidebar-title { height:var(--page-header-height); display:flex; align-items:center; padding:0 24px; color:#d4b483; font-size:18px; font-weight:650; border-bottom:1px solid rgba(255,255,255,.045); }
     .category-nav { padding:14px 12px; display:flex; flex-direction:column; gap:3px; }
     .category-nav-item { min-height:42px; width:100%; display:flex; align-items:center; gap:11px; padding:9px 12px; border-radius:10px; color:#6d6d72; text-align:left; font-size:13px; font-weight:560; cursor:pointer; transition:color .15s,background .15s; }
     .category-nav-item:hover { color:#bbb8b5; background:rgba(255,255,255,.03); }
     .category-nav-item--active { color:#d8c5a8; background:rgba(212,180,131,.075); }
-    .desktop-header { min-height:76px; flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:24px; padding:15px 32px; border-bottom:1px solid rgba(255,255,255,.045); }
+    .desktop-header { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:24px; border-bottom:1px solid rgba(255,255,255,.045); }
     .desktop-header h1 { color:#e4e0da; font-size:18px; font-weight:650; letter-spacing:-.01em; }
     .desktop-header p { margin-top:2px; color:#5e5e63; font-size:11px; }
     .header-actions { display:flex; align-items:center; gap:10px; }
     .mobile-header,.mobile-overview { display:none; }
-    .settings-content,.settings-content--mobile-hidden { display:block; padding:32px 40px 72px; }
+    .settings-content,.settings-content--mobile-hidden { display:block; padding:var(--page-content-top) var(--page-gutter) 72px; }
   }
 </style>

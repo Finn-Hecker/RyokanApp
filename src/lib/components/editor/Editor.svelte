@@ -380,13 +380,21 @@
     hidden
   />
 
+  {#snippet backAction()}
+    <Button variant="icon" ariaLabel={m.create_page_aria_back()} onclick={goBack}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </Button>
+  {/snippet}
+
+  {#snippet leadingActions()}
+    <div class="md:hidden">{@render backAction()}</div>
+  {/snippet}
+
   {#snippet actions()}
     <div class="flex items-center gap-2">
-      <Button variant="icon" ariaLabel={m.create_page_aria_back()} onclick={goBack}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </Button>
+      <div class="hidden md:block">{@render backAction()}</div>
 
       <div class="relative" bind:this={menuRef}>
         <Button variant="icon" ariaLabel={m.create_page_aria_more_options()} onclick={toggleMenu}>
@@ -485,7 +493,7 @@
     </div>
   {/snippet}
 
-  <SimpleFormPage maxWidth="max-w-[704px]" {actions}>
+  <SimpleFormPage maxWidth="max-w-[704px]" {leadingActions} {actions}>
 
   {#if !isAnyEditMode}
     <div class="page-heading text-center">

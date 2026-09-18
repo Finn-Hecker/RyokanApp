@@ -85,6 +85,11 @@
     navigateTo('create');
   }
 
+  function createScenario() {
+    appState.editingCharacter = null;
+    navigateTo('create');
+  }
+
   function ignoreScenarioAction(event: MouseEvent) {
     event.stopPropagation();
   }
@@ -113,10 +118,17 @@
   <div class="flex items-center gap-3">
     <Button variant="icon" ariaLabel={m.play_btn_back()} onclick={() => returnTo('lobby')}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>
+        <circle cx="12" cy="7" r="3"/>
+        <path d="M6 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
       </svg>
     </Button>
     <div class="h-6 w-px bg-white/10"></div>
+    <Button variant="secondary" onclick={createScenario}>
+      <svg class="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      <span class="hidden max-w-[70px] truncate md:block">{m.lobby_btn_open_create_char()}</span>
+    </Button>
     <Button variant="icon" ariaLabel={m.lobby_btn_open_settings()} onclick={() => navigateTo('settings')}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="3"/>

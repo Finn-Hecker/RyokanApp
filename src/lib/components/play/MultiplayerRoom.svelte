@@ -217,7 +217,6 @@
   pageTitle={m.mp_title()}
   showSidebar={!inMultiplayerChat}
   maxContentWidth="max-w-5xl"
-  contentPadding="px-3 sm:px-6"
   {sidebar}
   {header}
 >

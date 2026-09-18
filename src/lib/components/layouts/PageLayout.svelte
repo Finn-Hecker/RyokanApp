@@ -16,7 +16,6 @@
     showSidebar = false,
     sidebarWidth = "w-64",
     maxContentWidth = "max-w-7xl",
-    contentPadding = "px-8",
     children,
     sidebar,
     header
@@ -25,7 +24,6 @@
     showSidebar?: boolean;
     sidebarWidth?: string;
     maxContentWidth?: string;
-    contentPadding?: string;
     children?: Snippet;
     sidebar?: Snippet<[SidebarContext]>;
     header?: Snippet;
@@ -65,9 +63,7 @@
   {/if}
 
   <div class="flex-1 overflow-y-auto min-w-0 scrollbar-hide">
-    <div class="{maxContentWidth} mx-auto w-full {contentPadding}">
-      
-      <div class="flex items-center justify-between pt-[calc(1rem+env(safe-area-inset-top))] mb-3 sm:mb-6 md:pt-6">
+    <div class="app-page-header flex items-center justify-between border-b border-white/5">
         {#if showSidebar}
           <button
             onclick={() => isMobileSidebarOpen = true}
@@ -86,8 +82,9 @@
         {/if}
 
         {@render header?.()}
-      </div>
+    </div>
 
+    <div class="app-page-content {maxContentWidth} mx-auto w-full">
       {@render children?.()}
 
       <div class="h-8"></div>
