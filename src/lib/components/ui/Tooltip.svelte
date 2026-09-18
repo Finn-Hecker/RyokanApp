@@ -170,7 +170,13 @@
     box-sizing: border-box;
     max-height: calc(100dvh - 24px);
     overflow-y: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
     transform: translateY(4px);
+  }
+
+  .ryokan-tooltip-text::-webkit-scrollbar {
+    display: none;
   }
 
   .ryokan-tooltip-text--center::after,

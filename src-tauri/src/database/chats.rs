@@ -203,9 +203,9 @@ pub async fn create_chat(
         _ => "singleplayer",
     };
     let title = if mode == "multiplayer" {
-        format!("👥 {}", character_name)
+        format!("{}", character_name)
     } else {
-        format!("💬 {}", character_name)
+        format!("{}", character_name)
     };
     let role_snapshot = if mode == "singleplayer" {
         resolve_role_snapshot(&tx, character_id.as_deref(), role_selection.as_ref())?
