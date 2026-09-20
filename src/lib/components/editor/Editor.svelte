@@ -17,7 +17,8 @@
   import RoleTab from '$lib/components/editor/role/RoleTab.svelte';
   import WorldInfoTab from '$lib/components/editor/worldinfo/WorldInfoTab.svelte';
   import type { WorldInfoEntry } from '$lib/components/editor/worldinfo/worldInfoLogic';
-  import { createWorldInfo, updateWorldInfo } from '$lib/components/editor/worldinfo/worldInfoLogic';
+  import { createWorldInfo, deleteWorldInfo, updateWorldInfo, type WorldInfoFormData } from '$lib/components/editor/worldinfo/worldInfoLogic';
+  import { loadWorldInfos } from '$lib/stores/worldInfoStore.svelte';
   import { createRole, updateRole } from '$lib/stores/roleStore.svelte';
 
   import {
@@ -67,6 +68,7 @@
   let bundledRoles = $state<BundledRoleSnapshot[]>([]);
   let pendingBundledRoles = $state<Array<{ tempId: string; roleId: string }>>([]);
   let importedBundledRoles = $state<PortableBundledRoleSnapshot[]>([]);
+  let importedWorldInfo = $state<WorldInfoFormData | null>(null);
   let avatarPreview = $state<string | null>(null);
   let avatarChanged = $state(true);
 
@@ -252,6 +254,7 @@
       charPlayMode = result.play_mode ?? 'solo';
       rolePolicy = result.role_policy ?? 'open';
       importedBundledRoles = result.bundled_roles ?? [];
+      importedWorldInfo = result.world_info ?? null;
       bundledRoles = importedBundledRoles.map((role) => ({
         id: role.id,
         source_role_id: role.source_role_id,
@@ -269,23 +272,35 @@
     isSaving = true;
     try {
       if (activeTab === 'character') {
-        const characterId = await saveCharacter(
-          {
-            name: charName,
-            prompt: charPrompt,
-            greeting: charGreeting,
-            alternate_greetings: charAltGreetings,
-            play_mode: charPlayMode,
-            world_info_ids: worldInfoIds,
-            // New restricted Characters are first created open, then their
-            // snapshots are persisted, and only then made restricted.
-            role_policy: editChar?.isCustom ? rolePolicy : 'open',
-            bundled_roles: editChar?.isCustom ? undefined : importedBundledRoles,
-          },
-          editChar,
-          avatarPreview,
-          avatarChanged
-        );
+        let importedWorldInfoId: string | null = null;
+        if (importedWorldInfo) {
+          importedWorldInfoId = await createWorldInfo(importedWorldInfo);
+          worldInfoIds = [importedWorldInfoId];
+        }
+        let characterId: string;
+        try {
+          characterId = await saveCharacter(
+            {
+              name: charName,
+              prompt: charPrompt,
+              greeting: charGreeting,
+              alternate_greetings: charAltGreetings,
+              play_mode: charPlayMode,
+              world_info_ids: worldInfoIds,
+              // New restricted Characters are first created open, then their
+              // snapshots are persisted, and only then made restricted.
+              role_policy: editChar?.isCustom ? rolePolicy : 'open',
+              bundled_roles: editChar?.isCustom ? undefined : importedBundledRoles,
+            },
+            editChar,
+            avatarPreview,
+            avatarChanged
+          );
+        } catch (error) {
+          if (importedWorldInfoId) await deleteWorldInfo(importedWorldInfoId).catch(() => undefined);
+          throw error;
+        }
+        if (importedWorldInfoId) await loadWorldInfos();
         if (!editChar?.isCustom) {
           for (const pending of pendingBundledRoles) {
             await addBundledRoleSnapshot(characterId, pending.roleId);

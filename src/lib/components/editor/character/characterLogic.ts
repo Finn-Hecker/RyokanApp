@@ -5,6 +5,7 @@ import {
   deleteCharacter as storeDeleteCharacter
 } from '$lib/stores/characterStore.svelte';
 import type { PlayMode, PortableBundledRoleSnapshot, RolePolicy } from '$lib/stores/characterStore.svelte';
+import type { WorldInfoFormData } from '$lib/components/editor/worldinfo/worldInfoLogic';
 
 export interface CharFormData {
   name: string;
@@ -19,6 +20,7 @@ export interface CharFormData {
 
 export interface ImportResult extends Partial<CharFormData> {
   avatarDataUrl?: string;
+  world_info?: WorldInfoFormData | null;
 }
 
 export async function saveCharacter(
@@ -101,6 +103,7 @@ export async function importCharacterFromFile(
     alternate_greetings: string[];
     role_policy: RolePolicy;
     bundled_roles: PortableBundledRoleSnapshot[];
+    world_info: WorldInfoFormData | null;
   }>('parse_character_card', {
     imageData: Array.from(uint8Array)
   });
@@ -116,6 +119,7 @@ export async function importCharacterFromFile(
   }
   result.role_policy = metadata.role_policy;
   result.bundled_roles = metadata.bundled_roles;
+  result.world_info = metadata.world_info;
 
 
   return result;

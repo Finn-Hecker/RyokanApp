@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
-import { buildSystemPrompt, buildWiString, buildWorldInfoBlock } from '$lib/utils/promptBuilder';
 import { worldInfoState } from '$lib/stores/worldInfoStore.svelte';
 import { chatState } from '$lib/stores/chatStore.svelte';
+import { buildPromptMessages } from '$lib/utils/chatPromptBuilder';
 import type { ApiSettings } from '$lib/stores/appState.svelte';
 import type { Message } from '$lib/stores/chatStore.svelte';
 import {
@@ -44,93 +44,17 @@ export interface ChatMessage {
     content: string;
 }
 
-const START_ROLEPLAY_MARKER = '[Start Roleplay]';
 const DEFAULT_THINKING_BUDGET = 2500;
 
 export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
-    const { character, apiSettings, recentMessages, userPrompt } = options;
-
-    const worldInfoIds = character?.world_info_ids ?? [];
-    const relevantEntries = worldInfoState.allWorldInfos
-        .filter(wi => worldInfoIds.includes(wi.id))
-        .flatMap(wi => wi.entries);
-    const recentContext = [
-        ...recentMessages.slice(-10).map(m =>
-            m.role === 'assistant' ? stripThinkingContent(m.content) : m.content
-        ),
-        userPrompt ?? '',
-    ].join(' ');
-
-    const charName = character?.name || 'Unknown';
-
-    // Static block: core instructions + character card.
-    // No world info here — see the layout note above.
-    const baseSystemPrompt = buildSystemPrompt({
-        charName,
-        prompt: character?.prompt,
+    return buildPromptMessages({
+        character: options.character,
         role: options.role === undefined ? chatState.activeRoleSnapshot : options.role,
+        recentMessages: options.recentMessages,
+        userPrompt: options.userPrompt,
+        summaryMeta: options.summaryMeta ?? chatState.summaryMeta,
+        worldInfos: worldInfoState.allWorldInfos,
     });
-
-    const { currentSummary, lastSummarizedMessageId } = options.summaryMeta ?? chatState.summaryMeta;
-
-    // Append the rolling summary to the single system message instead of
-    // injecting a second system turn — avoids "No user query found" errors
-    // from models that expect exactly one system message (Qwen, Mistral, …).
-    const fullSystemContent = currentSummary
-        ? `${baseSystemPrompt}\n\n[Previous conversation summary:\n${currentSummary}]`
-        : baseSystemPrompt;
-
-    // Only send messages that haven't been compressed into the summary yet.
-    const lastSumIdx  = lastSummarizedMessageId
-        ? recentMessages.findIndex(m => m.id === lastSummarizedMessageId)
-        : -1;
-    const newMessages = recentMessages.slice(lastSumIdx + 1);
-
-    const messages: ChatMessage[] = [
-        { role: 'system', content: fullSystemContent },
-    ];
-
-    messages.push(...newMessages.map(msg => ({
-        role:    msg.role as ChatRole,
-        content: msg.role === 'assistant' ? stripThinkingContent(msg.content) : msg.content,
-    })));
-
-    if (userPrompt) {
-        messages.push({ role: 'user', content: userPrompt });
-    }
-
-    // Some model templates (e.g. Qwen via LM Studio) require the first
-    // non-system turn to be a user message.
-    const firstNonSystem = messages.find(m => m.role !== 'system');
-    if (firstNonSystem?.role === 'assistant') {
-        const systemIndex = messages.findLastIndex(m => m.role === 'system');
-        messages.splice(systemIndex + 1, 0, { role: 'user', content: START_ROLEPLAY_MARKER });
-    }
-
-    // World info: computed last, attached only to the current turn (see
-    // layout note above) instead of the cached system message.
-    const worldInfoBlock = buildWorldInfoBlock(
-        buildWiString(relevantEntries, 'before', recentContext),
-        buildWiString(relevantEntries, 'after',  recentContext),
-        charName,
-        'ollama',
-    );
-
-    if (worldInfoBlock) {
-        const lastUserIdx = messages.findLastIndex(m => m.role === 'user');
-        if (lastUserIdx !== -1) {
-            messages[lastUserIdx] = {
-                ...messages[lastUserIdx],
-                content: `${worldInfoBlock}\n\n${messages[lastUserIdx].content}`,
-            };
-        } else {
-            // No user turn to attach to (shouldn't normally happen) — fall
-            // back to a standalone message so the info isn't silently lost.
-            messages.push({ role: 'user', content: worldInfoBlock });
-        }
-    }
-
-    return messages;
 }
 
 /**

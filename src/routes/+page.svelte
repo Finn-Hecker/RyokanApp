@@ -14,6 +14,7 @@
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { handleBackNavigation } from '$lib/stores/navigation';
   import { invoke } from '@tauri-apps/api/core';
+  import { loadWorldInfos } from '$lib/stores/worldInfoStore.svelte';
 
   let loaded = $state(false); 
 
@@ -36,6 +37,7 @@
     const [settings, interactionMode] = await Promise.all([
       getAllSettings(),
       invoke<'desktop' | 'mobile'>('get_interaction_mode'),
+      loadWorldInfos(),
     ]);
     appState.interactionMode = interactionMode;
     const map = Object.fromEntries(settings.map(s => [s.key, s.value]));

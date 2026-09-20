@@ -4,6 +4,7 @@ use serde_json::Value;
 use tauri::command;
 use crate::database::characters::StoredBundledRoleSnapshot;
 use std::collections::HashSet;
+use crate::database::world_info::WorldInfoEntry;
 
 const RYOKAN_EXTENSION_KEY: &str = "ryokan";
 
@@ -23,6 +24,14 @@ pub struct CharacterMetadata {
     pub prompt: String,
     pub role_policy: String,
     pub bundled_roles: Vec<StoredBundledRoleSnapshot>,
+    pub world_info: Option<ImportedWorldInfo>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct ImportedWorldInfo {
+    pub name: String,
+    pub description: String,
+    pub entries: Vec<WorldInfoEntry>,
 }
 
 // Manually parses PNG chunks to avoid heavy image dependencies and ensure zero-lag extraction.
@@ -150,6 +159,8 @@ fn map_json_to_metadata(json: &Value) -> Option<CharacterMetadata> {
         }
     }
 
+    meta.world_info = root.get("character_book").and_then(import_character_book);
+
     meta.prompt = combine_legacy_prompt(
         meta.description.as_deref().unwrap_or_default(),
         meta.personality.as_deref().unwrap_or_default(),
@@ -164,6 +175,56 @@ fn map_json_to_metadata(json: &Value) -> Option<CharacterMetadata> {
     }
 
     if found_any { Some(meta) } else { None }
+}
+
+fn import_character_book(value: &Value) -> Option<ImportedWorldInfo> {
+    let raw_entries = value.get("entries")?.as_array()?;
+    let mut imported_ids = HashSet::new();
+    let mut entries = raw_entries.iter().enumerate().filter_map(|(index, entry)| {
+        let content = entry.get("content")?.as_str()?.to_string();
+        let keys = entry.get("keys").and_then(Value::as_array)
+            .map(|keys| keys.iter().filter_map(Value::as_str).map(String::from).collect())
+            .unwrap_or_default();
+        let original_id = entry.get("id").map(|id| match id {
+            Value::String(value) => value.clone(),
+            other => other.to_string(),
+        }).unwrap_or_else(|| index.to_string());
+        let id = if !original_id.trim().is_empty() && imported_ids.insert(original_id.clone()) {
+            original_id
+        } else {
+            format!("ccv3-{index}-{original_id}")
+        };
+        let comment = entry.get("comment").and_then(Value::as_str)
+            .or_else(|| entry.get("name").and_then(Value::as_str))
+            .unwrap_or_default().to_string();
+        Some((index, WorldInfoEntry {
+            id,
+            keys,
+            content,
+            enabled: entry.get("enabled").and_then(Value::as_bool).unwrap_or(true),
+            comment,
+            position: match entry.get("position").and_then(Value::as_str) {
+                Some("before_char") => "before".into(),
+                _ => "after".into(),
+            },
+            insertion_order: entry.get("insertion_order").and_then(Value::as_i64),
+            priority: entry.get("priority").and_then(Value::as_i64),
+            constant: entry.get("constant").and_then(Value::as_bool),
+            case_sensitive: entry.get("case_sensitive").and_then(Value::as_bool),
+            use_regex: entry.get("use_regex").and_then(Value::as_bool),
+            selective: entry.get("selective").and_then(Value::as_bool),
+            secondary_keys: entry.get("secondary_keys").and_then(Value::as_array)
+                .map(|keys| keys.iter().filter_map(Value::as_str).map(String::from).collect())
+                .unwrap_or_default(),
+            extensions: entry.get("extensions").cloned(),
+        }))
+    }).collect::<Vec<_>>();
+    entries.sort_by_key(|(index, entry)| (entry.insertion_order.unwrap_or(*index as i64), *index));
+    Some(ImportedWorldInfo {
+        name: value.get("name").and_then(Value::as_str).unwrap_or("Imported World Info").to_string(),
+        description: value.get("description").and_then(Value::as_str).unwrap_or_default().to_string(),
+        entries: entries.into_iter().map(|(_, entry)| entry).collect(),
+    })
 }
 
 #[derive(Deserialize)]
@@ -217,7 +278,7 @@ pub fn combine_legacy_prompt(description: &str, personality: &str, scenario: &st
 mod tests {
     use super::*;
     use crate::database::characters::StoredBundledRoleSnapshot;
-    use crate::export::build_card_json;
+    use crate::export::{build_card_json, build_character_book};
 
     fn v3_card(extension: Value) -> Value {
         serde_json::json!({
@@ -275,7 +336,7 @@ mod tests {
     fn open_character_without_roles_round_trips() {
         let card = build_card_json(
             "Rin", "Free prompt", "", "", "Hello", vec![], "", "", vec![],
-            "open", &[],
+            "open", &[], None,
         );
         let meta = map_json_to_metadata(&card).unwrap();
         assert!(meta.v3_spec);
@@ -301,7 +362,7 @@ mod tests {
         ];
         let card = build_card_json(
             "Rin", "Free prompt", "", "", "Hello", vec![], "", "", vec![],
-            "open", &roles,
+            "open", &roles, None,
         );
         let meta = map_json_to_metadata(&card).unwrap();
         assert_eq!(meta.role_policy, "open");
@@ -324,7 +385,7 @@ mod tests {
         }];
         let card = build_card_json(
             "Rin", "Free prompt", "", "", "Hello", vec![], "", "", vec![],
-            "restricted", &roles,
+            "restricted", &roles, None,
         );
         let meta = map_json_to_metadata(&card).unwrap();
         assert_eq!(meta.role_policy, "restricted");
@@ -344,6 +405,59 @@ mod tests {
             assert_eq!(meta.role_policy, "open");
             assert!(meta.bundled_roles.is_empty());
         }
+    }
+
+    #[test]
+    fn v3_lorebook_import_export_import_round_trip_preserves_activation_fields() {
+        let mut original = v3_card(serde_json::json!({}));
+        original["data"]["character_book"] = serde_json::json!({
+            "name": "Alpenwelt",
+            "description": "Orte und Bräuche",
+            "extensions": {},
+            "entries": [
+                {
+                    "id": "village", "keys": ["Bergdorf", "Dorf"],
+                    "content": "Das Bergdorf besitzt eine Sternwarte.",
+                    "extensions": {"source": "fixture"}, "enabled": true,
+                    "insertion_order": 20, "priority": 7, "case_sensitive": false,
+                    "use_regex": false, "constant": false, "position": "before_char"
+                },
+                {
+                    "id": 2, "keys": ["Straße"], "secondary_keys": ["Markt"],
+                    "content": "Der Markt schließt bei Dämmerung.",
+                    "extensions": {}, "enabled": true, "insertion_order": 30,
+                    "case_sensitive": false, "use_regex": false, "constant": false,
+                    "selective": true, "position": "after_char"
+                },
+                {
+                    "id": "disabled", "keys": ["Markt"], "content": "Nicht verwenden",
+                    "extensions": {}, "enabled": false, "insertion_order": 40,
+                    "case_sensitive": false, "use_regex": false, "constant": false
+                }
+            ]
+        });
+
+        let first_import = map_json_to_metadata(&original).unwrap();
+        let imported_book = first_import.world_info.clone().expect("lorebook imported");
+        assert_eq!(imported_book.entries.len(), 3);
+        assert_eq!(imported_book.entries[0].position, "before");
+        assert_eq!(imported_book.entries[1].secondary_keys, vec!["Markt"]);
+        assert!(!imported_book.entries[2].enabled);
+
+        let exported_book = build_character_book("Rin", vec![(
+            imported_book.name.clone(), imported_book.description.clone(), imported_book.entries.clone(),
+        )]);
+        let exported_card = build_card_json(
+            "Rin", "Free prompt", "", "", "Hello", vec![], "", "", vec![],
+            "open", &[], exported_book,
+        );
+        let second_import = map_json_to_metadata(&exported_card).unwrap();
+        let round_tripped = second_import.world_info.expect("round-tripped lorebook imported");
+
+        assert_eq!(round_tripped.name, imported_book.name);
+        assert_eq!(round_tripped.description, imported_book.description);
+        assert_eq!(round_tripped.entries, imported_book.entries);
+        assert!(exported_card["data"]["character_book"]["entries"].is_array());
     }
 
     #[tokio::test]

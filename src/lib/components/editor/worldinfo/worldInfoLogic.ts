@@ -9,6 +9,14 @@ export interface WorldInfoEntry {
   enabled:  boolean;
   comment:  string;
   position: WiPosition;
+  insertion_order?: number;
+  priority?: number;
+  constant?: boolean;
+  case_sensitive?: boolean;
+  use_regex?: boolean;
+  selective?: boolean;
+  secondary_keys?: string[];
+  extensions?: Record<string, unknown>;
 }
 
 export interface WorldInfoFormData {

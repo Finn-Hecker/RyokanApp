@@ -500,8 +500,8 @@
   "wi_tab_strip_before": "↑ World Info Before",
   "wi_tab_strip_after": "↓ World Info After",
   "wi_tab_btn_add_entry": "Add entry",
-  "wi_tab_callout_before_text": "– Base knowledge (Magic, Lore, History) – injected before the character description.",
-  "wi_tab_callout_after_text": "– Direct influences (Locations, Items, NPCs) – injected after the character description and has a stronger effect on current behavior.",
+  "wi_tab_callout_before_text": "Background knowledge such as magic, lore and history. Inserted before After entries within the World Info context.",
+  "wi_tab_callout_after_text": "Situational knowledge such as locations, items and NPCs. Inserted later within the same World Info context and placed closer to the current message.",
 
   "list_btn_edit": "Edit",
   "list_btn_delete": "Delete",

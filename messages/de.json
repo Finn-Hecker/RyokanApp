@@ -502,8 +502,8 @@
   "wi_tab_strip_before": "↑ World Info Before",
   "wi_tab_strip_after": "↓ World Info After",
   "wi_tab_btn_add_entry": "Eintrag hinzufügen",
-  "wi_tab_callout_before_text": "– Basiswissen (Magie, Lore, Geschichte) – wird vor der Charakterbeschreibung injiziert.",
-  "wi_tab_callout_after_text": "– Direkte Einflüsse (Orte, Gegenstände, NPCs) – wird nach der Charakterbeschreibung injiziert und wirkt stärker auf das aktuelle Verhalten.",
+  "wi_tab_callout_before_text": "Basiswissen wie Magie, Lore und Geschichte. Wird innerhalb des World Info Kontexts vor den After Einträgen eingefügt.",
+  "wi_tab_callout_after_text": "Situatives Wissen wie Orte, Gegenstände und NPCs. Wird innerhalb desselben World Info Kontexts später eingefügt und steht näher an der aktuellen Nachricht.",
 
   "list_btn_edit": "Bearbeiten",
   "list_btn_delete": "Löschen",

@@ -6,6 +6,7 @@ use image::ImageFormat;
 use std::io::Cursor;
 use serde_json::{json, Value};
 use crate::database::characters::{parse_bundled_roles, StoredBundledRoleSnapshot};
+use crate::database::world_info::WorldInfoEntry;
 
 const RYOKAN_EXTENSION_KEY: &str = "ryokan";
 
@@ -110,8 +111,9 @@ pub(crate) fn build_card_json(
     name: &str, desc: &str, personality: &str, scenario: &str, greeting: &str,
     alternate_greetings: Vec<String>, mes_example: &str, creator_notes: &str,
     tags: Vec<String>, role_policy: &str, bundled_roles: &[StoredBundledRoleSnapshot],
+    character_book: Option<Value>,
 ) -> Value {
-    json!({
+    let mut card = json!({
         "spec": "chara_card_v3",
         "spec_version": "3.0",
         "data": {
@@ -138,7 +140,53 @@ pub(crate) fn build_card_json(
                 }
             }
         }
-    })
+    });
+    if let Some(character_book) = character_book {
+        card["data"].as_object_mut().expect("card data is an object")
+            .insert("character_book".into(), character_book);
+    }
+    card
+}
+
+pub(crate) fn build_character_book(name: &str, books: Vec<(String, String, Vec<WorldInfoEntry>)>) -> Option<Value> {
+    if books.is_empty() { return None; }
+    let is_merged_book = books.len() > 1;
+    let book_name = if books.len() == 1 { books[0].0.clone() } else { format!("{name} World Info") };
+    let description = books.iter().filter_map(|(_, description, _)| {
+        let description = description.trim();
+        (!description.is_empty()).then_some(description)
+    }).collect::<Vec<_>>().join("\n\n");
+    let mut insertion_index = 0_i64;
+    let entries = books.into_iter().flat_map(|(_, _, entries)| entries).map(|entry| {
+        let constant = entry.constant.unwrap_or(entry.keys.is_empty());
+        let mut value = json!({
+            "id": entry.id,
+            "keys": entry.keys,
+            "content": entry.content,
+            "extensions": entry.extensions.unwrap_or_else(|| json!({})),
+            "enabled": entry.enabled,
+            "insertion_order": if is_merged_book { insertion_index } else { entry.insertion_order.unwrap_or(insertion_index) },
+            "case_sensitive": entry.case_sensitive.unwrap_or(false),
+            "use_regex": entry.use_regex.unwrap_or(false),
+            "constant": constant,
+            "comment": entry.comment,
+            "position": if entry.position == "before" { "before_char" } else { "after_char" },
+        });
+        insertion_index += 1;
+        let object = value.as_object_mut().expect("lorebook entry is an object");
+        if let Some(priority) = entry.priority { object.insert("priority".into(), json!(priority)); }
+        if let Some(selective) = entry.selective { object.insert("selective".into(), json!(selective)); }
+        if !entry.secondary_keys.is_empty() {
+            object.insert("secondary_keys".into(), json!(entry.secondary_keys));
+        }
+        value
+    }).collect::<Vec<_>>();
+    Some(json!({
+        "name": book_name,
+        "description": description,
+        "extensions": {},
+        "entries": entries,
+    }))
 }
 
 /// Exports a character as a standards-compatible Character Card V3 PNG.
@@ -149,10 +197,10 @@ pub(crate) fn build_card_json(
 pub async fn export_character_card(app: AppHandle, id: String) -> Result<Vec<u8>, String> {
     let conn = get_connection(&app)?;
 
-    let row: (String, String, String, String, String, String, String, String, String, Option<Vec<u8>>, String, String) =
+    let row: (String, String, String, String, String, String, String, String, String, Option<Vec<u8>>, String, String, String) =
         conn.query_row(
             "SELECT name, desc, personality, scenario, greeting, \
-                    alternate_greetings, mes_example, creator_notes, tags, avatar, role_policy, bundled_roles \
+                    alternate_greetings, mes_example, creator_notes, tags, avatar, role_policy, bundled_roles, world_info_ids \
              FROM characters WHERE id = ?1",
             params![id],
             |row| {
@@ -169,6 +217,7 @@ pub async fn export_character_card(app: AppHandle, id: String) -> Result<Vec<u8>
                     row.get::<_, Option<Vec<u8>>>(9)?,
                     row.get::<_, String>(10)?,
                     row.get::<_, String>(11)?,
+                    row.get::<_, String>(12)?,
                 ))
             },
         )
@@ -176,7 +225,7 @@ pub async fn export_character_card(app: AppHandle, id: String) -> Result<Vec<u8>
 
     let (name, desc, personality, scenario, greeting,
          alt_greetings_json, mes_example, creator_notes, tags_json, avatar_blob,
-         role_policy, bundled_roles_json) = row;
+         role_policy, bundled_roles_json, world_info_ids_json) = row;
 
     let alternate_greetings: Vec<String> =
         serde_json::from_str(&alt_greetings_json).unwrap_or_default();
@@ -184,9 +233,24 @@ pub async fn export_character_card(app: AppHandle, id: String) -> Result<Vec<u8>
         serde_json::from_str(&tags_json).unwrap_or_default();
 
     let bundled_roles = parse_bundled_roles(&bundled_roles_json)?;
+    let world_info_ids: Vec<String> = serde_json::from_str(&world_info_ids_json).unwrap_or_default();
+    let mut books = Vec::new();
+    for world_info_id in world_info_ids {
+        let result = conn.query_row(
+            "SELECT name, description, entries FROM world_infos WHERE id = ?1",
+            params![world_info_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
+        );
+        if let Ok((book_name, description, entries_json)) = result {
+            if let Ok(entries) = serde_json::from_str::<Vec<WorldInfoEntry>>(&entries_json) {
+                books.push((book_name, description, entries));
+            }
+        }
+    }
+    let character_book = build_character_book(&name, books);
     let card_json = build_card_json(
         &name, &desc, &personality, &scenario, &greeting, alternate_greetings,
-        &mes_example, &creator_notes, tags, &role_policy, &bundled_roles,
+        &mes_example, &creator_notes, tags, &role_policy, &bundled_roles, character_book,
     );
 
     let json_str = serde_json::to_string(&card_json)

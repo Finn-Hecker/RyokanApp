@@ -62,16 +62,47 @@ ${parts.join('\n\n')}`;
 }
 
 export function buildWiString(
-  entries: Array<{ keys: string[]; content: string; enabled: boolean; position: string }>,
+  entries: Array<{
+    keys: string[];
+    content: string;
+    enabled: boolean;
+    position: string;
+    constant?: boolean;
+    case_sensitive?: boolean;
+    use_regex?: boolean;
+    selective?: boolean;
+    secondary_keys?: string[];
+  }>,
   position: 'before' | 'after',
   recentMessages: string,
 ): string {
+  const normalizedContext = recentMessages.normalize('NFC');
+  const matches = (key: string, caseSensitive = false, useRegex = false): boolean => {
+    const normalizedKey = key.normalize('NFC');
+    if (useRegex) {
+      try {
+        return new RegExp(normalizedKey, caseSensitive ? 'u' : 'iu').test(normalizedContext);
+      } catch {
+        return false;
+      }
+    }
+    return caseSensitive
+      ? normalizedContext.includes(normalizedKey)
+      : normalizedContext.toLowerCase().includes(normalizedKey.toLowerCase());
+  };
+
   return entries
     .filter(e => e.enabled && e.position === position)
-    .filter(e =>
-      e.keys.length === 0 ||
-      e.keys.some(k => recentMessages.toLowerCase().includes(k.toLowerCase()))
-    )
+    .filter(e => {
+      // Empty-key Ryokan entries have historically been constant. An explicit
+      // CCv3 `constant: false`, however, must remain inactive without a key.
+      if ((!e.use_regex && e.constant === true) ||
+          (e.keys.length === 0 && e.constant === undefined)) return true;
+      const primaryMatch = e.keys.some(key => matches(key, e.case_sensitive, e.use_regex));
+      if (!primaryMatch) return false;
+      if (!e.selective || e.use_regex) return true;
+      return (e.secondary_keys ?? []).some(key => matches(key, e.case_sensitive, false));
+    })
     .map(e => e.content.trim())
     .filter(Boolean)
     .join('\n\n');
