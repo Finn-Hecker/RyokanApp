@@ -91,6 +91,7 @@
   "settings_model_select_title": "Modell auswählen",
   "settings_model_close": "Modellauswahl schließen",
   "settings_model_categories": "Modellkategorien",
+  "settings_model_category_others": "Weitere",
   "settings_model_favorite": "{model} zu Favoriten hinzufügen",
   "settings_model_unfavorite": "{model} aus Favoriten entfernen",
   "settings_model_error_no_models": "Server erreichbar, aber keine Modelle zurückgegeben.",

@@ -3,8 +3,13 @@
   import { fetchModels, saveSetting, type ModelInfo } from "$lib/utils/settings";
   import * as m from "$lib/paraglide/messages";
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { registerBackHandler } from '$lib/stores/navigation';
+  import {
+    curatedProviderGroupForModel,
+    curatedProviderGroups,
+    type CuratedProviderGroupId,
+  } from '$lib/utils/modelProviderGroups';
 
   let {
     powerUser = false,
@@ -47,8 +52,10 @@
   let modelSearch     = $state("");
   let activeModelCategory = $state("all");
   let favoriteModels = $state<string[]>([]);
+  let modelResultsReady = $state(false);
   let lastAttemptedModelConfig = "";
   let modelLoadRequest = 0;
+  let modelPreparationRequest = 0;
 
   $effect(() => {
     if (!modelMenuOpen) return;
@@ -61,17 +68,17 @@
   type ModelCategory = {
     id: string;
     label: string;
-    kind: "all" | "favorites" | "free" | "provider";
-    providerKey?: string;
+    kind: "all" | "free" | "favorites" | "provider";
+    providerGroup?: CuratedProviderGroupId | null;
   };
 
   const SPECIAL_MODEL_CATEGORIES: ModelCategory[] = [
     { id: "all", label: "All", kind: "all" },
-    { id: "favorites", label: "Favorites", kind: "favorites" },
-    { id: "free", label: "Free", kind: "free" },
   ];
 
   const FAVORITES_STORAGE_KEY = "ryokan-favorite-models";
+  const MODEL_RENDER_BATCH_SIZE = 50;
+  let renderedModelCount = $state(MODEL_RENDER_BATCH_SIZE);
 
   onMount(() => {
     try {
@@ -110,23 +117,39 @@
     event.preventDefault();
   }
 
-  const modelProviders = $derived.by(() => {
-    const providers = new Map<string, string>();
+  const availableProviderGroups = $derived.by(() => {
+    const presentGroups = new Set<CuratedProviderGroupId>();
+    let hasOtherModels = false;
     for (const modelId of availableModels) {
-      const key = modelProviderKey(modelId);
-      if (key && !providers.has(key)) providers.set(key, modelProviderLabel(key));
+      const group = curatedProviderGroupForModel(modelMetadata[modelId] ?? { id: modelId });
+      if (group) presentGroups.add(group.id);
+      else hasOtherModels = true;
     }
-    return Array.from(providers, ([key, label]) => ({ key, label }));
+    return {
+      curated: curatedProviderGroups.filter(group => presentGroups.has(group.id)),
+      hasOthers: hasOtherModels,
+    };
   });
+
+  const hasFreeModels = $derived(availableModels.some(modelId => isFreeModel(modelId)));
+  const hasFavoriteModels = $derived(availableModels.some(modelId => favoriteModels.includes(modelId)));
 
   const modelCategoryTabs = $derived<ModelCategory[]>([
     ...SPECIAL_MODEL_CATEGORIES,
-    ...modelProviders.map(provider => ({
-      id: `provider:${provider.key}`,
-      label: provider.label,
+    ...(hasFreeModels ? [{ id: "free", label: "Free", kind: "free" as const }] : []),
+    ...(hasFavoriteModels ? [{ id: "favorites", label: "Favorites", kind: "favorites" as const }] : []),
+    ...availableProviderGroups.curated.map(group => ({
+      id: `provider:${group.id}`,
+      label: group.label,
       kind: "provider" as const,
-      providerKey: provider.key,
+      providerGroup: group.id,
     })),
+    ...(availableProviderGroups.hasOthers ? [{
+      id: "provider:others",
+      label: m.settings_model_category_others(),
+      kind: "provider" as const,
+      providerGroup: null,
+    }] : []),
   ]);
 
   // Shared by both responsive presentations so their filter behavior stays identical.
@@ -135,13 +158,41 @@
     const category = modelCategoryTabs.find(item => item.id === activeModelCategory) ?? modelCategoryTabs[0];
     return availableModels.filter(modelId => {
       const matchesSearch = !query || modelId.toLowerCase().includes(query);
-      const matchesCategory = category.kind === "all"
-        || (category.kind === "favorites" && favoriteModels.includes(modelId))
+      const modelGroup = curatedProviderGroupForModel(modelMetadata[modelId] ?? { id: modelId });
+      // Search is intentionally global, regardless of the currently selected browse group.
+      const matchesCategory = Boolean(query)
+        || category.kind === "all"
         || (category.kind === "free" && isFreeModel(modelId))
-        || (category.kind === "provider" && modelProviderKey(modelId) === category.providerKey);
+        || (category.kind === "favorites" && favoriteModels.includes(modelId))
+        || (category.kind === "provider" && (modelGroup?.id ?? null) === category.providerGroup);
       return matchesSearch && matchesCategory;
     });
   });
+
+  const renderedModels = $derived(visibleModels.slice(0, renderedModelCount));
+
+  function updateModelSearch(event: Event) {
+    modelSearch = (event.currentTarget as HTMLInputElement).value;
+    renderedModelCount = MODEL_RENDER_BATCH_SIZE;
+  }
+
+  function selectModelCategory(categoryId: string) {
+    activeModelCategory = categoryId;
+    renderedModelCount = MODEL_RENDER_BATCH_SIZE;
+  }
+
+  function observeModelListEnd(node: HTMLElement) {
+    const observer = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return;
+      renderedModelCount = Math.min(
+        renderedModelCount + MODEL_RENDER_BATCH_SIZE,
+        visibleModels.length,
+      );
+    }, { root: node.parentElement, rootMargin: "200px 0px" });
+
+    observer.observe(node);
+    return { destroy: () => observer.disconnect() };
+  }
 
   const CONTEXT_STEPS = [
     { label: "4K",   value: 4096   },
@@ -227,7 +278,6 @@
     modelsError   = "";
     availableModels = [];
     modelMetadata = {};
-    modelMenuOpen = false;
     modelSearch = "";
     activeModelCategory = "all";
     try {
@@ -272,9 +322,17 @@
   }
 
   function toggleFavorite(modelId: string) {
-    favoriteModels = favoriteModels.includes(modelId)
+    const nextFavoriteModels = favoriteModels.includes(modelId)
       ? favoriteModels.filter(id => id !== modelId)
       : [...favoriteModels, modelId];
+    favoriteModels = nextFavoriteModels;
+    if (
+      activeModelCategory === "favorites"
+      && !availableModels.some(id => nextFavoriteModels.includes(id))
+    ) {
+      activeModelCategory = "all";
+      renderedModelCount = MODEL_RENDER_BATCH_SIZE;
+    }
     try {
       localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favoriteModels));
     } catch {
@@ -320,13 +378,36 @@
     return `${contextLength.toLocaleString()} context`;
   }
 
+  function afterNextPaint(): Promise<void> {
+    return new Promise(resolve => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+  }
+
+  async function prepareModelResultsAfterPaint(request: number) {
+    await tick();
+    await afterNextPaint();
+    if (request !== modelPreparationRequest || !modelMenuOpen) return;
+    modelResultsReady = true;
+  }
+
   function toggleModelMenu() {
     modelMenuOpen = !modelMenuOpen;
-    if (modelMenuOpen) activeModelCategory = "all";
+    if (modelMenuOpen) {
+      activeModelCategory = "all";
+      renderedModelCount = MODEL_RENDER_BATCH_SIZE;
+      modelResultsReady = false;
+      void prepareModelResultsAfterPaint(++modelPreparationRequest);
+    } else {
+      modelPreparationRequest++;
+      modelResultsReady = false;
+    }
   }
 
   function closeModelPicker() {
+    modelPreparationRequest++;
     modelMenuOpen = false;
+    modelResultsReady = false;
     modelSearch = "";
   }
 
@@ -470,12 +551,7 @@
         </label>
       </div>
 
-      {#if modelsLoading}
-        <div class="settings-input model-loading-state" role="status" aria-live="polite">
-          <span class="model-loading-spinner" aria-hidden="true"></span>
-          <span>{m.settings_model_loading()}</span>
-        </div>
-      {:else if availableModels.length > 0}
+      {#if canFetchModels() && !modelsError}
         <div class="model-picker">
           <button
             id="model-select"
@@ -485,7 +561,7 @@
             aria-expanded={modelMenuOpen}
             onclick={toggleModelMenu}
           >
-            <span>{appState.apiSettings.model}</span>
+            <span>{appState.apiSettings.model || m.settings_model_loading()}</span>
             <svg class:rotated={modelMenuOpen} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
               <path d="M6 9l6 6 6-6"/>
             </svg>
@@ -506,33 +582,45 @@
                 <input
                   class="model-search"
                   type="search"
-                  bind:value={modelSearch}
+                  value={modelSearch}
+                  oninput={updateModelSearch}
                   placeholder={m.settings_model_search_placeholder()}
                   aria-label={m.settings_model_search_placeholder()}
                 />
               </div>
                 <div class="model-category-tabs desktop-category-tabs" role="tablist" aria-label={m.settings_model_categories()} onwheel={scrollDesktopCategories}>
-                  {#each modelCategoryTabs as category (category.id)}<button type="button" role="tab" aria-selected={activeModelCategory === category.id} class="model-category-tab" class:model-category-tab--active={activeModelCategory === category.id} onclick={() => activeModelCategory = category.id}>{category.label}</button>{/each}
+                  {#if modelResultsReady}
+                    {#each modelCategoryTabs as category (category.id)}<button type="button" role="tab" aria-selected={activeModelCategory === category.id} class="model-category-tab" class:model-category-tab--active={activeModelCategory === category.id} onclick={() => selectModelCategory(category.id)}>{category.label}</button>{/each}
+                  {/if}
                 </div>
               </div>
               <div class="desktop-model-list" role="listbox" aria-label={m.settings_model_label()}>
-                {#each visibleModels as modelId (modelId)}
-                  <div class="desktop-model-row" class:desktop-model-row--selected={appState.apiSettings.model === modelId}>
-                    <button type="button" role="option" aria-selected={appState.apiSettings.model === modelId} class="desktop-model-select" onclick={() => selectModel(modelId)}>
-                      <span class="desktop-model-identity">
-                        <span class="desktop-model-name">{modelId}</span>
-                        <span class="desktop-model-meta">
-                          <span class="desktop-model-provider">{modelProviderLabel(modelProviderKey(modelId))}</span>
-                          {#if isFreeModel(modelId)}<span class="free-badge">Free</span>{/if}
-                          {#if modelPriceLabel(modelId)}<span class="desktop-meta-badge">{modelPriceLabel(modelId)}</span>{/if}
-                          {#if contextLabel(modelId)}<span class="desktop-meta-badge">{contextLabel(modelId)}</span>{/if}
-                        </span>
-                      </span>
-                      {#if appState.apiSettings.model === modelId}<span class="desktop-selected-mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>{/if}
-                    </button>
-                    <button type="button" class="desktop-favorite-btn" class:desktop-favorite-btn--active={favoriteModels.includes(modelId)} aria-label={favoriteModels.includes(modelId) ? m.settings_model_unfavorite({ model: modelId }) : m.settings_model_favorite({ model: modelId })} aria-pressed={favoriteModels.includes(modelId)} onclick={() => toggleFavorite(modelId)}><svg width="19" height="19" viewBox="0 0 24 24" fill={favoriteModels.includes(modelId) ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 3 2.78 5.63 6.22.9-4.5 4.39 1.06 6.2L12 17.2l-5.56 2.92 1.06-6.2L3 9.53l6.22-.9L12 3Z" stroke-linejoin="round"/></svg></button>
+                {#if !modelResultsReady || modelsLoading || availableModels.length === 0}
+                  <div class="model-list-loading" role="status" aria-live="polite" aria-label={m.settings_model_loading()}>
+                    {#each Array(6) as _}<div class="model-row-skeleton"></div>{/each}
                   </div>
-                {:else}<div class="model-no-results desktop-model-no-results">{m.settings_model_search_empty()}</div>{/each}
+                {:else}
+                  {#each renderedModels as modelId (modelId)}
+                    <div class="desktop-model-row" class:desktop-model-row--selected={appState.apiSettings.model === modelId}>
+                      <button type="button" role="option" aria-selected={appState.apiSettings.model === modelId} class="desktop-model-select" onclick={() => selectModel(modelId)}>
+                        <span class="desktop-model-identity">
+                          <span class="desktop-model-name">{modelId}</span>
+                          <span class="desktop-model-meta">
+                            <span class="desktop-model-provider">{modelProviderLabel(modelProviderKey(modelId))}</span>
+                            {#if isFreeModel(modelId)}<span class="free-badge">Free</span>{/if}
+                            {#if modelPriceLabel(modelId)}<span class="desktop-meta-badge">{modelPriceLabel(modelId)}</span>{/if}
+                            {#if contextLabel(modelId)}<span class="desktop-meta-badge">{contextLabel(modelId)}</span>{/if}
+                          </span>
+                        </span>
+                        {#if appState.apiSettings.model === modelId}<span class="desktop-selected-mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>{/if}
+                      </button>
+                      <button type="button" class="desktop-favorite-btn" class:desktop-favorite-btn--active={favoriteModels.includes(modelId)} aria-label={favoriteModels.includes(modelId) ? m.settings_model_unfavorite({ model: modelId }) : m.settings_model_favorite({ model: modelId })} aria-pressed={favoriteModels.includes(modelId)} onclick={() => toggleFavorite(modelId)}><svg width="19" height="19" viewBox="0 0 24 24" fill={favoriteModels.includes(modelId) ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 3 2.78 5.63 6.22.9-4.5 4.39 1.06 6.2L12 17.2l-5.56 2.92 1.06-6.2L3 9.53l6.22-.9L12 3Z" stroke-linejoin="round"/></svg></button>
+                    </div>
+                  {:else}<div class="model-no-results desktop-model-no-results">{m.settings_model_search_empty()}</div>{/each}
+                  {#if renderedModels.length < visibleModels.length}
+                    <div class="model-list-sentinel" use:observeModelListEnd aria-hidden="true"></div>
+                  {/if}
+                {/if}
               </div>
             </div>
 
@@ -554,61 +642,73 @@
                   <input
                     class="model-search"
                     type="search"
-                    bind:value={modelSearch}
+                    value={modelSearch}
+                    oninput={updateModelSearch}
                     placeholder={m.settings_model_search_placeholder()}
                     aria-label={m.settings_model_search_placeholder()}
                   />
                 </div>
 
                 <div class="model-category-tabs" role="tablist" aria-label={m.settings_model_categories()}>
-                  {#each modelCategoryTabs as category (category.id)}
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={activeModelCategory === category.id}
-                      class="model-category-tab"
-                      class:model-category-tab--active={activeModelCategory === category.id}
-                      onclick={() => activeModelCategory = category.id}
-                    >{category.label}</button>
-                  {/each}
+                  {#if modelResultsReady}
+                    {#each modelCategoryTabs as category (category.id)}
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={activeModelCategory === category.id}
+                        class="model-category-tab"
+                        class:model-category-tab--active={activeModelCategory === category.id}
+                        onclick={() => selectModelCategory(category.id)}
+                      >{category.label}</button>
+                    {/each}
+                  {/if}
                 </div>
               </div>
 
               <div class="mobile-model-list" role="listbox" aria-label={m.settings_model_label()}>
-                {#each visibleModels as modelId (modelId)}
-                  <div class="mobile-model-row" class:mobile-model-row--selected={appState.apiSettings.model === modelId}>
-                    <button
-                      type="button"
-                      role="option"
-                      aria-selected={appState.apiSettings.model === modelId}
-                      class="mobile-model-select"
-                      onclick={() => selectModel(modelId)}
-                    >
-                      <span class="mobile-model-name">{modelId}</span>
-                      <span class="mobile-model-details">
-                        <span class="mobile-model-provider">{modelProviderLabel(modelProviderKey(modelId))}</span>
-                        {#if isFreeModel(modelId)}<span class="free-badge">Free</span>{/if}
-                        {#if modelPriceLabel(modelId)}<span class="mobile-model-price">{modelPriceLabel(modelId)}</span>{/if}
-                        {#if contextLabel(modelId)}<span class="mobile-model-context">{contextLabel(modelId)}</span>{/if}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      class="model-favorite-btn"
-                      class:model-favorite-btn--active={favoriteModels.includes(modelId)}
-                      aria-label={favoriteModels.includes(modelId) ? m.settings_model_unfavorite({ model: modelId }) : m.settings_model_favorite({ model: modelId })}
-                      aria-pressed={favoriteModels.includes(modelId)}
-                      onclick={() => toggleFavorite(modelId)}
-                    >
-                      <svg width="19" height="19" viewBox="0 0 24 24" fill={favoriteModels.includes(modelId) ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 3 2.78 5.63 6.22.9-4.5 4.39 1.06 6.2L12 17.2l-5.56 2.92 1.06-6.2L3 9.53l6.22-.9L12 3Z" stroke-linejoin="round"/></svg>
-                    </button>
-                    {#if appState.apiSettings.model === modelId}
-                      <svg class="mobile-selected-check" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    {/if}
+                {#if !modelResultsReady || modelsLoading || availableModels.length === 0}
+                  <div class="model-list-loading" role="status" aria-live="polite" aria-label={m.settings_model_loading()}>
+                    {#each Array(6) as _}<div class="model-row-skeleton"></div>{/each}
                   </div>
                 {:else}
-                  <div class="model-no-results mobile-model-no-results">{m.settings_model_search_empty()}</div>
-                {/each}
+                  {#each renderedModels as modelId (modelId)}
+                    <div class="mobile-model-row" class:mobile-model-row--selected={appState.apiSettings.model === modelId}>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={appState.apiSettings.model === modelId}
+                        class="mobile-model-select"
+                        onclick={() => selectModel(modelId)}
+                      >
+                        <span class="mobile-model-name">{modelId}</span>
+                        <span class="mobile-model-details">
+                          <span class="mobile-model-provider">{modelProviderLabel(modelProviderKey(modelId))}</span>
+                          {#if isFreeModel(modelId)}<span class="free-badge">Free</span>{/if}
+                          {#if modelPriceLabel(modelId)}<span class="mobile-model-price">{modelPriceLabel(modelId)}</span>{/if}
+                          {#if contextLabel(modelId)}<span class="mobile-model-context">{contextLabel(modelId)}</span>{/if}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        class="model-favorite-btn"
+                        class:model-favorite-btn--active={favoriteModels.includes(modelId)}
+                        aria-label={favoriteModels.includes(modelId) ? m.settings_model_unfavorite({ model: modelId }) : m.settings_model_favorite({ model: modelId })}
+                        aria-pressed={favoriteModels.includes(modelId)}
+                        onclick={() => toggleFavorite(modelId)}
+                      >
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill={favoriteModels.includes(modelId) ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 3 2.78 5.63 6.22.9-4.5 4.39 1.06 6.2L12 17.2l-5.56 2.92 1.06-6.2L3 9.53l6.22-.9L12 3Z" stroke-linejoin="round"/></svg>
+                      </button>
+                      {#if appState.apiSettings.model === modelId}
+                        <svg class="mobile-selected-check" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      {/if}
+                    </div>
+                  {:else}
+                    <div class="model-no-results mobile-model-no-results">{m.settings_model_search_empty()}</div>
+                  {/each}
+                  {#if renderedModels.length < visibleModels.length}
+                    <div class="model-list-sentinel" use:observeModelListEnd aria-hidden="true"></div>
+                  {/if}
+                {/if}
               </div>
             </div>
           {/if}
@@ -783,10 +883,14 @@
   .model-search::-webkit-search-cancel-button { filter:invert(.6); }
   .free-badge { display:inline-flex; align-items:center; min-height:17px; padding:1px 6px; border-radius:999px; background:rgba(87,181,119,.12); color:#76c991; font-size:9px; font-weight:750; letter-spacing:.04em; text-transform:uppercase; }
   .model-no-results { padding:20px 12px; color:#66666b; font-size:12px; text-align:center; }
+  .model-list-sentinel { height:1px; }
+  .model-list-loading { display:flex; flex-direction:column; gap:7px; }
+  .model-row-skeleton { height:78px; border:1px solid rgba(255,255,255,.025); border-radius:14px; background:rgba(255,255,255,.018); animation:model-skeleton-pulse 1.2s ease-in-out infinite alternate; }
+  @keyframes model-skeleton-pulse { to { background:rgba(255,255,255,.035); } }
   .model-sheet-backdrop, .mobile-model-sheet { display:none; }
 
   .desktop-model-backdrop { position:fixed; z-index:70; inset:0; background:rgba(0,0,0,.7); backdrop-filter:blur(4px); animation:sheet-fade-in .16s ease-out; }
-  .desktop-model-browser { position:fixed; z-index:71; top:50%; left:50%; width:min(1080px,calc(100vw - 72px)); height:min(760px,calc(100dvh - 72px)); display:flex; flex-direction:column; overflow:hidden; transform:translate(-50%,-50%); border:1px solid rgba(255,255,255,.1); border-radius:22px; background:#18181a; box-shadow:0 30px 90px rgba(0,0,0,.65); animation:browser-pop-in .18s cubic-bezier(.22,.8,.3,1); }
+  .desktop-model-browser { position:fixed; z-index:71; top:50%; left:50%; width:min(1080px,calc(100vw - 72px)); height:min(760px,calc(100dvh - 72px)); display:flex; flex-direction:column; overflow:hidden; transform:translate(-50%,-50%); border:1px solid rgba(255,255,255,.1); border-radius:22px; background:#18181a; box-shadow:0 12px 32px rgba(0,0,0,.22); animation:browser-pop-in .18s cubic-bezier(.22,.8,.3,1); }
   .desktop-model-header { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:22px 24px 16px; border-bottom:1px solid rgba(255,255,255,.055); }
   .desktop-model-header h3 { margin:0; color:#eeeae4; font-size:22px; font-weight:680; letter-spacing:-.025em; }
   .desktop-model-header p { margin:4px 0 0; color:#626267; font-size:11.5px; }
@@ -799,7 +903,7 @@
   .model-category-tab { min-height:36px; flex:0 0 auto; padding:7px 14px; border:1px solid rgba(255,255,255,.065); border-radius:999px; background:rgba(255,255,255,.025); color:#77777c; font:inherit; font-size:12px; font-weight:650; white-space:nowrap; cursor:pointer; }
   .model-category-tab:hover { border-color:rgba(255,255,255,.13); color:#b5b5ba; }
   .model-category-tab--active { border-color:rgba(212,180,131,.42); background:rgba(212,180,131,.12); color:#dfc69f; }
-  .desktop-category-tabs { padding:1px 25px 2px 2px; overscroll-behavior-x:contain; mask-image:linear-gradient(to right,transparent 0,#000 18px,#000 calc(100% - 34px),transparent 100%); }
+  .desktop-category-tabs { padding:1px 25px 2px 2px; overscroll-behavior-x:contain;}
   .desktop-model-list { min-height:0; flex:1; overflow-y:auto; padding:12px 14px 18px; }
   .desktop-model-row { display:flex; align-items:stretch; border:1px solid rgba(255,255,255,.035); border-radius:14px; background:rgba(255,255,255,.012); color:#d1d1d5; transition:background .14s ease,border-color .14s ease,transform .14s ease; }
   .desktop-model-row + .desktop-model-row { margin-top:7px; }
@@ -844,7 +948,7 @@
       border-bottom:0;
       border-radius:24px 24px 0 0;
       background:#18181a;
-      box-shadow:0 -20px 60px rgba(0,0,0,.55);
+      box-shadow:0 -8px 24px rgba(0,0,0,.2);
       animation:sheet-slide-in .2s cubic-bezier(.22,.8,.3,1);
     }
     .model-sheet-handle {
@@ -937,6 +1041,8 @@
       overscroll-behavior:contain;
       -webkit-overflow-scrolling:touch;
     }
+    .mobile-model-list .model-list-loading { gap:2px; }
+    .mobile-model-list .model-row-skeleton { height:58px; border-color:transparent; border-radius:13px; }
     .mobile-model-row {
       min-height:58px;
       display:flex;
@@ -1023,9 +1129,6 @@
   .model-error-text { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .model-retry { flex:0 0 auto; padding:3px 7px; border-radius:6px; color:#fca5a5; font-size:11px; font-weight:650; cursor:pointer; }
   .model-retry:hover,.model-retry:focus-visible { outline:none; background:rgba(248,113,113,.1); }
-  .model-loading-state { min-height:42px; display:flex; align-items:center; gap:9px; color:#77777c; cursor:wait; }
-  .model-loading-spinner { width:14px; height:14px; flex:0 0 auto; border:2px solid rgba(255,255,255,.1); border-top-color:#d4b483; border-radius:50%; animation:spin .7s linear infinite; }
-  @keyframes spin { to { transform:rotate(360deg); } }
   .ctx-row {
     display: flex;
     flex-direction: column;

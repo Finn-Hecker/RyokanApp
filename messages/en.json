@@ -90,6 +90,7 @@
   "settings_model_select_title": "Select model",
   "settings_model_close": "Close model picker",
   "settings_model_categories": "Model categories",
+  "settings_model_category_others": "Others",
   "settings_model_favorite": "Add {model} to favorites",
   "settings_model_unfavorite": "Remove {model} from favorites",
   "settings_model_error_no_models": "Server accessible, but no models returned.",
