@@ -1,16 +1,19 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import * as m from '$lib/paraglide/messages';
 
   let {
     searchQuery = $bindable(),
     viewMode = $bindable(),
     showHidden = $bindable(),
-    hasHidden
+    hasHidden,
+    actions
   }: {
     searchQuery: string;
     viewMode: 'grid' | 'compact' | 'list';
     showHidden: boolean;
     hasHidden: boolean;
+    actions?: Snippet;
   } = $props();
 
   function setViewMode(mode: 'grid' | 'compact' | 'list') {
@@ -20,7 +23,7 @@
 </script>
 
 <div class="flex flex-nowrap items-center gap-2 mb-4 sm:mb-6 md:gap-3">
-  <div class="relative min-w-0 flex-1 md:max-w-sm">
+  <div class="relative flex-1 md:max-w-sm {actions ? 'min-w-32' : 'min-w-0'}">
     <svg class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
     </svg>
@@ -83,5 +86,11 @@
         </svg>
       {/if}
     </button>
+  {/if}
+
+  {#if actions}
+    <div class="flex shrink-0 items-center">
+      {@render actions()}
+    </div>
   {/if}
 </div>

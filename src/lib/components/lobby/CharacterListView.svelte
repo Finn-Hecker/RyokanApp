@@ -13,7 +13,8 @@
     onToggleHide,
     onTogglePin,
     onStartAs,
-    resolveDesc
+    resolveDesc,
+    menuMode = 'full'
   }: {
     characters: any[];
     showHidden: boolean;
@@ -24,6 +25,7 @@
     onTogglePin: (e: MouseEvent, char: any) => void;
     onStartAs: (e: MouseEvent, char: any) => void;
     resolveDesc: (char: any) => string;
+    menuMode?: 'full' | 'manage' | 'none';
   } = $props();
 
   // Tracks which row is currently being pressed. Driven by pointer events on
@@ -71,13 +73,16 @@
         </div>
       </div>
 
-      <div class="absolute right-3 top-1/2 -translate-y-1/2 z-20 pointer-events-auto transition-opacity duration-150 opacity-100 md:opacity-0 md:group-hover:opacity-100">
-        <CharacterContextMenu
-          {char} {isHidden} {isPinned}
-          size="md"
-          {onEdit} {onTogglePin} {onToggleHide} {onDelete} {onStartAs}
-        />
-      </div>
+      {#if menuMode !== 'none' && (menuMode === 'full' || char.isCustom)}
+        <div class="absolute right-3 top-1/2 -translate-y-1/2 z-20 pointer-events-auto transition-opacity duration-150 opacity-100 md:opacity-0 md:group-hover:opacity-100">
+          <CharacterContextMenu
+            {char} {isHidden} {isPinned}
+            size="md"
+            {menuMode}
+            {onEdit} {onTogglePin} {onToggleHide} {onDelete} {onStartAs}
+          />
+        </div>
+      {/if}
     </div>
   {/each}
 </div>

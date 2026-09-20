@@ -6,7 +6,9 @@
   "create_page_play_mode_multiplayer": "Mehrspieler",
   "create_page_placeholder_prompt": "Beschreibe Charakter, Setting, Beziehungen, Schreibstil, Regeln und alles Weitere, das die KI wissen soll.",
   "app_name": "Ryokan",
-  "welcome_title": "Willkommen im Ryokan",
+  "lobby_greeting_morning": "Guten Morgen.",
+  "lobby_greeting_afternoon": "Guten Tag.",
+  "lobby_greeting_evening": "Guten Abend.",
   "lobby_subtitle_pre": "Wähle deinen Begleiter für eine",
   "lobby_subtitle_highlight": "neue",
   "lobby_subtitle_post": "Unterhaltung.",
@@ -527,10 +529,10 @@
   "roles_list_empty_sub": "Erstelle deine erste Rolle und lege fest, wie du im Chat auftrittst.",
 
 
-  "play_title": "Spielen",
+  "play_title": "Gemeinsam spielen.",
   "play_subtitle_pre": "Roleplay",
   "play_subtitle_highlight": "gemeinsam",
-  "play_subtitle_post": "in einem gemeinsamen Raum.",
+  "play_subtitle_post": "in einem Raum.",
   "play_btn_back": "Zurück zur Lobby",
 
   "play_tab_minigames": "Minigames",

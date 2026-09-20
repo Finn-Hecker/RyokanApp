@@ -13,6 +13,7 @@
   import * as m from '$lib/paraglide/messages';
 
   import LobbyToolbar from './LobbyToolbar.svelte';
+  import BrowseIntro from './BrowseIntro.svelte';
   import CharacterGridView from './CharacterGridView.svelte';
   import CharacterCompactView from './CharacterCompactView.svelte';
   import CharacterListView from './CharacterListView.svelte';
@@ -23,6 +24,23 @@
   let viewMode = $state<'grid' | 'compact' | 'list'>('grid');
   let showHidden = $state(false);
 
+  type GreetingPeriod = 'morning' | 'afternoon' | 'evening';
+
+  function getGreetingPeriod(date: Date): GreetingPeriod {
+    const hour = date.getHours();
+    if (hour >= 5 && hour < 11) return 'morning';
+    if (hour >= 11 && hour < 18) return 'afternoon';
+    return 'evening';
+  }
+
+  let greetingPeriod = $state<GreetingPeriod>(getGreetingPeriod(new Date()));
+  let greeting = $derived(
+    greetingPeriod === 'morning'
+      ? m.lobby_greeting_morning()
+      : greetingPeriod === 'afternoon'
+        ? m.lobby_greeting_afternoon()
+        : m.lobby_greeting_evening()
+  );
   let deleteTarget = $state<{ id: string; name: string } | null>(null);
   let startTarget = $state<any | null>(null);
   let selectedRole = $state('none');
@@ -38,15 +56,23 @@
     });
   });
 
-  onMount(async () => {
-    await loadHiddenIds();
-    await loadPinnedIds();
-    await loadCharacters();
-    await loadRoles();
-    const saved = localStorage.getItem('ryokan-view-mode');
-    if (saved === 'grid' || saved === 'compact' || saved === 'list') {
-      viewMode = saved;
-    }
+  onMount(() => {
+    void (async () => {
+      await loadHiddenIds();
+      await loadPinnedIds();
+      await loadCharacters();
+      await loadRoles();
+      const saved = localStorage.getItem('ryokan-view-mode');
+      if (saved === 'grid' || saved === 'compact' || saved === 'list') {
+        viewMode = saved;
+      }
+    })();
+
+    const greetingTimer = window.setInterval(() => {
+      greetingPeriod = getGreetingPeriod(new Date());
+    }, 60_000);
+
+    return () => window.clearInterval(greetingTimer);
   });
 
   async function onSelectChar(char: any) {
@@ -210,18 +236,13 @@
 {/snippet}
 
 <PageLayout
-  pageTitle={m.welcome_title()}
+  pageTitle={greeting}
   showSidebar={true}
   maxContentWidth="max-w-7xl"
   {sidebar}
   {header}
 >
-  <header class="mb-3 sm:mb-5 md:mb-7">
-    <h1 class="mb-1 text-[1.375rem] font-medium leading-tight tracking-tight text-gray-100 sm:mb-1.5 sm:text-3xl md:mb-2 md:text-4xl">{m.welcome_title()}</h1>
-    <p class="text-[0.9375rem] leading-6 text-gray-500 md:text-base">
-      {m.lobby_subtitle()}
-    </p>
-  </header>
+  <BrowseIntro title={greeting} subtitle={m.lobby_subtitle()} />
 
   <LobbyToolbar bind:searchQuery bind:viewMode bind:showHidden {hasHidden} />
 

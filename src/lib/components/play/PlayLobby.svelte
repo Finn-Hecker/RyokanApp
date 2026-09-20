@@ -14,9 +14,16 @@
   import Sidebar from '$lib/components/Sidebar.svelte';
   import PageLayout from '$lib/components/layouts/PageLayout.svelte';
   import Button from '$lib/components/ui/Button.svelte';
+  import BrowseIntro from '$lib/components/lobby/BrowseIntro.svelte';
+  import LobbyToolbar from '$lib/components/lobby/LobbyToolbar.svelte';
   import CharacterGridView from '$lib/components/lobby/CharacterGridView.svelte';
+  import CharacterCompactView from '$lib/components/lobby/CharacterCompactView.svelte';
+  import CharacterListView from '$lib/components/lobby/CharacterListView.svelte';
+  import LobbyEmptyState from '$lib/components/lobby/LobbyEmptyState.svelte';
 
   let joinCode = $state('');
+  let searchQuery = $state('');
+  let viewMode = $state<'grid' | 'compact' | 'list'>('grid');
   let joinError = $state('');
   let displayName = $state('');
   let selectedScenario = $state<Character | null>(null);
@@ -39,10 +46,22 @@
         && !characterState.hiddenCharacterIds.has(String(character.id))
     )
   );
+  let filteredScenarios = $derived(
+    availableScenarios.filter((character) => {
+      const query = searchQuery.trim().toLowerCase();
+      return query === ''
+        || character.name?.toLowerCase().includes(query)
+        || scenarioDescription(character).toLowerCase().includes(query);
+    })
+  );
   let canJoin = $derived(joinCode.trim().length >= 4);
   let canStart = $derived(displayName.trim().length > 0 && !mpState.connecting);
 
   onMount(async () => {
+    const saved = localStorage.getItem('ryokan-view-mode');
+    if (saved === 'grid' || saved === 'compact' || saved === 'list') {
+      viewMode = saved;
+    }
     await loadHiddenIds();
     if (characterState.allCharacters.length === 0) await loadCharacters();
   });
@@ -138,35 +157,82 @@
   </div>
 {/snippet}
 
-<PageLayout pageTitle={m.play_title()} showSidebar={true} maxContentWidth="max-w-7xl" {sidebar} {header}>
-  <header class="mb-6 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between md:mb-8">
-    <div>
-      <h1 class="mb-2 text-2xl font-medium tracking-tight text-gray-100 sm:text-3xl md:text-4xl">{m.play_title()}</h1>
-      <p class="text-base text-gray-500 md:text-lg">
-        {m.play_subtitle_pre()} <span class="text-ryokan-accent">{m.play_subtitle_highlight()}</span> {m.play_subtitle_post()}
-      </p>
-    </div>
-    <Button variant="secondary" onclick={openJoinModal}>
+{#snippet toolbarActions()}
+  <button
+    type="button"
+    aria-label={m.play_mp_join_title()}
+    title={m.play_mp_join_title()}
+    onclick={openJoinModal}
+    class="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.04] text-gray-600 transition-all hover:border-ryokan-accent/30 hover:bg-white/[0.07] hover:text-gray-400 sm:hidden"
+  >
+    <svg class="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/>
+    </svg>
+  </button>
+  <div class="hidden sm:block">
+    <Button variant="secondary" size="sm" onclick={openJoinModal}>
       <svg class="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/>
       </svg>
       {m.play_mp_join_title()}
     </Button>
-  </header>
+  </div>
+{/snippet}
+
+<PageLayout pageTitle={m.play_title()} showSidebar={true} maxContentWidth="max-w-7xl" {sidebar} {header}>
+  <BrowseIntro
+    title={m.play_title()}
+    subtitle={`${m.play_subtitle_pre()} ${m.play_subtitle_highlight()} ${m.play_subtitle_post()}`}
+  />
+
+  <LobbyToolbar
+    bind:searchQuery
+    bind:viewMode
+    showHidden={false}
+    hasHidden={false}
+    actions={toolbarActions}
+  />
 
   {#if availableScenarios.length === 0}
-    <div class="flex min-h-64 max-w-2xl items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-6 text-center text-sm text-gray-500">
+    <div class="flex min-h-64 items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-6 text-center text-sm text-gray-500">
       {m.play_mp_picker_empty()}
     </div>
-  {:else}
+  {:else if filteredScenarios.length === 0}
+    <LobbyEmptyState {searchQuery} onResetSearch={() => (searchQuery = '')} />
+  {:else if viewMode === 'grid'}
     <CharacterGridView
-      characters={availableScenarios}
+      characters={filteredScenarios}
       showHidden={false}
       onSelect={chooseScenario}
       onEdit={manageScenario}
       onDelete={ignoreScenarioAction}
       onToggleHide={ignoreScenarioAction}
       onTogglePin={ignoreScenarioAction}
+      resolveDesc={scenarioDescription}
+      menuMode="manage"
+    />
+  {:else if viewMode === 'compact'}
+    <CharacterCompactView
+      characters={filteredScenarios}
+      showHidden={false}
+      onSelect={chooseScenario}
+      onEdit={manageScenario}
+      onDelete={ignoreScenarioAction}
+      onToggleHide={ignoreScenarioAction}
+      onTogglePin={ignoreScenarioAction}
+      onStartAs={ignoreScenarioAction}
+      menuMode="manage"
+    />
+  {:else}
+    <CharacterListView
+      characters={filteredScenarios}
+      showHidden={false}
+      onSelect={chooseScenario}
+      onEdit={manageScenario}
+      onDelete={ignoreScenarioAction}
+      onToggleHide={ignoreScenarioAction}
+      onTogglePin={ignoreScenarioAction}
+      onStartAs={ignoreScenarioAction}
       resolveDesc={scenarioDescription}
       menuMode="manage"
     />

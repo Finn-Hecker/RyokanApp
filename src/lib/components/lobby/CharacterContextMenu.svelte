@@ -10,6 +10,7 @@
     isHidden,
     isPinned,
     size = 'md',
+    menuMode = 'full',
     onEdit,
     onTogglePin,
     onToggleHide,
@@ -20,6 +21,7 @@
     isHidden: boolean;
     isPinned: boolean;
     size?: 'sm' | 'md' | 'lg';
+    menuMode?: 'full' | 'manage';
     onEdit: (e: MouseEvent, char: any) => void;
     onTogglePin: (e: MouseEvent, char: any) => void;
     onToggleHide: (e: MouseEvent, char: any) => void;
@@ -83,6 +85,20 @@
     class="absolute right-0 top-full mt-1.5 w-44 max-w-[calc(100vw-2rem)] bg-[#16161f] border border-ryokan-accent/[0.22] rounded-xl z-30 py-1 overflow-hidden"
     style="box-shadow: 0 20px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(212,180,131,0.04) inset;"
   >
+    {#if menuMode === 'manage'}
+      <button
+        type="button"
+        role="menuitem"
+        onclick={(e) => { close(); onEdit(e, char); }}
+        class="w-full flex items-center gap-2.5 px-3.5 py-2.5 touch-manipulation [-webkit-tap-highlight-color:transparent] text-sm text-gray-200 hover:text-white hover:bg-white/[0.06] transition-colors text-left"
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+        {m.play_mp_picker_manage()}
+      </button>
+    {:else}
     {#if char.role_policy !== 'restricted' || char.bundled_roles?.length !== 1}
       <button
         type="button"
@@ -163,6 +179,7 @@
         </svg>
         {m.lobby_action_delete()}
       </button>
+    {/if}
     {/if}
   </div>
 {/if}

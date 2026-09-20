@@ -708,7 +708,7 @@
   :global(.prose-custom p)            { margin-bottom: 1.2em; }
   :global(.prose-custom p:last-child) { margin-bottom: 0; }
   :global(.prose-custom strong)       { color: #ffffff; font-weight: 600; }
-  :global(.prose-custom em)           { color: #a39887; font-style: italic; }
+  :global(.prose-custom em)           { color: #a39887; font-size: 0.95em; font-style: italic; }
 
   /* Android WebView can inflate long text independently of its CSS font size.
      Anchor the two actual message render paths to the native interaction mode. */
