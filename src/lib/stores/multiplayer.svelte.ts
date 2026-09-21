@@ -42,6 +42,7 @@ const MAX_MESSAGE_ID_CHARS = 128;
 const MAX_LLM_DELTA_CHARS = 64 * 1024;
 const MAX_LLM_FINAL_CHARS = 512 * 1024;
 const MAX_SNAPSHOT_MESSAGES = 1000;
+const RECONNECT_MAX_DELAY_MS = 8000;
 
 // Types and reactive state
 
@@ -145,6 +146,8 @@ let remoteTypingTimer: ReturnType<typeof setTimeout> | null = null;
 let localTyping = false;
 let lastTypingSentAt = 0;
 let typingRelayChain = Promise.resolve();
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectAttempt = 0;
 
 interface ActiveGeneration {
   id: string;
@@ -587,13 +590,18 @@ async function createRoom(): Promise<void> {
 // WebSocket lifecycle
 
 function connect(roomId: string): void {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
   mpState.roomId = roomId;
+  mpState.connecting = true;
   const socket = new WebSocket(`${RELAY_WS}/ws/${roomId}`);
   let incomingFrameChain = Promise.resolve();
   ws = socket;
 
   socket.onopen = () => {
-    ws?.send(JSON.stringify({
+    if (ws !== socket) return;
+    socket.send(JSON.stringify({
       t: 'hello',
       host_token: hostToken,
       guest_token: hostToken ? undefined : guestToken,
@@ -618,20 +626,26 @@ function connect(roomId: string): void {
   };
 
   socket.onclose = (ev) => {
-    const wasConnected = mpState.connected;
+    if (ws !== socket) return;
+    ws = null;
     mpState.connected = false;
-    mpState.connecting = false;
     cancelActiveGeneration(false);
     if (mpState.closedReason) return; // room_closed already carried a reason
-    mpState.closedReason = mapCloseCode(ev.code, wasConnected);
+    const terminal = mapTerminalCloseCode(ev.code);
+    if (terminal) {
+      mpState.connecting = false;
+      mpState.closedReason = terminal;
+      return;
+    }
+    scheduleReconnect();
   };
 
-  ws.onerror = () => {
+  socket.onerror = () => {
     /* onclose fires right after anyway */
   };
 }
 
-function mapCloseCode(code: number, wasConnected: boolean): ClosedReason {
+function mapTerminalCloseCode(code: number): ClosedReason {
   switch (code) {
     case 4001:
       return 'host_left';
@@ -640,20 +654,50 @@ function mapCloseCode(code: number, wasConnected: boolean): ClosedReason {
     case 4403:
       return 'bad_token';
     case 4409:
-      return 'host_taken';
-    case 4008:
-      return 'idle';
-    case 4413:
-      return 'slow';
-    case 1000:
-      return wasConnected ? 'left' : 'error';
+      // A suspended mobile socket may still be registered briefly. Keep
+      // retrying the same host token until that stale connection is reaped.
+      return hostToken ? '' : 'host_taken';
     default:
-      return 'error';
+      // Idle, slow-consumer, ordinary and abnormal transport closes are all
+      // recoverable while the relay retains the room.
+      return '';
   }
+}
+
+function scheduleReconnect(immediate = false): void {
+  if (reconnectTimer || mpState.closedReason || !mpState.roomId || mpState.viewingHistory) return;
+  mpState.connecting = true;
+  // Do not fight the mobile OS or keep recreating sockets in the background.
+  // The visibility listener resumes immediately when the app is foregrounded.
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+  const delay = immediate
+    ? 0
+    : Math.min(500 * (2 ** reconnectAttempt++), RECONNECT_MAX_DELAY_MS);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect(mpState.roomId);
+  }, delay);
+}
+
+function reconnectOnForeground(): void {
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+  if (mpState.connected || mpState.closedReason || !mpState.roomId) return;
+  if (ws?.readyState === WebSocket.CONNECTING) return;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  scheduleReconnect(true);
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', reconnectOnForeground);
+  document.addEventListener('visibilitychange', reconnectOnForeground);
 }
 
 export function leaveRoom(): void {
   mpState.closedReason = 'left';
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'leave' }));
   ws?.close(1000);
   ws = null;
   cancelActiveGeneration(false);
@@ -662,6 +706,12 @@ export function leaveRoom(): void {
 }
 
 function resetRoomState(): void {
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  reconnectAttempt = 0;
+  if (mpState.connected && ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ t: 'leave' }));
+  }
   ws?.close(1000);
   ws = null;
   cancelActiveGeneration(false);
@@ -721,6 +771,7 @@ function resetRoomState(): void {
 async function handleServerMsg(msg: any): Promise<void> {
   switch (msg.t) {
     case 'welcome':
+      reconnectAttempt = 0;
       mpState.connected = true;
       mpState.connecting = false;
       mpState.pending = null;
@@ -728,7 +779,9 @@ async function handleServerMsg(msg: any): Promise<void> {
       mpState.role = msg.role;
       mpState.count = msg.count;
       mpState.lockedBy = msg.locked_by ?? null;
-      mpState.everyoneCanGenerate = false;
+      if (msg.role === 'host') {
+        mpState.everyoneCanGenerate = msg.everyone_can_generate === true;
+      }
       if (mpState.role === 'host') {
         mpState.characterName = appState.activeCharacter?.name ?? '';
       }
@@ -736,6 +789,7 @@ async function handleServerMsg(msg: any): Promise<void> {
       if (addInitialGreeting) shouldInsertInitialGreeting = false;
       await ensurePersistentSession();
       if (addInitialGreeting) await insertInitialGreeting();
+      if (mpState.role === 'host' && !addInitialGreeting) scheduleSnapshot();
       break;
 
     case 'joined':
@@ -781,6 +835,7 @@ async function handleServerMsg(msg: any): Promise<void> {
       break;
 
     case 'room_closed':
+      mpState.connecting = false;
       mpState.closedReason = msg.reason === 'expired' ? 'expired' : 'host_left';
       break;
 
@@ -1036,15 +1091,23 @@ function hostSignatureInput(sequence: number, body: unknown): Uint8Array {
 async function verifyHostEnvelope(envelope: any): Promise<unknown | null> {
   if (!signingPublicKey || envelope?.v !== 1 || !Number.isSafeInteger(envelope.sequence)) return null;
   if (envelope.sequence <= lastVerifiedHostSequence || typeof envelope.sig !== 'string') return null;
+
   try {
+    const signature = new Uint8Array(b64u.decode(envelope.sig));
+    const input = new Uint8Array(
+      hostSignatureInput(envelope.sequence, envelope.body),
+    );
+
     const valid = await crypto.subtle.verify(
       { name: 'ECDSA', hash: 'SHA-256' },
       signingPublicKey,
-      new Uint8Array(b64u.decode(envelope.sig)),
-      hostSignatureInput(envelope.sequence, envelope.body),
+      signature,
+      input,
     );
+
     if (!valid) return null;
     if (!hostStateInitialized && envelope.body?.k !== 'snap') return null;
+
     lastVerifiedHostSequence = envelope.sequence;
     hostStateInitialized = true;
     return envelope.body;
@@ -1062,7 +1125,7 @@ function sendHostRelay(body: unknown): Promise<void> {
       const signature = await crypto.subtle.sign(
         { name: 'ECDSA', hash: 'SHA-256' },
         signingPrivateKey,
-        hostSignatureInput(sequence, body),
+        new Uint8Array(hostSignatureInput(sequence, body)).buffer,
       );
       await sendRelay({
         k: 'host',
