@@ -1,6 +1,6 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
-  import { appState } from '$lib/stores/appState.svelte';
+  import { appState, snapshotActiveApiConnection } from '$lib/stores/appState.svelte';
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { tick, onMount, onDestroy } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -228,7 +228,7 @@
 
     const generationOptions: GenerationOptions = {
       character:      appState.activeCharacter,
-      apiSettings:    appState.apiSettings,
+      apiSettings:    snapshotActiveApiConnection(),
       recentMessages: chatState.currentMessages,
       userPrompt:     undefined as string | undefined,
     };
@@ -301,7 +301,7 @@
     try {
       const generationOptions: GenerationOptions = {
         character: appState.activeCharacter,
-        apiSettings: appState.apiSettings,
+        apiSettings: snapshotActiveApiConnection(),
         recentMessages: msgs.slice(0, idx),
         userPrompt: undefined,
         generationId: crypto.randomUUID(),

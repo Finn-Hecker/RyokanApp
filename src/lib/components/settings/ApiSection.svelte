@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { appState } from "$lib/stores/appState.svelte";
+  import { activateApiConnection, appState, createDefaultConnection, type ProviderKind } from "$lib/stores/appState.svelte";
   import { fetchModels, saveSetting, type ModelInfo } from "$lib/utils/settings";
   import * as m from "$lib/paraglide/messages";
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
@@ -10,15 +10,18 @@
     curatedProviderGroups,
     type CuratedProviderGroupId,
   } from '$lib/utils/modelProviderGroups';
+  import { deleteConnectionSafely, invalidateDetectedContext, PROVIDER_LABELS, refreshContextDetection, resolvedHardContextLimit } from '$lib/utils/apiConnections';
 
   let {
     powerUser = false,
     active = false,
     settingsReady = false,
+    onConnectionChange = (_previousConnectionId: string) => {},
   }: {
     powerUser?: boolean;
     active?: boolean;
     settingsReady?: boolean;
+    onConnectionChange?: (previousConnectionId: string) => void;
   } = $props();
 
   type ProviderTab = 'local' | 'cloud';
@@ -30,20 +33,20 @@
     icon: 'desktop' | 'cloud' | 'terminal' | 'ollama' | 'kobold' | 'openai' | 'grok';
     tab: ProviderTab;
     keyPlaceholder?: string;
+    kind: ProviderKind;
   };
 
   const PROVIDERS: Provider[] = [
-    { label: "LM Studio",  url: "http://127.0.0.1:1234/v1",    badge: () => m.settings_provider_badge_local(), icon: 'desktop',  tab: 'local' },
-    { label: "Ollama",     url: "http://127.0.0.1:11434/v1",   badge: () => m.settings_provider_badge_local(), icon: 'ollama',   tab: 'local' },
-    { label: "KoboldCPP",  url: "http://127.0.0.1:5001/v1",    badge: () => m.settings_provider_badge_local(), icon: 'kobold',   tab: 'local' },
-    { label: "llama.cpp",  url: "http://127.0.0.1:8080/v1",    badge: () => m.settings_provider_badge_local(), icon: 'terminal', tab: 'local' },
+    { label: "LM Studio",  kind: 'lm_studio', url: "http://127.0.0.1:1234/v1", badge: () => m.settings_provider_badge_local(), icon: 'desktop', tab: 'local' },
+    { label: "Ollama", kind: 'ollama', url: "http://127.0.0.1:11434/v1", badge: () => m.settings_provider_badge_local(), icon: 'ollama', tab: 'local' },
+    { label: "KoboldCPP", kind: 'koboldcpp', url: "http://127.0.0.1:5001/v1", badge: () => m.settings_provider_badge_local(), icon: 'kobold', tab: 'local' },
+    { label: "llama.cpp", kind: 'llama_cpp', url: "http://127.0.0.1:8080/v1", badge: () => m.settings_provider_badge_local(), icon: 'terminal', tab: 'local' },
 
-    { label: "OpenRouter", url: "https://openrouter.ai/api/v1", badge: () => m.settings_provider_badge_cloud(), icon: 'cloud',   tab: 'cloud', keyPlaceholder: "sk-or-..." },
-    { label: "OpenAI",     url: "https://api.openai.com/v1",   badge: () => m.settings_provider_badge_cloud(), icon: 'openai',  tab: 'cloud', keyPlaceholder: "sk-..." },
-    { label: "Grok",       url: "https://api.x.ai/v1",         badge: () => m.settings_provider_badge_cloud(), icon: 'grok',    tab: 'cloud', keyPlaceholder: "xai-..." },
+    { label: "OpenRouter", kind: 'openrouter', url: "https://openrouter.ai/api/v1", badge: () => m.settings_provider_badge_cloud(), icon: 'cloud', tab: 'cloud', keyPlaceholder: "sk-or-..." },
+    { label: "OpenAI", kind: 'openai', url: "https://api.openai.com/v1", badge: () => m.settings_provider_badge_cloud(), icon: 'openai', tab: 'cloud', keyPlaceholder: "sk-..." },
+    { label: "Grok", kind: 'xai', url: "https://api.x.ai/v1", badge: () => m.settings_provider_badge_cloud(), icon: 'grok', tab: 'cloud', keyPlaceholder: "xai-..." },
   ];
 
-  let customMode      = $state(false);
   let availableModels = $state<string[]>([]);
   let modelMetadata = $state<Record<string, ModelInfo>>({});
   let modelsLoading   = $state(false);
@@ -56,6 +59,7 @@
   let lastAttemptedModelConfig = "";
   let modelLoadRequest = 0;
   let modelPreparationRequest = 0;
+  let detectingContext = $state(false);
 
   $effect(() => {
     if (!modelMenuOpen) return;
@@ -194,21 +198,12 @@
     return { destroy: () => observer.disconnect() };
   }
 
-  const CONTEXT_STEPS = [
-    { label: "4K",   value: 4096   },
-    { label: "8K",   value: 8192   },
-    { label: "16K",  value: 16384  },
-    { label: "32K",  value: 32768  },
-    { label: "64K",  value: 65536  },
-    { label: "128K", value: 131072 },
-  ];
-
   const activeProvider = $derived(
-    PROVIDERS.find(p => p.url === appState.apiSettings.url) ?? null
+    PROVIDERS.find(p => p.kind === appState.apiSettings.providerKind) ?? null
   );
 
   const activeTab = $derived<ProviderTab>(
-    appState.apiSettings.customMode
+    appState.apiSettings.providerKind === 'generic_openai'
       ? 'cloud'
       : (activeProvider?.tab ?? (
           appState.apiSettings.url.includes('127.0.0.1') ||
@@ -222,7 +217,7 @@
   const showKey = $derived(powerUser || activeTab === 'cloud' || appState.apiSettings.customMode);
 
   const keyPlaceholder = $derived(activeProvider?.keyPlaceholder ?? "sk-...");
-  const isOpenRouter = $derived(appState.apiSettings.url.replace(/\/+$/, "") === "https://openrouter.ai/api/v1");
+  const isOpenRouter = $derived(appState.apiSettings.providerKind === 'openrouter');
 
   function switchTab(tab: ProviderTab) {
     if (activeTab === tab) return;
@@ -235,8 +230,10 @@
     modelLoadRequest++;
     lastAttemptedModelConfig = "";
     appState.apiSettings.customMode = false;
+    appState.apiSettings.providerKind = provider.kind;
     appState.apiSettings.url   = provider.url;
     appState.apiSettings.model = "";
+    invalidateDetectedContext(appState.apiSettings);
     availableModels = [];
     modelMetadata   = {};
     modelsError     = "";
@@ -249,8 +246,10 @@
     modelLoadRequest++;
     lastAttemptedModelConfig = "";
     appState.apiSettings.customMode = true;
+    appState.apiSettings.providerKind = 'generic_openai';
     appState.apiSettings.url   = "";
     appState.apiSettings.model = "";
+    invalidateDetectedContext(appState.apiSettings);
     availableModels = [];
     modelMetadata   = {};
     modelsError     = "";
@@ -289,6 +288,7 @@
         availableModels = models.map(model => model.id);
         modelMetadata = Object.fromEntries(models.map(model => [model.id, model]));
         if (!availableModels.includes(appState.apiSettings.model)) {
+          invalidateDetectedContext(appState.apiSettings);
           appState.apiSettings.model = availableModels[0];
         }
         await saveSetting("api_model", appState.apiSettings.model);
@@ -315,11 +315,60 @@
   });
 
   async function selectModel(modelId: string) {
+    if (appState.apiSettings.model !== modelId) invalidateDetectedContext(appState.apiSettings);
     appState.apiSettings.model = modelId;
     modelMenuOpen = false;
     modelSearch = "";
     await saveSetting("api_model", modelId);
   }
+
+  function selectConnection(id: string) {
+    const previousConnectionId = appState.activeApiConnectionId;
+    if (!activateApiConnection(id)) return;
+    onConnectionChange(previousConnectionId);
+    availableModels = [];
+    modelMetadata = {};
+    lastAttemptedModelConfig = '';
+  }
+
+  function createConnection() {
+    const connection = createDefaultConnection(crypto.randomUUID(), `Connection ${appState.apiConnections.length + 1}`);
+    appState.apiConnections.push(connection);
+    selectConnection(connection.id);
+  }
+
+  function deleteConnection() {
+    const result = deleteConnectionSafely(appState.apiConnections, appState.activeApiConnectionId, appState.activeApiConnectionId);
+    appState.apiConnections = result.connections;
+    selectConnection(result.activeId);
+  }
+
+  function handleIdentityChange() {
+    availableModels = []; modelMetadata = {}; appState.apiSettings.model = ''; modelsError = '';
+    invalidateDetectedContext(appState.apiSettings);
+  }
+
+  async function detectContext() {
+    detectingContext = true;
+    await refreshContextDetection(appState.apiSettings);
+    detectingContext = false;
+  }
+
+  function formatTokens(tokens: number): string {
+    if (tokens >= 1_000_000 && tokens % 1_000_000 === 0) return `${tokens / 1_000_000}M`;
+    if (tokens >= 1024 && tokens % 1024 === 0) return `${tokens / 1024}K`;
+    return tokens.toLocaleString();
+  }
+
+  const contextStatus = $derived.by(() => {
+    const detected = appState.apiSettings.detectedContext;
+    if (!detected) return appState.apiSettings.contextDetectionError || 'Automatic detection unavailable';
+    const label = detected.provenance === 'runtime' ? 'Runtime context'
+      : detected.provenance === 'provider_advertised' ? 'Provider context'
+      : detected.provenance === 'kobold_true_max' ? 'KoboldCpp context'
+      : 'KoboldCpp configured context';
+    return `${label}: ${formatTokens(detected.tokens)}`;
+  });
 
   function toggleFavorite(modelId: string) {
     const nextFavoriteModels = favoriteModels.includes(modelId)
@@ -427,6 +476,25 @@
   <span class="settings-section-title">{m.settings_section_api()}</span>
   <div class="settings-card space-y-4">
 
+    <div class="connection-toolbar">
+      <div class="connection-fields">
+        <label class="settings-label" for="active-connection">API connection</label>
+        <select id="active-connection" class="settings-input" value={appState.activeApiConnectionId} onchange={(event) => selectConnection(event.currentTarget.value)}>
+          {#each appState.apiConnections as connection (connection.id)}
+            <option value={connection.id}>{connection.name}</option>
+          {/each}
+        </select>
+        <input class="settings-input" aria-label="Connection name" bind:value={appState.apiSettings.name} maxlength="80" />
+      </div>
+      <div class="connection-actions">
+        <button type="button" class="connection-action" onclick={createConnection}>New</button>
+        <button type="button" class="connection-action danger" disabled={appState.apiConnections.length <= 1} onclick={deleteConnection}>Delete</button>
+      </div>
+    </div>
+
+    <div class="connection-active-note">Active for chat · {PROVIDER_LABELS[appState.apiSettings.providerKind]}</div>
+    <div class="settings-divider"></div>
+
     <div class="api-model-section">
     <h2 class="api-model-section-title">{m.settings_section_api()}</h2>
 
@@ -459,7 +527,7 @@
         {#each filteredProviders as provider (provider.url)}
           <button
             onclick={() => selectProvider(provider)}
-            class="provider-btn {!customMode && activeProvider?.url === provider.url ? 'provider-btn--active' : ''}"
+            class="provider-btn {appState.apiSettings.providerKind === provider.kind ? 'provider-btn--active' : ''}"
           >
             {#if provider.icon === 'desktop'}
               <svg class="provider-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -512,8 +580,8 @@
           id="api-url"
           type="text"
           bind:value={appState.apiSettings.url}
-          placeholder={customMode ? "https://my-provider.com/v1" : undefined}
-          onchange={() => { availableModels = []; modelMetadata = {}; appState.apiSettings.model = ""; modelsError = ""; }}
+          placeholder={appState.apiSettings.customMode ? "https://my-provider.com/v1" : undefined}
+          onchange={handleIdentityChange}
           class="settings-input"
         />
       </div>
@@ -525,7 +593,7 @@
       <div>
         <label class="settings-label" for="api-key">
           {m.settings_api_key_label()}
-          {#if activeTab === 'local' && !customMode}
+          {#if activeTab === 'local' && !appState.apiSettings.customMode}
             <span class="optional-badge">{m.settings_api_key_optional()}</span>
           {/if}
         </label>
@@ -739,21 +807,39 @@
           <span class="tooltip-hint">{m.settings_context_tooltip_hint()}</span>
         </Tooltip>
 
-        <span class="ctx-current">
-          {CONTEXT_STEPS.find(s => s.value === (appState.apiSettings.contextLimit ?? 4096))?.label
-            ?? `${appState.apiSettings.contextLimit ?? 4096}`}
-        </span>
+        <span class="ctx-current">Hard limit: {formatTokens(resolvedHardContextLimit(appState.apiSettings))}</span>
       </div>
 
-      <div class="ctx-chips">
-        {#each CONTEXT_STEPS as step}
-          <button
-            type="button"
-            class="ctx-chip {(appState.apiSettings.contextLimit ?? 4096) === step.value ? 'ctx-chip--active' : ''}"
-            onclick={() => { appState.apiSettings.contextLimit = step.value; }}
-            title={m.settings_context_words_hint({ count: Math.round(step.value * 0.75).toLocaleString() })}
-          >{step.label}</button>
-        {/each}
+      <div class="context-detection-row">
+        <span class="context-status">{contextStatus}</span>
+        <button type="button" class="connection-action" disabled={detectingContext || !appState.apiSettings.model} onclick={detectContext}>
+          {detectingContext ? 'Detecting…' : 'Refresh detection'}
+        </button>
+      </div>
+      {#if appState.apiSettings.detectedContext?.theoreticalTokens}
+        <div class="context-secondary">Theoretical model maximum: {formatTokens(appState.apiSettings.detectedContext.theoreticalTokens)}</div>
+      {/if}
+
+      <div class="context-controls">
+        <label>
+          <span class="settings-label">Context strategy</span>
+          <select class="settings-input" bind:value={appState.apiSettings.contextStrategy}>
+            <option value="economy">Economy</option>
+            <option value="balanced">Balanced</option>
+            <option value="maximum">Maximum Context</option>
+          </select>
+        </label>
+        <label>
+          <span class="settings-label">Manual cap <span class="optional-badge">optional</span></span>
+          <input class="settings-input" type="number" min="1024" max="16777216" step="1024"
+            value={appState.apiSettings.manualContextCap ?? ''}
+            placeholder="Automatic"
+            oninput={(event) => {
+              const value = event.currentTarget.valueAsNumber;
+              appState.apiSettings.manualContextCap = Number.isFinite(value) ? Math.round(value) : null;
+              appState.apiSettings.contextLimit = resolvedHardContextLimit(appState.apiSettings);
+            }} />
+        </label>
       </div>
     </div>
 
@@ -770,6 +856,20 @@
     font-weight: 650;
     letter-spacing: 0.02em;
   }
+  .connection-toolbar { display:flex; align-items:end; gap:10px; }
+  .connection-fields { min-width:0; flex:1; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .connection-fields .settings-label { grid-column:1/-1; margin-bottom:-2px; }
+  .connection-actions { display:flex; gap:6px; }
+  .connection-action { min-height:38px; padding:8px 11px; border:1px solid rgba(255,255,255,.08); border-radius:9px; color:#aaa7a3; background:rgba(255,255,255,.035); font-size:11px; font-weight:650; cursor:pointer; }
+  .connection-action:hover:not(:disabled) { color:#dfd8cf; border-color:rgba(212,180,131,.25); }
+  .connection-action.danger:hover:not(:disabled) { color:#e8a19b; border-color:rgba(220,90,80,.25); }
+  .connection-action:disabled { opacity:.38; cursor:default; }
+  .connection-active-note,.context-secondary { color:#5f5f64; font-size:11px; }
+  .context-detection-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:12px; }
+  .context-status { color:#b7a98f; font-size:12px; }
+  .context-secondary { margin-top:7px; }
+  .context-controls { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px; }
+  @media (max-width:560px) { .connection-toolbar { align-items:stretch; flex-direction:column; } .connection-fields,.context-controls { grid-template-columns:1fr; } .connection-fields .settings-label { grid-column:auto; } }
   .api-model-section--model {
     margin-top: 28px;
     padding-top: 28px;
@@ -1150,40 +1250,4 @@
     white-space: nowrap;
   }
 
-  .ctx-chips {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
-  }
-  @media (min-width: 420px) {
-    .ctx-chips {
-      grid-template-columns: repeat(6, 1fr);
-    }
-  }
-  .ctx-chip {
-    width: 100%;
-    padding: 9px 4px;
-    border-radius: 9px;
-    border: 1px solid rgba(255,255,255,0.06);
-    background: rgba(255,255,255,0.02);
-    color: #6b6b6e;
-    font-size: 11.5px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    text-align: center;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    white-space: nowrap;
-  }
-  .ctx-chip:hover:not(.ctx-chip--active) {
-    color: #d1d1d6;
-    border-color: rgba(255,255,255,0.12);
-    background: rgba(255,255,255,0.04);
-  }
-  .ctx-chip:active { transform: scale(0.97); }
-  .ctx-chip--active {
-    background: rgba(255,255,255,0.07);
-    border-color: rgba(212,180,131,0.4);
-    color: #d4b483;
-  }
 </style>

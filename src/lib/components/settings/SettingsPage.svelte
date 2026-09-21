@@ -8,8 +8,9 @@
   import ApiSection from "./ApiSection.svelte";
   import GeneralSection from "./GeneralSection.svelte";
   import Button from "$lib/components/ui/Button.svelte";
-  import { API_PARAMETER_SETTING_KEYS, createDefaultApiParameterEnabled, readApiParameterEnabled, type ApiParameterKey } from "$lib/utils/apiParameters";
+  import { API_PARAMETER_SETTING_KEYS, createDefaultApiParameterEnabled, type ApiParameterKey } from "$lib/utils/apiParameters";
   import { validateAdditionalApiParameters } from "$lib/utils/additionalApiParameters";
+  import { hydrateApiConnections, persistApiConnections, resolvedHardContextLimit } from "$lib/utils/apiConnections";
 
   type SettingsCategory = "provider" | "parameters" | "language" | "advanced";
   type Category = { id: SettingsCategory; label: string; description: string; mobileDescription: string; icon: string };
@@ -39,32 +40,20 @@
     if (mobile) mobileCategoryOpen = true;
   }
 
-  const SETTINGS_MAP: Record<string, (value: string) => void> = {
-    api_url: (v) => (appState.apiSettings.url = v),
-    api_key: (v) => (appState.apiSettings.apiKey = v),
-    api_model: (v) => (appState.apiSettings.model = v),
-    api_custom_mode: (v) => (appState.apiSettings.customMode = v === "true"),
-    system_prompt: (v) => (appState.apiSettings.systemPrompt = v),
-    api_temperature: (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.temperature = n; },
-    api_max_tokens: (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.maxTokens = n; },
-    api_thinking_budget: (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.thinkingBudget = n; },
-    api_presence_penalty: (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.presencePenalty = n; },
-    api_context_limit: (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.contextLimit = n; },
-    api_top_p: (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.topP = n; },
-    api_top_k: (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.topK = n; },
-    api_min_p: (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.minP = n; },
-    api_frequency_penalty: (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.frequencyPenalty = n; },
-    api_additional_parameters: (v) => { appState.apiSettings.additionalApiParameters = v; },
-    settings_power_user: (v) => { powerUser = v === "true"; },
-  };
+  function handleConnectionChange(previousConnectionId: string) {
+    const previous = appState.apiConnections.find(connection => connection.id === previousConnectionId);
+    if (previous) previous.parameterEnabled = { ...parameterEnabled };
+    parameterEnabled = { ...appState.apiSettings.parameterEnabled };
+  }
 
   onMount(loadSettings);
 
   async function loadSettings() {
     try {
       const settings = await getAllSettings();
-      parameterEnabled = readApiParameterEnabled(settings);
-      for (const row of settings) SETTINGS_MAP[row.key]?.(row.value);
+      hydrateApiConnections(settings);
+      parameterEnabled = { ...appState.apiSettings.parameterEnabled };
+      powerUser = settings.find(row => row.key === 'settings_power_user')?.value === 'true';
       if (appState.apiSettings.maxTokens == null) appState.apiSettings.maxTokens = 300;
       if (appState.apiSettings.presencePenalty == null) appState.apiSettings.presencePenalty = 1.1;
       if (appState.apiSettings.thinkingBudget == null) appState.apiSettings.thinkingBudget = 2500;
@@ -99,7 +88,10 @@
     if (!additionalApiParametersValidation.valid) return;
     isSaving = true;
     try {
+      appState.apiSettings.parameterEnabled = { ...parameterEnabled };
+      appState.apiSettings.contextLimit = resolvedHardContextLimit(appState.apiSettings);
       await Promise.all([
+        persistApiConnections(),
         saveSetting("api_url", appState.apiSettings.url), saveSetting("api_key", appState.apiSettings.apiKey),
         saveSetting("api_model", appState.apiSettings.model), saveSetting("api_custom_mode", appState.apiSettings.customMode),
         saveSetting("system_prompt", appState.apiSettings.systemPrompt),
@@ -192,7 +184,7 @@
     </div>
 
     <div bind:this={settingsContentEl} class="settings-content" class:settings-content--mobile-hidden={!mobileCategoryOpen}>
-      <div class="content-panel" hidden={activeSection !== "provider"}><ApiSection powerUser={powerUser} active={activeSection === "provider"} {settingsReady} /></div>
+      <div class="content-panel" hidden={activeSection !== "provider"}><ApiSection powerUser={powerUser} active={activeSection === "provider"} {settingsReady} onConnectionChange={handleConnectionChange} /></div>
       <div class="content-panel" hidden={activeSection === "provider"}>
         {#if activeSection === "advanced"}<div class="advanced-mode">{@render powerToggle()}</div>{/if}
         <GeneralSection powerUser={powerUser} bind:parameterEnabled category={generalCategory} />

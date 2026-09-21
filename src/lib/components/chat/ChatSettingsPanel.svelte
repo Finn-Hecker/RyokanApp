@@ -8,9 +8,9 @@
   import {
     API_PARAMETER_SETTING_KEYS,
     createDefaultApiParameterEnabled,
-    readApiParameterEnabled,
     type ApiParameterKey,
   } from "$lib/utils/apiParameters";
+  import { persistApiConnections } from '$lib/utils/apiConnections';
 
   let { onClose }: { onClose: () => void } = $props();
 
@@ -26,7 +26,7 @@
       const settings = await getAllSettings();
       const row = settings.find(r => r.key === "settings_power_user");
       if (row) powerUser = row.value === "true";
-      parameterEnabled = readApiParameterEnabled(settings);
+      parameterEnabled = { ...appState.apiSettings.parameterEnabled };
     } catch (err) {
       console.error("[ChatSettingsPanel] Failed to load settings:", err);
     }
@@ -45,7 +45,9 @@
 
   function toggleParameter(key: ApiParameterKey) {
     parameterEnabled[key] = !parameterEnabled[key];
+    appState.apiSettings.parameterEnabled = { ...parameterEnabled };
     persist(API_PARAMETER_SETTING_KEYS[key], parameterEnabled[key]);
+    void persistApiConnections();
   }
 
   const TEMPERATURES = $derived([
@@ -111,14 +113,15 @@
 
   // Every setter updates the live appState (so the next message picks it up
   // immediately) and persists it, since this panel has no separate "Save" button.
-  function setTemperature(v: number) { appState.apiSettings.temperature = v; persist("api_temperature", v); }
-  function setMaxTokens(v: number) { appState.apiSettings.maxTokens = v; persist("api_max_tokens", v); }
-  function setPresencePenalty(v: number) { appState.apiSettings.presencePenalty = v; persist("api_presence_penalty", v); }
-  function setThinkingBudget(v: number) { appState.apiSettings.thinkingBudget = v; persist("api_thinking_budget", v); }
-  function setTopP(v: number) { appState.apiSettings.topP = v; persist("api_top_p", v); }
-  function setTopK(v: number) { appState.apiSettings.topK = v; persist("api_top_k", v); }
-  function setMinP(v: number) { appState.apiSettings.minP = v; persist("api_min_p", v); }
-  function setFreqPenalty(v: number) { appState.apiSettings.frequencyPenalty = v; persist("api_frequency_penalty", v); }
+  function persistActive() { void persistApiConnections(); }
+  function setTemperature(v: number) { appState.apiSettings.temperature = v; persist("api_temperature", v); persistActive(); }
+  function setMaxTokens(v: number) { appState.apiSettings.maxTokens = v; persist("api_max_tokens", v); persistActive(); }
+  function setPresencePenalty(v: number) { appState.apiSettings.presencePenalty = v; persist("api_presence_penalty", v); persistActive(); }
+  function setThinkingBudget(v: number) { appState.apiSettings.thinkingBudget = v; persist("api_thinking_budget", v); persistActive(); }
+  function setTopP(v: number) { appState.apiSettings.topP = v; persist("api_top_p", v); persistActive(); }
+  function setTopK(v: number) { appState.apiSettings.topK = v; persist("api_top_k", v); persistActive(); }
+  function setMinP(v: number) { appState.apiSettings.minP = v; persist("api_min_p", v); persistActive(); }
+  function setFreqPenalty(v: number) { appState.apiSettings.frequencyPenalty = v; persist("api_frequency_penalty", v); persistActive(); }
 
   function handleWindowKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') onClose();

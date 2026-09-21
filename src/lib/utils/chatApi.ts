@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { worldInfoState } from '$lib/stores/worldInfoStore.svelte';
 import { chatState } from '$lib/stores/chatStore.svelte';
 import { buildPromptMessages } from '$lib/utils/chatPromptBuilder';
-import type { ApiSettings } from '$lib/stores/appState.svelte';
+import type { ApiConnection } from '$lib/stores/appState.svelte';
 import type { Message } from '$lib/stores/chatStore.svelte';
 import {
     deriveEffectiveTokenBudget,
@@ -26,7 +26,7 @@ export interface GenerationOptions {
     } | null;
     /** Persisted, chat-owned player Role snapshot. Defaults to the active chat. */
     role?: { name: string; prompt: string } | null;
-    apiSettings:    ApiSettings;
+    apiSettings:    ApiConnection;
     recentMessages: Message[];
     /** Include a new user prompt at the end (normal send). Omit for retry. */
     userPrompt?:    string;
@@ -68,7 +68,9 @@ export async function runGeneration(
     options:   GenerationOptions,
     callbacks: GenerationCallbacks,
 ): Promise<string> {
-    const { apiSettings } = options;
+    // Defensive copy: every network payload is bound to one immutable settings
+    // snapshot even if a caller accidentally passes the live Svelte object.
+    const apiSettings = structuredClone(options.apiSettings);
     const generationId = options.generationId ?? crypto.randomUUID();
 
     const messages = buildApiMessages(options);

@@ -4,8 +4,14 @@ export interface SummaryMarkerState {
 }
 
 export interface ApiRequestParameterConfig {
+  readonly temperatureEnabled?: boolean;
   readonly maxTokensEnabled: boolean;
+  readonly presencePenaltyEnabled?: boolean;
   readonly thinkingBudgetEnabled: boolean;
+  readonly topPEnabled?: boolean;
+  readonly topKEnabled?: boolean;
+  readonly minPEnabled?: boolean;
+  readonly frequencyPenaltyEnabled?: boolean;
   readonly maxTokens: number;
   readonly thinkingBudget: number;
   readonly additionalParameters: Readonly<Record<string, unknown>>;

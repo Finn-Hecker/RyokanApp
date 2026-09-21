@@ -18,7 +18,9 @@ export async function saveSetting(key: string, value: string | boolean | number)
   try {
     const stringValue = String(value);
     await invoke("save_setting", { key, value: stringValue });
-    console.log(`Saved setting '${key}' = ${stringValue}`);
+    // Values can contain credentials (legacy api_key and canonical connection JSON).
+    // Log only the setting identity, never its contents.
+    console.log(`Saved setting '${key}'`);
   } catch (e) {
     console.error(`Failed to save setting '${key}':`, e);
   }

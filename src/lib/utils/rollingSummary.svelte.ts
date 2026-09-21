@@ -43,6 +43,8 @@ interface SummaryOperation {
     generationId: string | null;
     cancelled: boolean;
     requestParameterConfig: ApiRequestParameterConfig;
+    contextLimit: number;
+    apiSettings: GenerationOptions['apiSettings'];
 }
 
 interface PersistedMessageRow extends Omit<Message, 'swipe_variants'> {
@@ -99,18 +101,32 @@ async function countMessagesTokens(messages: { role: string; content: string }[]
         + REQUEST_PRIMING_TOKENS;
 }
 
-function contextLimit(): number {
-    const configured = appState.apiSettings?.contextLimit ?? DEFAULT_CONTEXT_LIMIT;
+function contextLimit(configured = appState.apiSettings?.contextLimit ?? DEFAULT_CONTEXT_LIMIT): number {
     return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_CONTEXT_LIMIT;
 }
 
 async function loadRequestParameterConfig(
     options: GenerationOptions,
 ): Promise<ApiRequestParameterConfig> {
-    return await invoke<ApiRequestParameterConfig>('get_effective_api_parameter_config', {
+    let additionalParameters: Record<string, unknown> = {};
+    try {
+        const parsed = JSON.parse(options.apiSettings.additionalApiParameters || '{}');
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) additionalParameters = parsed;
+    } catch { /* Settings validation normally prevents invalid JSON. */ }
+    const enabled = options.apiSettings.parameterEnabled;
+    return {
+        temperatureEnabled: enabled?.temperature ?? false,
+        maxTokensEnabled: enabled?.maxTokens ?? false,
+        presencePenaltyEnabled: enabled?.presencePenalty ?? false,
+        thinkingBudgetEnabled: enabled?.thinkingBudget ?? false,
+        topPEnabled: enabled?.topP ?? false,
+        topKEnabled: enabled?.topK ?? false,
+        minPEnabled: enabled?.minP ?? false,
+        frequencyPenaltyEnabled: enabled?.frequencyPenalty ?? false,
         maxTokens: options.apiSettings.maxTokens,
         thinkingBudget: options.apiSettings.thinkingBudget,
-    });
+        additionalParameters,
+    };
 }
 
 async function countAdditionalParameterTokens(
@@ -147,7 +163,7 @@ async function measureNormalRequest(
     ]);
     const promptTokens = messageTokens + additionalParameterTokens;
     const reserve = responseReserve(requestParameterConfig);
-    const limit = contextLimit();
+    const limit = contextLimit(options.apiSettings.contextLimit);
     return {
         fits: fitsContextBudget(promptTokens, reserve, limit),
         promptTokens,
@@ -309,6 +325,7 @@ async function summaryRequestFits(
     messages: { role: string; content: string }[],
     requestParameterConfig: ApiRequestParameterConfig,
     maximumSummaryTokens = MAX_SUMMARY_TOKENS,
+    hardContextLimit = DEFAULT_CONTEXT_LIMIT,
 ): Promise<boolean> {
     const prompt = buildSummaryPrompt(previousSummary, messages, maximumSummaryTokens);
     const [messageTokens, additionalParameterTokens] = await Promise.all([
@@ -327,7 +344,7 @@ async function summaryRequestFits(
     return fitsContextBudget(
         inputTokens,
         outputReserve + TOKEN_ESTIMATION_MARGIN,
-        contextLimit(),
+        contextLimit(hardContextLimit),
     );
 }
 
@@ -343,12 +360,13 @@ async function requestSummary(
         messagesToCompress,
         operation.requestParameterConfig,
         maximumSummaryTokens,
+        operation.contextLimit,
     ))) {
         throw new ContextBudgetError('A summary input segment exceeds the configured context token limit.');
     }
     assertOperationCurrent(operation);
 
-    const apiSettings = appState.apiSettings;
+    const apiSettings = operation.apiSettings;
     const summaryRequestParameterConfig = withRequestTokenValues(
         operation.requestParameterConfig,
         maximumSummaryTokens,
@@ -433,7 +451,7 @@ async function largestFittingPrefix(
         const fits = await summaryRequestFits(previousSummary, [{
             ...message,
             content: message.content.slice(0, boundaries[mid]),
-        }], operation.requestParameterConfig, maximumSummaryTokens);
+        }], operation.requestParameterConfig, maximumSummaryTokens, operation.contextLimit);
         if (fits) low = mid;
         else high = mid - 1;
     }
@@ -459,6 +477,7 @@ async function generateRollingSummary(
                 candidate,
                 operation.requestParameterConfig,
                 maximumSummaryTokens,
+                operation.contextLimit,
             )) {
                 batch.push(pending.shift()!);
                 continue;
@@ -741,6 +760,8 @@ export function checkAndSummarizeIfNeeded(
             thinkingBudget: options.apiSettings.thinkingBudget,
             additionalParameters: {},
         },
+        contextLimit: options.apiSettings.contextLimit,
+        apiSettings: structuredClone(options.apiSettings),
     };
     pendingSummaryOperations.add(operation);
 

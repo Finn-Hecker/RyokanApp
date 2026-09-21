@@ -1,6 +1,7 @@
 use rusqlite::Connection;
 use std::fs;
 use tauri::{AppHandle, Manager};
+use serde_json::{json, Value};
 
 pub mod chats;
 pub mod messages;
@@ -23,6 +24,69 @@ fn normalize_character_play_modes(conn: &Connection) -> rusqlite::Result<usize> 
 
 fn remove_legacy_thinking_setting(conn: &Connection) -> rusqlite::Result<usize> {
     conn.execute("DELETE FROM settings WHERE key = 'thinking_mode'", [])
+}
+
+fn setting(conn: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
+    match conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| row.get(0)) {
+        Ok(value) => Ok(Some(value)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+fn legacy_provider_kind(url: &str) -> &'static str {
+    let normalized = url.trim_end_matches('/').to_ascii_lowercase();
+    match normalized.as_str() {
+        "https://openrouter.ai/api/v1" => "openrouter",
+        "http://127.0.0.1:1234/v1" | "http://localhost:1234/v1" => "lm_studio",
+        "http://127.0.0.1:8080/v1" | "http://localhost:8080/v1" => "llama_cpp",
+        "http://127.0.0.1:5001/v1" | "http://localhost:5001/v1" => "koboldcpp",
+        "http://127.0.0.1:11434/v1" | "http://localhost:11434/v1" => "ollama",
+        "https://api.openai.com/v1" => "openai",
+        "https://api.x.ai/v1" => "xai",
+        _ => "generic_openai",
+    }
+}
+
+fn migrate_api_connections(conn: &Connection) -> Result<bool, String> {
+    if setting(conn, "api_connections").map_err(|e| e.to_string())?.is_some() {
+        return Ok(false);
+    }
+    let get = |key: &str, fallback: &str| -> String {
+        setting(conn, key).ok().flatten().unwrap_or_else(|| fallback.to_string())
+    };
+    let number = |key: &str, fallback: f64| -> f64 {
+        get(key, "").parse::<f64>().unwrap_or(fallback)
+    };
+    let integer = |key: &str, fallback: u64| -> u64 {
+        get(key, "").parse::<u64>().unwrap_or(fallback)
+    };
+    let enabled = |key: &str| get(key, "false") == "true";
+    let url = get("api_url", "http://127.0.0.1:1234/v1");
+    let legacy_context = integer("api_context_limit", 8192).clamp(1024, 16_777_216);
+    let connection = json!({
+        "id": "default", "name": "Default", "providerKind": legacy_provider_kind(&url),
+        "url": url, "apiKey": get("api_key", ""), "model": get("api_model", ""),
+        "systemPrompt": get("system_prompt", ""), "temperature": number("api_temperature", 0.8),
+        "maxTokens": integer("api_max_tokens", 300), "presencePenalty": number("api_presence_penalty", 1.12),
+        "topP": number("api_top_p", 0.9), "topK": integer("api_top_k", 40), "minP": number("api_min_p", 0.05),
+        "frequencyPenalty": number("api_frequency_penalty", 0.0), "thinkingBudget": integer("api_thinking_budget", 2500),
+        "customMode": get("api_custom_mode", "false") == "true", "additionalApiParameters": get("api_additional_parameters", ""),
+        "manualContextCap": legacy_context, "contextLimit": legacy_context, "detectedContext": Value::Null,
+        "contextDetectionError": Value::Null, "contextStrategy": "balanced",
+        "parameterEnabled": {
+            "temperature": enabled("api_temperature_enabled"), "maxTokens": enabled("api_max_tokens_enabled"),
+            "presencePenalty": enabled("api_presence_penalty_enabled"), "thinkingBudget": enabled("api_thinking_budget_enabled"),
+            "topP": enabled("api_top_p_enabled"), "topK": enabled("api_top_k_enabled"),
+            "minP": enabled("api_min_p_enabled"), "frequencyPenalty": enabled("api_frequency_penalty_enabled")
+        }
+    });
+    let serialized = serde_json::to_string(&vec![connection]).map_err(|e| e.to_string())?;
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute("INSERT INTO settings (key, value) VALUES ('api_connections', ?1)", [&serialized]).map_err(|e| e.to_string())?;
+    tx.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('active_api_connection_id', 'default')", []).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 fn migrate_roles_prompt(conn: &Connection) -> rusqlite::Result<usize> {
@@ -227,6 +291,9 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
     remove_legacy_thinking_setting(&conn)
         .map_err(|e| format!("Failed to remove legacy thinking setting: {}", e))?;
 
+    migrate_api_connections(&conn)
+        .map_err(|e| format!("Failed to migrate API connections: {}", e))?;
+
     // Roles are reusable global templates. Existing bio text is migrated once
     // when prompt is empty; subsequent Role writes use prompt only.
     migrate_roles_prompt(&conn)
@@ -324,7 +391,7 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
 mod tests {
     use super::{
         migrate_character_roles, migrate_roles_prompt, normalize_character_play_modes,
-        remove_legacy_thinking_setting,
+        remove_legacy_thinking_setting, migrate_api_connections,
     };
     use rusqlite::{params, Connection};
 
@@ -408,6 +475,31 @@ mod tests {
             )
             .unwrap();
         assert_eq!(budget, "2500");
+    }
+
+    #[test]
+    fn flat_api_settings_migrate_once_without_losing_values() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
+            INSERT INTO settings VALUES ('api_url', 'https://openrouter.ai/api/v1');
+            INSERT INTO settings VALUES ('api_key', 'secret-key');
+            INSERT INTO settings VALUES ('api_model', 'vendor/model');
+            INSERT INTO settings VALUES ('api_context_limit', '32768');
+            INSERT INTO settings VALUES ('api_temperature', '0.42');
+            INSERT INTO settings VALUES ('api_temperature_enabled', 'true');
+            INSERT INTO settings VALUES ('api_additional_parameters', '{\"seed\":7}');").unwrap();
+        assert!(migrate_api_connections(&conn).unwrap());
+        assert!(!migrate_api_connections(&conn).unwrap());
+        let raw: String = conn.query_row("SELECT value FROM settings WHERE key='api_connections'", [], |row| row.get(0)).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let migrated = &value[0];
+        assert_eq!(migrated["providerKind"], "openrouter");
+        assert_eq!(migrated["apiKey"], "secret-key");
+        assert_eq!(migrated["model"], "vendor/model");
+        assert_eq!(migrated["manualContextCap"], 32768);
+        assert_eq!(migrated["temperature"], 0.42);
+        assert_eq!(migrated["parameterEnabled"]["temperature"], true);
+        assert_eq!(migrated["additionalApiParameters"], "{\"seed\":7}");
     }
 
     #[test]

@@ -1322,7 +1322,7 @@ async function runGeneration(): Promise<void> {
   const localMsg = mpState.messages.find((m) => m.id === mid)!;
 
   let raw = '';
-  const s = appState.apiSettings;
+  const s = structuredClone(appState.apiSettings);
 
   try {
     // Capture the stable conversation before generation can finish. This
@@ -1362,7 +1362,7 @@ async function runGeneration(): Promise<void> {
           url: s.url,
           api_key: s.apiKey,
           model: s.model,
-          messages: buildLlmMessages(),
+          messages: buildLlmMessages(s),
           temperature: s.temperature,
           max_tokens: s.maxTokens + (s.thinkingBudget ?? 2500),
           presence_penalty: s.presencePenalty,
@@ -1437,8 +1437,7 @@ async function runGeneration(): Promise<void> {
   }
 }
 
-function buildLlmMessages(): Array<{ role: string; content: string }> {
-  const s = appState.apiSettings;
+function buildLlmMessages(s = appState.apiSettings): Array<{ role: string; content: string }> {
   const char = mpState.sessionCharacter ?? appState.activeCharacter;
   let system = s.systemPrompt || '';
   if (char?.prompt) {

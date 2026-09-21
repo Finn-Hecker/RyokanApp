@@ -15,6 +15,7 @@
   import { handleBackNavigation } from '$lib/stores/navigation';
   import { invoke } from '@tauri-apps/api/core';
   import { loadWorldInfos } from '$lib/stores/worldInfoStore.svelte';
+  import { hydrateApiConnections } from '$lib/utils/apiConnections';
 
   let loaded = $state(false); 
 
@@ -42,20 +43,7 @@
     appState.interactionMode = interactionMode;
     const map = Object.fromEntries(settings.map(s => [s.key, s.value]));
 
-    if (map.api_url)     appState.apiSettings.url             = map.api_url;
-    if (map.api_key)     appState.apiSettings.apiKey          = map.api_key;
-    if (map.api_model)   appState.apiSettings.model           = map.api_model;
-    if (map.system_prompt)        appState.apiSettings.systemPrompt    = map.system_prompt;
-    if (map.api_temperature)      appState.apiSettings.temperature     = parseFloat(map.api_temperature);
-    if (map.api_max_tokens)       appState.apiSettings.maxTokens       = parseInt(map.api_max_tokens);
-    if (map.api_presence_penalty) appState.apiSettings.presencePenalty = parseFloat(map.api_presence_penalty);
-    if (map.api_context_limit)    appState.apiSettings.contextLimit    = parseInt(map.api_context_limit);
-    if (map.api_thinking_budget)  appState.apiSettings.thinkingBudget  = parseInt(map.api_thinking_budget);
-    if (map.api_top_p)            appState.apiSettings.topP             = parseFloat(map.api_top_p);
-    if (map.api_top_k)            appState.apiSettings.topK             = parseInt(map.api_top_k);
-    if (map.api_min_p)            appState.apiSettings.minP             = parseFloat(map.api_min_p);
-    if (map.api_frequency_penalty) appState.apiSettings.frequencyPenalty = parseFloat(map.api_frequency_penalty);
-    if (map.api_additional_parameters) appState.apiSettings.additionalApiParameters = map.api_additional_parameters;
+    hydrateApiConnections(settings);
 
     appState.isOnboarding = map['onboarding_completed'] !== 'true';
     loaded = true;
