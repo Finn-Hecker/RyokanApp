@@ -3,6 +3,7 @@
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { getAllSettings, saveSetting } from "$lib/utils/settings";
   import { onMount } from "svelte";
+  import { openUrl } from '@tauri-apps/plugin-opener';
   import { setLocale } from "$lib/paraglide/runtime";
   import * as m from "$lib/paraglide/messages";
   import ApiSection from "./ApiSection.svelte";
@@ -116,6 +117,11 @@
 
   function goBack() { returnTo('lobby'); }
 
+  async function openDiscord() {
+    try { await openUrl('https://discord.gg/shrZCsfGWK'); }
+    catch (error) { console.error('[Settings] Failed to open Discord:', error); }
+  }
+
   $effect(() => {
     if (!mobileCategoryOpen) return;
     return registerBackHandler(() => {
@@ -127,6 +133,14 @@
 
 {#snippet backIcon()}
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+{/snippet}
+
+{#snippet discordButton()}
+  <button type="button" class="discord-link" aria-label="Discord" title="Discord" onclick={openDiscord}>
+    <span class="discord-icon"><svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.545 2.907a13.2 13.2 0 0 0-3.257-1.011.05.05 0 0 0-.052.025c-.141.25-.297.577-.406.833a12.2 12.2 0 0 0-3.658 0 8 8 0 0 0-.412-.833.05.05 0 0 0-.052-.025c-1.125.194-2.22.534-3.257 1.011a.04.04 0 0 0-.021.018C.356 6.024-.213 9.047.066 12.032q.003.022.021.037a13.3 13.3 0 0 0 3.995 2.02.05.05 0 0 0 .056-.019q.463-.63.818-1.329a.05.05 0 0 0-.01-.059l-.018-.011a9 9 0 0 1-1.248-.595.05.05 0 0 1-.02-.066l.015-.019q.127-.095.248-.195a.05.05 0 0 1 .051-.007c2.619 1.196 5.454 1.196 8.041 0a.05.05 0 0 1 .053.007q.121.1.248.195a.05.05 0 0 1-.004.085 8 8 0 0 1-1.249.594.05.05 0 0 0-.03.03.05.05 0 0 0 .003.041c.24.465.515.909.817 1.329a.05.05 0 0 0 .056.019 13.2 13.2 0 0 0 4.001-2.02.05.05 0 0 0 .021-.037c.334-3.451-.559-6.449-2.366-9.106a.03.03 0 0 0-.02-.019m-8.198 7.307c-.789 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.45.73 1.438 1.613 0 .888-.637 1.612-1.438 1.612m5.316 0c-.788 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.451.73 1.438 1.613 0 .888-.631 1.612-1.438 1.612"/></svg></span>
+    <span class="discord-label">Discord</span>
+    <svg class="discord-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+  </button>
 {/snippet}
 
 {#snippet categoryIcon(item: Category)}
@@ -160,6 +174,7 @@
         </button>
       {/each}
     </nav>
+    <div class="sidebar-footer">{@render discordButton()}</div>
   </aside>
 
   <main class="settings-main">
@@ -184,6 +199,7 @@
           </button>
         {/each}
       </nav>
+      <div class="mobile-footer">{@render discordButton()}</div>
     </div>
 
     <div bind:this={settingsContentEl} class="settings-content" class:settings-content--mobile-hidden={!mobileCategoryOpen}>
@@ -202,9 +218,9 @@
   .settings-main { min-width:0; flex:1; display:flex; flex-direction:column; overflow:hidden; }
   .mobile-header { flex:0 0 auto; display:grid; grid-template-columns:40px minmax(0,1fr) auto; align-items:center; gap:8px; border-bottom:1px solid rgba(255,255,255,.05); }
   .mobile-header h1 { min-width:0; color:#e7e2da; font-size:17px; font-weight:650; letter-spacing:-.01em; overflow-wrap:anywhere; }
-  .mobile-overview { flex:1; overflow-y:auto; padding:var(--page-content-top) var(--page-gutter) calc(28px + env(safe-area-inset-bottom)); }
+  .mobile-overview { flex:1; display:flex; flex-direction:column; overflow-y:auto; padding:var(--page-content-top) var(--page-gutter) calc(28px + env(safe-area-inset-bottom)); }
   .mobile-overview--hidden,.settings-content--mobile-hidden { display:none; }
-  .mobile-category-list { overflow:hidden; border-radius:15px; background:rgba(255,255,255,.025); }
+  .mobile-category-list { flex:0 0 auto; overflow:hidden; border-radius:15px; background:rgba(255,255,255,.025); }
   .mobile-category-row { width:100%; min-height:64px; display:flex; align-items:center; gap:13px; padding:10px 14px; color:#c9c7ca; text-align:left; cursor:pointer; transition:background 140ms ease; }
   .mobile-category-row + .mobile-category-row { border-top:1px solid rgba(255,255,255,.055); }
   .mobile-category-row:hover,.mobile-category-row:active { background:rgba(255,255,255,.045); }
@@ -213,6 +229,15 @@
   .mobile-category-label { font-size:14px; font-weight:620; color:#e1dfe2; }
   .mobile-category-description { font-size:11px; line-height:1.35; color:#65656a; }
   .mobile-chevron { flex:0 0 auto; color:#444448; }
+  .mobile-footer { flex:0 0 auto; margin-top:auto; padding-top:20px; }
+  .discord-link { width:100%; min-height:52px; display:flex; align-items:center; gap:11px; padding:8px 12px; border:1px solid rgba(255,255,255,.055); border-radius:12px; background:rgba(255,255,255,.025); color:#aaa8ac; text-align:left; font-size:13px; font-weight:600; cursor:pointer; transition:color .15s,background .15s,border-color .15s,transform .15s; }
+  .discord-link:hover { color:#e0dce5; background:rgba(255,255,255,.05); border-color:rgba(145,152,229,.22); }
+  .discord-link:active { background:rgba(145,152,229,.1); transform:scale(.985); }
+  .discord-link:focus-visible { outline:2px solid #d4b483; outline-offset:2px; }
+  .discord-icon { width:32px; height:32px; flex:0 0 auto; display:grid; place-items:center; border-radius:9px; color:#a7adeb; background:rgba(145,152,229,.12); }
+  .discord-label { flex:1; }
+  .discord-arrow { flex:0 0 auto; color:#67666e; transition:color .15s,transform .15s; }
+  .discord-link:hover .discord-arrow { color:#a7adeb; transform:translate(2px,-2px); }
   .settings-content { flex:1; overflow-y:auto; overflow-x:hidden; padding:var(--page-content-top) var(--page-gutter) calc(36px + env(safe-area-inset-bottom)); }
   .content-panel { width:100%; max-width:660px; margin:0 auto; }
   .content-panel[hidden] { display:none; }
@@ -245,6 +270,7 @@
     .category-nav-item { min-height:42px; width:100%; display:flex; align-items:center; gap:11px; padding:9px 12px; border-radius:10px; color:#6d6d72; text-align:left; font-size:13px; font-weight:560; cursor:pointer; transition:color .15s,background .15s; }
     .category-nav-item:hover { color:#bbb8b5; background:rgba(255,255,255,.03); }
     .category-nav-item--active { color:#d8c5a8; background:rgba(212,180,131,.075); }
+    .sidebar-footer { margin-top:auto; padding:14px 12px 16px; border-top:1px solid rgba(255,255,255,.055); }
     .desktop-header { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:24px; border-bottom:1px solid rgba(255,255,255,.045); }
     .desktop-header h1 { color:#e4e0da; font-size:18px; font-weight:650; letter-spacing:-.01em; }
     .desktop-header p { margin-top:2px; color:#5e5e63; font-size:11px; }
