@@ -70,11 +70,14 @@ export function messageFingerprint(message: Message): string {
 }
 
 export function generationConfigurationFingerprint(options: GenerationOptions): string {
+    // Detection timestamps/errors do not change the provider prompt. Automatic
+    // refreshes must not discard a valid provider input-usage anchor.
+    const { detectedContext, contextDetectionError, ...requestSettings } = options.apiSettings;
     return JSON.stringify([
         options.apiSettings.providerKind,
         options.apiSettings.url,
         options.apiSettings.model,
-        options.apiSettings,
+        requestSettings,
         options.requestParameterConfig,
         options.character,
         options.role === undefined ? chatState.activeRoleSnapshot : options.role,

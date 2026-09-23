@@ -9,6 +9,7 @@ import type { GenerationOptions, GenerationPromptSnapshot } from '$lib/utils/cha
 import { processThinkingOutput, stripThinkingContent } from '$lib/utils/chatApi';
 import {
     commitOrRollback,
+    boundedSummaryOutputCap,
     canReusePromptAnchor,
     currentConversationRevision,
     deriveEffectiveTokenBudget,
@@ -18,14 +19,16 @@ import {
     reconcilePromptTokens,
     shouldRecompressExistingSummary,
     summaryWorkKey,
-    TOKEN_ESTIMATION_MARGIN,
+    summarySafetyMargin,
+    contextSafetyMargin,
     unicodeCodePointBoundaries,
     withRequestTokenValues,
     type ApiRequestParameterConfig,
     type SummaryMarkerState,
     type PromptUsageAnchor,
 } from '$lib/utils/rollingSummaryCore';
-import { adaptiveSummaryOutputCap, deriveWorkingContextTarget, shouldTriggerSummary, summaryCompressionGoal } from '$lib/utils/connectionCore';
+import { adaptiveSummaryOutputCap, resolvedHardContextLimit, resolvedWorkingContextTarget, shouldTriggerSummary, summaryCompressionGoal } from '$lib/utils/connectionCore';
+import { ensureContextDetection } from '$lib/utils/apiConnections';
 
 const DEFAULT_CONTEXT_LIMIT = 4096;
 const DEFAULT_SUMMARY_TOKENS = 1024;
@@ -48,6 +51,15 @@ interface SummaryOperation {
     contextLimit: number;
     apiSettings: GenerationOptions['apiSettings'];
     maximumSummaryTokens: number;
+    selectionFingerprint: string;
+    revision: number;
+}
+
+function summarySelectionFingerprint(): string {
+    const connection = snapshotSummaryApiConnection(appState.apiSettings);
+    return JSON.stringify([appState.summaryConnectionId, appState.longTermMemory,
+        connection.id, connection.providerKind, connection.url, connection.model,
+        connection.apiKey, connection.manualContextCap, appState.apiSettings.contextStrategy]);
 }
 
 interface PersistedMessageRow extends Omit<Message, 'swipe_variants' | 'usage_variants'> {
@@ -144,9 +156,9 @@ async function countAdditionalParameterTokens(
     return await countTokens(JSON.stringify(additional), model);
 }
 
-function responseReserve(requestParameterConfig: ApiRequestParameterConfig): number {
+function responseReserve(requestParameterConfig: ApiRequestParameterConfig, hardLimit: number): number {
     return deriveEffectiveTokenBudget(requestParameterConfig).reserveTokens
-        + TOKEN_ESTIMATION_MARGIN;
+        + contextSafetyMargin(hardLimit);
 }
 
 async function measureNormalRequest(
@@ -187,8 +199,8 @@ async function measureNormalRequest(
         ]);
         promptTokens = messageTokens + additionalParameterTokens;
     }
-    const reserve = responseReserve(requestParameterConfig);
-    const limit = contextLimit(options.apiSettings.contextLimit);
+    const limit = resolvedHardContextLimit(options.apiSettings);
+    const reserve = responseReserve(requestParameterConfig, limit);
     return {
         fits: fitsContextBudget(promptTokens, reserve, limit),
         promptTokens,
@@ -281,7 +293,9 @@ function assertOperationCurrent(operation: SummaryOperation): void {
         operation.chatId,
         chatState.activeChatId,
         operation.cancelled,
-    )) {
+    ) || operation.selectionFingerprint !== summarySelectionFingerprint()
+      || resolvedHardContextLimit(snapshotSummaryApiConnection(appState.apiSettings)) < operation.contextLimit
+      || operation.revision !== currentConversationRevision(operation.chatId)) {
         operation.cancelled = true;
         throw new SummaryCancelledError();
     }
@@ -369,11 +383,10 @@ async function commitSummary(
         ),
         previousMeta,
         candidateMeta,
-        () => isSummaryCommitCurrent(
-            operation.chatId,
-            chatState.activeChatId,
-            operation.cancelled,
-        ),
+        () => {
+            try { assertOperationCurrent(operation); return true; }
+            catch { return false; }
+        },
     );
 
     if (result !== 'committed') {
@@ -441,7 +454,7 @@ async function summaryRequestFits(
     ).reserveTokens;
     return fitsContextBudget(
         inputTokens,
-        outputReserve + TOKEN_ESTIMATION_MARGIN,
+        outputReserve + summarySafetyMargin(hardContextLimit),
         contextLimit(hardContextLimit),
     );
 }
@@ -487,6 +500,7 @@ async function requestSummary(
         await invoke('call_ai_api', {
             payload: {
                 generation_id: generationId,
+                provider_kind: apiSettings.providerKind,
                 request_parameter_config: summaryRequestParameterConfig,
                 url: apiSettings.url,
                 api_key: apiSettings.apiKey,
@@ -639,11 +653,8 @@ async function performSummaryCheck(
             history = allMessages.slice(0, boundary);
         }
 
-        const hardLimit = contextLimit(options.apiSettings.contextLimit);
-        const workingTarget = deriveWorkingContextTarget(
-            hardLimit,
-            options.apiSettings.contextStrategy,
-        );
+        const hardLimit = resolvedHardContextLimit(options.apiSettings);
+        const workingTarget = resolvedWorkingContextTarget(options.apiSettings);
         if (!appState.longTermMemory) {
             const selected = await selectNewestRawHistory(
                 options,
@@ -674,6 +685,24 @@ async function performSummaryCheck(
         }
         marker = resolveSummaryMarker(history, meta);
 
+        const clean = (message: Message) => ({
+            role: message.role,
+            content: message.role === 'assistant'
+                ? stripThinkingContent(message.content)
+                : message.content,
+        });
+        // Keep chat capacity independent. Pressure on the summary model only
+        // advances the rolling marker; large imports/pastes still use chunking.
+        const summaryTailFits = (summaryMeta: SummaryMarkerState) => summaryRequestFits(
+            summaryMeta.currentSummary,
+            history.slice(resolveSummaryMarker(history, summaryMeta).startIndex, -1).map(clean),
+            operation.requestParameterConfig,
+            operation.maximumSummaryTokens,
+            operation.contextLimit,
+            operation.apiSettings.model,
+        );
+        const summaryPressure = history.length - marker.startIndex > 1 && !(await summaryTailFits(meta));
+
         const initialFit = await measureNormalRequest(
             options,
             history,
@@ -682,7 +711,7 @@ async function performSummaryCheck(
             chatId,
         );
         assertOperationCurrent(operation);
-        if (!shouldTriggerSummary(initialFit.total, workingTarget)) {
+        if (!shouldTriggerSummary(initialFit.total, workingTarget) && !summaryPressure) {
             return { recentMessages: history, summaryMeta: meta, requestParameterConfig };
         }
 
@@ -725,13 +754,6 @@ async function performSummaryCheck(
         }
 
         summaryState.isSummarizing = true;
-        const clean = (message: Message) => ({
-            role: message.role,
-            content: message.role === 'assistant'
-                ? stripThinkingContent(message.content)
-                : message.content,
-        });
-
         let workingMeta = meta;
         if (meta.currentSummary) {
             const restoredSummaryTokens = await countTokens(meta.currentSummary, operation.apiSettings.model);
@@ -754,7 +776,7 @@ async function performSummaryCheck(
                     requestParameterConfig,
                 );
                 assertOperationCurrent(operation);
-                if (recompressedFit.total <= workingTarget) {
+                if (recompressedFit.total <= workingTarget && await summaryTailFits(workingMeta)) {
                     await commitSummary(operation, meta, workingMeta);
                     return {
                         recentMessages: history,
@@ -776,15 +798,16 @@ async function performSummaryCheck(
         for (let count = 1; count < newMessages.length; count += 1) {
             const markerId = newMessages[count - 1]?.id?.toString();
             if (!markerId) continue;
+            const projectedMeta = { currentSummary: workingMeta.currentSummary ?? 'summary', lastSummarizedMessageId: markerId };
             const projected = await measureNormalRequest(
                 options,
                 history,
-                { currentSummary: workingMeta.currentSummary ?? 'summary', lastSummarizedMessageId: markerId },
+                projectedMeta,
                 requestParameterConfig,
             );
             compressionCount = count;
-            if (projected.total <= goal) break;
-            if (count === preferredTailStart && projected.total <= workingTarget) break;
+            if ((projected.total <= goal || (count === preferredTailStart && projected.total <= workingTarget))
+                && await summaryTailFits(projectedMeta)) break;
         }
         const middle = newMessages.slice(0, compressionCount);
         const tail = newMessages.slice(compressionCount);
@@ -858,7 +881,7 @@ async function performSummaryCheck(
             requestParameterConfig,
         );
 
-        while (finalFit.total > goal && tail.length > 1) {
+        while (tail.length > 1 && (finalFit.total > goal || !(await summaryTailFits(candidateMeta)))) {
             const next = tail.shift()!;
             newSummary = await generateRollingSummary(newSummary, [clean(next)], operation, operation.maximumSummaryTokens);
             lastCompressedId = next.id ?? null;
@@ -895,6 +918,7 @@ async function fallbackAfterSummaryFailure(
     options: GenerationOptions,
     beforeMessageId?: string,
 ): Promise<PreparedGenerationContext | null> {
+    assertOperationCurrent(operation);
     const [allMessages, persistedMeta, requestParameterConfig] = await Promise.all([
         loadPersistedMessages(operation.chatId),
         loadPersistedSummary(operation.chatId),
@@ -911,7 +935,8 @@ async function fallbackAfterSummaryFailure(
         ? { currentSummary: null, lastSummarizedMessageId: null }
         : persistedMeta;
     const measurement = await measureNormalRequest(options, history, meta, requestParameterConfig);
-    if (measurement.total > contextLimit(options.apiSettings.contextLimit)) return null;
+    assertOperationCurrent(operation);
+    if (!measurement.fits) return null;
     return { recentMessages: history, summaryMeta: meta, requestParameterConfig };
 }
 
@@ -921,7 +946,8 @@ export function checkAndSummarizeIfNeeded(
     options: GenerationOptions,
     beforeMessageId?: string,
 ): Promise<PreparedGenerationContext> {
-    const workKey = summaryWorkKey(chatId, beforeMessageId);
+    const selectionFingerprint = summarySelectionFingerprint();
+    const workKey = JSON.stringify([summaryWorkKey(chatId, beforeMessageId), selectionFingerprint, options.apiSettings]);
     const existing = summaryWorkByBoundary.get(workKey);
     if (existing) return existing;
 
@@ -935,6 +961,8 @@ export function checkAndSummarizeIfNeeded(
         contextLimit: summaryConnection.contextLimit,
         apiSettings: summaryConnection,
         maximumSummaryTokens,
+        selectionFingerprint,
+        revision: currentConversationRevision(chatId),
     };
     pendingSummaryOperations.add(operation);
 
@@ -942,6 +970,23 @@ export function checkAndSummarizeIfNeeded(
         .catch(() => undefined)
         .then(async () => {
             try {
+                await Promise.all([
+                    ensureContextDetection(options.apiSettings),
+                    ...(appState.longTermMemory && summaryConnection.id !== options.apiSettings.id
+                        ? [ensureContextDetection(summaryConnection)] : []),
+                ]);
+                if (summaryConnection.id === options.apiSettings.id) {
+                    operation.apiSettings = options.apiSettings;
+                }
+                operation.contextLimit = resolvedHardContextLimit(operation.apiSettings);
+                if (appState.longTermMemory) {
+                    const overhead = await countMessagesTokens([{ role: 'user', content:
+                        buildSummaryPrompt('x', [], maximumSummaryTokens) }], operation.apiSettings.model)
+                        + await countAdditionalParameterTokens(operation.requestParameterConfig, operation.apiSettings.model);
+                    operation.maximumSummaryTokens = boundedSummaryOutputCap(maximumSummaryTokens, operation.contextLimit, overhead);
+                    if (operation.maximumSummaryTokens < 1) throw new ContextBudgetError('The summary instructions exceed the summary model context limit.');
+                    operation.requestParameterConfig = summaryRequestPolicy(operation.maximumSummaryTokens);
+                }
                 return await performSummaryCheck(operation, options, beforeMessageId);
             } catch (error) {
                 if (error instanceof SummaryCancelledError || operation.cancelled || !appState.longTermMemory) throw error;

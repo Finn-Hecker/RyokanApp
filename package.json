@@ -7,7 +7,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
-    "test:summary": "node --experimental-strip-types --test src/lib/utils/rollingSummaryCore.test.mjs",
+    "test:summary": "node --experimental-strip-types --test src/lib/utils/rollingSummaryCore.test.mjs src/lib/utils/rollingSummaryRuntime.test.mjs",
     "test:prompt": "node --experimental-strip-types --test src/lib/utils/promptBuilder.test.mjs",
     "test:connections": "node --experimental-strip-types --test src/lib/utils/connectionCore.test.mjs",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",

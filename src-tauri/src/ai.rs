@@ -784,7 +784,7 @@ fn parse_ollama(body: &serde_json::Value, model: &str) -> Result<u64, String> {
 }
 
 async fn get_context_json(url: String, api_key: &str) -> Result<serde_json::Value, String> {
-    let mut request = CLIENT.get(url);
+    let mut request = CLIENT.get(url).timeout(Duration::from_secs(10));
     if !api_key.is_empty() { request = request.bearer_auth(api_key); }
     let response = request.send().await.map_err(|_| "Context detection request failed".to_string())?;
     if !response.status().is_success() { return Err(format!("Context detection returned status {}", response.status())); }

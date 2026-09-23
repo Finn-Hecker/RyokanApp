@@ -3,14 +3,15 @@
   import { fetchModels, saveSetting, type ModelInfo } from "$lib/utils/settings";
   import * as m from "$lib/paraglide/messages";
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { registerBackHandler } from '$lib/stores/navigation';
   import {
     curatedProviderGroupForModel,
     curatedProviderGroups,
     type CuratedProviderGroupId,
   } from '$lib/utils/modelProviderGroups';
-  import { deleteConnectionSafely, invalidateDetectedContext, normalizeSummaryConnectionId, refreshContextDetection, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION } from '$lib/utils/apiConnections';
+  import { deleteConnectionSafely, ensureContextDetection, invalidateDetectedContext, normalizeSummaryConnectionId, refreshContextDetection, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION } from '$lib/utils/apiConnections';
+  import { resolvedWorkingContextTarget, resolveSummaryConnection } from '$lib/utils/connectionCore';
 
   const NEW_CONNECTION_ACTION = '__new_connection__';
 
@@ -69,6 +70,29 @@
   let renameValue = $state('');
   let confirmingConnectionDelete = $state(false);
   let renameInput = $state<HTMLInputElement>();
+
+  const summaryConnection = $derived(resolveSummaryConnection(appState.apiConnections, appState.summaryConnectionId, appState.apiSettings));
+  const workingContextBudget = $derived(resolvedWorkingContextTarget(appState.apiSettings));
+  const summaryContextLimit = $derived(resolvedHardContextLimit(summaryConnection));
+
+  $effect(() => {
+    if (!settingsReady || (!active && section !== 'memory')) return;
+    const chat = appState.apiSettings;
+    const summary = summaryConnection;
+    // Only identity changes retrigger detection, not the metadata it writes.
+    const identities = [chat, summary].map(connection =>
+      [connection.id, connection.providerKind, connection.url, connection.model, connection.apiKey].join('\n'));
+    void identities;
+    const memoryEnabled = appState.longTermMemory;
+    let disposed = false;
+    untrack(() => {
+      detectingContext = true;
+      void Promise.all([ensureContextDetection(chat),
+        ...(memoryEnabled && summary.id !== chat.id ? [ensureContextDetection(summary)] : [])
+      ]).finally(() => { if (!disposed) detectingContext = false; });
+    });
+    return () => { disposed = true; };
+  });
 
   $effect(() => {
     if (!modelMenuOpen) return;
@@ -861,7 +885,7 @@
         </Tooltip>
       </div>
       <div class="context-detection-row">
-        <div class="context-amount"><strong>{formatTokens(resolvedHardContextLimit(appState.apiSettings))} {m.settings_context_tokens()}</strong><span>{m.settings_context_effective()}</span></div>
+        <div class="context-amount"><strong>{formatTokens(workingContextBudget)} {m.settings_context_tokens()}</strong><span>{m.settings_context_effective()}</span></div>
       </div>
       <div class="context-secondary">
         <span>{#if appState.apiSettings.detectedContext && appState.apiSettings.detectedContext.provenance !== 'theoretical'}{m.settings_context_model_maximum({ tokens: formatTokens(appState.apiSettings.detectedContext.tokens) })}{:else}{m.settings_context_maximum_unavailable()}{/if}</span>
@@ -913,6 +937,7 @@
       {:else if appState.apiSettings.contextStrategy === 'maximum'}{m.settings_context_strategy_maximum_help()}
       {:else}{m.settings_context_strategy_balanced_help()}{/if}
     </div>
+    <span class="memory-help">{m.settings_context_working_help()}</span>
 
     <div class="settings-divider"></div>
     <div class="memory-controls">
@@ -930,6 +955,18 @@
           {/each}
         </select>
         <span class="memory-help">{m.settings_memory_same_as_chat_help()}</span>
+        {#if appState.longTermMemory && summaryConnection.id !== appState.apiSettings.id}
+          <span class="memory-help">
+            {#if summaryConnection.detectedContext && summaryConnection.detectedContext.provenance !== 'theoretical'}
+              {m.settings_memory_summary_context({ tokens: formatTokens(summaryContextLimit) })}
+            {:else}
+              {m.settings_memory_summary_context_unknown({ tokens: formatTokens(summaryContextLimit) })}
+            {/if}
+          </span>
+          {#if summaryContextLimit < resolvedHardContextLimit(appState.apiSettings)}
+            <span class="memory-help">{m.settings_memory_summary_context_smaller()}</span>
+          {/if}
+        {/if}
       </label>
     </div>
   </div>

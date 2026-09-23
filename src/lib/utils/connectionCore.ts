@@ -21,15 +21,21 @@ export function resolvedHardContextLimit(connection: ContextInputs): number {
   return automatic ?? manual ?? CONSERVATIVE_CONTEXT_FALLBACK;
 }
 
-/** Square-root growth gives small models most of their capacity, but progressively
- * reduces the fraction assigned to huge windows. All strategies remain soft-capped. */
+/** Shared by Memory settings and generation; this is a soft working target. */
+export function resolvedWorkingContextTarget(connection: ContextInputs & { contextStrategy: ContextStrategy }): number {
+  return deriveWorkingContextTarget(resolvedHardContextLimit(connection), connection.contextStrategy);
+}
+
+/** Total request budget, including output and safety reserves (not raw input).
+ * Maximum uses the hard window; measured request reserves determine usable input.
+ * Economy/Balanced deliberately limit cost with sublinear growth and ceilings. */
 export function deriveWorkingContextTarget(hardLimit: number, strategy: ContextStrategy): number {
   const hard = validContextSize(Math.floor(hardLimit)) ? Math.floor(hardLimit) : CONSERVATIVE_CONTEXT_FALLBACK;
+  if (strategy === 'maximum') return hard;
   const base = 8192;
   const policies = {
     economy: { smallShare: 0.5, growth: 0.55, ceiling: 32_768 },
     balanced: { smallShare: 0.85, growth: 1.15, ceiling: 98_304 },
-    maximum: { smallShare: 1, growth: 2.75, ceiling: 262_144 },
   } as const;
   const policy = policies[strategy];
   if (hard <= base) return Math.max(1024, Math.min(hard, Math.floor(hard * policy.smallShare)));
@@ -84,6 +90,7 @@ export function resolveSummaryConnection<T extends { id: string }>(
   chatConnection: T,
 ): T {
   if (selectedId === SAME_AS_CHAT_CONNECTION) return chatConnection;
+  if (selectedId === chatConnection.id) return chatConnection;
   return connections.find(connection => connection.id === selectedId) ?? chatConnection;
 }
 

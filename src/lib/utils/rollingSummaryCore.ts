@@ -96,6 +96,19 @@ export const UNKNOWN_REASONING_RESERVE = 512;
 /** Covers tokenizer mismatch and provider-specific chat-template framing. */
 export const TOKEN_ESTIMATION_MARGIN = 128;
 
+/** Allow proportional tokenizer/template mismatch, including unanchored chat requests. */
+export function contextSafetyMargin(contextLimit: number): number {
+  return Math.max(TOKEN_ESTIMATION_MARGIN, Math.ceil(contextLimit * 0.02));
+}
+
+export const summarySafetyMargin = contextSafetyMargin;
+
+/** Leave room for the previous summary, output, and new events even on small models. */
+export function boundedSummaryOutputCap(desired: number, contextLimit: number, promptOverhead: number): number {
+  return Math.max(0, Math.min(desired,
+    Math.floor((contextLimit - summarySafetyMargin(contextLimit) - promptOverhead) / 3)));
+}
+
 function strictTokenLimit(value: unknown): number | null {
   return typeof value === 'number'
     && Number.isSafeInteger(value)

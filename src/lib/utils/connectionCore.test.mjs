@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { acceptDetectedContext, adaptiveSummaryOutputCap, CONSERVATIVE_CONTEXT_FALLBACK, connectionIdentity, deleteConnectionSafely, deriveWorkingContextTarget, normalizeSummaryConnectionId, resolveMemorySettings, resolveSummaryConnection, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION, shouldTriggerSummary, summaryCompressionGoal } from './connectionCore.ts';
+import { acceptDetectedContext, adaptiveSummaryOutputCap, CONSERVATIVE_CONTEXT_FALLBACK, connectionIdentity, deleteConnectionSafely, deriveWorkingContextTarget, normalizeSummaryConnectionId, resolveMemorySettings, resolveSummaryConnection, resolvedHardContextLimit, resolvedWorkingContextTarget, SAME_AS_CHAT_CONNECTION, shouldTriggerSummary, summaryCompressionGoal } from './connectionCore.ts';
 
 test('hard context precedence uses detection, caps it manually, and falls back conservatively', () => {
   assert.equal(resolvedHardContextLimit({ detectedContext: { tokens: 131072, provenance: 'provider_advertised' }, manualContextCap: null }), 131072);
@@ -10,18 +10,41 @@ test('hard context precedence uses detection, caps it manually, and falls back c
   assert.equal(resolvedHardContextLimit({ detectedContext: { tokens: 0, provenance: 'runtime' }, manualContextCap: null }), CONSERVATIVE_CONTEXT_FALLBACK);
 });
 
-test('all strategies scale nonlinearly and never exceed hard context', () => {
-  const limits = [8192, 32768, 131072, 524288, 1048576];
+test('cost strategies remain bounded while Maximum uses the full request window', () => {
+  const limits = [1024, 4096, 8192, 16384, 32768, 131072, 524288, 1048576];
   for (const limit of limits) {
     const economy = deriveWorkingContextTarget(limit, 'economy');
     const balanced = deriveWorkingContextTarget(limit, 'balanced');
     const maximum = deriveWorkingContextTarget(limit, 'maximum');
-    assert.ok(economy < balanced, `${limit}: economy < balanced`);
+    assert.ok(economy <= balanced, `${limit}: economy <= balanced`);
     assert.ok(balanced <= maximum, `${limit}: balanced <= maximum`);
-    assert.ok(maximum <= limit, `${limit}: target <= hard limit`);
+    assert.equal(maximum, limit, `${limit}: Maximum includes the full request window`);
   }
-  assert.equal(deriveWorkingContextTarget(1048576, 'maximum'), 262144);
+  assert.equal(deriveWorkingContextTarget(1048576, 'maximum'), 1048576);
   assert.equal(deriveWorkingContextTarget(1048576, 'balanced'), 98304);
+});
+
+test('shared displayed/runtime working budget reacts to strategy, manual cap, and model detection', () => {
+  const connection = { detectedContext: { tokens: 524288, provenance: 'runtime' }, manualContextCap: null, contextStrategy: 'economy' };
+  assert.equal(resolvedWorkingContextTarget(connection), 32768);
+  connection.contextStrategy = 'balanced';
+  assert.equal(resolvedWorkingContextTarget(connection), 82944);
+  connection.contextStrategy = 'maximum';
+  assert.equal(resolvedWorkingContextTarget(connection), 524288);
+  assert.equal(connection.detectedContext.tokens, 524288);
+  connection.manualContextCap = 8192;
+  assert.equal(resolvedWorkingContextTarget(connection), 8192);
+  connection.contextStrategy = 'balanced';
+  assert.equal(resolvedWorkingContextTarget(connection), 6963);
+  connection.contextStrategy = 'economy';
+  assert.equal(resolvedWorkingContextTarget(connection), 4096);
+  connection.manualContextCap = 1048576;
+  assert.equal(resolvedHardContextLimit(connection), 524288);
+  connection.detectedContext = { tokens: 4096, provenance: 'runtime' };
+  assert.equal(resolvedWorkingContextTarget(connection), 2048);
+  connection.manualContextCap = null;
+  connection.detectedContext = null;
+  assert.equal(resolvedWorkingContextTarget(connection), 4096);
 });
 
 test('provider or model identity changes invalidate the cache key', () => {

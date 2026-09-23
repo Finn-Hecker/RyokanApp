@@ -1,5 +1,5 @@
 import { createDefaultApiParameterEnabled, type ApiParameterKey } from '$lib/utils/apiParameters';
-import { resolveSummaryConnection, SAME_AS_CHAT_CONNECTION } from '$lib/utils/connectionCore';
+import { resolvedHardContextLimit, resolveSummaryConnection, SAME_AS_CHAT_CONNECTION } from '$lib/utils/connectionCore';
 
 export type ProviderKind = 'openrouter' | 'lm_studio' | 'llama_cpp' | 'koboldcpp' | 'ollama' | 'openai' | 'xai' | 'generic_openai';
 export type ContextStrategy = 'economy' | 'balanced' | 'maximum';
@@ -94,6 +94,7 @@ export function snapshotApiConnection(connection: ApiConnection): ApiConnection 
   const snapshot = $state.snapshot(connection);
   return {
     ...snapshot,
+    contextLimit: resolvedHardContextLimit(snapshot),
     parameterEnabled: { ...snapshot.parameterEnabled },
     detectedContext: snapshot.detectedContext ? { ...snapshot.detectedContext } : null,
   };

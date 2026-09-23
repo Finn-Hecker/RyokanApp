@@ -8,11 +8,16 @@ export const API_CONNECTIONS_KEY = 'api_connections';
 export const ACTIVE_API_CONNECTION_KEY = 'active_api_connection_id';
 export const LONG_TERM_MEMORY_KEY = 'long_term_memory_enabled';
 export const SUMMARY_CONNECTION_KEY = 'summary_api_connection_id';
+// Share automatic lookups between Memory settings, chat, and summary snapshots.
+// Retry failures too; persisted runtime metadata is revalidated after restart.
+const detectionRequests = new Map<string, { expires: number; result: Promise<DetectedContextMetadata> }>();
 function normalizeConnection(value: Partial<ApiConnection>): ApiConnection {
   const fallback = createDefaultConnection(value.id || crypto.randomUUID(), value.name || 'Connection');
   const connection = { ...fallback, ...value, parameterEnabled: { ...fallback.parameterEnabled, ...value.parameterEnabled } };
   if (!validContextSize(connection.manualContextCap)) connection.manualContextCap = null;
   if (!connection.detectedContext || !validContextSize(connection.detectedContext.tokens)) connection.detectedContext = null;
+  if (connection.detectedContext && (connection.detectedContext.model !== connection.model
+    || connection.detectedContext.providerKind !== connection.providerKind)) connection.detectedContext = null;
   connection.contextLimit = resolvedHardContextLimit(connection);
   return connection;
 }
@@ -42,24 +47,54 @@ export function invalidateDetectedContext(connection: ApiConnection): void {
   connection.contextLimit = resolvedHardContextLimit(connection);
 }
 
-export async function refreshContextDetection(connection: ApiConnection): Promise<DetectedContextMetadata | null> {
+export async function refreshContextDetection(connection: ApiConnection, force = true): Promise<DetectedContextMetadata | null> {
   const identity = connectionIdentity(connection.providerKind, connection.url, connection.model);
+  const apiKey = connection.apiKey;
+  const key = JSON.stringify([identity, apiKey]);
+  let request = detectionRequests.get(key);
+  const isCurrent = () => identity === connectionIdentity(connection.providerKind, connection.url, connection.model)
+    && apiKey === connection.apiKey;
+  const publish = () => {
+    const live = appState.apiConnections.find(item => item.id === connection.id);
+    if (live && live !== connection && live.apiKey === apiKey
+      && connectionIdentity(live.providerKind, live.url, live.model) === identity) {
+      live.detectedContext = connection.detectedContext;
+      live.contextDetectionError = connection.contextDetectionError;
+      live.contextLimit = resolvedHardContextLimit(live);
+    }
+  };
   try {
-    const result = await invoke<DetectedContextMetadata>('detect_context', { providerKind: connection.providerKind, baseUrl: connection.url, model: connection.model, apiKey: connection.apiKey });
-    if (identity !== connectionIdentity(connection.providerKind, connection.url, connection.model)) return null;
+    if (force || !request || request.expires <= Date.now()) {
+      request = {
+        expires: Date.now() + 60_000,
+        result: invoke<DetectedContextMetadata>('detect_context', { providerKind: connection.providerKind, baseUrl: connection.url, model: connection.model, apiKey }),
+      };
+      detectionRequests.set(key, request);
+    }
+    const result = await request.result;
+    if (!isCurrent()) return null;
+    if (detectionRequests.get(key) !== request) return refreshContextDetection(connection, false);
     const accepted = acceptDetectedContext(connection.detectedContext, result);
     if (accepted !== result) throw new Error('Provider returned an invalid context size.');
     connection.detectedContext = accepted;
     connection.contextDetectionError = null;
     connection.contextLimit = resolvedHardContextLimit(connection);
+    publish();
     return result;
   } catch (error) {
-    if (identity === connectionIdentity(connection.providerKind, connection.url, connection.model)) {
+    if (isCurrent()) {
+      if (detectionRequests.get(key) !== request) return refreshContextDetection(connection, false);
       connection.contextDetectionError = error instanceof Error ? error.message : String(error);
       connection.contextLimit = resolvedHardContextLimit(connection);
+      publish();
     }
     return null;
   }
+}
+
+export async function ensureContextDetection(connection: ApiConnection): Promise<void> {
+  if (connection.model) await refreshContextDetection(connection, false);
+  connection.contextLimit = resolvedHardContextLimit(connection);
 }
 
 export const PROVIDER_LABELS: Record<ProviderKind, string> = {
