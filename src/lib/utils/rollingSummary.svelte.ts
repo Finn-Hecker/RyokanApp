@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { appState } from '$lib/stores/appState.svelte';
+import { appState, snapshotSummaryApiConnection } from '$lib/stores/appState.svelte';
 import { getClientLanguageName } from '$lib/utils/clientLanguage';
 import { chatState } from '$lib/stores/chatStore.svelte';
 import type { Message } from '$lib/stores/chatStore.svelte';
@@ -13,7 +13,6 @@ import {
     fitsContextBudget,
     isSummaryCommitCurrent,
     resolveSummaryMarker,
-    selectCompressionWindow,
     shouldRecompressExistingSummary,
     summaryWorkKey,
     TOKEN_ESTIMATION_MARGIN,
@@ -22,11 +21,10 @@ import {
     type ApiRequestParameterConfig,
     type SummaryMarkerState,
 } from '$lib/utils/rollingSummaryCore';
+import { adaptiveSummaryOutputCap, deriveWorkingContextTarget, shouldTriggerSummary, summaryCompressionGoal } from '$lib/utils/connectionCore';
 
 const DEFAULT_CONTEXT_LIMIT = 4096;
-const TAIL_COUNT = 4;
-const MAX_SUMMARY_TOKENS = 800;
-const THINKING_OVERHEAD = 2000;
+const DEFAULT_SUMMARY_TOKENS = 1024;
 const MESSAGE_FRAMING_TOKENS = 4;
 const REQUEST_PRIMING_TOKENS = 3;
 
@@ -45,6 +43,7 @@ interface SummaryOperation {
     requestParameterConfig: ApiRequestParameterConfig;
     contextLimit: number;
     apiSettings: GenerationOptions['apiSettings'];
+    maximumSummaryTokens: number;
 }
 
 interface PersistedMessageRow extends Omit<Message, 'swipe_variants'> {
@@ -70,9 +69,8 @@ export function estimateTokens(text: string): number {
     return Math.ceil(encoder.encode(text).byteLength / 3.35);
 }
 
-async function countTokens(text: string): Promise<number> {
+async function countTokens(text: string, model = appState.apiSettings?.model ?? ''): Promise<number> {
     if (!text) return 0;
-    const model = appState.apiSettings?.model ?? '';
     const cacheKey = `${model}\u0000${text}`;
     const cached = tokenCountCache.get(cacheKey);
     if (cached !== undefined) return cached;
@@ -91,12 +89,12 @@ async function countTokens(text: string): Promise<number> {
     }
 }
 
-async function countMessagesTokens(messages: { role: string; content: string }[]): Promise<number> {
+async function countMessagesTokens(messages: { role: string; content: string }[], model?: string): Promise<number> {
     if (messages.length === 0) return REQUEST_PRIMING_TOKENS;
     const serialized = messages
         .map((message) => `${message.role}\n${message.content}`)
         .join('\n');
-    return await countTokens(serialized)
+    return await countTokens(serialized, model)
         + (messages.length * MESSAGE_FRAMING_TOKENS)
         + REQUEST_PRIMING_TOKENS;
 }
@@ -131,13 +129,14 @@ async function loadRequestParameterConfig(
 
 async function countAdditionalParameterTokens(
     requestParameterConfig: ApiRequestParameterConfig,
+    model?: string,
 ): Promise<number> {
     const additional = requestParameterConfig.additionalParameters;
     if (!additional || Object.keys(additional).length === 0) return 0;
     // Tool schemas, response schemas, and provider-specific prompt fields can
     // consume context even though they are outside `messages`. Counting the
     // whole custom object is intentionally conservative for unknown providers.
-    return await countTokens(JSON.stringify(additional));
+    return await countTokens(JSON.stringify(additional), model);
 }
 
 function responseReserve(requestParameterConfig: ApiRequestParameterConfig): number {
@@ -150,7 +149,7 @@ async function measureNormalRequest(
     recentMessages: Message[],
     summaryMeta: SummaryMarkerState,
     requestParameterConfig: ApiRequestParameterConfig,
-): Promise<{ fits: boolean; promptTokens: number; reserve: number; limit: number }> {
+): Promise<{ fits: boolean; promptTokens: number; reserve: number; limit: number; total: number }> {
     const apiMessages = buildApiMessages({
         ...options,
         recentMessages,
@@ -158,8 +157,8 @@ async function measureNormalRequest(
         summaryMeta,
     });
     const [messageTokens, additionalParameterTokens] = await Promise.all([
-        countMessagesTokens(apiMessages),
-        countAdditionalParameterTokens(requestParameterConfig),
+        countMessagesTokens(apiMessages, options.apiSettings.model),
+        countAdditionalParameterTokens(requestParameterConfig, options.apiSettings.model),
     ]);
     const promptTokens = messageTokens + additionalParameterTokens;
     const reserve = responseReserve(requestParameterConfig);
@@ -169,6 +168,52 @@ async function measureNormalRequest(
         promptTokens,
         reserve,
         limit,
+        total: promptTokens + reserve,
+    };
+}
+
+async function selectNewestRawHistory(
+    options: GenerationOptions,
+    history: Message[],
+    requestParameterConfig: ApiRequestParameterConfig,
+    budget: number,
+): Promise<{ messages: Message[]; measurement: Awaited<ReturnType<typeof measureNormalRequest>> }> {
+    const starts = [0, ...history.map((message, index) => message.role === 'user' ? index : -1).filter(index => index > 0)];
+    const newestMeasurement = await measureNormalRequest(
+        options,
+        history.slice(-1),
+        { currentSummary: null, lastSummarizedMessageId: null },
+        requestParameterConfig,
+    );
+    for (const start of starts) {
+        const messages = history.slice(start);
+        const measurement = await measureNormalRequest(
+            options,
+            messages,
+            { currentSummary: null, lastSummarizedMessageId: null },
+            requestParameterConfig,
+        );
+        if (measurement.total <= budget) return { messages, measurement };
+    }
+    return { messages: history.slice(-1), measurement: newestMeasurement };
+}
+
+function summaryRequestPolicy(maximumSummaryTokens: number): ApiRequestParameterConfig {
+    return {
+        temperatureEnabled: true,
+        maxTokensEnabled: true,
+        presencePenaltyEnabled: false,
+        thinkingBudgetEnabled: false,
+        topPEnabled: false,
+        topKEnabled: false,
+        minPEnabled: false,
+        frequencyPenaltyEnabled: false,
+        maxTokens: maximumSummaryTokens,
+        thinkingBudget: 0,
+        additionalParameters: {
+            chat_template_kwargs: { enable_thinking: false },
+            reasoning: { enabled: false },
+        },
     };
 }
 
@@ -295,7 +340,7 @@ async function commitSummary(
 function buildSummaryPrompt(
     previousSummary: string | null,
     messagesToCompress: { role: string; content: string }[],
-    maximumSummaryTokens = MAX_SUMMARY_TOKENS,
+    maximumSummaryTokens = DEFAULT_SUMMARY_TOKENS,
 ): string {
     const transcript = messagesToCompress
         .map((message) => `${message.role === 'user' ? 'User' : 'Assistant'}: ${message.content}`)
@@ -324,19 +369,20 @@ async function summaryRequestFits(
     previousSummary: string | null,
     messages: { role: string; content: string }[],
     requestParameterConfig: ApiRequestParameterConfig,
-    maximumSummaryTokens = MAX_SUMMARY_TOKENS,
+    maximumSummaryTokens = DEFAULT_SUMMARY_TOKENS,
     hardContextLimit = DEFAULT_CONTEXT_LIMIT,
+    model = '',
 ): Promise<boolean> {
     const prompt = buildSummaryPrompt(previousSummary, messages, maximumSummaryTokens);
     const [messageTokens, additionalParameterTokens] = await Promise.all([
-        countMessagesTokens([{ role: 'user', content: prompt }]),
-        countAdditionalParameterTokens(requestParameterConfig),
+        countMessagesTokens([{ role: 'user', content: prompt }], model),
+        countAdditionalParameterTokens(requestParameterConfig, model),
     ]);
     const inputTokens = messageTokens + additionalParameterTokens;
     const summaryRequestParameterConfig = withRequestTokenValues(
         requestParameterConfig,
         maximumSummaryTokens,
-        THINKING_OVERHEAD,
+        0,
     );
     const outputReserve = deriveEffectiveTokenBudget(
         summaryRequestParameterConfig,
@@ -352,7 +398,7 @@ async function requestSummary(
     previousSummary: string | null,
     messagesToCompress: { role: string; content: string }[],
     operation: SummaryOperation,
-    maximumSummaryTokens = MAX_SUMMARY_TOKENS,
+    maximumSummaryTokens = DEFAULT_SUMMARY_TOKENS,
 ): Promise<string> {
     assertOperationCurrent(operation);
     if (!(await summaryRequestFits(
@@ -361,6 +407,7 @@ async function requestSummary(
         operation.requestParameterConfig,
         maximumSummaryTokens,
         operation.contextLimit,
+        operation.apiSettings.model,
     ))) {
         throw new ContextBudgetError('A summary input segment exceeds the configured context token limit.');
     }
@@ -370,7 +417,7 @@ async function requestSummary(
     const summaryRequestParameterConfig = withRequestTokenValues(
         operation.requestParameterConfig,
         maximumSummaryTokens,
-        THINKING_OVERHEAD,
+        0,
     );
     const effectiveBudget = deriveEffectiveTokenBudget(summaryRequestParameterConfig);
     const generationId = crypto.randomUUID();
@@ -403,6 +450,10 @@ async function requestSummary(
                 temperature: 0.3,
                 max_tokens: effectiveBudget.payloadMaxTokens,
                 presence_penalty: 0,
+                top_p: 1,
+                top_k: 0,
+                min_p: 0,
+                frequency_penalty: 0,
                 thinking_budget: effectiveBudget.payloadThinkingBudget,
             },
         });
@@ -422,16 +473,16 @@ async function requestSummary(
 async function enforceSummaryLimit(
     summary: string,
     operation: SummaryOperation,
-    maximumSummaryTokens = MAX_SUMMARY_TOKENS,
+    maximumSummaryTokens = DEFAULT_SUMMARY_TOKENS,
 ): Promise<string> {
-    if ((await countTokens(summary)) <= maximumSummaryTokens) return summary;
+    if ((await countTokens(summary, operation.apiSettings.model)) <= maximumSummaryTokens) return summary;
     const recompressed = await requestSummary(
         null,
         [{ role: 'assistant', content: summary }],
         operation,
         maximumSummaryTokens,
     );
-    if ((await countTokens(recompressed)) > maximumSummaryTokens) {
+    if ((await countTokens(recompressed, operation.apiSettings.model)) > maximumSummaryTokens) {
         throw new ContextBudgetError('The model returned a rolling summary above its token limit.');
     }
     return recompressed;
@@ -441,7 +492,7 @@ async function largestFittingPrefix(
     previousSummary: string | null,
     message: { role: string; content: string },
     operation: SummaryOperation,
-    maximumSummaryTokens = MAX_SUMMARY_TOKENS,
+    maximumSummaryTokens = DEFAULT_SUMMARY_TOKENS,
 ): Promise<number> {
     const boundaries = unicodeCodePointBoundaries(message.content);
     let low = 0;
@@ -451,7 +502,7 @@ async function largestFittingPrefix(
         const fits = await summaryRequestFits(previousSummary, [{
             ...message,
             content: message.content.slice(0, boundaries[mid]),
-        }], operation.requestParameterConfig, maximumSummaryTokens, operation.contextLimit);
+        }], operation.requestParameterConfig, maximumSummaryTokens, operation.contextLimit, operation.apiSettings.model);
         if (fits) low = mid;
         else high = mid - 1;
     }
@@ -462,7 +513,7 @@ async function generateRollingSummary(
     previousSummary: string | null,
     messages: { role: string; content: string }[],
     operation: SummaryOperation,
-    maximumSummaryTokens = MAX_SUMMARY_TOKENS,
+    maximumSummaryTokens = DEFAULT_SUMMARY_TOKENS,
 ): Promise<string> {
     let summary = previousSummary;
     const pending = messages.map((message) => ({ ...message }));
@@ -478,6 +529,7 @@ async function generateRollingSummary(
                 operation.requestParameterConfig,
                 maximumSummaryTokens,
                 operation.contextLimit,
+                operation.apiSettings.model,
             )) {
                 batch.push(pending.shift()!);
                 continue;
@@ -526,7 +578,6 @@ async function performSummaryCheck(
             loadPersistedSummary(chatId),
             loadRequestParameterConfig(options),
         ]);
-        operation.requestParameterConfig = requestParameterConfig;
         assertOperationCurrent(operation);
 
         let history = allMessages;
@@ -534,6 +585,31 @@ async function performSummaryCheck(
             const boundary = allMessages.findIndex((message) => message.id === beforeMessageId);
             if (boundary < 0) throw new Error('The message selected for retry no longer exists.');
             history = allMessages.slice(0, boundary);
+        }
+
+        const hardLimit = contextLimit(options.apiSettings.contextLimit);
+        const workingTarget = deriveWorkingContextTarget(
+            hardLimit,
+            options.apiSettings.contextStrategy,
+        );
+        if (!appState.longTermMemory) {
+            const selected = await selectNewestRawHistory(
+                options,
+                history,
+                requestParameterConfig,
+                workingTarget,
+            );
+            if (selected.measurement.total > hardLimit) {
+                throw new ContextBudgetError(
+                    `The fixed prompt, World Info, newest message, and output reserve need ` +
+                    `${selected.measurement.total} tokens, but the hard context limit is ${hardLimit}.`,
+                );
+            }
+            return {
+                recentMessages: selected.messages,
+                summaryMeta: { currentSummary: null, lastSummarizedMessageId: null },
+                requestParameterConfig,
+            };
         }
 
         let meta = persistedMeta;
@@ -553,7 +629,7 @@ async function performSummaryCheck(
             requestParameterConfig,
         );
         assertOperationCurrent(operation);
-        if (initialFit.fits) {
+        if (!shouldTriggerSummary(initialFit.total, workingTarget)) {
             return { recentMessages: history, summaryMeta: meta, requestParameterConfig };
         }
 
@@ -605,13 +681,14 @@ async function performSummaryCheck(
 
         let workingMeta = meta;
         if (meta.currentSummary) {
-            const restoredSummaryTokens = await countTokens(meta.currentSummary);
+            const restoredSummaryTokens = await countTokens(meta.currentSummary, operation.apiSettings.model);
             assertOperationCurrent(operation);
-            if (shouldRecompressExistingSummary(restoredSummaryTokens, MAX_SUMMARY_TOKENS)) {
+            if (shouldRecompressExistingSummary(restoredSummaryTokens, operation.maximumSummaryTokens)) {
                 const recompressed = await generateRollingSummary(
                     null,
                     [{ role: 'assistant', content: meta.currentSummary }],
                     operation,
+                    operation.maximumSummaryTokens,
                 );
                 workingMeta = {
                     currentSummary: recompressed,
@@ -624,7 +701,7 @@ async function performSummaryCheck(
                     requestParameterConfig,
                 );
                 assertOperationCurrent(operation);
-                if (recompressedFit.fits) {
+                if (recompressedFit.total <= workingTarget) {
                     await commitSummary(operation, meta, workingMeta);
                     return {
                         recentMessages: history,
@@ -637,7 +714,27 @@ async function performSummaryCheck(
 
         marker = resolveSummaryMarker(history, workingMeta);
         const newMessages = history.slice(marker.startIndex);
-        let { middle, tail } = selectCompressionWindow(newMessages, TAIL_COUNT);
+        const goal = summaryCompressionGoal(workingTarget);
+        const userStarts = newMessages
+            .map((message, index) => message.role === 'user' ? index : -1)
+            .filter(index => index >= 0);
+        const preferredTailStart = userStarts.at(-2) ?? Math.max(1, newMessages.length - 1);
+        let compressionCount = 0;
+        for (let count = 1; count < newMessages.length; count += 1) {
+            const markerId = newMessages[count - 1]?.id?.toString();
+            if (!markerId) continue;
+            const projected = await measureNormalRequest(
+                options,
+                history,
+                { currentSummary: workingMeta.currentSummary ?? 'summary', lastSummarizedMessageId: markerId },
+                requestParameterConfig,
+            );
+            compressionCount = count;
+            if (projected.total <= goal) break;
+            if (count === preferredTailStart && projected.total <= workingTarget) break;
+        }
+        const middle = newMessages.slice(0, compressionCount);
+        const tail = newMessages.slice(compressionCount);
         if (middle.length === 0) {
             if (workingMeta.currentSummary && workingMeta.lastSummarizedMessageId) {
                 const withoutSummary = await measureNormalRequest(
@@ -650,7 +747,7 @@ async function performSummaryCheck(
                     requestParameterConfig,
                 );
                 const summaryAllowance = Math.min(
-                    MAX_SUMMARY_TOKENS,
+                    operation.maximumSummaryTokens,
                     withoutSummary.limit
                         - withoutSummary.promptTokens
                         - withoutSummary.reserve
@@ -693,6 +790,7 @@ async function performSummaryCheck(
             workingMeta.currentSummary,
             middle.map(clean),
             operation,
+            operation.maximumSummaryTokens,
         );
         let lastCompressedId = middle[middle.length - 1]?.id ?? null;
         if (!lastCompressedId) throw new Error('A persisted message is missing its identifier.');
@@ -707,9 +805,9 @@ async function performSummaryCheck(
             requestParameterConfig,
         );
 
-        while (!finalFit.fits && tail.length > 1) {
+        while (finalFit.total > goal && tail.length > 1) {
             const next = tail.shift()!;
-            newSummary = await generateRollingSummary(newSummary, [clean(next)], operation);
+            newSummary = await generateRollingSummary(newSummary, [clean(next)], operation, operation.maximumSummaryTokens);
             lastCompressedId = next.id ?? null;
             if (!lastCompressedId) throw new Error('A persisted message is missing its identifier.');
             candidateMeta = {
@@ -739,6 +837,31 @@ async function performSummaryCheck(
     }
 }
 
+async function fallbackAfterSummaryFailure(
+    operation: SummaryOperation,
+    options: GenerationOptions,
+    beforeMessageId?: string,
+): Promise<PreparedGenerationContext | null> {
+    const [allMessages, persistedMeta, requestParameterConfig] = await Promise.all([
+        loadPersistedMessages(operation.chatId),
+        loadPersistedSummary(operation.chatId),
+        loadRequestParameterConfig(options),
+    ]);
+    let history = allMessages;
+    if (beforeMessageId) {
+        const boundary = allMessages.findIndex(message => message.id === beforeMessageId);
+        if (boundary < 0) return null;
+        history = allMessages.slice(0, boundary);
+    }
+    const resolution = resolveSummaryMarker(history, persistedMeta);
+    const meta = resolution.mustReset
+        ? { currentSummary: null, lastSummarizedMessageId: null }
+        : persistedMeta;
+    const measurement = await measureNormalRequest(options, history, meta, requestParameterConfig);
+    if (measurement.total > contextLimit(options.apiSettings.contextLimit)) return null;
+    return { recentMessages: history, summaryMeta: meta, requestParameterConfig };
+}
+
 /** Prepares complete persisted solo-chat context and rolls its summary forward if needed. */
 export function checkAndSummarizeIfNeeded(
     chatId: string,
@@ -749,25 +872,34 @@ export function checkAndSummarizeIfNeeded(
     const existing = summaryWorkByBoundary.get(workKey);
     if (existing) return existing;
 
+    const summaryConnection = snapshotSummaryApiConnection(options.apiSettings);
+    const maximumSummaryTokens = adaptiveSummaryOutputCap(options.apiSettings.contextStrategy);
     const operation: SummaryOperation = {
         chatId,
         generationId: null,
         cancelled: false,
-        requestParameterConfig: {
-            maxTokensEnabled: false,
-            thinkingBudgetEnabled: false,
-            maxTokens: options.apiSettings.maxTokens,
-            thinkingBudget: options.apiSettings.thinkingBudget,
-            additionalParameters: {},
-        },
-        contextLimit: options.apiSettings.contextLimit,
-        apiSettings: structuredClone(options.apiSettings),
+        requestParameterConfig: summaryRequestPolicy(maximumSummaryTokens),
+        contextLimit: summaryConnection.contextLimit,
+        apiSettings: summaryConnection,
+        maximumSummaryTokens,
     };
     pendingSummaryOperations.add(operation);
 
     const work = summarySerial
         .catch(() => undefined)
-        .then(() => performSummaryCheck(operation, options, beforeMessageId))
+        .then(async () => {
+            try {
+                return await performSummaryCheck(operation, options, beforeMessageId);
+            } catch (error) {
+                if (error instanceof SummaryCancelledError || operation.cancelled || !appState.longTermMemory) throw error;
+                const fallback = await fallbackAfterSummaryFailure(operation, options, beforeMessageId);
+                if (fallback) return fallback;
+                throw new ContextBudgetError(
+                    `Context compression failed and the raw request cannot fit within the chat model's hard context limit. ` +
+                    `Retry the generation. ${error instanceof Error ? error.message : String(error)}`,
+                );
+            }
+        })
         .finally(() => {
             pendingSummaryOperations.delete(operation);
             if (summaryWorkByBoundary.get(workKey) === work) {
@@ -777,4 +909,22 @@ export function checkAndSummarizeIfNeeded(
     summaryWorkByBoundary.set(workKey, work);
     summarySerial = work.then(() => undefined, () => undefined);
     return work;
+}
+
+/** Final provider-bound guard; rebuilds the prompt so dynamic World Info is re-evaluated. */
+export async function assertPreparedGenerationFits(options: GenerationOptions): Promise<void> {
+    const requestParameterConfig = options.requestParameterConfig
+        ?? await loadRequestParameterConfig(options);
+    const measurement = await measureNormalRequest(
+        options,
+        options.recentMessages,
+        options.summaryMeta ?? { currentSummary: null, lastSummarizedMessageId: null },
+        requestParameterConfig,
+    );
+    if (!measurement.fits) {
+        throw new ContextBudgetError(
+            `The final prompt changed after context preparation and now needs ${measurement.total} tokens, ` +
+            `but the hard context limit is ${measurement.limit}.`,
+        );
+    }
 }

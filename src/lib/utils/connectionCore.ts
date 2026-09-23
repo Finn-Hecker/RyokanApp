@@ -1,4 +1,5 @@
 export type ContextStrategy = 'economy' | 'balanced' | 'maximum';
+export const SAME_AS_CHAT_CONNECTION = 'same_as_chat';
 export const CONSERVATIVE_CONTEXT_FALLBACK = 8192;
 const MIN_VALID_CONTEXT = 1024;
 const MAX_VALID_CONTEXT = 16_777_216;
@@ -51,4 +52,48 @@ export function deleteConnectionSafely<T extends { id: string }>(connections: T[
   const nextConnections = connections.filter(connection => connection.id !== deleteId);
   const nextActiveId = activeId === deleteId ? nextConnections[Math.min(index, nextConnections.length - 1)].id : activeId;
   return { connections: nextConnections, activeId: nextActiveId };
+}
+
+export function normalizeSummaryConnectionId<T extends { id: string }>(
+  connections: T[],
+  selectedId: string | null | undefined,
+): string {
+  return selectedId && selectedId !== SAME_AS_CHAT_CONNECTION
+    && connections.some(connection => connection.id === selectedId)
+    ? selectedId
+    : SAME_AS_CHAT_CONNECTION;
+}
+
+export function adaptiveSummaryOutputCap(strategy: ContextStrategy): number {
+  if (strategy === 'economy') return 512;
+  if (strategy === 'maximum') return 2048;
+  return 1024;
+}
+
+export function shouldTriggerSummary(projectedTokens: number, workingTarget: number): boolean {
+  return projectedTokens > workingTarget;
+}
+
+export function summaryCompressionGoal(workingTarget: number): number {
+  return Math.max(1, Math.floor(workingTarget * 0.8));
+}
+
+export function resolveSummaryConnection<T extends { id: string }>(
+  connections: T[],
+  selectedId: string,
+  chatConnection: T,
+): T {
+  if (selectedId === SAME_AS_CHAT_CONNECTION) return chatConnection;
+  return connections.find(connection => connection.id === selectedId) ?? chatConnection;
+}
+
+export function resolveMemorySettings<T extends { id: string }>(
+  connections: T[],
+  enabledValue: string | undefined,
+  selectedId: string | undefined,
+): { longTermMemory: boolean; summaryConnectionId: string } {
+  return {
+    longTermMemory: enabledValue !== 'false',
+    summaryConnectionId: normalizeSummaryConnectionId(connections, selectedId),
+  };
 }

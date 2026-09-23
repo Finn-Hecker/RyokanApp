@@ -1,4 +1,5 @@
 import { createDefaultApiParameterEnabled, type ApiParameterKey } from '$lib/utils/apiParameters';
+import { resolveSummaryConnection, SAME_AS_CHAT_CONNECTION } from '$lib/utils/connectionCore';
 
 export type ProviderKind = 'openrouter' | 'lm_studio' | 'llama_cpp' | 'koboldcpp' | 'ollama' | 'openai' | 'xai' | 'generic_openai';
 export type ContextStrategy = 'economy' | 'balanced' | 'maximum';
@@ -70,6 +71,8 @@ export const appState = $state({
   apiConnections: [initialConnection] as ApiConnection[],
   activeApiConnectionId: initialConnection.id,
   apiSettings: initialConnection as ApiConnection,
+  longTermMemory: true,
+  summaryConnectionId: SAME_AS_CHAT_CONNECTION,
 });
 
 export function activateApiConnection(id: string): boolean {
@@ -86,6 +89,24 @@ export function replaceApiConnections(connections: ApiConnection[], activeId: st
   activateApiConnection(safe.some(item => item.id === activeId) ? activeId : safe[0].id);
 }
 
+/** Converts a possibly reactive Svelte connection proxy into immutable plain data. */
+export function snapshotApiConnection(connection: ApiConnection): ApiConnection {
+  const snapshot = $state.snapshot(connection);
+  return {
+    ...snapshot,
+    parameterEnabled: { ...snapshot.parameterEnabled },
+    detectedContext: snapshot.detectedContext ? { ...snapshot.detectedContext } : null,
+  };
+}
+
 export function snapshotActiveApiConnection(): ApiConnection {
-  return structuredClone(appState.apiSettings);
+  return snapshotApiConnection(appState.apiSettings);
+}
+
+export function snapshotSummaryApiConnection(chatSnapshot: ApiConnection): ApiConnection {
+  return snapshotApiConnection(resolveSummaryConnection(
+    appState.apiConnections,
+    appState.summaryConnectionId,
+    chatSnapshot,
+  ));
 }

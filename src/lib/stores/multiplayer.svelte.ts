@@ -17,7 +17,7 @@
  * plaintext either.
  */
 
-import { appState } from './appState.svelte';
+import { appState, snapshotActiveApiConnection } from './appState.svelte';
 import { navigateTo, returnTo } from './navigation';
 import { invoke } from '@tauri-apps/api/core';
 import { processThinkingOutput } from '$lib/utils/chatApi';
@@ -1322,7 +1322,7 @@ async function runGeneration(): Promise<void> {
   const localMsg = mpState.messages.find((m) => m.id === mid)!;
 
   let raw = '';
-  const s = structuredClone(appState.apiSettings);
+  const s = snapshotActiveApiConnection();
 
   try {
     // Capture the stable conversation before generation can finish. This

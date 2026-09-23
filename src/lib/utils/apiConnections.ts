@@ -1,11 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import { appState, createDefaultConnection, replaceApiConnections, type ApiConnection, type DetectedContextMetadata, type ProviderKind } from '$lib/stores/appState.svelte';
 import type { SettingRow } from '$lib/utils/settings';
-import { acceptDetectedContext, connectionIdentity, resolvedHardContextLimit, validContextSize } from '$lib/utils/connectionCore';
-export { acceptDetectedContext, connectionIdentity, CONSERVATIVE_CONTEXT_FALLBACK, deleteConnectionSafely, deriveWorkingContextTarget, resolvedHardContextLimit, validContextSize } from '$lib/utils/connectionCore';
+import { acceptDetectedContext, connectionIdentity, resolveMemorySettings, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION, validContextSize } from '$lib/utils/connectionCore';
+export { acceptDetectedContext, adaptiveSummaryOutputCap, connectionIdentity, CONSERVATIVE_CONTEXT_FALLBACK, deleteConnectionSafely, deriveWorkingContextTarget, normalizeSummaryConnectionId, resolveMemorySettings, resolveSummaryConnection, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION, shouldTriggerSummary, summaryCompressionGoal, validContextSize } from '$lib/utils/connectionCore';
 
 export const API_CONNECTIONS_KEY = 'api_connections';
 export const ACTIVE_API_CONNECTION_KEY = 'active_api_connection_id';
+export const LONG_TERM_MEMORY_KEY = 'long_term_memory_enabled';
+export const SUMMARY_CONNECTION_KEY = 'summary_api_connection_id';
 function normalizeConnection(value: Partial<ApiConnection>): ApiConnection {
   const fallback = createDefaultConnection(value.id || crypto.randomUUID(), value.name || 'Connection');
   const connection = { ...fallback, ...value, parameterEnabled: { ...fallback.parameterEnabled, ...value.parameterEnabled } };
@@ -20,8 +22,13 @@ export function hydrateApiConnections(settings: SettingRow[]): void {
   try {
     const parsed = JSON.parse(values.get(API_CONNECTIONS_KEY) ?? '[]');
     replaceApiConnections(Array.isArray(parsed) ? parsed.map(normalizeConnection) : [], values.get(ACTIVE_API_CONNECTION_KEY) ?? '');
+    const memory = resolveMemorySettings(appState.apiConnections, values.get(LONG_TERM_MEMORY_KEY), values.get(SUMMARY_CONNECTION_KEY));
+    appState.longTermMemory = memory.longTermMemory;
+    appState.summaryConnectionId = memory.summaryConnectionId;
   } catch {
     replaceApiConnections([createDefaultConnection()], 'default');
+    appState.longTermMemory = true;
+    appState.summaryConnectionId = SAME_AS_CHAT_CONNECTION;
   }
 }
 

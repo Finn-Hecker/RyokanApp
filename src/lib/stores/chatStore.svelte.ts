@@ -503,7 +503,10 @@ export async function persistSidebarOrganization(mode: ConversationMode) {
     const folders = chatState.folders
         .filter(folder => folder.mode === mode)
         .map((folder, index) => ({ ...folder, sort_order: index }));
-    chatState.folders = folders;
+    chatState.folders = [
+        ...chatState.folders.filter(folder => folder.mode !== mode),
+        ...folders,
+    ];
 
     const grouped = new Map<string | null, Conversation[]>();
     for (const chat of chatState.conversations.filter(chat => chat.mode === mode)) {
@@ -523,9 +526,13 @@ export async function persistSidebarOrganization(mode: ConversationMode) {
             return { id: chat.id, folder_id: chat.folder_id, sort_order: index };
         });
     });
-    await invoke('save_sidebar_organization', {
+    const refreshedFolders = await invoke<ChatFolder[]>('save_sidebar_organization', {
         mode,
         folderIds: folders.map(folder => folder.id),
         chats,
     });
+    chatState.folders = [
+        ...chatState.folders.filter(folder => folder.mode !== mode),
+        ...refreshedFolders,
+    ];
 }

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use uuid::Uuid;
@@ -35,6 +35,10 @@ fn normalized_mode(mode: &str) -> &str {
 #[tauri::command]
 pub async fn get_chat_folders(app: AppHandle, mode: String) -> Result<Vec<ChatFolder>, String> {
     let conn = get_connection(&app)?;
+    query_chat_folders(&conn, normalized_mode(&mode))
+}
+
+fn query_chat_folders(conn: &Connection, mode: &str) -> Result<Vec<ChatFolder>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT f.id, f.name, f.mode, f.sort_order, f.is_collapsed,
@@ -47,7 +51,7 @@ pub async fn get_chat_folders(app: AppHandle, mode: String) -> Result<Vec<ChatFo
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map(params![normalized_mode(&mode)], |row| {
+        .query_map(params![mode], |row| {
             Ok(ChatFolder {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -151,7 +155,7 @@ pub async fn save_sidebar_organization(
     mode: String,
     folder_ids: Vec<String>,
     chats: Vec<ChatPlacement>,
-) -> Result<(), String> {
+) -> Result<Vec<ChatFolder>, String> {
     let mut conn = get_connection(&app)?;
     let mode = normalized_mode(&mode);
     let folder_set: HashSet<&str> = folder_ids.iter().map(String::as_str).collect();
@@ -186,10 +190,8 @@ pub async fn save_sidebar_organization(
             return Err("Unknown folder in sidebar ordering".into());
         }
     }
-    let affected_folders: HashSet<Option<String>> = chats
-        .iter()
-        .map(|chat| chat.folder_id.clone())
-        .collect();
+    let affected_folders: HashSet<Option<String>> =
+        chats.iter().map(|chat| chat.folder_id.clone()).collect();
     for chat in &chats {
         if let Some(folder_id) = chat.folder_id.as_deref() {
             let folder_mode: Option<String> = tx
@@ -261,5 +263,6 @@ pub async fn save_sidebar_organization(
             .map_err(|e| e.to_string())?;
         }
     }
-    tx.commit().map_err(|e| e.to_string())
+    tx.commit().map_err(|e| e.to_string())?;
+    query_chat_folders(&conn, mode)
 }

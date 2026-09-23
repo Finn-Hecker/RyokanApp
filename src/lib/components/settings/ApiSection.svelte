@@ -10,16 +10,18 @@
     curatedProviderGroups,
     type CuratedProviderGroupId,
   } from '$lib/utils/modelProviderGroups';
-  import { deleteConnectionSafely, invalidateDetectedContext, PROVIDER_LABELS, refreshContextDetection, resolvedHardContextLimit } from '$lib/utils/apiConnections';
+  import { deleteConnectionSafely, invalidateDetectedContext, normalizeSummaryConnectionId, PROVIDER_LABELS, refreshContextDetection, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION } from '$lib/utils/apiConnections';
 
   let {
     powerUser = false,
     active = false,
+    section = 'provider',
     settingsReady = false,
     onConnectionChange = (_previousConnectionId: string) => {},
   }: {
     powerUser?: boolean;
     active?: boolean;
+    section?: 'provider' | 'memory';
     settingsReady?: boolean;
     onConnectionChange?: (previousConnectionId: string) => void;
   } = $props();
@@ -338,8 +340,10 @@
   }
 
   function deleteConnection() {
-    const result = deleteConnectionSafely(appState.apiConnections, appState.activeApiConnectionId, appState.activeApiConnectionId);
+    const deletedId = appState.activeApiConnectionId;
+    const result = deleteConnectionSafely(appState.apiConnections, deletedId, deletedId);
     appState.apiConnections = result.connections;
+    appState.summaryConnectionId = normalizeSummaryConnectionId(result.connections, appState.summaryConnectionId);
     selectConnection(result.activeId);
   }
 
@@ -473,6 +477,7 @@
 <svelte:window onkeydown={handleModelMenuKeydown} />
 
 <section>
+  {#if section === 'provider'}
   <span class="settings-section-title">{m.settings_section_api()}</span>
   <div class="settings-card space-y-4">
 
@@ -822,14 +827,6 @@
 
       <div class="context-controls">
         <label>
-          <span class="settings-label">Context strategy</span>
-          <select class="settings-input" bind:value={appState.apiSettings.contextStrategy}>
-            <option value="economy">Economy</option>
-            <option value="balanced">Balanced</option>
-            <option value="maximum">Maximum Context</option>
-          </select>
-        </label>
-        <label>
           <span class="settings-label">Manual cap <span class="optional-badge">optional</span></span>
           <input class="settings-input" type="number" min="1024" max="16777216" step="1024"
             value={appState.apiSettings.manualContextCap ?? ''}
@@ -846,6 +843,44 @@
     </div>
 
   </div>
+  {:else}
+  <span class="settings-section-title">{m.settings_category_memory()}</span>
+  <div class="settings-card space-y-4">
+    <div class="context-controls">
+      <label>
+        <span class="settings-label">Context strategy</span>
+        <select class="settings-input" bind:value={appState.apiSettings.contextStrategy}>
+          <option value="economy">Economy</option>
+          <option value="balanced">Balanced</option>
+          <option value="maximum">Maximum Context</option>
+        </select>
+      </label>
+    </div>
+    <div class="context-strategy-help">
+      {#if appState.apiSettings.contextStrategy === 'economy'}Economy uses less context and can reduce API cost.
+      {:else if appState.apiSettings.contextStrategy === 'maximum'}Maximum Context keeps more recent conversation before summarizing.
+      {:else}Balanced is the default and balances continuity with context usage.{/if}
+    </div>
+
+    <div class="settings-divider"></div>
+    <div class="memory-controls">
+      <label class="memory-toggle">
+        <span><span class="settings-label">Long-term memory</span><span class="memory-help">Maintain a rolling summary when the conversation grows.</span></span>
+        <input type="checkbox" bind:checked={appState.longTermMemory} />
+      </label>
+      <label>
+        <span class="settings-label">Summary connection</span>
+        <select class="settings-input" bind:value={appState.summaryConnectionId} disabled={!appState.longTermMemory}>
+          <option value={SAME_AS_CHAT_CONNECTION}>Same as chat</option>
+          {#each appState.apiConnections as connection (connection.id)}
+            <option value={connection.id}>{connection.name}</option>
+          {/each}
+        </select>
+        <span class="memory-help">Same as chat uses the currently selected chat API connection for summaries.</span>
+      </label>
+    </div>
+  </div>
+  {/if}
 </section>
 
 <style>
@@ -869,6 +904,11 @@
   .context-status { color:#b7a98f; font-size:12px; }
   .context-secondary { margin-top:7px; }
   .context-controls { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px; }
+  .context-strategy-help,.memory-help { display:block; margin-top:6px; color:#5f5f64; font-size:11px; line-height:1.4; }
+  .memory-controls { display:grid; gap:16px; }
+  .memory-toggle { display:flex; align-items:center; justify-content:space-between; gap:18px; }
+  .memory-toggle .settings-label { margin-bottom:0; }
+  .memory-toggle input { width:18px; height:18px; accent-color:#d4b483; }
   @media (max-width:560px) { .connection-toolbar { align-items:stretch; flex-direction:column; } .connection-fields,.context-controls { grid-template-columns:1fr; } .connection-fields .settings-label { grid-column:auto; } }
   .api-model-section--model {
     margin-top: 28px;

@@ -8,7 +8,7 @@
   import { runGeneration, type GenerationOptions } from '$lib/utils/chatApi';
   import { describeGenerationError, type GenerationErrorInfo } from '$lib/utils/generationError';
   import { positionSentChatMessage } from '$lib/utils/chatScroll';
-  import { summaryState, checkAndSummarizeIfNeeded, cancelActiveSummary, SummaryCancelledError } from '$lib/utils/rollingSummary.svelte';
+  import { summaryState, checkAndSummarizeIfNeeded, assertPreparedGenerationFits, cancelActiveSummary, SummaryCancelledError } from '$lib/utils/rollingSummary.svelte';
   import * as m from '$lib/paraglide/messages';
   import ChatHeader from './ChatHeader.svelte';
   import ChatInput from './ChatInput.svelte';
@@ -241,6 +241,7 @@
       generationOptions.requestParameterConfig = prepared.requestParameterConfig;
       activeGenerationId = crypto.randomUUID();
       generationOptions.generationId = activeGenerationId;
+      await assertPreparedGenerationFits(generationOptions);
       const result = await runGeneration(
         generationOptions,
         {
@@ -312,6 +313,7 @@
       generationOptions.summaryMeta = prepared.summaryMeta;
       generationOptions.requestParameterConfig = prepared.requestParameterConfig;
       activeGenerationId = generationOptions.generationId ?? null;
+      await assertPreparedGenerationFits(generationOptions);
       const result = await runGeneration(
         generationOptions,
         {

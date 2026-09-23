@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { worldInfoState } from '$lib/stores/worldInfoStore.svelte';
 import { chatState } from '$lib/stores/chatStore.svelte';
 import { buildPromptMessages } from '$lib/utils/chatPromptBuilder';
-import type { ApiConnection } from '$lib/stores/appState.svelte';
+import { snapshotApiConnection, type ApiConnection } from '$lib/stores/appState.svelte';
 import type { Message } from '$lib/stores/chatStore.svelte';
 import {
     deriveEffectiveTokenBudget,
@@ -70,7 +70,7 @@ export async function runGeneration(
 ): Promise<string> {
     // Defensive copy: every network payload is bound to one immutable settings
     // snapshot even if a caller accidentally passes the live Svelte object.
-    const apiSettings = structuredClone(options.apiSettings);
+    const apiSettings = snapshotApiConnection(options.apiSettings);
     const generationId = options.generationId ?? crypto.randomUUID();
 
     const messages = buildApiMessages(options);

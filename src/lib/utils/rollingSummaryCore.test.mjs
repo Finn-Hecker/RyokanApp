@@ -7,7 +7,7 @@ import {
   isMessageCoveredBySummary,
   isSummaryCommitCurrent,
   resolveSummaryMarker,
-  selectCompressionWindow,
+  selectRecentTurnSuffix,
   shouldRecompressExistingSummary,
   summaryWorkKey,
   TOKEN_ESTIMATION_MARGIN,
@@ -27,6 +27,25 @@ test('a valid marker resumes immediately after the summarized prefix', () => {
   );
 });
 
+test('recent retention is token-based and keeps complete newest turns where practical', () => {
+  const tokenized = [
+    { id: 'u1', role: 'user', tokens: 40 },
+    { id: 'a1', role: 'assistant', tokens: 50 },
+    { id: 'u2', role: 'user', tokens: 30 },
+    { id: 'a2', role: 'assistant', tokens: 35 },
+    { id: 'u3', role: 'user', tokens: 20 },
+    { id: 'a3', role: 'assistant', tokens: 25 },
+  ];
+  assert.deepEqual(
+    selectRecentTurnSuffix(tokenized, 110).retained.map(message => message.id),
+    ['u2', 'a2', 'u3', 'a3'],
+  );
+  assert.deepEqual(
+    selectRecentTurnSuffix(tokenized, 50).retained.map(message => message.id),
+    ['u3', 'a3'],
+  );
+});
+
 test('missing and internally inconsistent markers reset to full history', () => {
   assert.equal(resolveSummaryMarker(messages, {
     currentSummary: 'summary',
@@ -36,21 +55,6 @@ test('missing and internally inconsistent markers reset to full history', () => 
     currentSummary: null,
     lastSummarizedMessageId: 'c',
   }).mustReset, true);
-});
-
-test('compression keeps four recent messages when possible and always keeps one', () => {
-  assert.deepEqual(selectCompressionWindow(messages), {
-    middle: [{ id: 'a' }],
-    tail: messages.slice(1),
-  });
-  assert.deepEqual(selectCompressionWindow(messages.slice(0, 2)), {
-    middle: [{ id: 'a' }],
-    tail: [{ id: 'b' }],
-  });
-  assert.deepEqual(selectCompressionWindow(messages.slice(0, 1)), {
-    middle: [],
-    tail: [{ id: 'a' }],
-  });
 });
 
 test('covered-message detection is conservative when the marker is stale', () => {
