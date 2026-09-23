@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  canReusePromptAnchor,
   commitOrRollback,
   deriveEffectiveTokenBudget,
   fitsContextBudget,
   isMessageCoveredBySummary,
   isSummaryCommitCurrent,
   resolveSummaryMarker,
+  reconcilePromptTokens,
   selectRecentTurnSuffix,
   shouldRecompressExistingSummary,
   summaryWorkKey,
@@ -14,8 +16,67 @@ import {
   unicodeCodePointBoundaries,
   withRequestTokenValues,
 } from './rollingSummaryCore.ts';
+import { shouldTriggerSummary } from './connectionCore.ts';
 
 const messages = ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id }));
+
+const anchor = {
+  historyFingerprint: ['["u1","user","hello",0]'],
+  summaryFingerprint: '{"currentSummary":null,"lastSummarizedMessageId":null}',
+  configurationFingerprint: 'provider/model/config',
+  prompt: [{ role: 'system', content: 'character' }, { role: 'user', content: 'hello' }],
+  responseSwipeIndex: 0,
+  responseFingerprint: '["a1","assistant","reply",0]',
+  revision: 2,
+};
+
+test('provider input is reconciled against only the prompt tail', async () => {
+  const counted = [];
+  const countTail = async (tail) => {
+    counted.push(tail.map(message => message.content));
+    return tail.reduce((sum, message) => sum + message.content.length, 0);
+  };
+  const next = [...anchor.prompt, { role: 'assistant', content: 'reply' }, { role: 'user', content: 'next' }];
+  assert.equal(await reconcilePromptTokens(1000, anchor.prompt, next, countTail), 1009);
+  assert.deepEqual(counted, [[], ['reply', 'next']]);
+  assert.equal(await reconcilePromptTokens(1080, anchor.prompt, next, countTail), 1089);
+});
+
+test('cached input is included in provider input and output is not added', async () => {
+  const usage = { inputTokens: 1000, cachedInputTokens: 800, outputTokens: 400, reasoningTokens: 300 };
+  const predicted = await reconcilePromptTokens(
+    usage.inputTokens, anchor.prompt,
+    [...anchor.prompt, { role: 'assistant', content: 'reply' }],
+    async tail => tail.reduce((sum, message) => sum + message.content.length, 0),
+  );
+  assert.equal(predicted, 1005);
+});
+
+test('anchor requires the same branch, swipe, summary, and prompt configuration', () => {
+  const current = [...anchor.historyFingerprint, anchor.responseFingerprint, '["u2","user","next",0]'];
+  const valid = (history = current, summary = anchor.summaryFingerprint, config = anchor.configurationFingerprint, revision = 2) =>
+    canReusePromptAnchor(anchor, history, summary, config, revision);
+  assert.equal(valid(), true);
+  assert.equal(valid([anchor.historyFingerprint[0], '["a1","assistant","other swipe",1]']), false);
+  assert.equal(valid([anchor.historyFingerprint[0], '["a1","assistant","edited",0]']), false);
+  assert.equal(valid(['["u1","user","edited",0]', ...current.slice(1)]), false);
+  assert.equal(valid(current.slice(0, 1)), false);
+  assert.equal(valid([...current.slice(0, 1), '["other","assistant","reply",0]']), false);
+  assert.equal(valid(current, 'new summary'), false);
+  assert.equal(valid(current, anchor.summaryFingerprint, 'other provider/model/config'), false);
+  assert.equal(valid(current, anchor.summaryFingerprint, anchor.configurationFingerprint, 3), false);
+});
+
+test('missing provider usage falls back and predicted next input triggers before request', async () => {
+  const next = [...anchor.prompt, { role: 'assistant', content: 'reply' }, { role: 'user', content: 'next' }];
+  const countTail = async tail => tail.reduce((sum, message) => sum + message.content.length, 0);
+  assert.equal(await reconcilePromptTokens(null, anchor.prompt, next, countTail), null);
+  assert.equal(await reconcilePromptTokens(1000, [{ role: 'system', content: 'old' }], next, countTail), null);
+  const predictedInput = await reconcilePromptTokens(1000, anchor.prompt, next, countTail);
+  const outputReserve = 300 + TOKEN_ESTIMATION_MARGIN;
+  assert.equal(shouldTriggerSummary(predictedInput + outputReserve, 1436), true);
+  assert.equal(shouldTriggerSummary(predictedInput + outputReserve, 1437), false);
+});
 
 test('a valid marker resumes immediately after the summarized prefix', () => {
   assert.deepEqual(

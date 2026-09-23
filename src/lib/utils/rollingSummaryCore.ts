@@ -3,6 +3,68 @@ export interface SummaryMarkerState {
   lastSummarizedMessageId: string | null;
 }
 
+export interface PromptAnchorMessage {
+  role: string;
+  content: string;
+}
+
+export interface PromptUsageAnchor {
+  /** The persisted request history, including ids and active swipe indices. */
+  historyFingerprint: string[];
+  summaryFingerprint: string;
+  configurationFingerprint: string;
+  prompt: PromptAnchorMessage[];
+  responseSwipeIndex: number;
+  responseFingerprint: string;
+  revision: number;
+}
+
+/** Only an append to the exact anchored conversation may reuse provider usage. */
+export function canReusePromptAnchor(
+  anchor: PromptUsageAnchor,
+  historyFingerprint: string[],
+  summaryFingerprint: string,
+  configurationFingerprint: string,
+  revision: number,
+): boolean {
+  return anchor.summaryFingerprint === summaryFingerprint
+    && anchor.configurationFingerprint === configurationFingerprint
+    && anchor.revision === revision
+    && historyFingerprint.length > anchor.historyFingerprint.length
+    && anchor.historyFingerprint.every((value, index) => historyFingerprint[index] === value)
+    && historyFingerprint[anchor.historyFingerprint.length] === anchor.responseFingerprint;
+}
+
+const conversationRevisions = new Map<string, number>();
+
+export function currentConversationRevision(chatId: string): number {
+  return conversationRevisions.get(chatId) ?? 0;
+}
+
+export function bumpConversationRevision(chatId: string): void {
+  conversationRevisions.set(chatId, currentConversationRevision(chatId) + 1);
+}
+
+/** Provider input is the base; only the changed prompt suffix is estimated. */
+export async function reconcilePromptTokens(
+  inputTokens: number | null | undefined,
+  previous: PromptAnchorMessage[],
+  next: PromptAnchorMessage[],
+  countTail: (messages: PromptAnchorMessage[]) => Promise<number>,
+): Promise<number | null> {
+  if (!Number.isSafeInteger(inputTokens) || inputTokens! < 0) return null;
+  let common = 0;
+  while (common < previous.length && common < next.length
+    && previous[common].role === next[common].role
+    && previous[common].content === next[common].content) common += 1;
+  if (common === 0) return null;
+  const [oldTail, newTail] = await Promise.all([
+    countTail(previous.slice(common)),
+    countTail(next.slice(common)),
+  ]);
+  return Math.max(0, inputTokens! + newTail - oldTail);
+}
+
 export interface ApiRequestParameterConfig {
   readonly temperatureEnabled?: boolean;
   readonly maxTokensEnabled: boolean;

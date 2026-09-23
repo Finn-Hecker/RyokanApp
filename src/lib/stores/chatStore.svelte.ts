@@ -3,7 +3,7 @@ import { selectInitialGreeting } from '$lib/utils/characterGreeting';
 import { appState } from './appState.svelte';
 import { characterState, loadCharacters } from './characterStore.svelte';
 import { getLocale } from '$lib/paraglide/runtime';
-import { isMessageCoveredBySummary } from '$lib/utils/rollingSummaryCore';
+import { bumpConversationRevision, isMessageCoveredBySummary } from '$lib/utils/rollingSummaryCore';
 import type { TokenUsage } from '$lib/utils/tokenUsage';
 
 export interface Message {
@@ -382,6 +382,7 @@ export async function addSwipeVariant(messageId: string, content: string, usage:
     try {
         if (chatId) await invalidateSummaryIfCovered(chatId, messageId);
         await invoke('add_swipe_variant', { messageId, content, usage });
+        if (chatId) bumpConversationRevision(chatId);
         if (chatId) await loadMessages(chatId);
     } catch (e) {
         console.error(e);
@@ -395,6 +396,7 @@ export async function setSwipeIndex(messageId: string, index: number): Promise<v
     try {
         if (chatId) await invalidateSummaryIfCovered(chatId, messageId);
         await invoke('set_swipe_index', { messageId, index });
+        if (chatId) bumpConversationRevision(chatId);
         if (msg) {
             const clamped = Math.max(0, Math.min(index, msg.swipe_variants.length - 1));
             msg.swipe_index = clamped;
@@ -411,6 +413,7 @@ export async function updateMessage(id: string, content: string) {
     try {
         if (chatId) await invalidateSummaryIfCovered(chatId, id);
         await invoke('update_message', { id, content });
+        if (chatId) bumpConversationRevision(chatId);
         if (chatId) await loadMessages(chatId);
     } catch (e) {
         console.error(e);
@@ -423,6 +426,7 @@ export async function deleteMessage(id: string) {
     try {
         if (chatId) await invalidateSummaryIfCovered(chatId, id);
         await invoke('delete_message', { id });
+        if (chatId) bumpConversationRevision(chatId);
         if (chatId) await loadMessages(chatId);
     } catch (e) {
         console.error(e);

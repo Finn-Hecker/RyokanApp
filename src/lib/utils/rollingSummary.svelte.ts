@@ -4,15 +4,18 @@ import { appState, snapshotSummaryApiConnection } from '$lib/stores/appState.sve
 import { getClientLanguageName } from '$lib/utils/clientLanguage';
 import { chatState } from '$lib/stores/chatStore.svelte';
 import type { Message } from '$lib/stores/chatStore.svelte';
-import { buildApiMessages } from '$lib/utils/chatApi';
-import type { GenerationOptions } from '$lib/utils/chatApi';
+import { buildApiMessages, generationConfigurationFingerprint, messageFingerprint } from '$lib/utils/chatApi';
+import type { GenerationOptions, GenerationPromptSnapshot } from '$lib/utils/chatApi';
 import { processThinkingOutput, stripThinkingContent } from '$lib/utils/chatApi';
 import {
     commitOrRollback,
+    canReusePromptAnchor,
+    currentConversationRevision,
     deriveEffectiveTokenBudget,
     fitsContextBudget,
     isSummaryCommitCurrent,
     resolveSummaryMarker,
+    reconcilePromptTokens,
     shouldRecompressExistingSummary,
     summaryWorkKey,
     TOKEN_ESTIMATION_MARGIN,
@@ -20,6 +23,7 @@ import {
     withRequestTokenValues,
     type ApiRequestParameterConfig,
     type SummaryMarkerState,
+    type PromptUsageAnchor,
 } from '$lib/utils/rollingSummaryCore';
 import { adaptiveSummaryOutputCap, deriveWorkingContextTarget, shouldTriggerSummary, summaryCompressionGoal } from '$lib/utils/connectionCore';
 
@@ -46,8 +50,9 @@ interface SummaryOperation {
     maximumSummaryTokens: number;
 }
 
-interface PersistedMessageRow extends Omit<Message, 'swipe_variants'> {
+interface PersistedMessageRow extends Omit<Message, 'swipe_variants' | 'usage_variants'> {
     swipe_variants: string[] | string;
+    usage_variants: Message['usage_variants'] | string;
 }
 
 export class SummaryCancelledError extends Error {
@@ -149,6 +154,7 @@ async function measureNormalRequest(
     recentMessages: Message[],
     summaryMeta: SummaryMarkerState,
     requestParameterConfig: ApiRequestParameterConfig,
+    anchorChatId?: string,
 ): Promise<{ fits: boolean; promptTokens: number; reserve: number; limit: number; total: number }> {
     const apiMessages = buildApiMessages({
         ...options,
@@ -156,11 +162,31 @@ async function measureNormalRequest(
         userPrompt: undefined,
         summaryMeta,
     });
-    const [messageTokens, additionalParameterTokens] = await Promise.all([
-        countMessagesTokens(apiMessages, options.apiSettings.model),
-        countAdditionalParameterTokens(requestParameterConfig, options.apiSettings.model),
-    ]);
-    const promptTokens = messageTokens + additionalParameterTokens;
+    let promptTokens: number | null = null;
+    const anchor = anchorChatId && promptAnchors.get(anchorChatId);
+    const response = anchor && recentMessages[anchor.historyFingerprint.length];
+    if (anchor && response && canReusePromptAnchor(
+        anchor,
+        recentMessages.map(messageFingerprint),
+        JSON.stringify(summaryMeta),
+        generationConfigurationFingerprint({ ...options, requestParameterConfig }),
+        currentConversationRevision(anchorChatId!),
+    )) {
+        const inputTokens = response.usage_variants?.[anchor.responseSwipeIndex]?.inputTokens;
+        promptTokens = await reconcilePromptTokens(
+            inputTokens,
+            anchor.prompt,
+            apiMessages,
+            (tail) => countMessagesTokens(tail, options.apiSettings.model),
+        );
+    }
+    if (promptTokens === null) {
+        const [messageTokens, additionalParameterTokens] = await Promise.all([
+            countMessagesTokens(apiMessages, options.apiSettings.model),
+            countAdditionalParameterTokens(requestParameterConfig, options.apiSettings.model),
+        ]);
+        promptTokens = messageTokens + additionalParameterTokens;
+    }
     const reserve = responseReserve(requestParameterConfig);
     const limit = contextLimit(options.apiSettings.contextLimit);
     return {
@@ -225,6 +251,30 @@ const pendingSummaryOperations = new Set<SummaryOperation>();
 let summarySerial: Promise<void> = Promise.resolve();
 const TOKEN_COUNT_CACHE_SIZE = 256;
 const tokenCountCache = new Map<string, number>();
+const promptAnchors = new Map<string, PromptUsageAnchor>();
+
+/** Associates an exact pre-response request snapshot with its persisted variant. */
+export function rememberGenerationAnchor(
+    chatId: string,
+    promptSnapshot: GenerationPromptSnapshot,
+    response: Message | undefined,
+): void {
+    const usage = response?.usage_variants?.[response.swipe_index];
+    if (!response?.id || response.role !== 'assistant'
+        || !Number.isSafeInteger(usage?.inputTokens) || usage!.inputTokens! < 0) {
+        promptAnchors.delete(chatId);
+        return;
+    }
+    promptAnchors.set(chatId, {
+        historyFingerprint: promptSnapshot.historyFingerprint,
+        summaryFingerprint: promptSnapshot.summaryFingerprint,
+        configurationFingerprint: promptSnapshot.configurationFingerprint,
+        prompt: promptSnapshot.messages,
+        responseSwipeIndex: response.swipe_index,
+        responseFingerprint: messageFingerprint(response),
+        revision: currentConversationRevision(chatId),
+    });
+}
 
 function assertOperationCurrent(operation: SummaryOperation): void {
     if (!isSummaryCommitCurrent(
@@ -263,6 +313,8 @@ async function loadPersistedMessages(chatId: string): Promise<Message[]> {
             ? JSON.parse(row.swipe_variants)
             : (row.swipe_variants ?? [row.content]),
         swipe_index: row.swipe_index ?? 0,
+        usage_variants: typeof row.usage_variants === 'string'
+            ? JSON.parse(row.usage_variants) : (row.usage_variants ?? []),
     }));
 }
 
@@ -627,6 +679,7 @@ async function performSummaryCheck(
             history,
             meta,
             requestParameterConfig,
+            chatId,
         );
         assertOperationCurrent(operation);
         if (!shouldTriggerSummary(initialFit.total, workingTarget)) {
@@ -920,6 +973,7 @@ export async function assertPreparedGenerationFits(options: GenerationOptions): 
         options.recentMessages,
         options.summaryMeta ?? { currentSummary: null, lastSummarizedMessageId: null },
         requestParameterConfig,
+        chatState.activeChatId ?? undefined,
     );
     if (!measurement.fits) {
         throw new ContextBudgetError(

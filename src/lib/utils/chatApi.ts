@@ -58,6 +58,30 @@ export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
     });
 }
 
+export interface GenerationPromptSnapshot {
+    messages: ChatMessage[];
+    historyFingerprint: string[];
+    summaryFingerprint: string;
+    configurationFingerprint: string;
+}
+
+export function messageFingerprint(message: Message): string {
+    return JSON.stringify([message.id, message.role, message.content, message.swipe_index]);
+}
+
+export function generationConfigurationFingerprint(options: GenerationOptions): string {
+    return JSON.stringify([
+        options.apiSettings.providerKind,
+        options.apiSettings.url,
+        options.apiSettings.model,
+        options.apiSettings,
+        options.requestParameterConfig,
+        options.character,
+        options.role === undefined ? chatState.activeRoleSnapshot : options.role,
+        worldInfoState.allWorldInfos,
+    ]);
+}
+
 /**
  * Calls the AI API and streams the response.
  *
@@ -68,13 +92,19 @@ export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
 export async function runGeneration(
     options:   GenerationOptions,
     callbacks: GenerationCallbacks,
-): Promise<{ text: string; usage: TokenUsage | null }> {
+): Promise<{ text: string; usage: TokenUsage | null; promptSnapshot: GenerationPromptSnapshot }> {
     // Defensive copy: every network payload is bound to one immutable settings
     // snapshot even if a caller accidentally passes the live Svelte object.
     const apiSettings = snapshotApiConnection(options.apiSettings);
     const generationId = options.generationId ?? crypto.randomUUID();
 
     const messages = buildApiMessages(options);
+    const promptSnapshot: GenerationPromptSnapshot = {
+        messages,
+        historyFingerprint: options.recentMessages.map(messageFingerprint),
+        summaryFingerprint: JSON.stringify(options.summaryMeta ?? chatState.summaryMeta),
+        configurationFingerprint: generationConfigurationFingerprint({ ...options, apiSettings }),
+    };
 
     let rawBuffer      = '';
     let thinkingBuffer = '';
@@ -132,7 +162,7 @@ export async function runGeneration(
 
         const { text } = processThinkingOutput(rawBuffer, true);
         callbacks.onStreamUpdate(text);
-        return { text, usage };
+        return { text, usage, promptSnapshot };
     } finally {
         // Always cleared, even on error — otherwise the UI can get stuck
         // showing a "thinking" state after a failed request.

@@ -8,7 +8,7 @@
   import { runGeneration, type GenerationOptions } from '$lib/utils/chatApi';
   import { describeGenerationError, type GenerationErrorInfo } from '$lib/utils/generationError';
   import { positionSentChatMessage } from '$lib/utils/chatScroll';
-  import { summaryState, checkAndSummarizeIfNeeded, assertPreparedGenerationFits, cancelActiveSummary, SummaryCancelledError } from '$lib/utils/rollingSummary.svelte';
+  import { summaryState, checkAndSummarizeIfNeeded, assertPreparedGenerationFits, rememberGenerationAnchor, cancelActiveSummary, SummaryCancelledError } from '$lib/utils/rollingSummary.svelte';
   import * as m from '$lib/paraglide/messages';
   import ChatHeader from './ChatHeader.svelte';
   import ChatInput from './ChatInput.svelte';
@@ -251,6 +251,7 @@
       );
       if (chatState.activeChatId !== chatId) return;
       await addMessage('assistant', result.text, result.usage);
+      rememberGenerationAnchor(chatId, result.promptSnapshot, chatState.currentMessages.at(-1));
     } catch (err) {
       if (err instanceof SummaryCancelledError) return;
       console.error(err);
@@ -323,6 +324,13 @@
       );
       if (chatState.activeChatId !== chatId) return;
       await addSwipeVariant(msgId, result.text, result.usage);
+      rememberGenerationAnchor(
+        chatId,
+        result.promptSnapshot,
+        chatState.currentMessages.at(-1)?.id === msgId
+          ? chatState.currentMessages.at(-1)
+          : undefined,
+      );
     } catch (err) {
       if (err instanceof SummaryCancelledError) return;
       console.error(err);
