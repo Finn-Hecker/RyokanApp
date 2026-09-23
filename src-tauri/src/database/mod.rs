@@ -135,6 +135,15 @@ fn migrate_character_roles(conn: &Connection) -> rusqlite::Result<usize> {
     Ok(added)
 }
 
+fn migrate_message_usage(conn: &Connection) -> rusqlite::Result<usize> {
+    let columns = conn.prepare("PRAGMA table_info(messages)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if columns.iter().any(|column| column == "usage_variants") { return Ok(0); }
+    conn.execute_batch("ALTER TABLE messages ADD COLUMN usage_variants TEXT NOT NULL DEFAULT '[]';")?;
+    Ok(1)
+}
+
 /// Establishes a connection to the local SQLite database.
 /// Foreign keys are enabled per-connection, as SQLite disables them by default.
 pub fn get_connection(app: &AppHandle) -> Result<Connection, String> {
@@ -219,6 +228,7 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             author TEXT,
             swipe_variants TEXT NOT NULL DEFAULT '[]',
             swipe_index INTEGER NOT NULL DEFAULT 0,
+            usage_variants TEXT NOT NULL DEFAULT '[]',
             created_at DATETIME DEFAULT {utc_now},
             FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
         );
@@ -352,6 +362,8 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
     let _ = conn.execute_batch(
         "ALTER TABLE messages ADD COLUMN author TEXT;"
     );
+    migrate_message_usage(&conn)
+        .map_err(|e| format!("Failed to migrate message usage: {}", e))?;
 
     // Characters created before play modes existed default to singleplayer.
     let _ = conn.execute_batch(
@@ -392,8 +404,29 @@ mod tests {
     use super::{
         migrate_character_roles, migrate_roles_prompt, normalize_character_play_modes,
         remove_legacy_thinking_setting, migrate_api_connections,
+        migrate_message_usage,
     };
     use rusqlite::{params, Connection};
+
+    #[test]
+    fn message_usage_migration_preserves_rows_and_is_idempotent() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE messages (id TEXT PRIMARY KEY, content TEXT);
+            INSERT INTO messages VALUES ('old', 'hello');").unwrap();
+        assert_eq!(migrate_message_usage(&conn).unwrap(), 1);
+        assert_eq!(migrate_message_usage(&conn).unwrap(), 0);
+        let legacy: (String, String) = conn.query_row(
+            "SELECT content, usage_variants FROM messages WHERE id = 'old'", [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap();
+        assert_eq!(legacy, ("hello".into(), "[]".into()));
+        conn.execute("UPDATE messages SET usage_variants = ?1 WHERE id = 'old'",
+            [r#"[{"inputTokens":9,"cachedInputTokens":null,"outputTokens":3,"reasoningTokens":null}]"#]).unwrap();
+        let persisted: String = conn.query_row("SELECT usage_variants FROM messages WHERE id = 'old'", [], |row| row.get(0)).unwrap();
+        let decoded: Vec<Option<crate::ai::TokenUsage>> = serde_json::from_str(&persisted).unwrap();
+        assert_eq!(decoded[0].as_ref().unwrap().input_tokens, Some(9));
+        assert_eq!(decoded[0].as_ref().unwrap().cached_input_tokens, None);
+    }
 
     #[test]
     fn legacy_and_invalid_character_play_modes_migrate_to_solo() {

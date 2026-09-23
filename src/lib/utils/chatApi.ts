@@ -10,6 +10,7 @@ import {
     type SummaryMarkerState,
 } from '$lib/utils/rollingSummaryCore';
 import { processThinkingOutput, stripThinkingContent } from '$lib/utils/thinkingOutput';
+import type { TokenUsage } from '$lib/utils/tokenUsage';
 
 export { processThinkingOutput, stripThinkingContent } from '$lib/utils/thinkingOutput';
 
@@ -67,7 +68,7 @@ export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
 export async function runGeneration(
     options:   GenerationOptions,
     callbacks: GenerationCallbacks,
-): Promise<string> {
+): Promise<{ text: string; usage: TokenUsage | null }> {
     // Defensive copy: every network payload is bound to one immutable settings
     // snapshot even if a caller accidentally passes the live Svelte object.
     const apiSettings = snapshotApiConnection(options.apiSettings);
@@ -109,9 +110,10 @@ export async function runGeneration(
         const effectiveMaxTokens = effectiveBudget?.payloadMaxTokens
             ?? apiSettings.maxTokens + configuredThinkingBudget;
 
-        await invoke('call_ai_api', {
+        const usage = await invoke<TokenUsage | null>('call_ai_api', {
             payload: {
                 generation_id:      generationId,
+                provider_kind:     apiSettings.providerKind,
                 request_parameter_config: options.requestParameterConfig,
                 url:                apiSettings.url,
                 api_key:            apiSettings.apiKey,
@@ -130,7 +132,7 @@ export async function runGeneration(
 
         const { text } = processThinkingOutput(rawBuffer, true);
         callbacks.onStreamUpdate(text);
-        return text;
+        return { text, usage };
     } finally {
         // Always cleared, even on error — otherwise the UI can get stuck
         // showing a "thinking" state after a failed request.

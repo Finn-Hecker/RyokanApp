@@ -4,6 +4,7 @@ import { appState } from './appState.svelte';
 import { characterState, loadCharacters } from './characterStore.svelte';
 import { getLocale } from '$lib/paraglide/runtime';
 import { isMessageCoveredBySummary } from '$lib/utils/rollingSummaryCore';
+import type { TokenUsage } from '$lib/utils/tokenUsage';
 
 export interface Message {
     id?: string;
@@ -13,6 +14,7 @@ export interface Message {
     author?: string | null;
     swipe_variants: string[];
     swipe_index: number;
+    usage_variants: (TokenUsage | null)[];
 }
 
 export interface Conversation {
@@ -289,6 +291,8 @@ export async function loadMessages(chatId: string) {
                 ? JSON.parse(row.swipe_variants)
                 : (row.swipe_variants ?? [row.content]),
             swipe_index: row.swipe_index ?? 0,
+            usage_variants: typeof row.usage_variants === 'string'
+                ? JSON.parse(row.usage_variants) : (row.usage_variants ?? []),
         }));
         chatState.activeChatId = chatId;
         
@@ -321,6 +325,8 @@ export async function loadMoreMessages() {
                 ? JSON.parse(row.swipe_variants)
                 : (row.swipe_variants ?? [row.content]),
             swipe_index: row.swipe_index ?? 0,
+            usage_variants: typeof row.usage_variants === 'string'
+                ? JSON.parse(row.usage_variants) : (row.usage_variants ?? []),
         }));
 
         // Prepend older messages at the beginning
@@ -329,7 +335,7 @@ export async function loadMoreMessages() {
     } catch (e) { console.error(e); }
 }
 
-export async function addMessage(role: 'user' | 'assistant', content: string) {
+export async function addMessage(role: 'user' | 'assistant', content: string, usage: TokenUsage | null = null) {
     const chatId = chatState.activeChatId;
     if (!chatId) return;
     try {
@@ -340,6 +346,7 @@ export async function addMessage(role: 'user' | 'assistant', content: string) {
             author: null,
             messageId: null,
             createdAt: null,
+            usage,
         });
         await loadAllConversations();
         await loadMessages(chatId);
@@ -370,11 +377,11 @@ async function invalidateSummaryIfCovered(chatId: string, messageId: string): Pr
     }
 }
 
-export async function addSwipeVariant(messageId: string, content: string): Promise<void> {
+export async function addSwipeVariant(messageId: string, content: string, usage: TokenUsage | null = null): Promise<void> {
     const chatId = chatState.activeChatId;
     try {
         if (chatId) await invalidateSummaryIfCovered(chatId, messageId);
-        await invoke('add_swipe_variant', { messageId, content });
+        await invoke('add_swipe_variant', { messageId, content, usage });
         if (chatId) await loadMessages(chatId);
     } catch (e) {
         console.error(e);

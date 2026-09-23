@@ -292,7 +292,79 @@ pub fn stop_generation(generation_id: Option<String>) {
 /// OpenAI-compatible SSE (Server-Sent Events) streaming structs.
 #[derive(Deserialize)]
 struct StreamChunk {
+    #[serde(default)]
     choices: Vec<Choice>,
+}
+
+fn request_stream_usage(body: &mut serde_json::Value) {
+    let Some(object) = body.as_object_mut() else { return; };
+    let options = object.entry("stream_options").or_insert_with(|| serde_json::json!({}));
+    if !options.is_object() { *options = serde_json::json!({}); }
+    options["include_usage"] = serde_json::json!(true);
+}
+
+/// Counts reported by the backend for this request, independent of model capacity.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenUsage {
+    pub input_tokens: Option<u64>,
+    pub cached_input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub reasoning_tokens: Option<u64>,
+}
+
+impl TokenUsage {
+    fn is_empty(&self) -> bool {
+        self.input_tokens.is_none() && self.cached_input_tokens.is_none()
+            && self.output_tokens.is_none() && self.reasoning_tokens.is_none()
+    }
+}
+
+fn count_at(value: &serde_json::Value, path: &[&str]) -> Option<u64> {
+    path.iter().try_fold(value, |node, key| node.get(*key))?.as_u64()
+}
+
+fn first_count(value: &serde_json::Value, paths: &[&[&str]]) -> Option<u64> {
+    paths.iter().find_map(|path| count_at(value, path))
+}
+
+fn parse_token_usage(value: &serde_json::Value) -> Option<TokenUsage> {
+    // OpenAI-compatible usage includes OpenRouter, llama.cpp, LM Studio and
+    // KoboldCpp. Native Ollama final responses use the eval_count keys.
+    let usage = value.get("usage").unwrap_or(value);
+    let result = TokenUsage {
+        input_tokens: first_count(usage, &[&["prompt_tokens"], &["input_tokens"], &["prompt_eval_count"]]),
+        cached_input_tokens: first_count(usage, &[
+            &["prompt_tokens_details", "cached_tokens"],
+            &["input_tokens_details", "cached_tokens"],
+            &["prompt_tokens_details", "cache_read_tokens"],
+            &["cache_read_input_tokens"],
+        ]),
+        output_tokens: first_count(usage, &[&["completion_tokens"], &["output_tokens"], &["eval_count"]]),
+        reasoning_tokens: first_count(usage, &[
+            &["completion_tokens_details", "reasoning_tokens"],
+            &["output_tokens_details", "reasoning_tokens"],
+        ]),
+    };
+    (!result.is_empty()).then_some(result)
+}
+
+fn stream_token_usage(value: &serde_json::Value, provider_kind: Option<&str>) -> Option<TokenUsage> {
+    let mut usage = parse_token_usage(value).unwrap_or_default();
+    if provider_kind == Some("llama_cpp") && usage.cached_input_tokens.is_none() {
+        usage.cached_input_tokens = count_at(value, &["timings", "cache_n"]);
+    }
+    (!usage.is_empty()).then_some(usage)
+}
+
+fn merge_token_usage(previous: Option<TokenUsage>, incoming: TokenUsage) -> TokenUsage {
+    let previous = previous.unwrap_or_default();
+    TokenUsage {
+        input_tokens: incoming.input_tokens.or(previous.input_tokens),
+        cached_input_tokens: incoming.cached_input_tokens.or(previous.cached_input_tokens),
+        output_tokens: incoming.output_tokens.or(previous.output_tokens),
+        reasoning_tokens: incoming.reasoning_tokens.or(previous.reasoning_tokens),
+    }
 }
 
 #[derive(Deserialize)]
@@ -314,6 +386,8 @@ struct Delta {
 pub(crate) struct AiRequest {
     #[serde(alias = "generationId")]
     generation_id: Option<String>,
+    #[serde(alias = "providerKind")]
+    provider_kind: Option<String>,
     #[serde(alias = "requestParameterConfig")]
     request_parameter_config: Option<RequestApiParameterConfig>,
     url: String,
@@ -909,7 +983,7 @@ fn flush_batches(
 /// Uses a CancellationToken so stop_generation() drops the TCP connection immediately -
 /// including during the initial connect, not just once streaming has started.
 #[tauri::command]
-pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), String> {
+pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<Option<TokenUsage>, String> {
     // Replace the active token so stop_generation() targets this request.
     let token = CancellationToken::new();
     let request_id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
@@ -1002,6 +1076,9 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
     }
 
     merge_additional_api_parameters(&mut body, additional_parameters);
+    if matches!(payload.provider_kind.as_deref(), Some("openrouter" | "llama_cpp" | "lm_studio" | "koboldcpp" | "ollama" | "openai" | "xai" | "generic_openai")) {
+        request_stream_usage(&mut body);
+    }
 
     let mut req = CLIENT
         .post(format!("{}/chat/completions", payload.url))
@@ -1016,7 +1093,7 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
     // token. A server that's slow/unreachable would hang here with no way to abort.
     let res = tokio::select! {
         result = req.send() => result.map_err(|e| transport_error(&e, &payload.model))?,
-        _ = token.cancelled() => return Ok(()),
+        _ = token.cancelled() => return Ok(None),
     };
 
     if !res.status().is_success() {
@@ -1032,6 +1109,7 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
     }
 
     let mut stream = res.bytes_stream().eventsource();
+    let mut reported_usage = None;
 
     let mut token_batch = String::new();
     let mut thinking_batch = String::new();
@@ -1064,6 +1142,9 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
                         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&event.data) {
                             if value.get("error").is_some() {
                                 return Err(api_error_from_body(0, &event.data, &payload.api_key, &payload.model, &payload.messages));
+                            }
+                            if let Some(usage) = stream_token_usage(&value, payload.provider_kind.as_deref()) {
+                                reported_usage = Some(merge_token_usage(reported_usage, usage));
                             }
                         }
                         match serde_json::from_str::<StreamChunk>(&event.data) {
@@ -1107,7 +1188,7 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<(), Strin
         &payload.generation_id,
     )?;
 
-    Ok(())
+    Ok(reported_usage)
 }
 
 #[cfg(test)]
@@ -1115,8 +1196,76 @@ mod tests {
     use super::{
         api_error_from_body, bind_request_parameter_config, cancellation_matches,
         merge_additional_api_parameters, parse_additional_api_parameters, ApiParameterFlags,
-        RequestApiParameterConfig,
+        merge_token_usage, parse_token_usage, request_stream_usage, stream_token_usage, RequestApiParameterConfig, StreamChunk,
     };
+
+    #[test]
+    fn parses_provider_reported_usage_without_estimating_missing_metrics() {
+        let openrouter = serde_json::json!({"usage": {
+            "prompt_tokens": 120, "completion_tokens": 40,
+            "prompt_tokens_details": {"cached_tokens": 80},
+            "completion_tokens_details": {"reasoning_tokens": 12}
+        }});
+        let usage = parse_token_usage(&openrouter).unwrap();
+        assert_eq!((usage.input_tokens, usage.cached_input_tokens, usage.output_tokens, usage.reasoning_tokens),
+                   (Some(120), Some(80), Some(40), Some(12)));
+
+        let lm_studio = parse_token_usage(&serde_json::json!({"usage": {
+            "prompt_tokens": 10, "completion_tokens": 4
+        }})).unwrap();
+        assert_eq!(lm_studio.cached_input_tokens, None);
+        assert_eq!(lm_studio.reasoning_tokens, None);
+        assert_eq!(parse_token_usage(&serde_json::json!({"usage": {"total_tokens": 14}})), None);
+        assert_eq!(parse_token_usage(&serde_json::json!({"usage": {
+            "prompt_tokens": -1, "completion_tokens": "4"
+        }})), None);
+    }
+
+    #[test]
+    fn parses_compatible_details_and_native_ollama_counts() {
+        let compatible = parse_token_usage(&serde_json::json!({"usage": {
+            "input_tokens": 15, "output_tokens": 8,
+            "input_tokens_details": {"cached_tokens": 3},
+            "output_tokens_details": {"reasoning_tokens": 2}
+        }})).unwrap();
+        assert_eq!((compatible.input_tokens, compatible.cached_input_tokens, compatible.output_tokens, compatible.reasoning_tokens),
+                   (Some(15), Some(3), Some(8), Some(2)));
+        let ollama = parse_token_usage(&serde_json::json!({"prompt_eval_count": 19, "eval_count": 6})).unwrap();
+        assert_eq!((ollama.input_tokens, ollama.output_tokens, ollama.cached_input_tokens),
+                   (Some(19), Some(6), None));
+    }
+
+    #[test]
+    fn usage_only_final_stream_chunk_is_accepted() {
+        let final_chunk = serde_json::json!({
+            "choices": [], "usage": {"prompt_tokens": 21, "completion_tokens": 7}
+        });
+        let chunk: StreamChunk = serde_json::from_value(final_chunk.clone()).unwrap();
+        assert!(chunk.choices.is_empty());
+        let usage = stream_token_usage(&final_chunk, Some("openrouter")).unwrap();
+        assert_eq!((usage.input_tokens, usage.output_tokens), (Some(21), Some(7)));
+        assert!(stream_token_usage(&serde_json::json!({"choices": []}), Some("openrouter")).is_none());
+    }
+
+    #[test]
+    fn llama_timings_cache_count_is_used_only_for_llama_and_merges_with_usage() {
+        let first = stream_token_usage(&serde_json::json!({"usage": {
+            "prompt_tokens": 40, "completion_tokens": 9
+        }}), Some("llama_cpp"));
+        let final_chunk = serde_json::json!({"choices": [], "timings": {"cache_n": 30}});
+        let final_usage = stream_token_usage(&final_chunk, Some("llama_cpp")).unwrap();
+        let merged = merge_token_usage(first, final_usage);
+        assert_eq!((merged.input_tokens, merged.cached_input_tokens, merged.output_tokens),
+                   (Some(40), Some(30), Some(9)));
+        assert!(stream_token_usage(&final_chunk, Some("koboldcpp")).is_none());
+    }
+
+    #[test]
+    fn stream_usage_request_survives_custom_stream_options() {
+        let mut body = serde_json::json!({"stream_options": {"include_usage": false, "other": true}});
+        request_stream_usage(&mut body);
+        assert_eq!(body["stream_options"], serde_json::json!({"include_usage": true, "other": true}));
+    }
 
     #[test]
     fn bound_request_uses_snapshotted_token_values_instead_of_live_payload_values() {

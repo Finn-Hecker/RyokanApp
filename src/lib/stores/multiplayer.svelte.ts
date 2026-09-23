@@ -24,6 +24,7 @@ import { processThinkingOutput } from '$lib/utils/chatApi';
 import { getClientLanguageName } from '$lib/utils/clientLanguage';
 import { selectInitialGreeting } from '$lib/utils/characterGreeting';
 import type { Character } from './characterStore.svelte';
+import type { TokenUsage } from '$lib/utils/tokenUsage';
 
 // Configuration
 
@@ -67,6 +68,23 @@ export interface MpMessage {
   ts: number;
   /** true while an LLM stream is still writing into this message */
   streaming?: boolean;
+  usage?: TokenUsage | null;
+}
+
+function parseRelayUsage(value: unknown): TokenUsage | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  const fields = ['inputTokens', 'cachedInputTokens', 'outputTokens', 'reasoningTokens'] as const;
+  for (const field of fields) {
+    const count = record[field];
+    if (count != null && (!Number.isSafeInteger(count) || (count as number) < 0)) return null;
+  }
+  return {
+    inputTokens: (record.inputTokens as number | null) ?? null,
+    cachedInputTokens: (record.cachedInputTokens as number | null) ?? null,
+    outputTokens: (record.outputTokens as number | null) ?? null,
+    reasoningTokens: (record.reasoningTokens as number | null) ?? null,
+  };
 }
 
 export interface SessionCharacter {
@@ -520,6 +538,7 @@ async function persistMessage(message: MpMessage, conversationId?: string | null
     // collide with a different local conversation.
     messageId: `${chatId}:${message.id}`,
     createdAt: new Date(message.ts).toISOString(),
+    usage: message.kind === 'llm' ? message.usage ?? null : null,
   });
 }
 
@@ -960,6 +979,7 @@ async function handleDecrypted(inner: any, sourceId: number): Promise<void> {
         : null;
       const finalAuthor = typeof inner.name === 'string' ? inner.name : null;
       const finalTimestamp = safeTimestamp(inner.ts, 0);
+      const finalUsage = parseRelayUsage(inner.usage);
       let m = mpState.messages.find((x) => x.id === mid);
       if (!m && finalText !== null) {
         m = {
@@ -968,10 +988,12 @@ async function handleDecrypted(inner: any, sourceId: number): Promise<void> {
           author: finalAuthor ?? mpState.characterName ?? 'AI',
           text: finalText,
           ts: finalTimestamp || Date.now(),
+          usage: finalUsage,
         };
         seenIds.add(mid);
         insertSorted(m);
       } else if (m) {
+        m.usage = finalUsage;
         if (finalText !== null) m.text = finalText;
         if (finalAuthor !== null) m.author = finalAuthor;
         if (finalTimestamp) {
@@ -1356,9 +1378,10 @@ async function runGeneration(): Promise<void> {
     }
 
     if (!generation.aborted) {
-      await invoke('call_ai_api', {
+      localMsg.usage = await invoke<TokenUsage | null>('call_ai_api', {
         payload: {
           generation_id: generation.id,
+          provider_kind: s.providerKind,
           url: s.url,
           api_key: s.apiKey,
           model: s.model,
@@ -1414,6 +1437,7 @@ async function runGeneration(): Promise<void> {
           text: localMsg.text,
           name: generation.author,
           ts: generation.timestamp,
+          usage: localMsg.usage ?? null,
         };
     await queueGenerationRelay(generation, completion).catch(() => undefined);
 

@@ -266,13 +266,13 @@ pub async fn clone_chat_from_message(
     // rowid is a tiebreaker for messages sharing the same created_at second
     // (e.g. rapid inserts) — it always reflects true insertion order.
     let mut stmt = tx.prepare(
-        "SELECT id, role, content, swipe_variants, swipe_index, author
+        "SELECT id, role, content, swipe_variants, swipe_index, author, usage_variants
          FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC, rowid ASC"
     ).map_err(|e| e.to_string())?;
 
-    let all_messages: Vec<(String, String, String, String, i64, Option<String>)> = stmt
+    let all_messages: Vec<(String, String, String, String, i64, Option<String>, String)> = stmt
         .query_map(params![chat_id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?))
         }).map_err(|e| e.to_string())?
         .collect::<Result<_, _>>()
         .map_err(|e| e.to_string())?;
@@ -299,12 +299,12 @@ pub async fn clone_chat_from_message(
     // Copy every message up to the cut-off with fresh ids, preserving role,
     // content and swipe history. Inserted in order so created_at / rowid
     // ordering matches the original conversation.
-    for (_, role, content, swipe_variants, swipe_index, author) in messages_to_copy {
+    for (_, role, content, swipe_variants, swipe_index, author, usage_variants) in messages_to_copy {
         let new_msg_id = Uuid::new_v4().to_string();
         tx.execute(
-            "INSERT INTO messages (id, conversation_id, role, content, swipe_variants, swipe_index, author)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![new_msg_id, new_chat_id, role, content, swipe_variants, swipe_index, author],
+            "INSERT INTO messages (id, conversation_id, role, content, swipe_variants, swipe_index, author, usage_variants)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![new_msg_id, new_chat_id, role, content, swipe_variants, swipe_index, author, usage_variants],
         ).map_err(|e| e.to_string())?;
     }
 

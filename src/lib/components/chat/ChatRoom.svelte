@@ -250,7 +250,7 @@
         }
       );
       if (chatState.activeChatId !== chatId) return;
-      await addMessage('assistant', result);
+      await addMessage('assistant', result.text, result.usage);
     } catch (err) {
       if (err instanceof SummaryCancelledError) return;
       console.error(err);
@@ -322,7 +322,7 @@
         }
       );
       if (chatState.activeChatId !== chatId) return;
-      await addSwipeVariant(msgId, result);
+      await addSwipeVariant(msgId, result.text, result.usage);
     } catch (err) {
       if (err instanceof SummaryCancelledError) return;
       console.error(err);

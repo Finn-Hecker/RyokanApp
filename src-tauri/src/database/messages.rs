@@ -3,6 +3,7 @@ use rusqlite::{params};
 use serde::Serialize;
 use uuid::Uuid;
 use crate::database::get_connection;
+use crate::ai::TokenUsage;
 
 /// Database representation of a single chat message within a conversation.
 #[derive(Serialize)]
@@ -18,6 +19,8 @@ pub struct DbMessage {
     pub swipe_variants: String,
     /// Zero-based index pointing to the currently displayed variant.
     pub swipe_index: i64,
+    /// JSON array aligned with swipe_variants; null means no provider usage.
+    pub usage_variants: String,
     pub created_at: String,
 }
 
@@ -29,7 +32,7 @@ pub struct DbMessage {
 pub async fn get_messages(app: AppHandle, chat_id: String) -> Result<Vec<DbMessage>, String> {
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare(
-        "SELECT id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at \
+        "SELECT id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at, usage_variants \
          FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC, rowid ASC"
     ).map_err(|e| e.to_string())?;
 
@@ -43,6 +46,7 @@ pub async fn get_messages(app: AppHandle, chat_id: String) -> Result<Vec<DbMessa
             swipe_variants: row.get(5)?,
             swipe_index: row.get(6)?,
             created_at: row.get(7)?,
+            usage_variants: row.get(8)?,
         })
     }).map_err(|e| e.to_string())?;
 
@@ -63,6 +67,7 @@ pub async fn add_message(
     author: Option<String>,
     message_id: Option<String>,
     created_at: Option<String>,
+    usage: Option<TokenUsage>,
 ) -> Result<(), String> {
     let conn = crate::database::get_connection(&app)?;
 
@@ -70,12 +75,13 @@ pub async fn add_message(
     // Store the initial content as the first (and only) swipe variant.
     let initial_variants = serde_json::to_string(&vec![&content])
         .map_err(|e| e.to_string())?;
+    let initial_usage = serde_json::to_string(&vec![usage]).map_err(|e| e.to_string())?;
 
     let inserted = conn.execute(
-        "INSERT INTO messages (id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, COALESCE(?7, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))) \
+        "INSERT INTO messages (id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at, usage_variants) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, COALESCE(?7, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), ?8) \
          ON CONFLICT(id) DO NOTHING",
-        rusqlite::params![msg_id, chat_id, role, content, author, initial_variants, created_at],
+        rusqlite::params![msg_id, chat_id, role, content, author, initial_variants, created_at, initial_usage],
     ).map_err(|e| e.to_string())?;
 
     // Relay snapshots and echoed frames can contain the same stable message
@@ -121,31 +127,59 @@ pub async fn add_message(
 /// The new variant is added to the `swipe_variants` array and becomes the active one.
 /// Returns the new swipe_index so the frontend can update its local state.
 #[tauri::command]
-pub async fn add_swipe_variant(app: AppHandle, message_id: String, content: String) -> Result<i64, String> {
+pub async fn add_swipe_variant(app: AppHandle, message_id: String, content: String, usage: Option<TokenUsage>) -> Result<i64, String> {
     let conn = get_connection(&app)?;
+    append_swipe_variant(&conn, &message_id, content, usage)
+}
 
+fn append_swipe_variant(conn: &rusqlite::Connection, message_id: &str, content: String, usage: Option<TokenUsage>) -> Result<i64, String> {
     // Fetch current variants JSON.
-    let current_variants_json: String = conn.query_row(
-        "SELECT swipe_variants FROM messages WHERE id = ?1",
+    let (current_variants_json, current_usage_json): (String, String) = conn.query_row(
+        "SELECT swipe_variants, usage_variants FROM messages WHERE id = ?1",
         params![message_id],
-        |row| row.get(0),
+        |row| Ok((row.get(0)?, row.get(1)?)),
     ).map_err(|e| e.to_string())?;
 
     let mut variants: Vec<String> = serde_json::from_str(&current_variants_json)
         .unwrap_or_default();
 
     variants.push(content.clone());
+    let mut usages: Vec<Option<TokenUsage>> = serde_json::from_str(&current_usage_json).unwrap_or_default();
+    usages.resize(variants.len() - 1, None);
+    usages.push(usage);
     let new_index = (variants.len() as i64) - 1;
 
     let updated_json = serde_json::to_string(&variants)
         .map_err(|e| e.to_string())?;
+    let usage_json = serde_json::to_string(&usages).map_err(|e| e.to_string())?;
 
     conn.execute(
-        "UPDATE messages SET content = ?1, swipe_variants = ?2, swipe_index = ?3 WHERE id = ?4",
-        params![content, updated_json, new_index, message_id],
+        "UPDATE messages SET content = ?1, swipe_variants = ?2, swipe_index = ?3, usage_variants = ?4 WHERE id = ?5",
+        params![content, updated_json, new_index, usage_json, message_id],
     ).map_err(|e| e.to_string())?;
 
     Ok(new_index)
+}
+
+#[cfg(test)]
+mod usage_tests {
+    use super::*;
+
+    #[test]
+    fn generated_swipes_keep_distinct_reported_usage() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE messages (id TEXT PRIMARY KEY, content TEXT, swipe_variants TEXT, swipe_index INTEGER, usage_variants TEXT);
+            INSERT INTO messages VALUES ('a', 'first', '[\"first\"]', 0, '[null]');").unwrap();
+        let usage = TokenUsage { input_tokens: Some(30), cached_input_tokens: Some(20), output_tokens: Some(7), reasoning_tokens: None };
+        assert_eq!(append_swipe_variant(&conn, "a", "second".into(), Some(usage.clone())).unwrap(), 1);
+        let (text, index, usage_json): (String, i64, String) = conn.query_row(
+            "SELECT content, swipe_index, usage_variants FROM messages WHERE id = 'a'", [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap();
+        let variants: Vec<Option<TokenUsage>> = serde_json::from_str(&usage_json).unwrap();
+        assert_eq!((text.as_str(), index), ("second", 1));
+        assert_eq!(variants, vec![None, Some(usage)]);
+    }
 }
 
 /// Navigates to a specific variant by index without creating a new one.
@@ -182,10 +216,10 @@ pub async fn set_swipe_index(app: AppHandle, message_id: String, index: i64) -> 
 pub async fn update_message(app: AppHandle, id: String, content: String) -> Result<(), String> {
     let conn = get_connection(&app)?;
 
-    let (variants_json, swipe_index): (String, i64) = conn.query_row(
-        "SELECT swipe_variants, swipe_index FROM messages WHERE id = ?1",
+    let (variants_json, swipe_index, usage_json): (String, i64, String) = conn.query_row(
+        "SELECT swipe_variants, swipe_index, usage_variants FROM messages WHERE id = ?1",
         params![id],
-        |row| Ok((row.get(0)?, row.get(1)?)),
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     ).map_err(|e| e.to_string())?;
 
     let mut variants: Vec<String> = serde_json::from_str(&variants_json)
@@ -194,13 +228,16 @@ pub async fn update_message(app: AppHandle, id: String, content: String) -> Resu
     if let Some(slot) = variants.get_mut(swipe_index as usize) {
         *slot = content.clone();
     }
+    let mut usages: Vec<Option<TokenUsage>> = serde_json::from_str(&usage_json).unwrap_or_default();
+    usages.resize(variants.len(), None);
+    if let Some(slot) = usages.get_mut(swipe_index as usize) { *slot = None; }
 
     let updated_json = serde_json::to_string(&variants)
         .map_err(|e| e.to_string())?;
 
     conn.execute(
-        "UPDATE messages SET content = ?1, swipe_variants = ?2 WHERE id = ?3",
-        params![content, updated_json, id],
+        "UPDATE messages SET content = ?1, swipe_variants = ?2, usage_variants = ?3 WHERE id = ?4",
+        params![content, updated_json, serde_json::to_string(&usages).map_err(|e| e.to_string())?, id],
     ).map_err(|e| e.to_string())?;
 
     Ok(())
@@ -228,7 +265,7 @@ pub async fn get_messages_page(app: AppHandle, chat_id: String, limit: i64, offs
     // second-level resolution (relevant e.g. right after cloning a chat,
     // where many messages get inserted within the same second).
     let mut stmt = conn.prepare(
-        "SELECT id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at \
+        "SELECT id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at, usage_variants \
          FROM messages WHERE conversation_id = ?1 \
          ORDER BY created_at DESC, rowid DESC \
          LIMIT ?2 OFFSET ?3"
@@ -244,6 +281,7 @@ pub async fn get_messages_page(app: AppHandle, chat_id: String, limit: i64, offs
             swipe_variants: row.get(5)?,
             swipe_index: row.get(6)?,
             created_at: row.get(7)?,
+            usage_variants: row.get(8)?,
         })
     }).map_err(|e| e.to_string())?;
 
