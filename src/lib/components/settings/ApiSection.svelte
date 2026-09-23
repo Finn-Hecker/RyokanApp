@@ -10,7 +10,9 @@
     curatedProviderGroups,
     type CuratedProviderGroupId,
   } from '$lib/utils/modelProviderGroups';
-  import { deleteConnectionSafely, invalidateDetectedContext, normalizeSummaryConnectionId, PROVIDER_LABELS, refreshContextDetection, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION } from '$lib/utils/apiConnections';
+  import { deleteConnectionSafely, invalidateDetectedContext, normalizeSummaryConnectionId, refreshContextDetection, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION } from '$lib/utils/apiConnections';
+
+  const NEW_CONNECTION_ACTION = '__new_connection__';
 
   let {
     powerUser = false,
@@ -62,6 +64,11 @@
   let modelLoadRequest = 0;
   let modelPreparationRequest = 0;
   let detectingContext = $state(false);
+  let connectionMenuOpen = $state(false);
+  let renamingConnection = $state(false);
+  let renameValue = $state('');
+  let confirmingConnectionDelete = $state(false);
+  let renameInput = $state<HTMLInputElement>();
 
   $effect(() => {
     if (!modelMenuOpen) return;
@@ -79,7 +86,7 @@
   };
 
   const SPECIAL_MODEL_CATEGORIES: ModelCategory[] = [
-    { id: "all", label: "All", kind: "all" },
+    { id: "all", label: m.settings_model_category_all(), kind: "all" },
   ];
 
   const FAVORITES_STORAGE_KEY = "ryokan-favorite-models";
@@ -142,8 +149,8 @@
 
   const modelCategoryTabs = $derived<ModelCategory[]>([
     ...SPECIAL_MODEL_CATEGORIES,
-    ...(hasFreeModels ? [{ id: "free", label: "Free", kind: "free" as const }] : []),
-    ...(hasFavoriteModels ? [{ id: "favorites", label: "Favorites", kind: "favorites" as const }] : []),
+    ...(hasFreeModels ? [{ id: "free", label: m.settings_model_category_free(), kind: "free" as const }] : []),
+    ...(hasFavoriteModels ? [{ id: "favorites", label: m.settings_model_category_favorites(), kind: "favorites" as const }] : []),
     ...availableProviderGroups.curated.map(group => ({
       id: `provider:${group.id}`,
       label: group.label,
@@ -325,6 +332,10 @@
   }
 
   function selectConnection(id: string) {
+    if (id === NEW_CONNECTION_ACTION) { createConnection(); return; }
+    connectionMenuOpen = false;
+    renamingConnection = false;
+    confirmingConnectionDelete = false;
     const previousConnectionId = appState.activeApiConnectionId;
     if (!activateApiConnection(id)) return;
     onConnectionChange(previousConnectionId);
@@ -334,17 +345,43 @@
   }
 
   function createConnection() {
-    const connection = createDefaultConnection(crypto.randomUUID(), `Connection ${appState.apiConnections.length + 1}`);
+    connectionMenuOpen = false;
+    const connection = createDefaultConnection(crypto.randomUUID(), m.settings_connection_default_name({ number: String(appState.apiConnections.length + 1) }));
     appState.apiConnections.push(connection);
     selectConnection(connection.id);
   }
 
   function deleteConnection() {
+    confirmingConnectionDelete = false;
     const deletedId = appState.activeApiConnectionId;
     const result = deleteConnectionSafely(appState.apiConnections, deletedId, deletedId);
     appState.apiConnections = result.connections;
     appState.summaryConnectionId = normalizeSummaryConnectionId(result.connections, appState.summaryConnectionId);
     selectConnection(result.activeId);
+  }
+
+  async function startConnectionRename() {
+    connectionMenuOpen = false;
+    renameValue = appState.apiSettings.name;
+    renamingConnection = true;
+    await tick();
+    renameInput?.focus();
+    renameInput?.select();
+  }
+
+  function finishConnectionRename() {
+    const name = renameValue.trim();
+    if (name) appState.apiSettings.name = name;
+    renamingConnection = false;
+  }
+
+  function handleRenameKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter') { event.preventDefault(); finishConnectionRename(); }
+    if (event.key === 'Escape') { event.preventDefault(); renamingConnection = false; }
+  }
+
+  function handleConnectionMenuClick(event: MouseEvent) {
+    if (!(event.target as HTMLElement).closest('.connection-menu-wrap')) connectionMenuOpen = false;
   }
 
   function handleIdentityChange() {
@@ -363,16 +400,6 @@
     if (tokens >= 1024 && tokens % 1024 === 0) return `${tokens / 1024}K`;
     return tokens.toLocaleString();
   }
-
-  const contextStatus = $derived.by(() => {
-    const detected = appState.apiSettings.detectedContext;
-    if (!detected) return appState.apiSettings.contextDetectionError || 'Automatic detection unavailable';
-    const label = detected.provenance === 'runtime' ? 'Runtime context'
-      : detected.provenance === 'provider_advertised' ? 'Provider context'
-      : detected.provenance === 'kobold_true_max' ? 'KoboldCpp context'
-      : 'KoboldCpp configured context';
-    return `${label}: ${formatTokens(detected.tokens)}`;
-  });
 
   function toggleFavorite(modelId: string) {
     const nextFavoriteModels = favoriteModels.includes(modelId)
@@ -474,34 +501,53 @@
 
 </script>
 
-<svelte:window onkeydown={handleModelMenuKeydown} />
+<svelte:window onkeydown={handleModelMenuKeydown} onclick={handleConnectionMenuClick} />
 
 <section>
   {#if section === 'provider'}
   <span class="settings-section-title">{m.settings_section_api()}</span>
-  <div class="settings-card space-y-4">
+  <div class="settings-card provider-settings">
 
-    <div class="connection-toolbar">
-      <div class="connection-fields">
-        <label class="settings-label" for="active-connection">API connection</label>
+    <div class="connection-management">
+      <label class="settings-label" for="active-connection">{m.settings_connection_label()}</label>
+      <div class="connection-toolbar">
         <select id="active-connection" class="settings-input" value={appState.activeApiConnectionId} onchange={(event) => selectConnection(event.currentTarget.value)}>
           {#each appState.apiConnections as connection (connection.id)}
             <option value={connection.id}>{connection.name}</option>
           {/each}
+          <option disabled>──────────</option>
+          <option value={NEW_CONNECTION_ACTION}>{m.settings_connection_new()}</option>
         </select>
-        <input class="settings-input" aria-label="Connection name" bind:value={appState.apiSettings.name} maxlength="80" />
+        <div class="connection-menu-wrap">
+          <button type="button" class="connection-action connection-more" aria-label={m.settings_connection_options()} aria-haspopup="menu" aria-expanded={connectionMenuOpen} onclick={() => connectionMenuOpen = !connectionMenuOpen}>⋯</button>
+          {#if connectionMenuOpen}
+            <div class="connection-menu" role="menu" aria-label={m.settings_connection_options()}>
+              <button type="button" role="menuitem" onclick={startConnectionRename}>{m.settings_connection_rename()}</button>
+              <button type="button" role="menuitem" class="danger" disabled={appState.apiConnections.length <= 1} onclick={() => { connectionMenuOpen = false; confirmingConnectionDelete = true; }}>{m.settings_connection_delete()}</button>
+            </div>
+          {/if}
+        </div>
       </div>
-      <div class="connection-actions">
-        <button type="button" class="connection-action" onclick={createConnection}>New</button>
-        <button type="button" class="connection-action danger" disabled={appState.apiConnections.length <= 1} onclick={deleteConnection}>Delete</button>
-      </div>
+      {#if renamingConnection}
+        <div class="connection-inline-edit">
+          <input bind:this={renameInput} class="settings-input" aria-label={m.settings_connection_name()} bind:value={renameValue} maxlength="80" onkeydown={handleRenameKeydown} />
+          <button type="button" class="connection-action" onclick={finishConnectionRename}>{m.settings_btn_save()}</button>
+          <button type="button" class="connection-text-action" onclick={() => renamingConnection = false}>{m.settings_connection_cancel()}</button>
+        </div>
+      {/if}
+      {#if confirmingConnectionDelete}
+        <div class="connection-delete-confirm" role="group" aria-label={m.settings_connection_confirm_delete()}>
+          <span>{m.settings_connection_delete_prompt({ name: appState.apiSettings.name })}</span>
+          <button type="button" class="connection-text-action" onclick={() => confirmingConnectionDelete = false}>{m.settings_connection_cancel()}</button>
+          <button type="button" class="connection-action danger" onclick={deleteConnection}>{m.settings_connection_delete()}</button>
+        </div>
+      {/if}
     </div>
 
-    <div class="connection-active-note">Active for chat · {PROVIDER_LABELS[appState.apiSettings.providerKind]}</div>
     <div class="settings-divider"></div>
 
     <div class="api-model-section">
-    <h2 class="api-model-section-title">{m.settings_section_api()}</h2>
+    <h2 class="api-model-section-title">{m.settings_provider_label()}</h2>
 
     <div class="tab-switcher">
       <button
@@ -526,7 +572,6 @@
     </div>
 
     <div>
-      <span class="settings-label">{m.settings_provider_label()}</span>
       <div class="provider-grid" class:provider-grid--4={activeTab === 'cloud'}>
 
         {#each filteredProviders as provider (provider.url)}
@@ -644,7 +689,7 @@
             <div class="desktop-model-backdrop" role="presentation" onclick={handleModelBackdropClick}></div>
             <div class="desktop-model-browser" role="dialog" aria-modal="true" aria-labelledby="desktop-model-browser-title">
               <header class="desktop-model-header">
-                <div><h3 id="desktop-model-browser-title">{m.settings_model_select_title()}</h3><p>{availableModels.length} models available</p></div>
+                <div><h3 id="desktop-model-browser-title">{m.settings_model_select_title()}</h3><p>{m.settings_model_available_count({ count: String(availableModels.length) })}</p></div>
                 <button type="button" class="model-sheet-close" aria-label={m.settings_model_close()} onclick={closeModelPicker}><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" stroke-linecap="round"/></svg></button>
               </header>
               <div class="desktop-model-controls">
@@ -680,7 +725,7 @@
                           <span class="desktop-model-name">{modelId}</span>
                           <span class="desktop-model-meta">
                             <span class="desktop-model-provider">{modelProviderLabel(modelProviderKey(modelId))}</span>
-                            {#if isFreeModel(modelId)}<span class="free-badge">Free</span>{/if}
+                            {#if isFreeModel(modelId)}<span class="free-badge">{m.settings_model_category_free()}</span>{/if}
                             {#if modelPriceLabel(modelId)}<span class="desktop-meta-badge">{modelPriceLabel(modelId)}</span>{/if}
                             {#if contextLabel(modelId)}<span class="desktop-meta-badge">{contextLabel(modelId)}</span>{/if}
                           </span>
@@ -756,7 +801,7 @@
                         <span class="mobile-model-name">{modelId}</span>
                         <span class="mobile-model-details">
                           <span class="mobile-model-provider">{modelProviderLabel(modelProviderKey(modelId))}</span>
-                          {#if isFreeModel(modelId)}<span class="free-badge">Free</span>{/if}
+                          {#if isFreeModel(modelId)}<span class="free-badge">{m.settings_model_category_free()}</span>{/if}
                           {#if modelPriceLabel(modelId)}<span class="mobile-model-price">{modelPriceLabel(modelId)}</span>{/if}
                           {#if contextLabel(modelId)}<span class="mobile-model-context">{contextLabel(modelId)}</span>{/if}
                         </span>
@@ -800,83 +845,91 @@
       {/if}
     </div>
 
-    <div class="settings-divider"></div>
-
-    <div class="ctx-row">
-      <div class="ctx-row-head">
-        <span class="settings-label whitespace-nowrap" style="margin-bottom:0">{m.settings_context_label()}</span>
-
-        <Tooltip>
-          {m.settings_context_tooltip_p1()}<br><br>
-          {m.settings_context_tooltip_p2()}<br><br>
-          <span class="tooltip-hint">{m.settings_context_tooltip_hint()}</span>
-        </Tooltip>
-
-        <span class="ctx-current">Hard limit: {formatTokens(resolvedHardContextLimit(appState.apiSettings))}</span>
-      </div>
-
-      <div class="context-detection-row">
-        <span class="context-status">{contextStatus}</span>
-        <button type="button" class="connection-action" disabled={detectingContext || !appState.apiSettings.model} onclick={detectContext}>
-          {detectingContext ? 'Detecting…' : 'Refresh detection'}
-        </button>
-      </div>
-      {#if appState.apiSettings.detectedContext?.theoreticalTokens}
-        <div class="context-secondary">Theoretical model maximum: {formatTokens(appState.apiSettings.detectedContext.theoreticalTokens)}</div>
-      {/if}
-
-      <div class="context-controls">
-        <label>
-          <span class="settings-label">Manual cap <span class="optional-badge">optional</span></span>
-          <input class="settings-input" type="number" min="1024" max="16777216" step="1024"
-            value={appState.apiSettings.manualContextCap ?? ''}
-            placeholder="Automatic"
-            oninput={(event) => {
-              const value = event.currentTarget.valueAsNumber;
-              appState.apiSettings.manualContextCap = Number.isFinite(value) ? Math.round(value) : null;
-              appState.apiSettings.contextLimit = resolvedHardContextLimit(appState.apiSettings);
-            }} />
-        </label>
-      </div>
-    </div>
-
     </div>
 
   </div>
   {:else}
   <span class="settings-section-title">{m.settings_category_memory()}</span>
-  <div class="settings-card space-y-4">
+  <div class="settings-card memory-settings">
+    <div class="ctx-row">
+      <div class="ctx-row-head">
+        <span class="settings-label">{m.settings_context_label()}</span>
+        <Tooltip>
+          {m.settings_context_tooltip_p1()}<br><br>
+          {m.settings_context_tooltip_p2()}<br><br>
+          <span class="tooltip-hint">{m.settings_context_tooltip_hint()}</span>
+        </Tooltip>
+      </div>
+      <div class="context-detection-row">
+        <div class="context-amount"><strong>{formatTokens(resolvedHardContextLimit(appState.apiSettings))} {m.settings_context_tokens()}</strong><span>{m.settings_context_effective()}</span></div>
+      </div>
+      <div class="context-secondary">
+        <span>{#if appState.apiSettings.detectedContext && appState.apiSettings.detectedContext.provenance !== 'theoretical'}{m.settings_context_model_maximum({ tokens: formatTokens(appState.apiSettings.detectedContext.tokens) })}{:else}{m.settings_context_maximum_unavailable()}{/if}</span>
+        {#if appState.apiSettings.detectedContext?.provenance === 'theoretical'}
+          <span>· {m.settings_context_theoretical_maximum({ tokens: formatTokens(appState.apiSettings.detectedContext.tokens) })}</span>
+        {/if}
+        {#if appState.apiSettings.detectedContext?.theoreticalTokens}
+          <span>· {m.settings_context_theoretical_maximum({ tokens: formatTokens(appState.apiSettings.detectedContext.theoreticalTokens) })}</span>
+        {/if}
+        <span class="context-status">· {detectingContext ? m.settings_context_detecting() : appState.apiSettings.detectedContext?.provenance !== 'theoretical' && appState.apiSettings.detectedContext ? m.settings_context_detected() : m.settings_context_not_detected()}</span>
+        <button type="button" class="context-retry" aria-label={m.settings_context_refresh()} title={m.settings_context_refresh()} disabled={detectingContext || !appState.apiSettings.model} onclick={detectContext}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 6.7"/><path d="M20 4v7h-7"/></svg></button>
+      </div>
+      <div class="manual-limit">
+        <label class="manual-limit-toggle">
+          <span class="setting-toggle-copy"><strong>{m.settings_context_manual_limit()}</strong><small>{m.settings_context_manual_help()}</small></span>
+          <input class="settings-switch-input sr-only" type="checkbox" checked={appState.apiSettings.manualContextCap !== null} onchange={(event) => {
+            appState.apiSettings.manualContextCap = event.currentTarget.checked ? resolvedHardContextLimit(appState.apiSettings) : null;
+            appState.apiSettings.contextLimit = resolvedHardContextLimit(appState.apiSettings);
+          }} />
+          <span class="settings-switch-track" aria-hidden="true"><span class="settings-switch-thumb"></span></span>
+        </label>
+        {#if appState.apiSettings.manualContextCap !== null}
+          <label>
+            <span class="settings-label">{m.settings_context_token_limit()}</span>
+            <input class="settings-input" type="number" min="1024" max="16777216" step="1024"
+              value={appState.apiSettings.manualContextCap ?? ''}
+              oninput={(event) => {
+                const value = event.currentTarget.valueAsNumber;
+                appState.apiSettings.manualContextCap = Number.isFinite(value) ? Math.round(value) : null;
+                appState.apiSettings.contextLimit = resolvedHardContextLimit(appState.apiSettings);
+              }} />
+          </label>
+        {/if}
+      </div>
+    </div>
+    <div class="settings-divider"></div>
     <div class="context-controls">
       <label>
-        <span class="settings-label">Context strategy</span>
+        <span class="settings-label">{m.settings_context_strategy()}</span>
         <select class="settings-input" bind:value={appState.apiSettings.contextStrategy}>
-          <option value="economy">Economy</option>
-          <option value="balanced">Balanced</option>
-          <option value="maximum">Maximum Context</option>
+          <option value="economy">{m.settings_context_strategy_economy()}</option>
+          <option value="balanced">{m.settings_context_strategy_balanced()}</option>
+          <option value="maximum">{m.settings_context_strategy_maximum()}</option>
         </select>
       </label>
     </div>
     <div class="context-strategy-help">
-      {#if appState.apiSettings.contextStrategy === 'economy'}Economy uses less context and can reduce API cost.
-      {:else if appState.apiSettings.contextStrategy === 'maximum'}Maximum Context keeps more recent conversation before summarizing.
-      {:else}Balanced is the default and balances continuity with context usage.{/if}
+      {#if appState.apiSettings.contextStrategy === 'economy'}{m.settings_context_strategy_economy_help()}
+      {:else if appState.apiSettings.contextStrategy === 'maximum'}{m.settings_context_strategy_maximum_help()}
+      {:else}{m.settings_context_strategy_balanced_help()}{/if}
     </div>
 
     <div class="settings-divider"></div>
     <div class="memory-controls">
       <label class="memory-toggle">
-        <span><span class="settings-label">Long-term memory</span><span class="memory-help">Maintain a rolling summary when the conversation grows.</span></span>
-        <input type="checkbox" bind:checked={appState.longTermMemory} />
+        <span class="setting-toggle-copy"><strong>{m.settings_memory_long_term()}</strong><small>{m.settings_memory_long_term_help()}</small></span>
+        <input class="settings-switch-input sr-only" type="checkbox" bind:checked={appState.longTermMemory} />
+        <span class="settings-switch-track" aria-hidden="true"><span class="settings-switch-thumb"></span></span>
       </label>
       <label>
-        <span class="settings-label">Summary connection</span>
+        <span class="settings-label">{m.settings_memory_summary_connection()}</span>
         <select class="settings-input" bind:value={appState.summaryConnectionId} disabled={!appState.longTermMemory}>
-          <option value={SAME_AS_CHAT_CONNECTION}>Same as chat</option>
+          <option value={SAME_AS_CHAT_CONNECTION}>{m.settings_memory_same_as_chat()}</option>
           {#each appState.apiConnections as connection (connection.id)}
             <option value={connection.id}>{connection.name}</option>
           {/each}
         </select>
-        <span class="memory-help">Same as chat uses the currently selected chat API connection for summaries.</span>
+        <span class="memory-help">{m.settings_memory_same_as_chat_help()}</span>
       </label>
     </div>
   </div>
@@ -885,31 +938,63 @@
 
 <style>
   .api-model-section-title {
-    margin: 0 0 16px;
+    margin: 0 0 14px;
     color: #d8c5a8;
     font-size: 13px;
     font-weight: 650;
     letter-spacing: 0.02em;
   }
-  .connection-toolbar { display:flex; align-items:end; gap:10px; }
-  .connection-fields { min-width:0; flex:1; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-  .connection-fields .settings-label { grid-column:1/-1; margin-bottom:-2px; }
-  .connection-actions { display:flex; gap:6px; }
-  .connection-action { min-height:38px; padding:8px 11px; border:1px solid rgba(255,255,255,.08); border-radius:9px; color:#aaa7a3; background:rgba(255,255,255,.035); font-size:11px; font-weight:650; cursor:pointer; }
+  .provider-settings > .settings-divider { margin:24px 0; }
+  .connection-management { min-width:0; }
+  .connection-toolbar { display:flex; align-items:center; gap:8px; }
+  .connection-toolbar select { min-width:0; flex:1; }
+  .connection-action { min-height:40px; padding:8px 11px; border:1px solid rgba(255,255,255,.08); border-radius:9px; color:#aaa7a3; background:rgba(255,255,255,.035); font-size:11px; font-weight:650; white-space:nowrap; cursor:pointer; }
   .connection-action:hover:not(:disabled) { color:#dfd8cf; border-color:rgba(212,180,131,.25); }
   .connection-action.danger:hover:not(:disabled) { color:#e8a19b; border-color:rgba(220,90,80,.25); }
   .connection-action:disabled { opacity:.38; cursor:default; }
-  .connection-active-note,.context-secondary { color:#5f5f64; font-size:11px; }
-  .context-detection-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:12px; }
-  .context-status { color:#b7a98f; font-size:12px; }
-  .context-secondary { margin-top:7px; }
-  .context-controls { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px; }
-  .context-strategy-help,.memory-help { display:block; margin-top:6px; color:#5f5f64; font-size:11px; line-height:1.4; }
-  .memory-controls { display:grid; gap:16px; }
-  .memory-toggle { display:flex; align-items:center; justify-content:space-between; gap:18px; }
-  .memory-toggle .settings-label { margin-bottom:0; }
-  .memory-toggle input { width:18px; height:18px; accent-color:#d4b483; }
-  @media (max-width:560px) { .connection-toolbar { align-items:stretch; flex-direction:column; } .connection-fields,.context-controls { grid-template-columns:1fr; } .connection-fields .settings-label { grid-column:auto; } }
+  .connection-menu-wrap { position:relative; flex:0 0 auto; }
+  .connection-more { width:36px; min-height:38px; padding:0; border-color:rgba(255,255,255,.055); background:transparent; color:#77777c; font-size:20px; font-weight:500; line-height:1; }
+  .connection-more:hover:not(:disabled) { background:rgba(255,255,255,.035); }
+  .connection-menu { position:absolute; z-index:20; top:calc(100% + 5px); right:0; width:142px; padding:4px; border:1px solid rgba(255,255,255,.09); border-radius:10px; background:#252527; box-shadow:0 12px 28px rgba(0,0,0,.35); }
+  .connection-menu button { display:block; width:100%; padding:9px 10px; border-radius:7px; color:#cbc8c5; text-align:left; font-size:12px; cursor:pointer; }
+  .connection-menu button:hover:not(:disabled) { background:rgba(255,255,255,.06); }
+  .connection-menu button.danger { color:#df938d; }
+  .connection-menu button:disabled { opacity:.4; cursor:default; }
+  .connection-inline-edit,.connection-delete-confirm { display:flex; align-items:center; gap:8px; margin-top:9px; }
+  .connection-inline-edit input { min-width:0; flex:1; }
+  @media (max-width:420px) { .connection-inline-edit { flex-wrap:wrap; } .connection-inline-edit input { flex-basis:100%; } }
+  .connection-delete-confirm { flex-wrap:wrap; color:#bdb7b1; font-size:12px; }
+  .connection-delete-confirm span { flex:1; min-width:150px; }
+  .connection-text-action { padding:6px 8px; border-radius:7px; color:#aaa7a3; font-size:11px; font-weight:650; cursor:pointer; }
+  .connection-text-action:hover:not(:disabled) { color:#e2d6c5; background:rgba(255,255,255,.045); }
+  .connection-text-action:disabled { opacity:.4; cursor:default; }
+  .connection-management + .settings-divider { margin-top:20px; }
+  .api-model-section .tab-switcher { margin-bottom:18px; }
+  .api-model-section .provider-grid { margin-top:0; }
+  .api-model-section > .settings-divider { margin:22px 0; }
+  .ctx-row-head { display:flex; align-items:center; gap:8px; }
+  .ctx-row-head .settings-label { margin-bottom:0; }
+  .context-detection-row { padding:14px 0; border-bottom:1px solid rgba(255,255,255,.05); }
+  .context-amount { display:flex; flex-direction:column; gap:3px; min-width:0; }
+  .context-amount strong { color:#e0dbd4; font-size:19px; font-weight:620; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+  .context-amount span { color:#65656a; font-size:11px; }
+  .context-status { color:#77777c; }
+  .context-secondary { display:flex; align-items:center; flex-wrap:wrap; column-gap:5px; margin-top:8px; color:#65656a; font-size:11px; line-height:1.4; }
+  .context-retry { display:inline-grid; place-items:center; width:24px; height:24px; margin-left:2px; border-radius:6px; color:#77777c; cursor:pointer; }
+  .context-retry:hover:not(:disabled) { color:#c7b9a5; background:rgba(255,255,255,.045); }
+  .context-retry:focus-visible { outline:2px solid #d4b483; outline-offset:2px; }
+  .context-retry:disabled { opacity:.4; cursor:default; }
+  .manual-limit { display:grid; gap:14px; margin-top:22px; }
+  .manual-limit-toggle,.memory-toggle { display:flex; align-items:center; justify-content:space-between; gap:18px; min-height:42px; cursor:pointer; }
+  .setting-toggle-copy { display:flex; min-width:0; flex-direction:column; gap:4px; }
+  .setting-toggle-copy strong { color:#cfcac4; font-size:13px; font-weight:620; line-height:1.35; }
+  .setting-toggle-copy small { color:#65656a; font-size:11px; line-height:1.4; }
+  .manual-limit > label:not(.manual-limit-toggle) { width:100%; max-width:230px; }
+  .context-controls { max-width:360px; margin-top:0; }
+  .context-strategy-help,.memory-help { display:block; margin-top:7px; color:#5f5f64; font-size:11px; line-height:1.4; }
+  .memory-controls { display:grid; gap:22px; }
+  .memory-controls > label:not(.memory-toggle) { width:100%; max-width:360px; }
+  .memory-settings > .settings-divider { margin:26px 0; }
   .api-model-section--model {
     margin-top: 28px;
     padding-top: 28px;
@@ -964,6 +1049,7 @@
 
   .provider-btn {
     display: flex;
+    min-width: 0;
     flex-direction: column;
     align-items: center;
     gap: 5px;
@@ -994,7 +1080,9 @@
   .provider-label {
     font-size: 12px;
     font-weight: 600;
-    line-height: 1;
+    line-height: 1.25;
+    text-align: center;
+    overflow-wrap: anywhere;
   }
 
   .optional-badge {
@@ -1280,14 +1368,4 @@
     align-items: center;
     gap: 8px;
   }
-  .ctx-current {
-    margin-left: auto;
-    font-size: 11px;
-    font-weight: 700;
-    color: #d4b483;
-    letter-spacing: 0.04em;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-
 </style>

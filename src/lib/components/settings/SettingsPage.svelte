@@ -145,8 +145,8 @@
   <label class="power-user-toggle" title={m.settings_power_user_title()}>
     <span class="power-icon" class:active={powerUser}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg></span>
     <span class="power-copy"><span class="power-label">{m.settings_power_user_label()}</span><span class="power-description">{m.settings_power_user_description()}</span></span>
-    <input type="checkbox" bind:checked={powerUser} class="sr-only peer" />
-    <span class="power-track"><span class="power-thumb"></span></span>
+    <input type="checkbox" bind:checked={powerUser} class="settings-switch-input sr-only" />
+    <span class="settings-switch-track"><span class="settings-switch-thumb"></span></span>
   </label>
 {/snippet}
 
@@ -223,10 +223,11 @@
   .power-copy { min-width:0; flex:1; display:flex; flex-direction:column; gap:3px; }
   .power-label { color:#d1cfd2; font-size:13px; font-weight:650; }
   .power-description { color:#5e5e63; font-size:11px; line-height:1.35; }
-  .power-track { position:relative; width:42px; height:24px; flex:0 0 auto; border-radius:999px; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.08); transition:background .2s,border-color .2s; }
-  .power-thumb { position:absolute; width:16px; height:16px; left:3px; top:3px; border-radius:50%; background:#5a5a5e; transition:transform .2s,background .2s; }
-  .peer:checked + .power-track { background:rgba(212,180,131,.2); border-color:rgba(212,180,131,.4); }
-  .peer:checked + .power-track .power-thumb { transform:translateX(18px); background:#d4b483; }
+  :global(.settings-switch-track) { position:relative; width:42px; height:24px; flex:0 0 auto; border-radius:999px; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.08); transition:background .2s,border-color .2s; }
+  :global(.settings-switch-thumb) { position:absolute; width:16px; height:16px; left:3px; top:3px; border-radius:50%; background:#5a5a5e; transition:transform .2s,background .2s; }
+  :global(.settings-switch-input:checked + .settings-switch-track) { background:rgba(212,180,131,.2); border-color:rgba(212,180,131,.4); }
+  :global(.settings-switch-input:checked + .settings-switch-track .settings-switch-thumb) { transform:translateX(18px); background:#d4b483; }
+  :global(.settings-switch-input:focus-visible + .settings-switch-track) { outline:2px solid #d4b483; outline-offset:3px; }
   .save-spinner { width:12px; height:12px; border:2px solid rgba(255,255,255,.12); border-top-color:rgba(255,255,255,.6); border-radius:50%; animation:spin .6s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
   :global(.settings-card) { padding:0; background:transparent; border:0; border-radius:0; }
