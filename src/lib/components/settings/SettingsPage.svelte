@@ -219,6 +219,8 @@
   .mobile-header { flex:0 0 auto; display:grid; grid-template-columns:40px minmax(0,1fr) auto; align-items:center; gap:8px; border-bottom:1px solid rgba(255,255,255,.05); }
   .mobile-header h1 { min-width:0; color:#e7e2da; font-size:17px; font-weight:650; letter-spacing:-.01em; overflow-wrap:anywhere; }
   .mobile-overview { flex:1; display:flex; flex-direction:column; overflow-y:auto; padding:var(--page-content-top) var(--page-gutter) calc(28px + env(safe-area-inset-bottom)); }
+  .mobile-overview,.settings-content { -ms-overflow-style:none; scrollbar-width:none; }
+  .mobile-overview::-webkit-scrollbar,.settings-content::-webkit-scrollbar { display:none; }
   .mobile-overview--hidden,.settings-content--mobile-hidden { display:none; }
   .mobile-category-list { flex:0 0 auto; overflow:hidden; border-radius:15px; background:rgba(255,255,255,.025); }
   .mobile-category-row { width:100%; min-height:64px; display:flex; align-items:center; gap:13px; padding:10px 14px; color:#c9c7ca; text-align:left; cursor:pointer; transition:background 140ms ease; }
