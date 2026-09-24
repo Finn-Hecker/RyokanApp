@@ -1,0 +1,83 @@
+name: Signed Windows release
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Stable release or isolated updater test pair
+        type: choice
+        options: [test, stable]
+        default: test
+        required: true
+
+permissions:
+  contents: write
+concurrency:
+  group: windows-release-${{ inputs.channel }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    environment: ${{ inputs.channel == 'stable' && 'release' || 'updater-test' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJSON(inputs.channel == 'test' && '["0.5.1", "0.5.2"]' || '["production"]') }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - name: Frontend checks
+        run: |
+          npx paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:updater
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Prepare signed configuration
+        id: config
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          TEST_VERSION: ${{ matrix.version }}
+          TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if (!$env:TAURI_SIGNING_PRIVATE_KEY) { throw 'Missing signing private key' }
+          node scripts/updater-config.mjs $env:CHANNEL $env:TEST_VERSION 0.5.2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Refuse to replace a published release
+        env:
+          RELEASE_TAG: ${{ steps.config.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          try {
+            $release = Invoke-RestMethod "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' }
+            if (!$release.draft) { throw 'This release is already published. Use a new version instead of replacing signed assets.' }
+          } catch {
+            if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw }
+          }
+      - name: Build signed installer and draft release
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          args: --target x86_64-pc-windows-msvc --config src-tauri/updater.generated.json -- --locked
+          tagName: ${{ steps.config.outputs.tag }}
+          releaseCommitish: ${{ github.sha }}
+          releaseName: Ryokan ${{ steps.config.outputs.tag }}
+          releaseBody: Signed Windows installer. See docs/updater.md for release validation before publishing.
+          releaseDraft: true
+          prerelease: ${{ inputs.channel == 'test' }}
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+          uploadUpdaterSignatures: true
