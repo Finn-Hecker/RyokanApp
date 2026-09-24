@@ -130,6 +130,9 @@ Ryokan currently runs natively on:
 
 Prebuilt versions are available from the [Releases page](https://github.com/Finn-Hecker/RyokanApp/releases).
 
+Windows update signing, GitHub release setup, Android limitations, and the isolated
+end-to-end updater test are documented in [docs/updater.md](docs/updater.md).
+
 Multiplayer guests can join supported sessions directly through their browser.
 
 ---

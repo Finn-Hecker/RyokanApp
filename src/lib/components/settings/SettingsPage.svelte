@@ -9,6 +9,7 @@
   import * as m from "$lib/paraglide/messages";
   import ApiSection from "./ApiSection.svelte";
   import GeneralSection from "./GeneralSection.svelte";
+  import UpdateSection from './UpdateSection.svelte';
   import { downloadDiagnostics } from '$lib/utils/diagnostics';
   import { diagnosticsMetadata } from '$lib/utils/diagnosticsMetadata';
   import Button from "$lib/components/ui/Button.svelte";
@@ -207,6 +208,7 @@
       <div class="content-panel" hidden={activeSection !== "provider" && activeSection !== "memory"}><ApiSection powerUser={powerUser} active={activeSection === "provider"} section={activeSection === "memory" ? "memory" : "provider"} {settingsReady} onConnectionChange={handleConnectionChange} /></div>
       <div class="content-panel" hidden={activeSection === "provider" || activeSection === "memory"}>
         {#if activeSection === "advanced"}
+          <UpdateSection />
           <div class="advanced-mode">{@render powerToggle()}</div>
           <div class="advanced-mode">
             <p class="power-label">{m.settings_diagnostics_title()}</p>

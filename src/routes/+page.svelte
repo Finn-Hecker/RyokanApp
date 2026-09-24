@@ -16,6 +16,8 @@
   import { invoke } from '@tauri-apps/api/core';
   import { loadWorldInfos } from '$lib/stores/worldInfoStore.svelte';
   import { hydrateApiConnections } from '$lib/utils/apiConnections';
+  import { updater } from '$lib/stores/updater';
+  import * as m from '$lib/paraglide/messages';
 
   let loaded = $state(false); 
 
@@ -47,6 +49,7 @@
 
     appState.isOnboarding = map['onboarding_completed'] !== 'true';
     loaded = true;
+    void updater.initialize();
 
   }
 </script>
@@ -57,6 +60,9 @@
   <Onboarding />
 {:else}
   <main class="h-screen w-screen flex flex-col bg-ryokan-bg text-gray-200 overflow-hidden relative">
+    {#if appState.currentView === 'lobby' && ['available', 'ready'].includes($updater.phase)}
+      <p class="px-4 py-2 text-xs text-center text-ryokan-accent" role="status">{m.update_banner({ version: $updater.version })}</p>
+    {/if}
     <div class="flex-1 overflow-hidden relative z-0">
       {#if appState.currentView === 'lobby'}
         <CharacterLobby />

@@ -6,6 +6,11 @@ mod tokenizer;
 mod diagnostics;
 
 #[tauri::command]
+fn supports_updates() -> bool {
+    cfg!(windows)
+}
+
+#[tauri::command]
 fn get_interaction_mode() -> &'static str {
     if cfg!(any(target_os = "android", target_os = "ios")) {
         "mobile"
@@ -19,6 +24,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            #[cfg(windows)]
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
             diagnostics::init(app.handle());
             if let Err(error) = database::init_db(app.handle()) {
                 diagnostics::record(diagnostics::Event::DatabaseFailed);
@@ -29,6 +36,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_interaction_mode,
+            supports_updates,
             diagnostics::record_frontend_event,
             diagnostics::record_diagnostic_decision,
             diagnostics::export_diagnostics,
