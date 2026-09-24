@@ -476,7 +476,10 @@
 
   async function addFolder() {
     const name = newFolderName.trim();
-    if (!name) { isCreatingFolder = false; return; }
+    if (!name) {
+      if (interactionMode === 'desktop') isCreatingFolder = false;
+      return;
+    }
     try {
       await createChatFolder(name, mode);
       newFolderName = '';
@@ -1076,13 +1079,22 @@
   >
     <div class="section-heading">
       <span>{m.sidebar_folders()}</span>
-      <button type="button" onclick={() => isCreatingFolder = true} class="add-folder-button" aria-label={m.sidebar_new_folder()}>＋</button>
+      <button
+        type="button"
+        onclick={() => interactionMode === 'mobile' && isCreatingFolder ? addFolder() : isCreatingFolder = true}
+        disabled={interactionMode === 'mobile' && isCreatingFolder && !newFolderName.trim()}
+        class="add-folder-button"
+        aria-label={interactionMode === 'mobile' && isCreatingFolder ? m.create_char_btn_save() : m.sidebar_new_folder()}
+      >{interactionMode === 'mobile' && isCreatingFolder ? '✓' : '＋'}</button>
     </div>
 
     {#if isCreatingFolder}
       <div transition:slide={{ duration: 180, easing: cubicOut }}>
-        <input use:focusInput bind:value={newFolderName} onblur={addFolder} onkeydown={(event) => {
-          if (event.key === 'Enter') addFolder();
+        <input use:focusInput bind:value={newFolderName} enterkeyhint={interactionMode === 'mobile' ? 'done' : undefined} onblur={() => interactionMode === 'desktop' && addFolder()} onkeydown={(event) => {
+          if (event.key === 'Enter') {
+            if (interactionMode === 'mobile') event.preventDefault();
+            addFolder();
+          }
           if (event.key === 'Escape') { newFolderName = ''; isCreatingFolder = false; }
         }} placeholder={m.sidebar_folder_name()} class="w-full rounded-lg border border-ryokan-accent/40 bg-white/10 px-3 py-2 text-sm text-gray-100 outline-none" />
       </div>
@@ -1394,6 +1406,7 @@
   .section-heading--chats { margin-top:8px; }
   .add-folder-button,.sidebar-close-button { width:36px; height:36px; display:grid; place-items:center; border-radius:9px; color:#6d6d72; cursor:pointer; transition:color .15s,background .15s,transform .1s; }
   .add-folder-button { margin-right:-6px; font-size:18px; font-weight:350; }
+  .add-folder-button:disabled { opacity:.4; cursor:default; }
   .add-folder-button:hover,.sidebar-close-button:hover { color:#d4b483; background:rgba(255,255,255,.04); }
   .add-folder-button:active,.sidebar-close-button:active { transform:scale(.96); background:rgba(255,255,255,.07); }
   .sidebar-footer { padding:8px 10px; }
