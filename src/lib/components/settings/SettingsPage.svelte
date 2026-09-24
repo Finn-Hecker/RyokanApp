@@ -119,8 +119,8 @@
 
   function goBack() { returnTo('lobby'); }
 
-  async function openDiscord() {
-    try { await openUrl('https://discord.gg/shrZCsfGWK'); }
+  async function openExternalLink(url: string) {
+    try { await openUrl(url); }
     catch (error) { reportDiagnostic('settings'); }
   }
 
@@ -137,12 +137,17 @@
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round" /></svg>
 {/snippet}
 
-{#snippet discordButton()}
-  <button type="button" class="discord-link" aria-label="Discord" title="Discord" onclick={openDiscord}>
-    <span class="discord-icon"><svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.545 2.907a13.2 13.2 0 0 0-3.257-1.011.05.05 0 0 0-.052.025c-.141.25-.297.577-.406.833a12.2 12.2 0 0 0-3.658 0 8 8 0 0 0-.412-.833.05.05 0 0 0-.052-.025c-1.125.194-2.22.534-3.257 1.011a.04.04 0 0 0-.021.018C.356 6.024-.213 9.047.066 12.032q.003.022.021.037a13.3 13.3 0 0 0 3.995 2.02.05.05 0 0 0 .056-.019q.463-.63.818-1.329a.05.05 0 0 0-.01-.059l-.018-.011a9 9 0 0 1-1.248-.595.05.05 0 0 1-.02-.066l.015-.019q.127-.095.248-.195a.05.05 0 0 1 .051-.007c2.619 1.196 5.454 1.196 8.041 0a.05.05 0 0 1 .053.007q.121.1.248.195a.05.05 0 0 1-.004.085 8 8 0 0 1-1.249.594.05.05 0 0 0-.03.03.05.05 0 0 0 .003.041c.24.465.515.909.817 1.329a.05.05 0 0 0 .056.019 13.2 13.2 0 0 0 4.001-2.02.05.05 0 0 0 .021-.037c.334-3.451-.559-6.449-2.366-9.106a.03.03 0 0 0-.02-.019m-8.198 7.307c-.789 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.45.73 1.438 1.613 0 .888-.637 1.612-1.438 1.612m5.316 0c-.788 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.451.73 1.438 1.613 0 .888-.631 1.612-1.438 1.612"/></svg></span>
-    <span class="discord-label">Discord</span>
-    <svg class="discord-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8" stroke-linecap="round" stroke-linejoin="round" /></svg>
-  </button>
+{#snippet communityLinks()}
+  <div class="community-card" role="group" aria-label="Ryokan community links">
+    <button type="button" class="discord-link" aria-label="Open Ryokan Discord" title="Discord" onclick={() => openExternalLink('https://discord.gg/shrZCsfGWK')}>
+      <span class="discord-icon"><svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.545 2.907a13.2 13.2 0 0 0-3.257-1.011.05.05 0 0 0-.052.025c-.141.25-.297.577-.406.833a12.2 12.2 0 0 0-3.658 0 8 8 0 0 0-.412-.833.05.05 0 0 0-.052-.025c-1.125.194-2.22.534-3.257 1.011a.04.04 0 0 0-.021.018C.356 6.024-.213 9.047.066 12.032q.003.022.021.037a13.3 13.3 0 0 0 3.995 2.02.05.05 0 0 0 .056-.019q.463-.63.818-1.329a.05.05 0 0 0-.01-.059l-.018-.011a9 9 0 0 1-1.248-.595.05.05 0 0 1-.02-.066l.015-.019q.127-.095.248-.195a.05.05 0 0 1 .051-.007c2.619 1.196 5.454 1.196 8.041 0a.05.05 0 0 1 .053.007q.121.1.248.195a.05.05 0 0 1-.004.085 8 8 0 0 1-1.249.594.05.05 0 0 0-.03.03.05.05 0 0 0 .003.041c.24.465.515.909.817 1.329a.05.05 0 0 0 .056.019 13.2 13.2 0 0 0 4.001-2.02.05.05 0 0 0 .021-.037c.334-3.451-.559-6.449-2.366-9.106a.03.03 0 0 0-.02-.019m-8.198 7.307c-.789 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.45.73 1.438 1.613 0 .888-.637 1.612-1.438 1.612m5.316 0c-.788 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.451.73 1.438 1.613 0 .888-.631 1.612-1.438 1.612"/></svg></span>
+      <span class="discord-label">Discord</span>
+    </button>
+    <button type="button" class="github-link" aria-label="Open Ryokan on GitHub" title="GitHub" onclick={() => openExternalLink('https://github.com/Finn-Hecker/RyokanApp')}>
+      <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.64 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.51-2.01.38-2.53-.5-2.69-.96-.09-.23-.48-.96-.82-1.15-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.83.72 1.23 1.87.88 2.33.67.07-.53.28-.88.51-1.08-1.78-.21-3.64-.91-3.64-4.02 0-.89.31-1.62.82-2.19-.08-.2-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.5 7.5 0 0 1 8 3.9c.68 0 1.36.09 2 .28 1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.96.08 2.16.51.57.82 1.3.82 2.19 0 3.12-1.87 3.81-3.65 4.02.29.25.54.74.54 1.5 0 1.08-.01 1.95-.01 2.22 0 .22.15.47.55.39A8.14 8.14 0 0 0 16 8.13C16 3.64 12.42 0 8 0"/></svg>
+      <span class="github-label">GitHub</span>
+    </button>
+  </div>
 {/snippet}
 
 {#snippet categoryIcon(item: Category)}
@@ -176,7 +181,7 @@
         </button>
       {/each}
     </nav>
-    <div class="sidebar-footer">{@render discordButton()}</div>
+    <div class="sidebar-footer">{@render communityLinks()}</div>
   </aside>
 
   <main class="settings-main">
@@ -201,7 +206,7 @@
           </button>
         {/each}
       </nav>
-      <div class="mobile-footer">{@render discordButton()}</div>
+      <div class="mobile-footer">{@render communityLinks()}</div>
     </div>
 
     <div bind:this={settingsContentEl} class="settings-content" class:settings-content--mobile-hidden={!mobileCategoryOpen}>
@@ -245,14 +250,20 @@
   .mobile-category-description { font-size:11px; line-height:1.35; color:#65656a; }
   .mobile-chevron { flex:0 0 auto; color:#444448; }
   .mobile-footer { flex:0 0 auto; margin-top:auto; padding-top:20px; }
-  .discord-link { width:100%; min-height:52px; display:flex; align-items:center; gap:11px; padding:8px 12px; border:1px solid rgba(255,255,255,.055); border-radius:12px; background:rgba(255,255,255,.025); color:#aaa8ac; text-align:left; font-size:13px; font-weight:600; cursor:pointer; transition:color .15s,background .15s,border-color .15s,transform .15s; }
-  .discord-link:hover { color:#e0dce5; background:rgba(255,255,255,.05); border-color:rgba(145,152,229,.22); }
-  .discord-link:active { background:rgba(145,152,229,.1); transform:scale(.985); }
-  .discord-link:focus-visible { outline:2px solid #d4b483; outline-offset:2px; }
-  .discord-icon { width:32px; height:32px; flex:0 0 auto; display:grid; place-items:center; border-radius:9px; color:#a7adeb; background:rgba(145,152,229,.12); }
-  .discord-label { flex:1; }
-  .discord-arrow { flex:0 0 auto; color:#67666e; transition:color .15s,transform .15s; }
-  .discord-link:hover .discord-arrow { color:#a7adeb; transform:translate(2px,-2px); }
+  .community-card { width:100%; min-height:52px; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); overflow:hidden; border:1px solid rgba(255,255,255,.055); border-radius:12px; background:rgba(255,255,255,.025); transition:border-color .15s; }
+  .community-card:hover { border-color:rgba(145,152,229,.18); }
+  .discord-link,.github-link { width:100%; min-width:0; min-height:50px; display:flex; align-items:center; justify-content:center; gap:7px; padding:8px; font-size:12px; font-weight:600; white-space:nowrap; cursor:pointer; transition:color .15s,background .15s; }
+  .discord-link { color:#aaa8ac; }
+  .discord-link:hover { color:#e0dce5; background:rgba(255,255,255,.025); }
+  .discord-link:active { background:rgba(145,152,229,.1); }
+  .discord-icon { width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; border-radius:7px; color:#a7adeb; background:rgba(145,152,229,.12); }
+  .discord-icon svg { width:16px; height:16px; }
+  .discord-label,.github-label { flex:0 0 auto; overflow:visible; text-overflow:clip; }
+  .github-link { border-left:1px solid rgba(255,255,255,.065); color:#8d8b8f; }
+  .github-link svg { width:17px; height:17px; flex:0 0 auto; }
+  .github-link:hover { color:#d8d5d1; background:rgba(255,255,255,.04); }
+  .github-link:active { background:rgba(212,180,131,.08); }
+  .discord-link:focus-visible,.github-link:focus-visible { position:relative; z-index:1; outline:2px solid #d4b483; outline-offset:-2px; }
   .settings-content { flex:1; overflow-y:auto; overflow-x:hidden; padding:var(--page-content-top) var(--page-gutter) calc(36px + env(safe-area-inset-bottom)); }
   .content-panel { width:100%; max-width:660px; margin:0 auto; }
   .content-panel[hidden] { display:none; }

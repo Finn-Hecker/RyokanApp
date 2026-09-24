@@ -9,6 +9,7 @@
       "identifier": "opener:allow-open-url",
       "allow": [
         { "url": "https://discord.gg/shrZCsfGWK" },
+        { "url": "https://github.com/Finn-Hecker/RyokanApp" },
         { "url": "https://github.com/Finn-Hecker/RyokanApp/releases/latest" }
       ]
     },
