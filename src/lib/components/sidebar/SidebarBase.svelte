@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { flip } from 'svelte/animate';
   import type { AnimationConfig } from 'svelte/animate';
   import { cubicOut } from 'svelte/easing';
@@ -165,7 +166,7 @@
           .map(folder => [folder.id, chatsInFolder(folder.id).length < folder.chat_count]),
       );
     } catch (error) {
-      console.error("[Sidebar] Error loading chats:", error);
+      reportDiagnostic('sidebar');
     } finally {
       isLoading = false;
       setTimeout(setupObserver, 0);
@@ -181,7 +182,7 @@
       try {
         hasMore = await loadMoreConversations(mode);
       } catch (error) {
-        console.error("[Sidebar] Error loading more chats:", error);
+        reportDiagnostic('sidebar');
       } finally {
         isLoading = false;
       }
@@ -213,7 +214,7 @@
       const moreAvailable = await loadMoreFolderConversations(folderId);
       folderHasMore = { ...folderHasMore, [folderId]: moreAvailable };
     } catch (error) {
-      console.error('[Sidebar] Error loading more folder chats:', error);
+      reportDiagnostic('sidebar');
     } finally {
       folderLoading = { ...folderLoading, [folderId]: false };
     }
@@ -480,7 +481,7 @@
       await createChatFolder(name, mode);
       newFolderName = '';
       isCreatingFolder = false;
-    } catch (error) { console.error('[Sidebar] Could not create folder:', error); }
+    } catch (error) { reportDiagnostic('sidebar'); }
   }
 
   async function finishFolderRename() {
@@ -489,7 +490,7 @@
     folderToRename = null;
     if (!id || !name) return;
     try { await renameChatFolder(id, name); }
-    catch (error) { console.error('[Sidebar] Could not rename folder:', error); }
+    catch (error) { reportDiagnostic('sidebar'); }
   }
 
   function startFolderRename(id: string, currentName: string, event: Event) {
@@ -503,7 +504,7 @@
     event.stopPropagation();
     closeContextMenu();
     try { await deleteChatFolder(id); }
-    catch (error) { console.error('[Sidebar] Could not delete folder:', error); }
+    catch (error) { reportDiagnostic('sidebar'); }
   }
 
   async function toggleFolderCollapse(id: string, isCollapsed: boolean) {
@@ -521,7 +522,7 @@
           [id]: chatsInFolder(id).length < folder.chat_count,
         };
       }
-      console.error('[Sidebar] Could not update folder state:', error);
+      reportDiagnostic('sidebar');
     }
     finally { folderLoading = { ...folderLoading, [id]: false }; }
   }
@@ -879,7 +880,7 @@
     commitChatPreview();
     try { await persistSidebarOrganization(mode); }
     catch (error) {
-      console.error('[Sidebar] Could not save organization:', error);
+      reportDiagnostic('sidebar');
       await loadAllConversations(mode);
     } finally {
       clearDragState();

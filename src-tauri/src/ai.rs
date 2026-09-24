@@ -168,18 +168,18 @@ fn load_additional_api_parameters(window: &Window) -> serde_json::Map<String, se
     ) {
         Ok(value) => value,
         Err(rusqlite::Error::QueryReturnedNoRows) => return serde_json::Map::new(),
-        Err(error) => {
-            eprintln!("Failed to load additional API parameters: {error}");
+        Err(_) => {
+            crate::diagnostics::record(crate::diagnostics::Event::ParametersLoadFailed);
             return serde_json::Map::new();
         }
     };
 
     match parse_additional_api_parameters(&raw) {
         Ok(parameters) => parameters,
-        Err(error) => {
+        Err(_) => {
             // The settings UI prevents this state; this is a final safety net for
             // externally modified or legacy databases. Invalid values are omitted.
-            eprintln!("Ignoring additional API parameters: {error}");
+            crate::diagnostics::record(crate::diagnostics::Event::ParametersInvalid);
             serde_json::Map::new()
         }
     }
@@ -984,6 +984,7 @@ fn flush_batches(
 /// including during the initial connect, not just once streaming has started.
 #[tauri::command]
 pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<Option<TokenUsage>, String> {
+    crate::diagnostics::record(crate::diagnostics::Event::GenerationStarted);
     // Replace the active token so stop_generation() targets this request.
     let token = CancellationToken::new();
     let request_id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
@@ -1092,11 +1093,15 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<Option<To
     // first byte arrives, since previously only the streaming loop below watched the
     // token. A server that's slow/unreachable would hang here with no way to abort.
     let res = tokio::select! {
-        result = req.send() => result.map_err(|e| transport_error(&e, &payload.model))?,
+        result = req.send() => result.map_err(|e| {
+            crate::diagnostics::record(crate::diagnostics::Event::TransportFailed);
+            transport_error(&e, &payload.model)
+        })?,
         _ = token.cancelled() => return Ok(None),
     };
 
     if !res.status().is_success() {
+        crate::diagnostics::record(crate::diagnostics::Event::ProviderFailed);
         let status = res.status().as_u16();
         let response_body = res.text().await.unwrap_or_default();
         return Err(api_error_from_body(
@@ -1141,6 +1146,7 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<Option<To
                         }
                         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&event.data) {
                             if value.get("error").is_some() {
+                                crate::diagnostics::record(crate::diagnostics::Event::ProviderFailed);
                                 return Err(api_error_from_body(0, &event.data, &payload.api_key, &payload.model, &payload.messages));
                             }
                             if let Some(usage) = stream_token_usage(&value, payload.provider_kind.as_deref()) {
@@ -1158,13 +1164,13 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<Option<To
                                     }
                                 }
                             }
-                            Err(e) => {
-                                eprintln!("Failed to parse SSE chunk: {} (raw: {})", e, event.data);
+                            Err(_) => {
+                                crate::diagnostics::record(crate::diagnostics::Event::StreamInvalid);
                             }
                         }
                     }
-                    Err(e) => {
-                        eprintln!("SSE Error: {}", e);
+                    Err(_) => {
+                        crate::diagnostics::record(crate::diagnostics::Event::StreamFailed);
                     }
                 }
             }

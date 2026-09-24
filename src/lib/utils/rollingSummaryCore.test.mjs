@@ -139,7 +139,7 @@ const config = (
 });
 
 test('4096-token budgets respect disabled and enabled forwarding switches', () => {
-  const disabled = deriveEffectiveTokenBudget(config(false, false));
+  const { calculation: disabledCalculation, ...disabled } = deriveEffectiveTokenBudget(config(false, false));
   assert.deepEqual(disabled, {
     payloadMaxTokens: 300,
     payloadThinkingBudget: 0,
@@ -147,8 +147,11 @@ test('4096-token budgets respect disabled and enabled forwarding switches', () =
     hasKnownTotalLimit: false,
   });
   assert.equal(4096 - disabled.reserveTokens - TOKEN_ESTIMATION_MARGIN, 2944);
+  assert.equal(disabledCalculation.total_limit, null);
+  assert.equal(disabledCalculation.reasoning_enabled, true);
 
-  const outputOnly = deriveEffectiveTokenBudget(config(true, false));
+  const { calculation: outputOnlyCalculation, ...outputOnly } = deriveEffectiveTokenBudget(config(true, false));
+  assert.equal(outputOnlyCalculation.total_limit, 300);
   assert.deepEqual(outputOnly, {
     payloadMaxTokens: 300,
     payloadThinkingBudget: 0,
@@ -156,7 +159,8 @@ test('4096-token budgets respect disabled and enabled forwarding switches', () =
     hasKnownTotalLimit: true,
   });
 
-  const thinkingOnly = deriveEffectiveTokenBudget(config(false, true));
+  const { calculation: thinkingOnlyCalculation, ...thinkingOnly } = deriveEffectiveTokenBudget(config(false, true));
+  assert.equal(thinkingOnlyCalculation.reasoning_limit, 2500);
   assert.deepEqual(thinkingOnly, {
     payloadMaxTokens: 2800,
     payloadThinkingBudget: 2500,
@@ -164,7 +168,8 @@ test('4096-token budgets respect disabled and enabled forwarding switches', () =
     hasKnownTotalLimit: false,
   });
 
-  const both = deriveEffectiveTokenBudget(config(true, true));
+  const { calculation: bothCalculation, ...both } = deriveEffectiveTokenBudget(config(true, true));
+  assert.equal(bothCalculation.total_limit, 2800);
   assert.deepEqual(both, {
     payloadMaxTokens: 2800,
     payloadThinkingBudget: 2500,
@@ -195,6 +200,7 @@ test('invalid custom output limits are never coerced to numbers', () => {
       );
       assert.equal(budget.reserveTokens, 1024);
       assert.equal(budget.hasKnownTotalLimit, false);
+      assert.equal(budget.calculation.invalid_total_limit, true);
     }
   }
 });

@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { traceDecision, diagnosticConnection, type DiagnosticDecision } from '$lib/utils/diagnosticDecisions';
 import { appState, createDefaultConnection, replaceApiConnections, type ApiConnection, type DetectedContextMetadata, type ProviderKind } from '$lib/stores/appState.svelte';
 import type { SettingRow } from '$lib/utils/settings';
 import { acceptDetectedContext, connectionIdentity, resolveMemorySettings, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION, validContextSize } from '$lib/utils/connectionCore';
@@ -11,6 +12,11 @@ export const SUMMARY_CONNECTION_KEY = 'summary_api_connection_id';
 // Share automatic lookups between Memory settings, chat, and summary snapshots.
 // Retry failures too; persisted runtime metadata is revalidated after restart.
 const detectionRequests = new Map<string, { expires: number; result: Promise<DetectedContextMetadata> }>();
+function traceDetection(connection: ApiConnection, outcome: Extract<DiagnosticDecision, { kind: 'detection' }>['outcome'], cached = false): void {
+  traceDecision({ kind: 'detection', connection: diagnosticConnection(connection), provider: connection.providerKind, outcome, cached,
+    detected_tokens: connection.detectedContext?.tokens ?? null, manual_cap: connection.manualContextCap,
+    hard_limit: resolvedHardContextLimit(connection), provenance: connection.detectedContext?.provenance ?? 'unknown' });
+}
 function normalizeConnection(value: Partial<ApiConnection>): ApiConnection {
   const fallback = createDefaultConnection(value.id || crypto.randomUUID(), value.name || 'Connection');
   const connection = { ...fallback, ...value, parameterEnabled: { ...fallback.parameterEnabled, ...value.parameterEnabled } };
@@ -45,6 +51,7 @@ export function invalidateDetectedContext(connection: ApiConnection): void {
   connection.detectedContext = null;
   connection.contextDetectionError = null;
   connection.contextLimit = resolvedHardContextLimit(connection);
+  traceDetection(connection, 'invalidated');
 }
 
 export async function refreshContextDetection(connection: ApiConnection, force = true): Promise<DetectedContextMetadata | null> {
@@ -52,6 +59,7 @@ export async function refreshContextDetection(connection: ApiConnection, force =
   const apiKey = connection.apiKey;
   const key = JSON.stringify([identity, apiKey]);
   let request = detectionRequests.get(key);
+  const cached = !force && Boolean(request && request.expires > Date.now());
   const isCurrent = () => identity === connectionIdentity(connection.providerKind, connection.url, connection.model)
     && apiKey === connection.apiKey;
   const publish = () => {
@@ -72,7 +80,7 @@ export async function refreshContextDetection(connection: ApiConnection, force =
       detectionRequests.set(key, request);
     }
     const result = await request.result;
-    if (!isCurrent()) return null;
+    if (!isCurrent()) { traceDetection(connection, 'stale', cached); return null; }
     if (detectionRequests.get(key) !== request) return refreshContextDetection(connection, false);
     const accepted = acceptDetectedContext(connection.detectedContext, result);
     if (accepted !== result) throw new Error('Provider returned an invalid context size.');
@@ -80,6 +88,7 @@ export async function refreshContextDetection(connection: ApiConnection, force =
     connection.contextDetectionError = null;
     connection.contextLimit = resolvedHardContextLimit(connection);
     publish();
+    traceDetection(connection, 'applied', cached);
     return result;
   } catch (error) {
     if (isCurrent()) {
@@ -87,6 +96,7 @@ export async function refreshContextDetection(connection: ApiConnection, force =
       connection.contextDetectionError = error instanceof Error ? error.message : String(error);
       connection.contextLimit = resolvedHardContextLimit(connection);
       publish();
+      traceDetection(connection, 'failed', cached);
     }
     return null;
   }
@@ -94,6 +104,7 @@ export async function refreshContextDetection(connection: ApiConnection, force =
 
 export async function ensureContextDetection(connection: ApiConnection): Promise<void> {
   if (connection.model) await refreshContextDetection(connection, false);
+  else traceDetection(connection, 'no_model');
   connection.contextLimit = resolvedHardContextLimit(connection);
 }
 

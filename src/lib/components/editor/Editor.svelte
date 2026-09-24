@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
   import { appState } from '$lib/stores/appState.svelte';
@@ -263,7 +264,7 @@
         has_avatar: !!role.avatar,
       }));
     } catch (err) {
-      console.warn('Import failed:', err);
+      reportDiagnostic('editor', true);
     }
   }
 
@@ -364,7 +365,7 @@
       await exportCharacterCard(editChar.id, charName);
       showToast('success');
     } catch (e) {
-      console.error('Export failed:', e);
+      reportDiagnostic('editor');
       showToast('error');
     } finally {
       isExporting = false;

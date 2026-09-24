@@ -1,3 +1,4 @@
+import { reportDiagnostic } from '$lib/utils/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
 import { CHARACTERS as STATIC_CHARACTERS } from '$lib/data/characters';
 
@@ -66,7 +67,7 @@ export async function loadHiddenIds() {
         const ids = await invoke<string[]>('get_hidden_character_ids');
         characterState.hiddenCharacterIds = new Set(ids.map(String));
     } catch (e) {
-        console.error('Error loading hidden character ids:', e);
+        reportDiagnostic('character');
     }
 }
 
@@ -75,7 +76,7 @@ export async function loadPinnedIds() {
         const ids = await invoke<string[]>('get_pinned_character_ids');
         characterState.pinnedCharacterIds = new Set(ids.map(String));
     } catch (e) {
-        console.error('Error loading pinned character ids:', e);
+        reportDiagnostic('character');
     }
 }
 
@@ -105,7 +106,7 @@ export async function loadCharacters() {
         // eagerly for every character here would defeat that.
 
     } catch (e) {
-        console.error("Error loading characters:", e);
+        reportDiagnostic('character');
     }
 }
 
@@ -129,7 +130,7 @@ export async function loadCharacterAvatar(id: string): Promise<void> {
             String(c.id) === id ? { ...c, avatarUrl } : c
         );
     } catch (e) {
-        console.error('Error loading character avatar:', id, e);
+        reportDiagnostic('character');
     } finally {
         avatarFetchesInFlight.delete(id);
     }
@@ -186,7 +187,7 @@ export async function createCharacter(charData: CharacterInput) {
         return realId;
 
     } catch (e) {
-        console.error("Error creating character:", e);
+        reportDiagnostic('character');
         characterState.allCharacters = characterState.allCharacters.filter(c => c.id !== tempId);
         throw e;
     }
@@ -221,7 +222,7 @@ export async function updateCharacter(id: string, charData: CharacterInput) {
         return id;
 
     } catch (e) {
-        console.error("Error updating character:", e);
+        reportDiagnostic('character');
         throw e;
     }
 }
@@ -311,7 +312,7 @@ export async function deleteCharacter(id: string) {
         characterState.pinnedCharacterIds = newPinned;
         
     } catch (e) {
-        console.error("Error deleting character:", e);
+        reportDiagnostic('character');
         throw e;
     }
 }
@@ -327,7 +328,7 @@ export async function toggleHideCharacter(id: string | number): Promise<boolean>
         isNowHidden ? newSet.add(normalizedId) : newSet.delete(normalizedId);
         characterState.hiddenCharacterIds = newSet;
     } catch (e) {
-        console.error('Error toggling hidden state:', e);
+        reportDiagnostic('character');
         throw e;
     }
 
@@ -345,7 +346,7 @@ export async function togglePinCharacter(id: string | number): Promise<boolean> 
         isNowPinned ? newSet.add(normalizedId) : newSet.delete(normalizedId);
         characterState.pinnedCharacterIds = newSet;
     } catch (e) {
-        console.error('Error toggling pinned state:', e);
+        reportDiagnostic('character');
         throw e;
     }
 

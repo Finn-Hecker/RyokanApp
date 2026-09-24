@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { traceDecision, diagnosticOperation, diagnosticConnection } from '$lib/utils/diagnosticDecisions';
 import { worldInfoState } from '$lib/stores/worldInfoStore.svelte';
 import { chatState } from '$lib/stores/chatStore.svelte';
 import { buildPromptMessages } from '$lib/utils/chatPromptBuilder';
@@ -20,6 +21,10 @@ export interface GenerationCallbacks {
 }
 
 export interface GenerationOptions {
+    /** Ephemeral diagnostic correlation/counts only; never part of provider requests. */
+    diagnosticOperation?: number;
+    diagnosticLocalInput?: number;
+    diagnosticReserve?: number;
     character: {
         name?: string;
         prompt?: string;
@@ -163,6 +168,12 @@ export async function runGeneration(
             },
         });
 
+        traceDecision({ kind: 'usage', operation: options.diagnosticOperation ?? diagnosticOperation(), request: diagnosticOperation(),
+            connection: diagnosticConnection(apiSettings), purpose: 'chat', local_input_tokens: options.diagnosticLocalInput ?? null,
+            input_tokens: usage?.inputTokens ?? null, cached_input_tokens: usage?.cachedInputTokens ?? null,
+            output_tokens: usage?.outputTokens ?? null, reasoning_tokens: usage?.reasoningTokens ?? null,
+            reserve_tokens: options.diagnosticReserve ?? effectiveBudget?.reserveTokens ?? null,
+        });
         const { text } = processThinkingOutput(rawBuffer, true);
         callbacks.onStreamUpdate(text);
         return { text, usage, promptSnapshot };

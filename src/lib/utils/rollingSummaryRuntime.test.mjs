@@ -37,6 +37,7 @@ async function loadProduction(specifier) {
   for (const match of [...source.matchAll(/from ['"]([^'"]+)['"]/g)]) {
     source = source.replace(match[0], `from '${await loadProduction(match[1])}'`);
   }
+  source = source.replace("import('@tauri-apps/api/event')", `import('${modules.get('@tauri-apps/api/event')}')`);
   const url = asModule(source);
   modules.set(specifier, url);
   return url;
@@ -69,8 +70,9 @@ function fixture({ chatLimit = 524288, summaryLimit = 131072, same = false, manu
   }));
   const calls = [];
   const detections = [];
+  const decisions = [];
   const count = text => Math.ceil(text.length / 4);
-  const f = { chat, summary, messages, calls, detections, beforeResponse: null, count,
+  const f = { chat, summary, messages, calls, detections, decisions, reportedUsage: null, beforeResponse: null, count,
     meta: () => meta,
     setMeta: value => { meta = value; },
     async run() {
@@ -81,6 +83,8 @@ function fixture({ chatLimit = 524288, summaryLimit = 131072, same = false, manu
     },
   };
   harness.invoke = async (command, args) => {
+    if (command === 'record_diagnostic_decision') { decisions.push(args.decision); return; }
+    if (command === 'record_frontend_event') return;
     if (command === 'count_tokens') return count(args.text);
     if (command === 'detect_context') {
       detections.push(args.model);
@@ -106,7 +110,7 @@ function fixture({ chatLimit = 524288, summaryLimit = 131072, same = false, manu
       calls.push({ ...p, input });
       await f.beforeResponse?.();
       listeners.get('ai-token')?.({ payload: { generationId: p.generation_id, token: 'Established facts.' } });
-      return null;
+      return f.reportedUsage;
     }
     throw new Error(`Unexpected command: ${command}`);
   };
@@ -310,4 +314,98 @@ test('a smaller detected summary window cancels active work before committing', 
   f.beforeResponse = () => { f.summary.detectedContext.tokens = 2048; };
   await assert.rejects(f.run(), runtime.SummaryCancelledError);
   assert.equal(f.meta().summary, null);
+});
+
+test('diagnostics explain no-trigger, chat pressure, summary pressure and memory disabled', async () => {
+  for (const [settings, trigger] of [
+    [{ lengths: [100, 100, 20] }, 'none'],
+    [{ chatLimit: 8192, summaryLimit: 131072, lengths: [16000, 16000, 20] }, 'chat'],
+    [{ chatLimit: 524288, summaryLimit: 8192, lengths: [16000, 16000, 20] }, 'summary'],
+  ]) {
+    const f = fixture(settings);
+    await f.run();
+    const decision = f.decisions.find(d => d.kind === 'budget' && d.stage === 'decision');
+    assert.equal(decision.trigger, trigger);
+    assert.equal(decision.measurement.total, decision.measurement.prompt_tokens + decision.measurement.reserve_tokens + decision.measurement.safety_tokens);
+    assert.equal(decision.working_target, resolvedWorkingContextTarget(f.chat));
+    assert.equal(decision.measurement.hard_limit, resolvedHardContextLimit(f.chat));
+    if (trigger === 'summary') {
+      const pressure = f.decisions.find(d => d.kind === 'summary_capacity' && d.stage === 'pressure');
+      assert.equal(pressure.fits, false);
+      assert.ok(pressure.input_tokens + pressure.output_reserve + pressure.safety_tokens > pressure.hard_limit);
+      assert.ok(f.decisions.some(d => d.state === 'committed'));
+    }
+  }
+  const f = fixture();
+  state.appState.longTermMemory = false;
+  await f.run();
+  assert.ok(f.decisions.some(d => d.kind === 'budget' && d.stage === 'memory_disabled' && d.trigger === 'disabled'));
+});
+
+test('diagnostics capture reserve overrides and context detection caps without private data', async () => {
+  const f = fixture({ manual: 8192, same: true });
+  f.chat.apiKey = 'SECRET_API_KEY';
+  f.chat.systemPrompt = 'SECRET_SYSTEM_PROMPT';
+  f.chat.additionalApiParameters = JSON.stringify({ max_completion_tokens: 2048, privateTag: 'SECRET_CUSTOM_CONTENT' });
+  await f.run();
+  const detection = f.decisions.find(d => d.kind === 'detection');
+  assert.equal(detection.manual_cap, 8192);
+  assert.equal(detection.hard_limit, 8192);
+  const budget = f.decisions.find(d => d.kind === 'budget');
+  assert.equal(budget.measurement.reserve_tokens, 2048);
+  assert.equal(budget.measurement.budget_details.total_limit, 2048);
+  const serialized = JSON.stringify(f.decisions);
+  for (const value of [f.chat.apiKey, f.chat.systemPrompt, 'SECRET_CUSTOM_CONTENT', f.chat.model, f.chat.url, f.chat.id, f.messages[0].id, f.messages[0].content]) {
+    assert.ok(!serialized.includes(value), `diagnostics must exclude private fixture data`);
+  }
+});
+
+test('diagnostics correlate API accounting and anchor reconciliation across generations', async () => {
+  const f = fixture({ chatLimit: 32768, same: true });
+  f.reportedUsage = { inputTokens: 1000, cachedInputTokens: 750, outputTokens: 100, reasoningTokens: 40 };
+  const { options, prepared } = await f.run();
+  Object.assign(options, prepared);
+  const result = await chatApi.runGeneration(options, { onStreamUpdate() {}, onThinkingPhaseChange() {} });
+  const usage = f.decisions.find(d => d.kind === 'usage' && d.purpose === 'chat');
+  assert.equal(usage.operation, options.diagnosticOperation);
+  assert.equal(usage.input_tokens, 1000);
+  assert.equal(usage.cached_input_tokens, 750);
+  assert.equal(usage.output_tokens, 100);
+  assert.equal(usage.reasoning_tokens, 40);
+  assert.ok(usage.local_input_tokens < usage.input_tokens);
+  const response = { id: 'private-response-id', role: 'assistant', content: result.text, swipe_index: 0, swipe_variants: [result.text], usage_variants: [f.reportedUsage] };
+  runtime.rememberGenerationAnchor(harness.chatState.activeChatId, result.promptSnapshot, response);
+  f.messages.push(response, { id: 'private-next-id', role: 'user', content: 'private follow-up', swipe_index: 0, swipe_variants: [], usage_variants: [] });
+  await f.run();
+  const decision = f.decisions.filter(d => d.kind === 'budget' && d.stage === 'decision').at(-1);
+  assert.equal(decision.measurement.anchor, 'reused');
+  assert.ok(decision.measurement.prompt_tokens > decision.measurement.local_tokens);
+  assert.notEqual(decision.operation, usage.operation);
+  const original = f.decisions.find(d => d.kind === 'budget');
+  assert.equal(decision.conversation, original.conversation);
+  assert.ok(!JSON.stringify(f.decisions).includes('private follow-up'));
+});
+
+test('diagnostics identify stale markers and cancellation reasons', async () => {
+  const stale = fixture();
+  stale.setMeta({ summary: 'PRIVATE_SUMMARY', last_id: 'missing-private-marker' });
+  await stale.run();
+  assert.ok(stale.decisions.some(d => d.state === 'marker_reset' && d.reason === 'marker_invalid'));
+  assert.ok(stale.decisions.some(d => d.state === 'committed'));
+  assert.ok(!JSON.stringify(stale.decisions).includes('PRIVATE_SUMMARY'));
+  const f = fixture({ summaryLimit: 8192, lengths: [40000, 20] });
+  f.beforeResponse = () => { f.summary.detectedContext.tokens = 2048; };
+  await assert.rejects(f.run(), runtime.SummaryCancelledError);
+  assert.ok(f.decisions.some(d => d.state === 'cancelled' && d.reason === 'context_shrunk'));
+});
+
+test('diagnostic IPC failure never changes summary decisions', async () => {
+  const f = fixture({ chatLimit: 8192, lengths: [16000, 16000, 20] });
+  const invoke = harness.invoke;
+  harness.invoke = (command, args) => {
+    if (command === 'record_diagnostic_decision') throw new Error('diagnostics unavailable');
+    return invoke(command, args);
+  };
+  await f.run();
+  assert.ok(f.meta().summary);
 });

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { invoke } from '@tauri-apps/api/core';
   import { appState, snapshotActiveApiConnection } from '$lib/stores/appState.svelte';
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
@@ -254,7 +255,7 @@
       rememberGenerationAnchor(chatId, result.promptSnapshot, chatState.currentMessages.at(-1));
     } catch (err) {
       if (err instanceof SummaryCancelledError) return;
-      console.error(err);
+      reportDiagnostic('chat');
       generationError = describeGenerationError(err);
     } finally {
       isGenerating = false;
@@ -333,7 +334,7 @@
       );
     } catch (err) {
       if (err instanceof SummaryCancelledError) return;
-      console.error(err);
+      reportDiagnostic('chat');
       generationError = describeGenerationError(err);
       failedRetryMsgId = msgId;
     } finally {

@@ -1,3 +1,4 @@
+import { reportDiagnostic } from '$lib/utils/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
 import { getSetting } from '$lib/utils/settings';
 
@@ -38,7 +39,7 @@ export async function loadRoles(): Promise<void> {
             ? savedDefaultId
             : null;
     } catch (error) {
-        console.error('Error loading roles:', error);
+        reportDiagnostic('role');
         throw error;
     }
 }
@@ -61,7 +62,7 @@ export async function loadRoleAvatar(id: string): Promise<void> {
             role.id === id ? { ...role, avatarUrl } : role
         );
     } catch (error) {
-        console.error('Error loading role avatar:', id, error);
+        reportDiagnostic('role');
         throw error;
     } finally {
         avatarFetchesInFlight.delete(id);
@@ -85,7 +86,7 @@ export async function createRole(input: RoleInput): Promise<string> {
         }
         return id;
     } catch (error) {
-        console.error('Error creating role:', error);
+        reportDiagnostic('role');
         throw error;
     }
 }
@@ -103,7 +104,7 @@ export async function updateRole(id: string, input: RoleInput): Promise<void> {
             setTimeout(() => void loadRoles(), 800);
         }
     } catch (error) {
-        console.error('Error updating role:', error);
+        reportDiagnostic('role');
         throw error;
     }
 }
@@ -114,7 +115,7 @@ export async function deleteRole(id: string): Promise<void> {
         roleState.roles = roleState.roles.filter((role) => role.id !== id);
         if (roleState.defaultRoleId === id) roleState.defaultRoleId = null;
     } catch (error) {
-        console.error('Error deleting role:', error);
+        reportDiagnostic('role');
         throw error;
     }
 }

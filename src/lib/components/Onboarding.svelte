@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { fade, fly } from 'svelte/transition';
   import { appState } from '$lib/stores/appState.svelte';
   import { saveSetting, fetchModels } from '$lib/utils/settings';
@@ -132,7 +133,7 @@
       appState.isOnboarding = false;
 
     } catch (error) {
-      console.error('Failed to save settings:', error);
+      reportDiagnostic('settings');
       modelError = 'Database error while saving. Please try again.';
     } finally {
       saving = false;

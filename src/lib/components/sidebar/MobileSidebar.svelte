@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { onDestroy } from 'svelte';
   import SidebarBase from './SidebarBase.svelte';
   import type { ConversationMode } from '$lib/stores/chatStore.svelte';
@@ -188,7 +189,7 @@
       completingDrag = true;
       void Promise.resolve()
         .then(() => sidebar?.completeMobileDrag(event.clientX, event.clientY))
-        .catch(error => console.error('[MobileSidebar] Could not complete drag:', error))
+        .catch(error => reportDiagnostic('sidebar'))
         .finally(() => {
           sidebar?.cancelMobileDrag();
           completingDrag = false;

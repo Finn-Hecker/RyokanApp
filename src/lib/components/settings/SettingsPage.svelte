@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { appState } from "$lib/stores/appState.svelte";
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { getAllSettings, saveSetting } from "$lib/utils/settings";
@@ -8,6 +9,8 @@
   import * as m from "$lib/paraglide/messages";
   import ApiSection from "./ApiSection.svelte";
   import GeneralSection from "./GeneralSection.svelte";
+  import { downloadDiagnostics } from '$lib/utils/diagnostics';
+  import { diagnosticsMetadata } from '$lib/utils/diagnosticsMetadata';
   import Button from "$lib/components/ui/Button.svelte";
   import { API_PARAMETER_SETTING_KEYS, createDefaultApiParameterEnabled, type ApiParameterKey } from "$lib/utils/apiParameters";
   import { validateAdditionalApiParameters } from "$lib/utils/additionalApiParameters";
@@ -17,6 +20,22 @@
   type Category = { id: SettingsCategory; label: string; description: string; mobileDescription: string; icon: string };
 
   let powerUser = $state(false);
+  let exportingDiagnostics = $state(false);
+  let diagnosticsStatus = $state('');
+
+  async function exportDiagnostics() {
+    if (exportingDiagnostics) return;
+    exportingDiagnostics = true;
+    diagnosticsStatus = '';
+    try {
+      await downloadDiagnostics(diagnosticsMetadata(appState.apiSettings, appState.longTermMemory));
+      diagnosticsStatus = m.settings_diagnostics_started();
+    } catch {
+      diagnosticsStatus = m.settings_diagnostics_failed();
+    } finally {
+      exportingDiagnostics = false;
+    }
+  }
   let parameterEnabled = $state<Record<ApiParameterKey, boolean>>(createDefaultApiParameterEnabled());
 
   const CATEGORIES: Category[] = [
@@ -64,25 +83,7 @@
       if (appState.apiSettings.topK == null) appState.apiSettings.topK = 40;
       if (appState.apiSettings.minP == null) appState.apiSettings.minP = 0.05;
       if (appState.apiSettings.frequencyPenalty == null) appState.apiSettings.frequencyPenalty = 0;
-
-      console.log("[Settings] Loaded values:", {
-        url: appState.apiSettings.url,
-        apiKeyConfigured: Boolean(appState.apiSettings.apiKey),
-        model: appState.apiSettings.model,
-        systemPrompt: appState.apiSettings.systemPrompt,
-        temperature: appState.apiSettings.temperature,
-        maxTokens: appState.apiSettings.maxTokens,
-        presencePenalty: appState.apiSettings.presencePenalty,
-        thinkingBudget: appState.apiSettings.thinkingBudget,
-        contextLimit: appState.apiSettings.contextLimit,
-        topP: appState.apiSettings.topP,
-        topK: appState.apiSettings.topK,
-        minP: appState.apiSettings.minP,
-        frequencyPenalty: appState.apiSettings.frequencyPenalty,
-        parameterEnabled: { ...parameterEnabled },
-        powerUser,
-      });
-    } catch (err) { console.error("[Settings] Failed to load:", err); }
+    } catch (err) { reportDiagnostic('settings'); }
     finally { settingsReady = true; }
   }
 
@@ -111,7 +112,7 @@
       const locale = appState.pendingUiLocale;
       if (locale) setLocale(locale as any);
       goBack();
-    } catch (err) { console.error("[Settings] Save failed:", err); }
+    } catch (err) { reportDiagnostic('settings'); }
     finally { isSaving = false; }
   }
 
@@ -119,7 +120,7 @@
 
   async function openDiscord() {
     try { await openUrl('https://discord.gg/shrZCsfGWK'); }
-    catch (error) { console.error('[Settings] Failed to open Discord:', error); }
+    catch (error) { reportDiagnostic('settings'); }
   }
 
   $effect(() => {
@@ -205,7 +206,17 @@
     <div bind:this={settingsContentEl} class="settings-content" class:settings-content--mobile-hidden={!mobileCategoryOpen}>
       <div class="content-panel" hidden={activeSection !== "provider" && activeSection !== "memory"}><ApiSection powerUser={powerUser} active={activeSection === "provider"} section={activeSection === "memory" ? "memory" : "provider"} {settingsReady} onConnectionChange={handleConnectionChange} /></div>
       <div class="content-panel" hidden={activeSection === "provider" || activeSection === "memory"}>
-        {#if activeSection === "advanced"}<div class="advanced-mode">{@render powerToggle()}</div>{/if}
+        {#if activeSection === "advanced"}
+          <div class="advanced-mode">{@render powerToggle()}</div>
+          <div class="advanced-mode">
+            <p class="power-label">{m.settings_diagnostics_title()}</p>
+            <p class="power-description" style="margin: 8px 0 14px">{m.settings_diagnostics_description()}</p>
+            <Button variant="secondary" disabled={exportingDiagnostics} onclick={exportDiagnostics}>
+              {exportingDiagnostics ? m.settings_diagnostics_exporting() : m.settings_diagnostics_export()}
+            </Button>
+            <p class="power-description" role="status" style="margin-top: 8px">{diagnosticsStatus}</p>
+          </div>
+        {/if}
         <GeneralSection powerUser={powerUser} bind:parameterEnabled category={generalCategory} />
       </div>
     </div>

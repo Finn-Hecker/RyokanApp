@@ -1,3 +1,4 @@
+import { reportDiagnostic } from '$lib/utils/diagnostics';
 /**
  * Multiplayer client for the zero knowledge relay server.
  *
@@ -640,7 +641,7 @@ function connect(roomId: string): void {
         return handleServerMsg(msg);
       })
       .catch((error) => {
-        console.error('Failed to process multiplayer frame', error);
+        reportDiagnostic('multiplayer');
       });
   };
 
@@ -968,7 +969,7 @@ async function handleDecrypted(inner: any, sourceId: number): Promise<void> {
         completedStreamIds.add(mid);
         mpState.messages = mpState.messages.filter((message) => message.id !== mid);
         void discardPersistedMessage(mid).catch((error) => {
-          console.error('Failed to discard cancelled multiplayer generation', error);
+          reportDiagnostic('multiplayer');
         });
         break;
       }
@@ -1284,7 +1285,7 @@ function cancelActiveGeneration(releaseLock: boolean, discardPartial = false): v
   // Rust owns the HTTP stream. The id prevents a delayed abort command from
   // cancelling a subsequent generation that has already become active.
   void invoke('stop_generation', { generationId: generation.id }).catch((error) => {
-    console.error('Failed to stop multiplayer generation', error);
+    reportDiagnostic('multiplayer');
   });
 }
 
@@ -1402,7 +1403,7 @@ async function runGeneration(): Promise<void> {
     if (delta) { localMsg.text = text; generation.buffer += delta; }
   } catch (error) {
     if (!generation.aborted) {
-      console.error('Multiplayer generation failed', error);
+      reportDiagnostic('multiplayer');
       if (!localMsg.text.trim()) localMsg.text = '⚠';
     }
   } finally {
@@ -1449,13 +1450,13 @@ async function runGeneration(): Promise<void> {
       try {
         await discardPersistedMessage(mid, generation.conversationId);
       } catch (error) {
-        console.error('Failed to discard cancelled multiplayer generation', error);
+        reportDiagnostic('multiplayer');
       }
     } else if (meaningful) {
       try {
         await persistMessageOnce(localMsg, generation.conversationId);
       } catch (error) {
-        console.error('Failed to persist multiplayer generation', error);
+        reportDiagnostic('multiplayer');
       }
     }
   }

@@ -1,3 +1,4 @@
+import { reportDiagnostic } from '$lib/utils/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
 import { selectInitialGreeting } from '$lib/utils/characterGreeting';
 import { appState } from './appState.svelte';
@@ -137,7 +138,7 @@ export async function loadAllConversations(mode: ConversationMode = loadedConver
         ];
         replaceModeConversations(mode, [...openFolderPages.flat(), ...looseChats]);
     } catch (e) {
-        console.error(e);
+        reportDiagnostic('chat');
     }
 }
 
@@ -165,7 +166,7 @@ export async function loadMoreConversations(mode: ConversationMode = loadedConve
         ];
         return result.length === PAGE_SIZE;
     } catch (e) {
-        console.error(e);
+        reportDiagnostic('chat');
         return false;
     }
 }
@@ -209,7 +210,7 @@ export async function startNewChat(character: any, roleSelection: RoleSelection 
         await loadAllConversations('singleplayer');
         await loadMessages(newId);
     } catch (e) {
-        console.error(e);
+        reportDiagnostic('chat');
         throw e;
     }
 }
@@ -226,7 +227,7 @@ export async function openHistoryChat(chatId: string) {
         if (char) {
             appState.activeCharacter = char;
         } else {
-            console.warn("Could not find a character for this chat.");
+            reportDiagnostic('chat', true);
         }
     }
 }
@@ -247,7 +248,7 @@ export async function cloneChatFromMessage(messageId: string): Promise<string | 
         await loadAllConversations('singleplayer');
         return newChatId;
     } catch (e) {
-        console.error(e);
+        reportDiagnostic('chat');
         return null;
     }
 }
@@ -298,7 +299,7 @@ export async function loadMessages(chatId: string) {
         
         // If we hit the limit exactly, there are probably more messages available
         chatState.hasMoreMessages = result.length === limit;
-    } catch (e) { console.error(e); }
+    } catch (e) { reportDiagnostic('chat'); }
 }
 
 // Triggered when the user scrolls up
@@ -332,7 +333,7 @@ export async function loadMoreMessages() {
         // Prepend older messages at the beginning
         chatState.currentMessages = [...parsed, ...chatState.currentMessages];
         chatState.hasMoreMessages = result.length === 25;
-    } catch (e) { console.error(e); }
+    } catch (e) { reportDiagnostic('chat'); }
 }
 
 export async function addMessage(role: 'user' | 'assistant', content: string, usage: TokenUsage | null = null) {
@@ -350,7 +351,7 @@ export async function addMessage(role: 'user' | 'assistant', content: string, us
         });
         await loadAllConversations();
         await loadMessages(chatId);
-    } catch (e) { console.error(e); }
+    } catch (e) { reportDiagnostic('chat'); }
 }
 
 async function invalidateSummaryIfCovered(chatId: string, messageId: string): Promise<void> {
@@ -385,7 +386,7 @@ export async function addSwipeVariant(messageId: string, content: string, usage:
         if (chatId) bumpConversationRevision(chatId);
         if (chatId) await loadMessages(chatId);
     } catch (e) {
-        console.error(e);
+        reportDiagnostic('chat');
         throw e;
     }
 }
@@ -403,7 +404,7 @@ export async function setSwipeIndex(messageId: string, index: number): Promise<v
             msg.content = msg.swipe_variants[clamped];
         }
     } catch (e) {
-        console.error(e);
+        reportDiagnostic('chat');
         throw e;
     }
 }
@@ -416,7 +417,7 @@ export async function updateMessage(id: string, content: string) {
         if (chatId) bumpConversationRevision(chatId);
         if (chatId) await loadMessages(chatId);
     } catch (e) {
-        console.error(e);
+        reportDiagnostic('chat');
         throw e;
     }
 }
@@ -429,7 +430,7 @@ export async function deleteMessage(id: string) {
         if (chatId) bumpConversationRevision(chatId);
         if (chatId) await loadMessages(chatId);
     } catch (e) {
-        console.error(e);
+        reportDiagnostic('chat');
         throw e;
     }
 }
@@ -438,14 +439,14 @@ export async function renameConversation(id: string, title: string) {
     try {
         await invoke('rename_chat', { id, title });
         await loadAllConversations();
-    } catch (e) { console.error(e); }
+    } catch (e) { reportDiagnostic('chat'); }
 }
 
 export async function togglePinConversation(id: string) {
     try {
         await invoke('toggle_pin_chat', { id });
         await loadAllConversations();
-    } catch (e) { console.error(e); }
+    } catch (e) { reportDiagnostic('chat'); }
 }
 
 export async function deleteConversation(id: string) {
@@ -460,7 +461,7 @@ export async function deleteConversation(id: string) {
                 lastSummarizedMessageId: null,
             };
         }
-    } catch (e) { console.error(e); }
+    } catch (e) { reportDiagnostic('chat'); }
 }
 
 export async function createChatFolder(name: string, mode: ConversationMode) {

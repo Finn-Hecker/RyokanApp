@@ -60,14 +60,14 @@ pub async fn count_tokens(text: String, model_name: String) -> u32 {
         Some(tokenizer) => {
             match tokenizer.encode(text.as_str(), false) {
                 Ok(encoding) => encoding.len() as u32,
-                Err(e) => {
-                    eprintln!("[Tokenizer] Encoding error: {}", e);
+                Err(_) => {
+                    crate::diagnostics::record(crate::diagnostics::Event::TokenizerFailed);
                     fallback_count(&text)
                 }
             }
         }
         None => {
-            eprintln!("[Tokenizer] Tokenizer failed to load — using fallback.");
+            crate::diagnostics::record(crate::diagnostics::Event::TokenizerFailed);
             fallback_count(&text)
         }
     }

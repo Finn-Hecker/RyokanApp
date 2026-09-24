@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { appState } from "$lib/stores/appState.svelte";
   import { getAllSettings, saveSetting } from "$lib/utils/settings";
   import * as m from "$lib/paraglide/messages";
@@ -28,13 +29,13 @@
       if (row) powerUser = row.value === "true";
       parameterEnabled = { ...appState.apiSettings.parameterEnabled };
     } catch (err) {
-      console.error("[ChatSettingsPanel] Failed to load settings:", err);
+      reportDiagnostic('settings');
     }
   });
 
   function persist(key: string, value: unknown) {
     saveSetting(key, value as any).catch(err =>
-      console.error(`[ChatSettingsPanel] Failed to save "${key}":`, err)
+      reportDiagnostic('settings')
     );
   }
 

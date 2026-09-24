@@ -1,4 +1,10 @@
 {
+  "settings_diagnostics_title": "Diagnostics",
+  "settings_diagnostics_description": "Local logs are kept for up to 7 days (48 MiB maximum). Export includes app and system details, provider type, model configuration status, context/token/summary decisions, and up to 2 MiB of recent log source data. No keys, URLs, model names, prompts, chats, or other private content. Nothing is uploaded automatically.",
+  "settings_diagnostics_export": "Export Diagnostics",
+  "settings_diagnostics_exporting": "Exporting…",
+  "settings_diagnostics_started": "Diagnostics download requested.",
+  "settings_diagnostics_failed": "Could not export diagnostics. Please try again.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "create_page_label_prompt": "Prompt",
   "create_page_label_play_mode": "Available in",

@@ -10,6 +10,7 @@
     "test:summary": "node --experimental-strip-types --test src/lib/utils/rollingSummaryCore.test.mjs src/lib/utils/rollingSummaryRuntime.test.mjs",
     "test:prompt": "node --experimental-strip-types --test src/lib/utils/promptBuilder.test.mjs",
     "test:connections": "node --experimental-strip-types --test src/lib/utils/connectionCore.test.mjs",
+    "test:diagnostics": "node --experimental-strip-types --test src/lib/utils/diagnostics.test.mjs",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",

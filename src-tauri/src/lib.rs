@@ -3,6 +3,7 @@ mod database;
 mod import;
 mod export;
 mod tokenizer;
+mod diagnostics;
 
 #[tauri::command]
 fn get_interaction_mode() -> &'static str {
@@ -18,11 +19,19 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            database::init_db(app.handle())?;
+            diagnostics::init(app.handle());
+            if let Err(error) = database::init_db(app.handle()) {
+                diagnostics::record(diagnostics::Event::DatabaseFailed);
+                return Err(error.into());
+            }
+            diagnostics::record(diagnostics::Event::DatabaseReady);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_interaction_mode,
+            diagnostics::record_frontend_event,
+            diagnostics::record_diagnostic_decision,
+            diagnostics::export_diagnostics,
             ai::call_ai_api,
             ai::fetch_models,
             ai::detect_context,

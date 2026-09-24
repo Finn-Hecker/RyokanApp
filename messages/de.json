@@ -1,4 +1,10 @@
 {
+  "settings_diagnostics_title": "Diagnose",
+  "settings_diagnostics_description": "Lokale Protokolle werden bis zu 7 Tage aufbewahrt (maximal 48 MiB). Der Export enthält App- und Systemdetails, Anbietertyp, Modellkonfigurationsstatus, Kontext-/Token-/Zusammenfassungsentscheidungen und bis zu 2 MiB aktuelle Protokolldaten. Keine Schlüssel, URLs, Modellnamen, Prompts, Chats oder anderen privaten Inhalte. Es wird nichts automatisch hochgeladen.",
+  "settings_diagnostics_export": "Diagnose exportieren",
+  "settings_diagnostics_exporting": "Wird exportiert…",
+  "settings_diagnostics_started": "Diagnose-Download angefordert.",
+  "settings_diagnostics_failed": "Diagnose konnte nicht exportiert werden. Bitte erneut versuchen.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "create_page_label_prompt": "Prompt",
   "create_page_label_play_mode": "Verfügbar in",

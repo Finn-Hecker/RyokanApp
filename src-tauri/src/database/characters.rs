@@ -408,7 +408,7 @@ pub async fn create_character(app: AppHandle, payload: CreateCharacterPayload) -
                             );
                         }
                     }
-                    Err(e) => eprintln!("Avatar processing failed: {}", e)
+                    Err(_) => crate::diagnostics::record(crate::diagnostics::Event::AvatarFailed)
                 }
             });
         }
@@ -471,7 +471,7 @@ pub async fn update_character(app: AppHandle, id: String, payload: CreateCharact
                             );
                         }
                     }
-                    Err(e) => eprintln!("Avatar update failed: {}", e)
+                    Err(_) => crate::diagnostics::record(crate::diagnostics::Event::AvatarFailed)
                 }
             });
         }

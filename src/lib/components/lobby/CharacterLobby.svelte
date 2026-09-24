@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { appState } from '$lib/stores/appState.svelte';
   import { navigateTo, registerBackHandler } from '$lib/stores/navigation';
   import { characterState, loadCharacters, toggleHideCharacter, togglePinCharacter, deleteCharacter, loadHiddenIds, loadPinnedIds } from '$lib/stores/characterStore.svelte';
@@ -164,7 +165,7 @@
     try {
       await deleteCharacter(deleteTarget.id);
     } catch (err) {
-      console.error('Delete failed:', err);
+      reportDiagnostic('character');
     } finally {
       deleteTarget = null;
     }

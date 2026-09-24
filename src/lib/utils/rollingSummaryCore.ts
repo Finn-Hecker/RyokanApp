@@ -80,6 +80,15 @@ export interface ApiRequestParameterConfig {
 }
 
 export interface EffectiveTokenBudget {
+  /** Content-free explanation of the reserve policy, shared with diagnostics. */
+  calculation: {
+    total_limit: number | null;
+    reasoning_limit: number | null;
+    invalid_total_limit: boolean;
+    invalid_reasoning_limit: boolean;
+    reasoning_enabled: boolean;
+    reasoning_ambiguous: boolean;
+  };
   /** Value supplied to Rust; persisted switches still decide whether it is forwarded. */
   payloadMaxTokens: number;
   /** Value supplied to Rust; persisted switches still decide whether it is forwarded. */
@@ -192,6 +201,14 @@ export function deriveEffectiveTokenBudget(
   const knownTotal = validTotalLimits.length > 0
     ? Math.max(...validTotalLimits)
     : null;
+  const calculation = {
+    total_limit: knownTotal,
+    reasoning_limit: validReasoningLimits.length > 0 ? Math.max(...validReasoningLimits) : null,
+    invalid_total_limit: hasInvalidTotalLimit,
+    invalid_reasoning_limit: hasInvalidReasoningLimit,
+    reasoning_enabled: reasoningEnabled,
+    reasoning_ambiguous: reasoningBehaviorAmbiguous,
+  };
 
   if (knownTotal !== null && !hasInvalidTotalLimit) {
     // OpenAI-compatible total completion caps include visible and reasoning tokens.
@@ -200,6 +217,7 @@ export function deriveEffectiveTokenBudget(
       payloadThinkingBudget,
       reserveTokens: knownTotal,
       hasKnownTotalLimit: true,
+      calculation,
     };
   }
 
@@ -221,6 +239,7 @@ export function deriveEffectiveTokenBudget(
     payloadThinkingBudget,
     reserveTokens: Math.max(knownTotal ?? 0, fallback),
     hasKnownTotalLimit: false,
+    calculation,
   };
 }
 
