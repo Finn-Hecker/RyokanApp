@@ -193,7 +193,7 @@
   "settings_context_label": "Kontextfenster",
   "settings_context_tooltip_p1": "Wie viel Chatverlauf die KI gleichzeitig verarbeitet.",
   "settings_context_tooltip_p2": "Zu hohe Werte können Fehler verursachen, wenn das Limit deines Modells überschritten wird. Bei lokalen Modellen steigt außerdem der RAM-Verbrauch stark an.",
-  "settings_context_tooltip_hint": "Für die meisten Gespräche reichen 4K – 8K.",
+  "settings_context_tooltip_hint": "Für die meisten Gespräche reichen 16K – 32K.",
   "settings_context_words_hint": "~ {count} Wörter",
   "settings_creativity_tooltip_p1": "Steuert, wie vorhersehbar die KI antwortet.",
   "settings_creativity_tooltip_p2a": "Fokussiert → ideal für Code, Übersetzungen & Fakten.",

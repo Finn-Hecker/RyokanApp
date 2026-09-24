@@ -192,7 +192,7 @@
   "settings_context_label": "Context Window",
   "settings_context_tooltip_p1": "How much chat history the AI processes at once.",
   "settings_context_tooltip_p2": "Values that are too high can cause errors if your model's limit is exceeded. For local models, RAM usage also increases significantly.",
-  "settings_context_tooltip_hint": "4K – 8K is sufficient for most conversations.",
+  "settings_context_tooltip_hint": "16K – 32K is sufficient for most conversations.",
   "settings_context_words_hint": "~ {count} words",
   "settings_creativity_tooltip_p1": "Controls how predictable the AI's responses are.",
   "settings_creativity_tooltip_p2a": "Focused → ideal for code, translations & hard facts.",
