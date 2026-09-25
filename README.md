@@ -18,12 +18,33 @@ Connect an AI model, choose a character, and step into a conversation that grows
 
 <table>
   <tr>
-    <td><img width="400" alt="Ryokan Interface" src="https://github.com/user-attachments/assets/ec3ab47b-0431-4e60-a5c8-83d16ca9ba36" /></td>
-    <td><img width="400" alt="Ryokan Chat" src="https://github.com/user-attachments/assets/93c00213-f69f-4f1a-a6f8-71f826663af9" /></td>
+    <td>
+      <img width="210" alt="Ryokan Interface"
+           src="https://github.com/user-attachments/assets/ec3ab47b-0431-4e60-a5c8-83d16ca9ba36" />
+    </td>
+    <td>
+      <img width="210" alt="Ryokan Chat"
+           src="https://github.com/user-attachments/assets/93c00213-f69f-4f1a-a6f8-71f826663af9" />
+    </td>
+    <td rowspan="2">
+      <img width="210" alt="Ryokan Mobile Interface"
+           src="https://github.com/user-attachments/assets/1b300157-041f-4b50-b563-3c63238bd649" />
+    </td>
+    <td rowspan="2">
+      <img width="210" alt="Ryokan Mobile Chat"
+           src="https://github.com/user-attachments/assets/ac974b31-36ad-436d-84c9-67fbf6cba2d2" />
+    </td>
   </tr>
+
   <tr>
-    <td><img width="400" alt="Ryokan Settings" src="https://github.com/user-attachments/assets/093e4bb2-5cf1-478b-9ea4-6ae37a4f004d" /></td>
-    <td><img width="400" alt="Ryokan Multiplayer" src="https://github.com/user-attachments/assets/afc78fe2-284e-49c3-8810-298f4bd53832" /></td>
+    <td>
+      <img width="210" alt="Ryokan Settings"
+           src="https://github.com/user-attachments/assets/093e4bb2-5cf1-478b-9ea4-6ae37a4f004d" />
+    </td>
+    <td>
+      <img width="210" alt="Ryokan Multiplayer"
+           src="https://github.com/user-attachments/assets/afc78fe2-284e-49c3-8810-298f4bd53832" />
+    </td>
   </tr>
 </table>
 
