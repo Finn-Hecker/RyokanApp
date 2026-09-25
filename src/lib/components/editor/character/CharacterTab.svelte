@@ -1,6 +1,7 @@
 <script lang="ts">
   import AvatarPicker from './AvatarPicker.svelte';
   import CharacterFormFields from './CharacterFormFields.svelte';
+  import CharacterPlayMode from './CharacterPlayMode.svelte';
   import type { PlayMode } from '$lib/stores/characterStore.svelte';
   import type { BundledRoleSnapshot, RolePolicy } from '$lib/stores/characterStore.svelte';
   import BundledRolesPicker from './BundledRolesPicker.svelte';
@@ -43,7 +44,6 @@
   bind:name
   bind:prompt
   bind:greeting
-  bind:playMode
   bind:worldInfoIds
   alternate_greetings={alternate_greetings}
   onAltGreetingsChange={(updated) => (alternate_greetings = updated)}
@@ -57,3 +57,5 @@
 />
 
 <BundledRolesPicker bind:rolePolicy {bundledRoles} onAdd={onAddRole} onRemove={onRemoveRole} />
+
+<CharacterPlayMode bind:playMode />
