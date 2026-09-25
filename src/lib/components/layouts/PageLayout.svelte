@@ -1,13 +1,21 @@
 <script lang="ts">
   import { fade, fly } from 'svelte/transition';
   import type { Snippet } from 'svelte';
+  import { appState, type InteractionMode } from '$lib/stores/appState.svelte';
+
+  type SidebarLayout = 'inline' | 'drawer';
+  type SidebarContext = {
+    layout: SidebarLayout;
+    interactionMode: InteractionMode;
+    isOpen: boolean;
+    close: () => void;
+  };
   
   let {
     pageTitle,
     showSidebar = false,
     sidebarWidth = "w-64",
     maxContentWidth = "max-w-7xl",
-    contentPadding = "px-8",
     children,
     sidebar,
     header
@@ -16,9 +24,8 @@
     showSidebar?: boolean;
     sidebarWidth?: string;
     maxContentWidth?: string;
-    contentPadding?: string;
     children?: Snippet;
-    sidebar?: Snippet<[{ isMobileSidebarOpen: boolean; close: () => void }]>;
+    sidebar?: Snippet<[SidebarContext]>;
     header?: Snippet;
   } = $props();
 
@@ -34,7 +41,7 @@
   {#if showSidebar}
     <div class="hidden lg:flex shrink-0 bg-ryokan-sidebar">
       <aside class="{sidebarWidth} h-full border-r border-white/5 flex flex-col shrink-0">
-        {@render sidebar?.({ isMobileSidebarOpen: false, close: () => {} })}
+        {@render sidebar?.({ layout: 'inline', interactionMode: appState.interactionMode, isOpen: true, close: () => {} })}
       </aside>
     </div>
 
@@ -50,15 +57,13 @@
         transition:fly={{ x: -500, duration: 200 }}
         class="lg:hidden fixed left-0 top-0 bottom-0 w-72 bg-ryokan-sidebar border-r border-white/5 shadow-2xl z-50 flex flex-col"
       >
-        {@render sidebar?.({ isMobileSidebarOpen, close: () => isMobileSidebarOpen = false })}
+        {@render sidebar?.({ layout: 'drawer', interactionMode: appState.interactionMode, isOpen: isMobileSidebarOpen, close: () => isMobileSidebarOpen = false })}
       </aside>
     {/if}
   {/if}
 
   <div class="flex-1 overflow-y-auto min-w-0 scrollbar-hide">
-    <div class="{maxContentWidth} mx-auto w-full {contentPadding}">
-      
-      <div class="flex items-center justify-between pt-[calc(1rem+env(safe-area-inset-top))] mb-6 md:pt-6">
+    <div class="app-page-header flex items-center justify-between border-b border-white/5">
         {#if showSidebar}
           <button
             onclick={() => isMobileSidebarOpen = true}
@@ -77,8 +82,9 @@
         {/if}
 
         {@render header?.()}
-      </div>
+    </div>
 
+    <div class="app-page-content {maxContentWidth} mx-auto w-full">
       {@render children?.()}
 
       <div class="h-8"></div>

@@ -1,5 +1,10 @@
 <script lang="ts">
+  import { onMount, tick } from 'svelte';
   import type { Snippet } from 'svelte';
+
+  const VIEWPORT_MARGIN = 12;
+  const TOOLTIP_GAP = 10;
+
   let {
     width = 230,
     align = 'center',
@@ -11,20 +16,86 @@
   } = $props();
 
   let open = $state(false);
+  let hovered = $state(false);
+  let focused = $state(false);
+  let wrapper: HTMLDivElement;
+  let tooltip: HTMLDivElement;
+  let tooltipStyle = $state('');
+  let placement = $state<'top' | 'bottom'>('top');
+
+  const visible = $derived(open || hovered || focused);
+
+  async function updatePosition() {
+    if (!visible) return;
+
+    await tick();
+    if (!visible || !wrapper || !tooltip) return;
+
+    const triggerRect = wrapper.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const viewportLeft = viewport?.offsetLeft ?? 0;
+    const viewportTop = viewport?.offsetTop ?? 0;
+    const viewportWidth = viewport?.width ?? window.innerWidth;
+    const viewportHeight = viewport?.height ?? window.innerHeight;
+    const viewportRight = viewportLeft + viewportWidth;
+    const viewportBottom = viewportTop + viewportHeight;
+
+    const preferredTop = triggerRect.top - TOOLTIP_GAP - tooltipRect.height;
+    const preferredBottom = triggerRect.bottom + TOOLTIP_GAP;
+    placement = preferredTop < viewportTop + VIEWPORT_MARGIN ? 'bottom' : 'top';
+
+    const desiredLeft =
+      align === 'left'
+        ? triggerRect.left
+        : align === 'right'
+          ? triggerRect.right - tooltipRect.width
+          : triggerRect.left + triggerRect.width / 2 - tooltipRect.width / 2;
+    const maxLeft = Math.max(viewportLeft + VIEWPORT_MARGIN, viewportRight - VIEWPORT_MARGIN - tooltipRect.width);
+    const maxTop = Math.max(viewportTop + VIEWPORT_MARGIN, viewportBottom - VIEWPORT_MARGIN - tooltipRect.height);
+    const left = Math.min(Math.max(desiredLeft, viewportLeft + VIEWPORT_MARGIN), maxLeft);
+    const desiredTop = placement === 'top' ? preferredTop : preferredBottom;
+    const top = Math.min(Math.max(desiredTop, viewportTop + VIEWPORT_MARGIN), maxTop);
+
+    tooltipStyle = `left: ${left}px; top: ${top}px;`;
+  }
+
+  $effect(() => {
+    if (visible) void updatePosition();
+  });
 
   function toggle(e: MouseEvent) {
     e.stopPropagation();
     open = !open;
   }
+
+  onMount(() => {
+    const reposition = () => void updatePosition();
+    window.addEventListener('resize', reposition);
+    window.visualViewport?.addEventListener('resize', reposition);
+
+    return () => {
+      window.removeEventListener('resize', reposition);
+      window.visualViewport?.removeEventListener('resize', reposition);
+    };
+  });
 </script>
 
 <svelte:window onclick={() => (open = false)} />
 
-<div class="ryokan-tooltip-wrapper" class:ryokan-tooltip-wrapper--open={open}>
+<div
+  bind:this={wrapper}
+  class="ryokan-tooltip-wrapper"
+  class:ryokan-tooltip-wrapper--open={open}
+>
   <button
     type="button"
     class="ryokan-tooltip-trigger"
     onclick={toggle}
+    onmouseenter={() => (hovered = true)}
+    onmouseleave={() => (hovered = false)}
+    onfocus={() => (focused = true)}
+    onblur={() => (focused = false)}
     aria-label="Mehr Infos"
     aria-expanded={open}
   >
@@ -45,8 +116,10 @@
   </button>
 
   <div
-    class="ryokan-tooltip-text ryokan-tooltip-text--{align}"
-    style="width: min({width}px, calc(100vw - 48px))"
+    bind:this={tooltip}
+    class="ryokan-tooltip-text ryokan-tooltip-text--{align} ryokan-tooltip-text--{placement}"
+    class:ryokan-tooltip-text--visible={visible}
+    style="width: min({width}px, calc(100vw - {VIEWPORT_MARGIN * 2}px)); {tooltipStyle}"
   >
     {@render children?.()}
   </div>
@@ -80,8 +153,7 @@
   .ryokan-tooltip-text {
     visibility: hidden;
     opacity: 0;
-    position: absolute;
-    bottom: calc(100% + 10px);
+    position: fixed;
     background: #1c1c1e;
     color: #a1a1aa;
     border: 1px solid rgba(212, 180, 131, 0.15);
@@ -95,19 +167,16 @@
     z-index: 50;
     pointer-events: none;
     line-height: 1.5;
+    box-sizing: border-box;
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    transform: translateY(4px);
   }
 
-  .ryokan-tooltip-text--center {
-    left: 50%;
-    transform: translateX(-50%) translateY(4px);
-  }
-  .ryokan-tooltip-text--left {
-    left: 0;
-    transform: translateY(4px);
-  }
-  .ryokan-tooltip-text--right {
-    right: 0;
-    transform: translateY(4px);
+  .ryokan-tooltip-text::-webkit-scrollbar {
+    display: none;
   }
 
   .ryokan-tooltip-text--center::after,
@@ -141,23 +210,28 @@
     z-index: 1;
   }
 
-  .ryokan-tooltip-wrapper:hover .ryokan-tooltip-text,
-  .ryokan-tooltip-wrapper:focus-within .ryokan-tooltip-text,
-  .ryokan-tooltip-wrapper--open .ryokan-tooltip-text {
+  .ryokan-tooltip-text--bottom::after,
+  .ryokan-tooltip-text--bottom::before {
+    top: auto;
+    bottom: 100%;
+  }
+  .ryokan-tooltip-text--bottom::after {
+    border-top-color: transparent;
+    border-bottom-color: rgba(212, 180, 131, 0.15);
+  }
+  .ryokan-tooltip-text--bottom {
+    transform: translateY(-4px);
+  }
+  .ryokan-tooltip-text--bottom::before {
+    margin-top: 0;
+    margin-bottom: 1px;
+    border-top-color: transparent;
+    border-bottom-color: #1c1c1e;
+  }
+
+  .ryokan-tooltip-text--visible {
     visibility: visible;
     opacity: 1;
-  }
-  .ryokan-tooltip-wrapper:hover .ryokan-tooltip-text--center,
-  .ryokan-tooltip-wrapper:focus-within .ryokan-tooltip-text--center,
-  .ryokan-tooltip-wrapper--open .ryokan-tooltip-text--center {
-    transform: translateX(-50%) translateY(0);
-  }
-  .ryokan-tooltip-wrapper:hover .ryokan-tooltip-text--left,
-  .ryokan-tooltip-wrapper:hover .ryokan-tooltip-text--right,
-  .ryokan-tooltip-wrapper:focus-within .ryokan-tooltip-text--left,
-  .ryokan-tooltip-wrapper:focus-within .ryokan-tooltip-text--right,
-  .ryokan-tooltip-wrapper--open .ryokan-tooltip-text--left,
-  .ryokan-tooltip-wrapper--open .ryokan-tooltip-text--right {
     transform: translateY(0);
   }
 

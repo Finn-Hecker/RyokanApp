@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { appState } from '$lib/stores/appState.svelte';
+  import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { loadAllConversations } from '$lib/stores/chatStore.svelte';
   import { positionSentChatMessage } from '$lib/utils/chatScroll';
   import { renderMessageMarkdown } from '$lib/utils/renderMessageMarkdown';
@@ -27,6 +28,14 @@
   let roomMenuOpen = $state(false);
   let messagesEl = $state<HTMLDivElement | null>(null);
   let loadedSessionId = '';
+
+  $effect(() => {
+    if (!roomMenuOpen) return;
+    return registerBackHandler(() => {
+      roomMenuOpen = false;
+      return true;
+    });
+  });
 
   const locked = $derived(mpState.lockedBy !== null);
   const inMultiplayerChat = $derived(mpState.connected || mpState.viewingHistory);
@@ -113,9 +122,9 @@
 
 <svelte:window onclick={closeRoomMenu} />
 
-{#snippet sidebar({ isMobileSidebarOpen, close }: { isMobileSidebarOpen: boolean, close: () => void })}
+{#snippet sidebar({ layout, interactionMode, isOpen, close }: { layout: 'inline' | 'drawer', interactionMode: 'desktop' | 'mobile', isOpen: boolean, close: () => void })}
   <div class="h-full flex flex-col overflow-hidden">
-    <Sidebar isOpen={isMobileSidebarOpen} {close} alwaysVisible={!isMobileSidebarOpen} mode="multiplayer" />
+    <Sidebar {layout} {interactionMode} {isOpen} {close} mode="multiplayer" />
   </div>
 {/snippet}
 
@@ -208,7 +217,6 @@
   pageTitle={m.mp_title()}
   showSidebar={!inMultiplayerChat}
   maxContentWidth="max-w-5xl"
-  contentPadding="px-3 sm:px-6"
   {sidebar}
   {header}
 >
@@ -220,7 +228,7 @@
         </svg>
       </div>
       <p class="mb-6 text-gray-300">{closedText}</p>
-      <Button variant="secondary" onclick={() => (appState.currentView = 'play')}>{m.mp_closed_back_btn()}</Button>
+      <Button variant="secondary" onclick={() => returnTo('play')}>{m.mp_closed_back_btn()}</Button>
     </div>
 
   {:else if !mpState.connected && !mpState.viewingHistory}

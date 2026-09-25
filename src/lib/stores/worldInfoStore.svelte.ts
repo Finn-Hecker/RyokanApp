@@ -1,3 +1,4 @@
+import { reportDiagnostic } from '$lib/utils/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
 import type { WorldInfoEntry } from '$lib/components/editor/worldinfo/worldInfoLogic';
 import { DEFAULT_WORLD_INFOS } from '$lib/data/worldInfo';
@@ -19,6 +20,6 @@ export async function loadWorldInfos(): Promise<void> {
     const rows = await invoke<WorldInfo[]>('get_world_infos');
     worldInfoState.allWorldInfos = [...DEFAULT_WORLD_INFOS, ...rows];
   } catch (e) {
-    console.error('worldInfoStore – loadWorldInfos:', e);
+    reportDiagnostic('world_info');
   }
 }

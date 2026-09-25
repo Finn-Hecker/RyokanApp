@@ -1,7 +1,27 @@
+import { reportDiagnostic } from '$lib/utils/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
 import { CHARACTERS as STATIC_CHARACTERS } from '$lib/data/characters';
 
 export type PlayMode = 'solo' | 'multiplayer';
+export type RolePolicy = 'open' | 'restricted';
+
+export interface BundledRoleSnapshot {
+    id: string;
+    source_role_id: string | null;
+    name: string;
+    prompt: string;
+    has_avatar: boolean;
+    avatarUrl?: string;
+}
+
+export interface PortableBundledRoleSnapshot {
+    id: string;
+    source_role_id: string | null;
+    name: string;
+    prompt: string;
+    /** Base64 image bytes returned only while importing a portable card. */
+    avatar?: string | null;
+}
 
 export interface Character {
     id: string | number;
@@ -22,9 +42,15 @@ export interface Character {
     hidden?: boolean;
     alternate_greetings?: string[];
     world_info_ids?: string[];
+    role_policy: RolePolicy;
+    bundled_roles: BundledRoleSnapshot[];
 }
 
-export type CharacterInput = Pick<Character, 'name' | 'prompt' | 'greeting' | 'initials' | 'color' | 'play_mode' | 'alternate_greetings' | 'world_info_ids'> & { avatar?: string | null };
+export type CharacterInput = Pick<Character, 'name' | 'prompt' | 'greeting' | 'initials' | 'color' | 'play_mode' | 'alternate_greetings' | 'world_info_ids'> & {
+    avatar?: string | null;
+    role_policy?: RolePolicy;
+    bundled_roles?: PortableBundledRoleSnapshot[];
+};
 
 export const characterState = $state({
     allCharacters: [] as Character[],
@@ -41,7 +67,7 @@ export async function loadHiddenIds() {
         const ids = await invoke<string[]>('get_hidden_character_ids');
         characterState.hiddenCharacterIds = new Set(ids.map(String));
     } catch (e) {
-        console.error('Error loading hidden character ids:', e);
+        reportDiagnostic('character');
     }
 }
 
@@ -50,7 +76,7 @@ export async function loadPinnedIds() {
         const ids = await invoke<string[]>('get_pinned_character_ids');
         characterState.pinnedCharacterIds = new Set(ids.map(String));
     } catch (e) {
-        console.error('Error loading pinned character ids:', e);
+        reportDiagnostic('character');
     }
 }
 
@@ -68,6 +94,8 @@ export async function loadCharacters() {
             world_info_ids: Array.isArray(c.world_info_ids)
                 ? c.world_info_ids
                 : [],
+            role_policy: c.role_policy ?? 'open',
+            bundled_roles: Array.isArray(c.bundled_roles) ? c.bundled_roles : [],
         }));
 
         characterState.allCharacters = [...customChars, ...STATIC_CHARACTERS];
@@ -78,7 +106,7 @@ export async function loadCharacters() {
         // eagerly for every character here would defeat that.
 
     } catch (e) {
-        console.error("Error loading characters:", e);
+        reportDiagnostic('character');
     }
 }
 
@@ -102,7 +130,7 @@ export async function loadCharacterAvatar(id: string): Promise<void> {
             String(c.id) === id ? { ...c, avatarUrl } : c
         );
     } catch (e) {
-        console.error('Error loading character avatar:', id, e);
+        reportDiagnostic('character');
     } finally {
         avatarFetchesInFlight.delete(id);
     }
@@ -121,6 +149,11 @@ export async function createCharacter(charData: CharacterInput) {
         isCustom: true,
         avatarUrl: charData.avatar || undefined,
         world_info_ids: charData.world_info_ids ?? [],
+        role_policy: charData.role_policy ?? 'open',
+        bundled_roles: (charData.bundled_roles ?? []).map(role => ({
+            ...role,
+            has_avatar: !!role.avatar,
+        })),
     };
 
     characterState.allCharacters = [
@@ -141,6 +174,8 @@ export async function createCharacter(charData: CharacterInput) {
                 color: charData.color,
                 play_mode: charData.play_mode,
                 world_info_ids: charData.world_info_ids ?? [],
+                role_policy: charData.role_policy ?? 'open',
+                bundled_roles: charData.bundled_roles ?? [],
             }
         });
 
@@ -149,9 +184,10 @@ export async function createCharacter(charData: CharacterInput) {
         );
 
         setTimeout(() => loadCharacters(), 800);
+        return realId;
 
     } catch (e) {
-        console.error("Error creating character:", e);
+        reportDiagnostic('character');
         characterState.allCharacters = characterState.allCharacters.filter(c => c.id !== tempId);
         throw e;
     }
@@ -171,19 +207,94 @@ export async function updateCharacter(id: string, charData: CharacterInput) {
                 color: charData.color,
                 play_mode: charData.play_mode,
                 world_info_ids: charData.world_info_ids ?? [],
+                role_policy: charData.role_policy,
             }
         });
 
+        const { bundled_roles: _portableBundledRoles, ...displayData } = charData;
         characterState.allCharacters = characterState.allCharacters.map(c =>
-            c.id === id ? { ...c, ...charData, id, isCustom: true } : c
+            c.id === id
+                ? { ...c, ...displayData, role_policy: charData.role_policy ?? c.role_policy, id, isCustom: true }
+                : c
         );
 
         setTimeout(() => loadCharacters(), 800);
+        return id;
 
     } catch (e) {
-        console.error("Error updating character:", e);
+        reportDiagnostic('character');
         throw e;
     }
+}
+
+export async function setCharacterRolePolicy(id: string, rolePolicy: RolePolicy): Promise<void> {
+    await invoke('set_character_role_policy', { characterId: id, rolePolicy });
+    characterState.allCharacters = characterState.allCharacters.map((character) =>
+        String(character.id) === id ? { ...character, role_policy: rolePolicy } : character
+    );
+}
+
+export async function addBundledRoleSnapshot(
+    characterId: string,
+    roleId: string
+): Promise<BundledRoleSnapshot> {
+    const snapshot = await invoke<BundledRoleSnapshot>('add_bundled_role_snapshot', {
+        characterId,
+        roleId,
+    });
+    characterState.allCharacters = characterState.allCharacters.map((character) =>
+        String(character.id) === characterId
+            ? { ...character, bundled_roles: [...character.bundled_roles, snapshot] }
+            : character
+    );
+    return snapshot;
+}
+
+export async function loadBundledRoleSnapshots(characterId: string): Promise<void> {
+    const snapshots = await invoke<BundledRoleSnapshot[]>('get_bundled_role_snapshots', {
+        characterId,
+    });
+    characterState.allCharacters = characterState.allCharacters.map((character) =>
+        String(character.id) === characterId
+            ? { ...character, bundled_roles: snapshots }
+            : character
+    );
+}
+
+export async function removeBundledRoleSnapshot(
+    characterId: string,
+    snapshotId: string
+): Promise<void> {
+    await invoke('remove_bundled_role_snapshot', { characterId, snapshotId });
+    characterState.allCharacters = characterState.allCharacters.map((character) =>
+        String(character.id) === characterId
+            ? {
+                ...character,
+                bundled_roles: character.bundled_roles.filter((snapshot) => snapshot.id !== snapshotId),
+            }
+            : character
+    );
+}
+
+export async function loadBundledRoleAvatar(
+    characterId: string,
+    snapshotId: string
+): Promise<void> {
+    const avatarUrl = await invoke<string | null>('get_bundled_role_avatar', {
+        characterId,
+        snapshotId,
+    });
+    if (!avatarUrl) return;
+    characterState.allCharacters = characterState.allCharacters.map((character) =>
+        String(character.id) === characterId
+            ? {
+                ...character,
+                bundled_roles: character.bundled_roles.map((snapshot) =>
+                    snapshot.id === snapshotId ? { ...snapshot, avatarUrl } : snapshot
+                ),
+            }
+            : character
+    );
 }
 
 export async function deleteCharacter(id: string) {
@@ -201,7 +312,7 @@ export async function deleteCharacter(id: string) {
         characterState.pinnedCharacterIds = newPinned;
         
     } catch (e) {
-        console.error("Error deleting character:", e);
+        reportDiagnostic('character');
         throw e;
     }
 }
@@ -217,7 +328,7 @@ export async function toggleHideCharacter(id: string | number): Promise<boolean>
         isNowHidden ? newSet.add(normalizedId) : newSet.delete(normalizedId);
         characterState.hiddenCharacterIds = newSet;
     } catch (e) {
-        console.error('Error toggling hidden state:', e);
+        reportDiagnostic('character');
         throw e;
     }
 
@@ -235,7 +346,7 @@ export async function togglePinCharacter(id: string | number): Promise<boolean> 
         isNowPinned ? newSet.add(normalizedId) : newSet.delete(normalizedId);
         characterState.pinnedCharacterIds = newSet;
     } catch (e) {
-        console.error('Error toggling pinned state:', e);
+        reportDiagnostic('character');
         throw e;
     }
 

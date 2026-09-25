@@ -38,7 +38,7 @@
 </script>
 
 {#if char.avatarUrl}
-  <img src={char.avatarUrl} alt={char.name} class={imgClass} />
+  <img src={char.avatarUrl} alt={char.name} class={imgClass} decoding="async" />
   {#if gradientClass}
     <div class="absolute inset-0 {gradientClass}"></div>
   {/if}

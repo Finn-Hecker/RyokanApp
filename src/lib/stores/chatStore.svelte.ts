@@ -1,8 +1,11 @@
+import { reportDiagnostic } from '$lib/utils/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
 import { selectInitialGreeting } from '$lib/utils/characterGreeting';
 import { appState } from './appState.svelte';
 import { characterState, loadCharacters } from './characterStore.svelte';
 import { getLocale } from '$lib/paraglide/runtime';
+import { bumpConversationRevision, isMessageCoveredBySummary } from '$lib/utils/rollingSummaryCore';
+import type { TokenUsage } from '$lib/utils/tokenUsage';
 
 export interface Message {
     id?: string;
@@ -12,6 +15,7 @@ export interface Message {
     author?: string | null;
     swipe_variants: string[];
     swipe_index: number;
+    usage_variants: (TokenUsage | null)[];
 }
 
 export interface Conversation {
@@ -27,9 +31,31 @@ export interface Conversation {
     cloned_from_id?: string | null;
     /** Title of the source chat at the time it was cloned. */
     cloned_from_title?: string | null;
+    folder_id: string | null;
+    sort_order: number;
+    role_snapshot: ChatRoleSnapshot | null;
+}
+
+export interface ChatRoleSnapshot {
+    name: string;
+    prompt: string;
+}
+
+export interface RoleSelection {
+    source: 'global' | 'bundled';
+    id: string;
 }
 
 export type ConversationMode = Conversation['mode'];
+
+export interface ChatFolder {
+    id: string;
+    name: string;
+    mode: ConversationMode;
+    sort_order: number;
+    is_collapsed: boolean;
+    chat_count: number;
+}
 
 export interface DisplayMessage {
     id: string;
@@ -38,12 +64,10 @@ export interface DisplayMessage {
     senderName: string;
     swipeVariants: string[];
     swipeIndex: number;
+    generationError?: import('$lib/utils/generationError').GenerationErrorInfo;
 }
 
-/**
- * Soft-summary metadata for the active chat session.
- * Lives purely in memory — the DB is never mutated by the summarizer.
- */
+/** Persisted rolling-summary metadata for the active chat session. */
 export interface SummaryMeta {
     currentSummary:          string | null;
     lastSummarizedMessageId: string | null;
@@ -51,6 +75,7 @@ export interface SummaryMeta {
 
 export const chatState = $state({
     conversations:   [] as Conversation[],
+    folders:         [] as ChatFolder[],
     currentMessages: [] as Message[],
     activeChatId:    null as string | null,
     hasMoreMessages: false,
@@ -58,6 +83,7 @@ export const chatState = $state({
         currentSummary:          null,
         lastSummarizedMessageId: null,
     } as SummaryMeta,
+    activeRoleSnapshot: null as ChatRoleSnapshot | null,
 });
 
 const dateFormatter = new Intl.DateTimeFormat(getLocale(), {
@@ -65,54 +91,113 @@ const dateFormatter = new Intl.DateTimeFormat(getLocale(), {
     timeStyle: 'short'
 });
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 10;
 let loadedConversationMode: ConversationMode = 'singleplayer';
+
+function formatConversations(conversations: Conversation[]) {
+    return conversations.map(chat => ({
+        ...chat,
+        formattedDate: dateFormatter.format(new Date(chat.created_at))
+    }));
+}
+
+function replaceModeConversations(mode: ConversationMode, conversations: Conversation[]) {
+    chatState.conversations = [
+        ...chatState.conversations.filter(chat => chat.mode !== mode),
+        ...formatConversations(conversations),
+    ];
+}
 
 export async function loadAllConversations(mode: ConversationMode = loadedConversationMode) {
     loadedConversationMode = mode;
     try {
-        const result = await invoke<Conversation[]>('get_conversations_page', {
-            limit: PAGE_SIZE,
-            offset: 0,
-            mode,
-        });
-        chatState.conversations = result.map(chat => ({
-            ...chat,
-            formattedDate: dateFormatter.format(new Date(chat.created_at))
-        }));
+        const [looseChats, folders] = await Promise.all([
+            invoke<Conversation[]>('get_conversations_page', {
+                limit: PAGE_SIZE,
+                offset: 0,
+                mode,
+                folderId: null,
+            }),
+            invoke<ChatFolder[]>('get_chat_folders', { mode }),
+        ]);
+        const openFolderPages = await Promise.all(
+            folders
+                .filter(folder => !folder.is_collapsed)
+                .map(folder => invoke<Conversation[]>('get_conversations_page', {
+                    limit: Math.max(folder.chat_count, PAGE_SIZE),
+                    offset: 0,
+                    mode,
+                    folderId: folder.id,
+                })),
+        );
+        // Commit the folder metadata and its visible conversations together. Updating
+        // the folders first briefly rendered expanded folders without their rows.
+        chatState.folders = [
+            ...chatState.folders.filter(folder => folder.mode !== mode),
+            ...folders,
+        ];
+        replaceModeConversations(mode, [...openFolderPages.flat(), ...looseChats]);
     } catch (e) {
-        console.error(e);
+        reportDiagnostic('chat');
     }
 }
 
 export async function loadMoreConversations(mode: ConversationMode = loadedConversationMode): Promise<boolean> {
     if (mode !== loadedConversationMode) {
         await loadAllConversations(mode);
-        return chatState.conversations.length === PAGE_SIZE;
+        return chatState.conversations.filter(
+            chat => chat.mode === mode && chat.folder_id === null,
+        ).length === PAGE_SIZE;
     }
     try {
-        const currentLength = chatState.conversations.length;
+        const currentLength = chatState.conversations.filter(
+            chat => chat.mode === mode && chat.folder_id === null,
+        ).length;
         const result = await invoke<Conversation[]>('get_conversations_page', {
             limit: PAGE_SIZE,
             offset: currentLength,
             mode,
+            folderId: null,
         });
         if (result.length === 0) return false;
         chatState.conversations = [
             ...chatState.conversations,
-            ...result.map(chat => ({
-                ...chat,
-                formattedDate: dateFormatter.format(new Date(chat.created_at))
-            }))
+            ...formatConversations(result)
         ];
         return result.length === PAGE_SIZE;
     } catch (e) {
-        console.error(e);
+        reportDiagnostic('chat');
         return false;
     }
 }
 
-export async function startNewChat(character: any) {
+export async function loadMoreFolderConversations(folderId: string, reset = false): Promise<boolean> {
+    const folder = chatState.folders.find(item => item.id === folderId);
+    if (!folder) return false;
+    const loaded = chatState.conversations.filter(chat => chat.folder_id === folderId);
+    const offset = reset ? 0 : loaded.length;
+    const result = await invoke<Conversation[]>('get_conversations_page', {
+        limit: Math.max(folder.chat_count, PAGE_SIZE),
+        offset,
+        mode: folder.mode,
+        folderId,
+    });
+    const otherChats = reset
+        ? chatState.conversations.filter(chat => chat.folder_id !== folderId)
+        : chatState.conversations;
+    const knownIds = new Set(otherChats.map(chat => chat.id));
+    chatState.conversations = [
+        ...otherChats,
+        ...formatConversations(result).filter(chat => !knownIds.has(chat.id)),
+    ];
+    return false;
+}
+
+export function unloadFolderConversations(folderId: string) {
+    chatState.conversations = chatState.conversations.filter(chat => chat.folder_id !== folderId);
+}
+
+export async function startNewChat(character: any, roleSelection: RoleSelection | null = null) {
     try {
         const selectedGreeting = selectInitialGreeting(character);
         const newId = await invoke<string>('create_chat', {
@@ -120,10 +205,14 @@ export async function startNewChat(character: any) {
             characterName: character.name,
             initialMessage: selectedGreeting,
             mode: 'singleplayer',
+            roleSelection,
         });
         await loadAllConversations('singleplayer');
         await loadMessages(newId);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+        reportDiagnostic('chat');
+        throw e;
+    }
 }
 
 export async function openHistoryChat(chatId: string) {
@@ -138,7 +227,7 @@ export async function openHistoryChat(chatId: string) {
         if (char) {
             appState.activeCharacter = char;
         } else {
-            console.warn("Could not find a character for this chat.");
+            reportDiagnostic('chat', true);
         }
     }
 }
@@ -159,7 +248,7 @@ export async function cloneChatFromMessage(messageId: string): Promise<string | 
         await loadAllConversations('singleplayer');
         return newChatId;
     } catch (e) {
-        console.error(e);
+        reportDiagnostic('chat');
         return null;
     }
 }
@@ -169,6 +258,9 @@ export async function loadMessages(chatId: string) {
         // Chat was switched: clear local history to avoid flickering
         chatState.currentMessages = [];
         chatState.hasMoreMessages = false;
+        chatState.activeRoleSnapshot = chatState.conversations.find(
+            (conversation) => conversation.id === chatId
+        )?.role_snapshot ?? null;
         
         try {
             const meta = await invoke<{ summary: string | null; last_id: string | null }>(
@@ -200,12 +292,14 @@ export async function loadMessages(chatId: string) {
                 ? JSON.parse(row.swipe_variants)
                 : (row.swipe_variants ?? [row.content]),
             swipe_index: row.swipe_index ?? 0,
+            usage_variants: typeof row.usage_variants === 'string'
+                ? JSON.parse(row.usage_variants) : (row.usage_variants ?? []),
         }));
         chatState.activeChatId = chatId;
         
         // If we hit the limit exactly, there are probably more messages available
         chatState.hasMoreMessages = result.length === limit;
-    } catch (e) { console.error(e); }
+    } catch (e) { reportDiagnostic('chat'); }
 }
 
 // Triggered when the user scrolls up
@@ -232,15 +326,17 @@ export async function loadMoreMessages() {
                 ? JSON.parse(row.swipe_variants)
                 : (row.swipe_variants ?? [row.content]),
             swipe_index: row.swipe_index ?? 0,
+            usage_variants: typeof row.usage_variants === 'string'
+                ? JSON.parse(row.usage_variants) : (row.usage_variants ?? []),
         }));
 
         // Prepend older messages at the beginning
         chatState.currentMessages = [...parsed, ...chatState.currentMessages];
         chatState.hasMoreMessages = result.length === 25;
-    } catch (e) { console.error(e); }
+    } catch (e) { reportDiagnostic('chat'); }
 }
 
-export async function addMessage(role: 'user' | 'assistant', content: string) {
+export async function addMessage(role: 'user' | 'assistant', content: string, usage: TokenUsage | null = null) {
     const chatId = chatState.activeChatId;
     if (!chatId) return;
     try {
@@ -251,60 +347,106 @@ export async function addMessage(role: 'user' | 'assistant', content: string) {
             author: null,
             messageId: null,
             createdAt: null,
+            usage,
         });
         await loadAllConversations();
         await loadMessages(chatId);
-    } catch (e) { console.error(e); }
+    } catch (e) { reportDiagnostic('chat'); }
 }
 
-export async function addSwipeVariant(messageId: string, content: string): Promise<void> {
+async function invalidateSummaryIfCovered(chatId: string, messageId: string): Promise<void> {
+    const meta = await invoke<{ summary: string | null; last_id: string | null }>(
+        'get_summary_meta',
+        { chatId },
+    );
+    if (!meta.summary && !meta.last_id) return;
+
+    const messages = await invoke<Array<{ id: string }>>('get_messages', { chatId });
+    const inconsistent = Boolean(meta.summary) !== Boolean(meta.last_id);
+    if (!inconsistent && !isMessageCoveredBySummary(messages, meta.last_id, messageId)) return;
+
+    await invoke('save_summary_meta', {
+        chatId,
+        summary: null,
+        lastSummarizedMessageId: null,
+    });
+    if (chatState.activeChatId === chatId) {
+        chatState.summaryMeta = {
+            currentSummary: null,
+            lastSummarizedMessageId: null,
+        };
+    }
+}
+
+export async function addSwipeVariant(messageId: string, content: string, usage: TokenUsage | null = null): Promise<void> {
     const chatId = chatState.activeChatId;
     try {
-        await invoke('add_swipe_variant', { messageId, content });
+        if (chatId) await invalidateSummaryIfCovered(chatId, messageId);
+        await invoke('add_swipe_variant', { messageId, content, usage });
+        if (chatId) bumpConversationRevision(chatId);
         if (chatId) await loadMessages(chatId);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+        reportDiagnostic('chat');
+        throw e;
+    }
 }
 
 export async function setSwipeIndex(messageId: string, index: number): Promise<void> {
     const msg = chatState.currentMessages.find(m => m.id === messageId);
-    if (msg) {
-        const clamped = Math.max(0, Math.min(index, msg.swipe_variants.length - 1));
-        msg.swipe_index = clamped;
-        msg.content = msg.swipe_variants[clamped];
-    }
+    const chatId = chatState.activeChatId;
     try {
+        if (chatId) await invalidateSummaryIfCovered(chatId, messageId);
         await invoke('set_swipe_index', { messageId, index });
-    } catch (e) { console.error(e); }
+        if (chatId) bumpConversationRevision(chatId);
+        if (msg) {
+            const clamped = Math.max(0, Math.min(index, msg.swipe_variants.length - 1));
+            msg.swipe_index = clamped;
+            msg.content = msg.swipe_variants[clamped];
+        }
+    } catch (e) {
+        reportDiagnostic('chat');
+        throw e;
+    }
 }
 
 export async function updateMessage(id: string, content: string) {
     const chatId = chatState.activeChatId;
     try {
+        if (chatId) await invalidateSummaryIfCovered(chatId, id);
         await invoke('update_message', { id, content });
+        if (chatId) bumpConversationRevision(chatId);
         if (chatId) await loadMessages(chatId);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+        reportDiagnostic('chat');
+        throw e;
+    }
 }
 
 export async function deleteMessage(id: string) {
     const chatId = chatState.activeChatId;
     try {
+        if (chatId) await invalidateSummaryIfCovered(chatId, id);
         await invoke('delete_message', { id });
+        if (chatId) bumpConversationRevision(chatId);
         if (chatId) await loadMessages(chatId);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+        reportDiagnostic('chat');
+        throw e;
+    }
 }
 
 export async function renameConversation(id: string, title: string) {
     try {
         await invoke('rename_chat', { id, title });
         await loadAllConversations();
-    } catch (e) { console.error(e); }
+    } catch (e) { reportDiagnostic('chat'); }
 }
 
 export async function togglePinConversation(id: string) {
     try {
         await invoke('toggle_pin_chat', { id });
         await loadAllConversations();
-    } catch (e) { console.error(e); }
+    } catch (e) { reportDiagnostic('chat'); }
 }
 
 export async function deleteConversation(id: string) {
@@ -319,5 +461,90 @@ export async function deleteConversation(id: string) {
                 lastSummarizedMessageId: null,
             };
         }
-    } catch (e) { console.error(e); }
+    } catch (e) { reportDiagnostic('chat'); }
+}
+
+export async function createChatFolder(name: string, mode: ConversationMode) {
+    const folder = await invoke<ChatFolder>('create_chat_folder', { name, mode });
+    chatState.folders = [...chatState.folders, folder];
+}
+
+export async function renameChatFolder(id: string, name: string) {
+    await invoke('rename_chat_folder', { id, name });
+    const folder = chatState.folders.find(item => item.id === id);
+    if (folder) folder.name = name.trim();
+}
+
+export async function setChatFolderCollapsed(id: string, isCollapsed: boolean): Promise<boolean> {
+    const folder = chatState.folders.find(item => item.id === id);
+    if (!folder) return false;
+    const previousState = folder.is_collapsed;
+
+    if (isCollapsed) {
+        // Keep the rows mounted while the CSS grid closes. Removing them here used
+        // to collapse the folder in one frame before an animation could run.
+        folder.is_collapsed = true;
+        try {
+            await invoke('set_chat_folder_collapsed', { id, isCollapsed: true });
+            return false;
+        } catch (error) {
+            folder.is_collapsed = previousState;
+            throw error;
+        }
+    }
+
+    // Load hidden rows before revealing the folder. This prevents it from opening
+    // empty and growing a second time when its conversations arrive.
+    try {
+        const moreAvailable = await loadMoreFolderConversations(id, true);
+        await invoke('set_chat_folder_collapsed', { id, isCollapsed: false });
+        folder.is_collapsed = false;
+        return moreAvailable;
+    } catch (error) {
+        folder.is_collapsed = previousState;
+        throw error;
+    }
+}
+
+export async function deleteChatFolder(id: string) {
+    await invoke('delete_chat_folder', { id });
+    await loadAllConversations(loadedConversationMode);
+}
+
+export async function persistSidebarOrganization(mode: ConversationMode) {
+    const folders = chatState.folders
+        .filter(folder => folder.mode === mode)
+        .map((folder, index) => ({ ...folder, sort_order: index }));
+    chatState.folders = [
+        ...chatState.folders.filter(folder => folder.mode !== mode),
+        ...folders,
+    ];
+
+    const grouped = new Map<string | null, Conversation[]>();
+    for (const chat of chatState.conversations.filter(chat => chat.mode === mode)) {
+        const items = grouped.get(chat.folder_id) ?? [];
+        items.push(chat);
+        grouped.set(chat.folder_id, items);
+    }
+    const chats = [...grouped.entries()].flatMap(([folderId, items]) => {
+        const orderedItems = folderId === null
+            ? [...items].sort((a, b) => {
+                const activityDifference = new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+                return activityDifference || b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id);
+            })
+            : items;
+        return orderedItems.map((chat, index) => {
+            chat.sort_order = index;
+            return { id: chat.id, folder_id: chat.folder_id, sort_order: index };
+        });
+    });
+    const refreshedFolders = await invoke<ChatFolder[]>('save_sidebar_organization', {
+        mode,
+        folderIds: folders.map(folder => folder.id),
+        chats,
+    });
+    chatState.folders = [
+        ...chatState.folders.filter(folder => folder.mode !== mode),
+        ...refreshedFolders,
+    ];
 }

@@ -1,10 +1,11 @@
 use tauri::AppHandle;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use uuid::Uuid;
 use crate::database::get_connection;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct WorldInfoEntry {
     pub id:       String,
     pub keys:     Vec<String>,
@@ -12,6 +13,22 @@ pub struct WorldInfoEntry {
     pub enabled:  bool,
     pub comment:  String,
     pub position: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub insertion_order: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub constant: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub case_sensitive: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub use_regex: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selective: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secondary_keys: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extensions: Option<Value>,
 }
 
 #[derive(Serialize)]

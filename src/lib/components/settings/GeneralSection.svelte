@@ -8,13 +8,27 @@
     createDefaultApiParameterEnabled,
     type ApiParameterKey,
   } from "$lib/utils/apiParameters";
+  import { validateAdditionalApiParameters } from "$lib/utils/additionalApiParameters";
 
   export let powerUser: boolean = false;
-  export let behaviorOnly: boolean = false;
-  export let languageOnly: boolean = false;
+  export let category: "parameters" | "advanced" | "language" = "parameters";
 
   export let parameterEnabled: Record<ApiParameterKey, boolean> =
     createDefaultApiParameterEnabled();
+
+  $: additionalApiParametersValidation = validateAdditionalApiParameters(
+    appState.apiSettings.additionalApiParameters,
+  );
+
+  $: additionalApiParametersError = additionalApiParametersValidation.valid
+    ? ""
+    : additionalApiParametersValidation.error === "invalidJson"
+      ? m.settings_additional_api_parameters_error_invalid_json()
+      : additionalApiParametersValidation.error === "rootMustBeObject"
+        ? m.settings_additional_api_parameters_error_object()
+        : m.settings_additional_api_parameters_error_protected({
+            fields: additionalApiParametersValidation.fields?.join(", ") ?? "",
+          });
 
   function toggleParameter(key: ApiParameterKey) {
     parameterEnabled = {
@@ -143,10 +157,12 @@
   </span>
 {/snippet}
 
-{#if behaviorOnly}
+{#if category === "parameters" || category === "advanced"}
 <section>
-  <span class="settings-section-title">{m.settings_section_ai_behavior()}</span>
+  <span class="settings-section-title">{category === "advanced" ? m.settings_category_advanced() : m.settings_section_ai_behavior()}</span>
   <div class="settings-card space-y-4">
+
+    {#if category === "parameters"}
 
     <div>
       <div class="flex items-center justify-between mb-2">
@@ -289,26 +305,7 @@
 
     <div class="settings-divider"></div>
 
-    <div
-      role="switch"
-      aria-checked={appState.apiSettings.isThinkingModel}
-      tabindex="0"
-      on:click={() => (appState.apiSettings.isThinkingModel = !appState.apiSettings.isThinkingModel)}
-      on:keydown={(e) => (e.key === " " || e.key === "Enter") && (appState.apiSettings.isThinkingModel = !appState.apiSettings.isThinkingModel)}
-      class="thinking-toggle-row"
-    >
-      <div class="thinking-toggle-text">
-        <span class="thinking-toggle-label">{m.settings_thinking_label()}</span>
-        <span class="thinking-toggle-sub">{m.settings_thinking_sub()}</span>
-      </div>
-      <div class="toggle-track" class:toggle-track--on={appState.apiSettings.isThinkingModel}>
-        <div class="toggle-thumb" class:toggle-thumb--on={appState.apiSettings.isThinkingModel}></div>
-      </div>
-    </div>
-
-    {#if appState.apiSettings.isThinkingModel}
-      <div in:fade={{ duration: 250, delay: 30 }}>
-        <div class="settings-divider"></div>
+      <div>
         <div>
           <div class="flex items-center justify-between mb-2">
             <div style="display:flex;align-items:center;gap:8px;">
@@ -354,13 +351,10 @@
           {/if}
         </div>
       </div>
+
     {/if}
 
-    <div class="sampling-divider" role="separator">
-      <span class="sampling-divider-line"></span>
-      <span class="sampling-subheading">{m.settings_section_sampling_advanced()}</span>
-      <span class="sampling-divider-line"></span>
-    </div>
+    {#if category === "advanced"}
 
     <div>
       <div class="flex items-center justify-between mb-2">
@@ -548,11 +542,42 @@
       {/if}
     </div>
 
+    <div class="settings-divider"></div>
+
+    <div class="additional-parameters-field">
+      <div class="additional-parameters-heading">
+        <label class="settings-label" for="additional-api-parameters" style="margin-bottom:0">
+          {m.settings_additional_api_parameters_label()}
+        </label>
+        <span class="power-user-badge">{m.settings_power_user_label()}</span>
+      </div>
+      <p id="additional-api-parameters-description" class="additional-parameters-description">
+        {m.settings_additional_api_parameters_description()}
+      </p>
+      <textarea
+        id="additional-api-parameters"
+        class="settings-input additional-parameters-input"
+        class:additional-parameters-input--error={additionalApiParametersError}
+        bind:value={appState.apiSettings.additionalApiParameters}
+        placeholder={m.settings_additional_api_parameters_placeholder()}
+        aria-describedby="additional-api-parameters-description additional-api-parameters-error"
+        aria-invalid={additionalApiParametersError ? "true" : "false"}
+        spellcheck="false"
+      ></textarea>
+      {#if additionalApiParametersError}
+        <p id="additional-api-parameters-error" class="additional-parameters-error" role="alert">
+          {additionalApiParametersError}
+        </p>
+      {/if}
+    </div>
+
+    {/if}
+
   </div>
 </section>
 {/if}
 
-{#if languageOnly}
+{#if category === "language"}
 <section>
   <span class="settings-section-title">{m.settings_section_language()}</span>
   <div class="settings-card language-settings-card">
@@ -595,6 +620,50 @@
 {/if}
 
 <style>
+  .additional-parameters-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .additional-parameters-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .power-user-badge {
+    padding: 2px 7px;
+    border: 1px solid rgba(212,180,131,.22);
+    border-radius: 999px;
+    background: rgba(212,180,131,.07);
+    color: #a78e69;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+  .additional-parameters-description {
+    margin: 0 0 2px;
+    color: #66666b;
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .additional-parameters-input {
+    min-height: 150px;
+    resize: vertical;
+    font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    line-height: 1.5;
+    tab-size: 2;
+  }
+  .additional-parameters-input--error {
+    border-color: rgba(239, 107, 107, .55) !important;
+    box-shadow: 0 0 0 3px rgba(239, 107, 107, .06);
+  }
+  .additional-parameters-error {
+    margin: 0;
+    color: #e88787;
+    font-size: 11px;
+    line-height: 1.4;
+  }
   .language-settings-card {
     display: flex;
     flex-direction: column;
@@ -769,29 +838,6 @@
   }
   .preset-btn--active .preset-hint { opacity: 0.65; }
 
-  .sampling-divider {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 6px 0 2px;
-  }
-  .sampling-divider-line {
-    flex: 1;
-    height: 1px;
-    background: rgba(255,255,255,0.07);
-  }
-  .sampling-subheading {
-    flex-shrink: 0;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: #6b6b6e;
-    white-space: nowrap;
-    margin: 10px 00px 15px 0px;
-  }
-
-
   .parameter-actions {
     display: flex;
     align-items: center;
@@ -893,67 +939,4 @@
     letter-spacing: 0.04em;
   }
 
-  .toggle-track {
-    position: relative;
-    flex-shrink: 0;
-    width: 44px;
-    height: 24px;
-    border-radius: 9999px;
-    background: rgba(255,255,255,0.07);
-    border: 1px solid rgba(255,255,255,0.08);
-    transition: background 0.2s, border-color 0.2s;
-  }
-  .toggle-track--on {
-    background: rgba(212,180,131,0.2);
-    border-color: rgba(212,180,131,0.4);
-  }
-  .toggle-thumb {
-    position: absolute;
-    top: 3px;
-    left: 3px;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #5a5a5e;
-    transition: transform 0.2s, background 0.2s;
-  }
-  .toggle-thumb--on {
-    transform: translateX(20px);
-    background: #d4b483;
-  }
-
-  .thinking-toggle-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    cursor: pointer;
-    user-select: none;
-    padding: 12px 14px;
-    border-radius: 12px;
-    border: 1px solid rgba(255,255,255,0.06);
-    background: rgba(255,255,255,0.02);
-    transition: background 0.15s ease, border-color 0.15s ease;
-  }
-  .thinking-toggle-row:hover {
-    background: rgba(255,255,255,0.04);
-    border-color: rgba(255,255,255,0.10);
-  }
-  .thinking-toggle-text {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-  .thinking-toggle-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: #d1d1d6;
-    line-height: 1.3;
-  }
-  .thinking-toggle-sub {
-    font-size: 11px;
-    color: #d4b483;
-    opacity: 0.7;
-    line-height: 1.4;
-  }
 </style>

@@ -1,16 +1,19 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import * as m from '$lib/paraglide/messages';
 
   let {
     searchQuery = $bindable(),
     viewMode = $bindable(),
     showHidden = $bindable(),
-    hasHidden
+    hasHidden,
+    actions
   }: {
     searchQuery: string;
     viewMode: 'grid' | 'compact' | 'list';
     showHidden: boolean;
     hasHidden: boolean;
+    actions?: Snippet;
   } = $props();
 
   function setViewMode(mode: 'grid' | 'compact' | 'list') {
@@ -19,8 +22,8 @@
   }
 </script>
 
-<div class="flex flex-wrap items-center gap-2 md:flex-nowrap md:gap-3 mb-6">
-  <div class="relative w-full order-1 md:order-none md:w-auto md:flex-1 md:max-w-sm">
+<div class="flex flex-nowrap items-center gap-2 mb-4 sm:mb-6 md:gap-3">
+  <div class="relative flex-1 md:max-w-sm {actions ? 'min-w-32' : 'min-w-0'}">
     <svg class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
     </svg>
@@ -32,7 +35,7 @@
     />
   </div>
 
-  <div class="flex items-center gap-1 bg-white/[0.04] border border-white/[0.06] rounded-xl p-1 order-2 md:order-none">
+  <div class="flex shrink-0 items-center gap-1 bg-white/[0.04] border border-white/[0.06] rounded-xl p-1">
     <button
       onclick={() => setViewMode('grid')}
       title={m.lobby_view_grid()}
@@ -69,7 +72,7 @@
     <button
       onclick={() => (showHidden = !showHidden)}
       title={showHidden ? m.lobby_toggle_hide_hidden() : m.lobby_toggle_show_hidden()}
-      class="order-3 md:order-none w-9 h-9 flex items-center justify-center rounded-xl bg-white/[0.04] border border-white/[0.06] transition-all {showHidden ? 'text-white border-ryokan-accent/40 bg-white/[0.08]' : 'text-gray-600 hover:text-gray-400 hover:bg-white/[0.07]'}"
+      class="shrink-0 w-9 h-9 flex items-center justify-center rounded-xl bg-white/[0.04] border border-white/[0.06] transition-all {showHidden ? 'text-white border-ryokan-accent/40 bg-white/[0.08]' : 'text-gray-600 hover:text-gray-400 hover:bg-white/[0.07]'}"
     >
       {#if showHidden}
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -83,5 +86,11 @@
         </svg>
       {/if}
     </button>
+  {/if}
+
+  {#if actions}
+    <div class="flex shrink-0 items-center">
+      {@render actions()}
+    </div>
   {/if}
 </div>

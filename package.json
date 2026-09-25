@@ -1,22 +1,28 @@
 {
   "name": "ryokan",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
+    "test:summary": "node --experimental-strip-types --test src/lib/utils/rollingSummaryCore.test.mjs src/lib/utils/rollingSummaryRuntime.test.mjs",
+    "test:prompt": "node --experimental-strip-types --test src/lib/utils/promptBuilder.test.mjs",
+    "test:connections": "node --experimental-strip-types --test src/lib/utils/connectionCore.test.mjs",
+    "test:diagnostics": "node --experimental-strip-types --test src/lib/utils/diagnostics.test.mjs",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
-    "postinstall": "node scripts/download-tokenizer.js"
+    "postinstall": "node scripts/download-tokenizer.js",
+    "test:updater": "node --experimental-strip-types --test src/lib/utils/updater.test.mjs scripts/updater-config.test.mjs"
   },
   "license": "MIT",
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-sql": "^2.3.2",
+    "@tauri-apps/plugin-updater": "^2.12.0",
     "dompurify": "^3.3.1",
     "gpt-tokenizer": "^3.4.0",
     "marked": "^17.0.1"
@@ -27,7 +33,7 @@
     "@sveltejs/kit": "^2.70.2",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@tailwindcss/postcss": "^4.1.18",
-    "@tauri-apps/cli": "^2.11.4",
+    "@tauri-apps/cli": "^2.11.5",
     "@types/dompurify": "^3.0.5",
     "@types/marked": "^5.0.2",
     "@types/node": "^24.13.3",

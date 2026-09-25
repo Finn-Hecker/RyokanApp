@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import * as m from '$lib/paraglide/messages';
   import { renderMessageMarkdown } from '$lib/utils/renderMessageMarkdown';
   import { setSwipeIndex } from '$lib/stores/chatStore.svelte';
+  import type { InteractionMode } from '$lib/stores/appState.svelte';
   import type { DisplayMessage } from '$lib/stores/chatStore.svelte';
 
   let {
@@ -13,10 +15,16 @@
     canSwipe = false,
     canCloneFrom = false,
     cloneDisabled = false,
+    mobileActionsOpen = false,
+    interactionMode = 'desktop',
     character = null,
     onRetry,
+    onGenerationRetry,
+    onGenerationDismiss,
     onEditSave,
-    onCloneFrom
+    onCloneFrom,
+    onMobileActionsOpen,
+    onMobileActionsClose
   }: {
     msg: DisplayMessage;
     isGenerating?: boolean;
@@ -26,10 +34,16 @@
     canSwipe?: boolean;
     canCloneFrom?: boolean;
     cloneDisabled?: boolean;
+    mobileActionsOpen?: boolean;
+    interactionMode?: InteractionMode;
     character?: any;
     onRetry?: (data: { msgId: string }) => void;
+    onGenerationRetry?: () => void;
+    onGenerationDismiss?: () => void;
     onEditSave?: (data: { msgId: string; newContent: string }) => void;
     onCloneFrom?: (data: { msgId: string }) => void;
+    onMobileActionsOpen?: (msgId: string) => void;
+    onMobileActionsClose?: () => void;
   } = $props();
 
   let editMode = $state(false);
@@ -38,6 +52,25 @@
   let editWidth = $state(0);
   let editHeight = $state(0);
   let isCloning = $state(false);
+  let longPressTimer: ReturnType<typeof setTimeout> | undefined;
+  let longPressStart: { x: number; y: number } | null = null;
+  let mobileLongPressPending = $state(false);
+  // Keep inline controls out of the mobile DOM. Defaulting to mobile also keeps
+  // them out of SSR/pre-hydration markup until the viewport is known.
+  let isMobileViewport = $state(true);
+
+  onMount(() => {
+    const mobileQuery = window.matchMedia('(max-width: 639px)');
+    const syncViewport = () => {
+      isMobileViewport = mobileQuery.matches;
+    };
+
+    syncViewport();
+    mobileQuery.addEventListener('change', syncViewport);
+    return () => mobileQuery.removeEventListener('change', syncViewport);
+  });
+
+  let isMobileInteraction = $derived(interactionMode === 'mobile');
 
   // Swipe animation state — null means no animation (e.g. on mount or after streaming)
   let slideDir = $state<null | 'left' | 'right' | 'enter'>(null);
@@ -55,6 +88,11 @@
   let canGoRight    = $derived(canSwipe && currentIndex < totalVariants - 1);
 
   let showControls  = $derived(canSwipe || (canEdit && !isGenerating) || (canCloneFrom && !isGenerating));
+  let hasMobileActions = $derived(
+    (canSwipe && (canGoLeft || canGoRight || canRetry)) ||
+    (canEdit && !isGenerating) ||
+    (canCloneFrom && !isGenerating && !cloneDisabled && !isCloning)
+  );
   let showDots      = $derived(isLast && isGenerating && !msg.text);
 
   async function navigateSwipe(direction: 'left' | 'right') {
@@ -71,6 +109,12 @@
     // Clear after animation so subsequent re-renders don't re-trigger it
     await new Promise(r => setTimeout(r, 200));
     slideDir = null;
+  }
+
+  function startSwipe(direction: 'left' | 'right') {
+    void navigateSwipe(direction).catch(() => {
+      slideDir = null;
+    });
   }
 
   async function handleEditOpen() {
@@ -108,9 +152,73 @@
       isCloning = false;
     }
   }
+
+  function startMobileLongPress(event: PointerEvent) {
+    if (!window.matchMedia('(max-width: 639px)').matches || event.pointerType !== 'touch' || !hasMobileActions || (event.target as HTMLElement).closest('button, input, textarea, a')) return;
+    longPressStart = { x: event.clientX, y: event.clientY };
+    mobileLongPressPending = true;
+    longPressTimer = setTimeout(() => {
+      window.getSelection()?.removeAllRanges();
+      navigator.vibrate?.(8);
+      onMobileActionsOpen?.(msg.id);
+      mobileLongPressPending = false;
+      longPressTimer = undefined;
+    }, 500);
+  }
+
+  function cancelMobileLongPress(event?: PointerEvent) {
+    if (event?.type === 'pointermove' && longPressStart) {
+      const moved = Math.hypot(event.clientX - longPressStart.x, event.clientY - longPressStart.y) > 10;
+      if (!moved) return;
+    }
+    if (longPressTimer) clearTimeout(longPressTimer);
+    longPressTimer = undefined;
+    longPressStart = null;
+    mobileLongPressPending = false;
+  }
+
+  function closeMobileActions() {
+    onMobileActionsClose?.();
+  }
+
+  function preventMobileTextSelection(event: MouseEvent) {
+    if (window.matchMedia('(max-width: 639px)').matches) event.preventDefault();
+  }
+
+  function openMobileEdit() {
+    closeMobileActions();
+    void handleEditOpen();
+  }
+
+  function openMobileClone() {
+    closeMobileActions();
+    void handleCloneFromHere();
+  }
+
+  function openMobileSwipe(direction: 'left' | 'right') {
+    closeMobileActions();
+    startSwipe(direction);
+  }
+
+  function openMobileRetry() {
+    closeMobileActions();
+    onRetry?.({ msgId: msg.id });
+  }
+
 </script>
 
-<div data-message-id={msg.id} class="flex {msg.isUser ? 'justify-end mb-6' : 'justify-start mb-8'}">
+<div
+  data-message-id={msg.id}
+  role="group"
+  class="flex {msg.isUser ? 'justify-end mb-6' : 'justify-start mb-8'}"
+  class:mobile-message-typography={isMobileInteraction}
+  class:mobile-long-press-pending={mobileLongPressPending}
+  onpointerdown={startMobileLongPress}
+  onpointermove={cancelMobileLongPress}
+  onpointerup={cancelMobileLongPress}
+  onpointercancel={cancelMobileLongPress}
+  oncontextmenu={preventMobileTextSelection}
+>
 
 {#if msg.isUser}
   <div class="max-w-[75%] sm:max-w-[65%] group/usermsg">
@@ -149,10 +257,10 @@
           {isOocMsg
             ? 'bg-ryokan-accent/[0.07] border border-ryokan-accent/25 text-ryokan-accent italic'
             : 'bg-[#1e1e22] border border-white/[0.04] text-gray-200'}
-          text-[15px] leading-relaxed break-words shadow-sm transition-colors">
+          user-message-text text-[15px] leading-relaxed break-words shadow-sm transition-colors">
           {displayText}
         </div>
-        {#if canEdit && !isGenerating}
+        {#if !isMobileViewport && canEdit && !isGenerating}
           <div class="user-ctrl-bar
             opacity-100 translate-y-0 pointer-events-auto
             sm:opacity-0 sm:group-hover/usermsg:opacity-100
@@ -224,12 +332,29 @@
       {:else}
         <div
           bind:this={msgEl}
-          class="text-gray-200 text-sm break-words prose-custom swipe-bubble"
+          class="text-gray-200 break-words prose-custom swipe-bubble"
           class:swipe-exit-left={slideDir === 'left'}
           class:swipe-exit-right={slideDir === 'right'}
           class:swipe-enter={slideDir === 'enter'}
         >
           {@html cleanHtml}
+
+          {#if msg.generationError}
+            <div class="generation-error" role="alert">
+              <p class="generation-error-title">{msg.generationError.title}</p>
+              <details><summary>{m.chat_generation_details()}</summary><dl>
+                {#if msg.generationError.status}<div><dt>{m.chat_generation_http_status()}</dt><dd>{msg.generationError.status}</dd></div>{/if}
+                {#if msg.generationError.code}<div><dt>{m.chat_generation_error_code()}</dt><dd>{msg.generationError.code}</dd></div>{/if}
+                {#if msg.generationError.provider}<div><dt>{m.chat_generation_provider()}</dt><dd>{msg.generationError.provider}</dd></div>{/if}
+                {#if msg.generationError.model}<div><dt>{m.chat_generation_model()}</dt><dd>{msg.generationError.model}</dd></div>{/if}
+                <div><dt>{m.chat_generation_api_message()}</dt><dd>{msg.generationError.message}</dd></div>
+              </dl></details>
+              <div class="generation-error-actions">
+                <button onclick={() => onGenerationRetry?.()}>{m.chat_error_retry()}</button>
+                <button onclick={() => onGenerationDismiss?.()}>{m.chat_error_cancel()}</button>
+              </div>
+            </div>
+          {/if}
 
           {#if showDots}
             <span class="breathe-dots" aria-label="Generiert…" role="status">
@@ -240,7 +365,7 @@
           {/if}
         </div>
 
-        {#if showControls}
+        {#if !isMobileViewport && showControls}
           <div class="controls-bar
             opacity-100 translate-y-0 pointer-events-auto
             sm:opacity-0 sm:group-hover/message:opacity-100
@@ -252,7 +377,7 @@
                 class="ctrl-btn"
                 class:ctrl-btn--dim={!canGoLeft}
                 disabled={!canGoLeft}
-                onclick={() => navigateSwipe('left')}
+                onclick={() => startSwipe('left')}
                 aria-label="Vorherige Variante"
               >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
@@ -269,7 +394,7 @@
                   class="ctrl-btn"
                   class:ctrl-btn--accent={!canGoRight && canRetry}
                   disabled={isGenerating}
-                  onclick={() => canGoRight ? navigateSwipe('right') : onRetry?.({ msgId: msg.id })}
+                  onclick={() => canGoRight ? startSwipe('right') : onRetry?.({ msgId: msg.id })}
                   aria-label={canGoRight ? 'Nächste Variante' : m.chat_retry()}
                   title={canGoRight ? undefined : m.chat_retry()}
                 >
@@ -338,6 +463,39 @@
 
 </div>
 
+{#if mobileActionsOpen}
+  <div class="mobile-action-sheet-layer">
+    <button class="mobile-action-sheet-backdrop" aria-label={m.chat_cancel()} onclick={closeMobileActions}></button>
+    <div class="mobile-action-sheet" role="dialog" aria-modal="true" aria-label="Message actions">
+      <div class="mobile-action-sheet-handle" aria-hidden="true"></div>
+      <div class="mobile-action-sheet-actions">
+        {#if canSwipe && canGoLeft}
+          <button class="mobile-action" onclick={() => openMobileSwipe('left')}>
+            <span>{m.chat_previous_variant()}</span>
+            {#if totalVariants > 1}<small>{currentIndex + 1} / {totalVariants}</small>{/if}
+          </button>
+        {/if}
+        {#if canSwipe}
+          {#if canGoRight}
+            <button class="mobile-action" onclick={() => openMobileSwipe('right')}><span>{m.chat_next_variant()}</span></button>
+          {:else if canRetry}
+            <button class="mobile-action mobile-action--accent" onclick={openMobileRetry}><span>{m.chat_retry()}</span></button>
+          {/if}
+        {/if}
+        {#if canEdit && !isGenerating}
+          <button class="mobile-action" onclick={openMobileEdit}><span>{m.chat_edit()}</span></button>
+        {/if}
+        {#if canCloneFrom && !isGenerating && !cloneDisabled && !isCloning}
+          <button class="mobile-action" onclick={openMobileClone}>
+            <span>{isCloning ? m.chat_clone_from_here_loading() : m.chat_clone_from_here_label()}</span>
+          </button>
+        {/if}
+      </div>
+      <button class="mobile-action mobile-action--cancel" onclick={closeMobileActions}>{m.chat_cancel()}</button>
+    </div>
+  </div>
+{/if}
+
 <style>
   @property --border-angle {
     syntax: '<angle>';
@@ -401,6 +559,43 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.04);
     backdrop-filter: blur(10px);
     white-space: nowrap;
+  }
+
+  @media (max-width: 639px) {
+    .controls-bar,
+    .user-ctrl-bar {
+      display: none;
+    }
+
+    .mobile-long-press-pending {
+      opacity: .88;
+    }
+
+    [data-message-id] {
+      touch-action: pan-y;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+  }
+
+  .mobile-action-sheet-layer { display: none; }
+
+  @media (max-width: 639px) {
+    .mobile-action-sheet-layer { display: block; position: fixed; z-index: 80; inset: 0; }
+    .mobile-action-sheet-backdrop { position: absolute; inset: 0; width: 100%; border: 0; background: rgba(0,0,0,.52); backdrop-filter: blur(2px); animation: mobile-sheet-fade .16s ease-out; }
+    .mobile-action-sheet { position: absolute; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); left: 10px; max-width: 480px; margin: auto; padding: 8px; border: 1px solid rgba(255,255,255,.09); border-radius: 18px; background: rgba(25,25,29,.98); box-shadow: 0 -8px 32px rgba(0,0,0,.32); animation: mobile-sheet-enter .2s cubic-bezier(.22,.8,.3,1); will-change: transform, opacity; }
+    .mobile-action-sheet-handle { width: 34px; height: 4px; margin: 2px auto 8px; border-radius: 999px; background: rgba(255,255,255,.16); }
+    .mobile-action-sheet-actions { display: grid; gap: 3px; }
+    .mobile-action { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 50px; padding: 0 14px; border: 0; border-radius: 12px; background: transparent; color: #e5e5ea; font: 500 15px/1.2 inherit; text-align: left; }
+    .mobile-action:active:not(:disabled) { background: rgba(255,255,255,.08); }
+    .mobile-action:disabled { color: rgba(255,255,255,.28); }
+    .mobile-action small { color: rgba(255,255,255,.38); font-size: 12px; }
+    .mobile-action--accent { color: #d4b483; }
+    .mobile-action--cancel { justify-content: center; margin-top: 5px; background: rgba(255,255,255,.055); color: rgba(255,255,255,.66); }
+    @keyframes mobile-sheet-fade { from { opacity: 0; } }
+    @keyframes mobile-sheet-enter { from { opacity: .72; transform: translateY(20px); } }
+    @media (prefers-reduced-motion: reduce) { .mobile-action-sheet-backdrop, .mobile-action-sheet { animation-duration: .01ms; } }
   }
 
   .ctrl-btn {
@@ -513,7 +708,40 @@
   :global(.prose-custom p)            { margin-bottom: 1.2em; }
   :global(.prose-custom p:last-child) { margin-bottom: 0; }
   :global(.prose-custom strong)       { color: #ffffff; font-weight: 600; }
-  :global(.prose-custom em)           { color: #a39887; font-style: italic; }
+  :global(.prose-custom em)           { color: #a39887; font-size: 0.95em; font-style: italic; }
+
+  /* Android WebView can inflate long text independently of its CSS font size.
+     Anchor the two actual message render paths to the native interaction mode. */
+  .mobile-message-typography :global(.prose-custom) {
+    font-size: 14.5px;
+    line-height: 1.55;
+    -webkit-text-size-adjust: none;
+    text-size-adjust: none;
+  }
+
+  .mobile-message-typography :global(.prose-custom p) {
+    margin-bottom: 1em;
+  }
+
+  .mobile-message-typography .user-message-text {
+    font-size: 17px;
+    line-height: 1.5;
+    -webkit-text-size-adjust: none;
+    text-size-adjust: none;
+  }
+
+  .generation-error { padding: 12px 14px; border: 1px solid rgba(248,113,113,.25); border-radius: 12px; background: rgba(248,113,113,.07); color: #d1d5db; }
+  .generation-error-title { margin: 0; color: #fca5a5; font-weight: 600; }
+  .generation-error details { margin-top: 7px; font-size: 12px; color: #9ca3af; }
+  .generation-error summary { cursor: pointer; user-select: none; }
+  .generation-error dl { margin: 8px 0 0; display: grid; gap: 5px; }
+  .generation-error dl div { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px; }
+  .generation-error dt { color: #6b7280; }
+  .generation-error dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .generation-error-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .generation-error-actions button { padding: 4px 9px; border-radius: 7px; background: rgba(255,255,255,.06); color: #d1d5db; cursor: pointer; font-size: 12px; }
+  .generation-error-actions button:first-child { color: #fca5a5; }
+  .generation-error-actions button:hover { background: rgba(255,255,255,.1); }
 
   :global(.breathe-dots) {
     display: inline-flex;

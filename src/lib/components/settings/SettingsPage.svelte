@@ -1,69 +1,82 @@
 <script lang="ts">
+  import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { appState } from "$lib/stores/appState.svelte";
+  import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { getAllSettings, saveSetting } from "$lib/utils/settings";
   import { onMount } from "svelte";
+  import { openUrl } from '@tauri-apps/plugin-opener';
   import { setLocale } from "$lib/paraglide/runtime";
   import * as m from "$lib/paraglide/messages";
-  import PageWithNavSidebar from '$lib/components/layouts/PageWithNavSidebar.svelte';
   import ApiSection from "./ApiSection.svelte";
   import GeneralSection from "./GeneralSection.svelte";
-  import Button from '$lib/components/ui/Button.svelte';
-  import {
-    API_PARAMETER_SETTING_KEYS,
-    createDefaultApiParameterEnabled,
-    readApiParameterEnabled,
-    type ApiParameterKey,
-  } from "$lib/utils/apiParameters";
+  import UpdateSection from './UpdateSection.svelte';
+  import { downloadDiagnostics } from '$lib/utils/diagnostics';
+  import { diagnosticsMetadata } from '$lib/utils/diagnosticsMetadata';
+  import Button from "$lib/components/ui/Button.svelte";
+  import { API_PARAMETER_SETTING_KEYS, createDefaultApiParameterEnabled, type ApiParameterKey } from "$lib/utils/apiParameters";
+  import { validateAdditionalApiParameters } from "$lib/utils/additionalApiParameters";
+  import { hydrateApiConnections, LONG_TERM_MEMORY_KEY, persistApiConnections, resolvedHardContextLimit, SUMMARY_CONNECTION_KEY } from "$lib/utils/apiConnections";
+
+  type SettingsCategory = "provider" | "memory" | "parameters" | "language" | "advanced" | "about";
+  type Category = { id: SettingsCategory; label: string; description: string; mobileDescription: string; icon: string };
 
   let powerUser = $state(false);
+  let exportingDiagnostics = $state(false);
+  let diagnosticsStatus = $state('');
 
-  // Keep the numeric value and the enabled state separate. This way disabling a
-  // sampler does not destroy the user's tuned value, and re-enabling restores it.
-  let parameterEnabled = $state<Record<ApiParameterKey, boolean>>(
-    createDefaultApiParameterEnabled(),
-  );
+  async function exportDiagnostics() {
+    if (exportingDiagnostics) return;
+    exportingDiagnostics = true;
+    diagnosticsStatus = '';
+    try {
+      await downloadDiagnostics(diagnosticsMetadata(appState.apiSettings, appState.longTermMemory));
+      diagnosticsStatus = m.settings_diagnostics_started();
+    } catch {
+      diagnosticsStatus = m.settings_diagnostics_failed();
+    } finally {
+      exportingDiagnostics = false;
+    }
+  }
+  let parameterEnabled = $state<Record<ApiParameterKey, boolean>>(createDefaultApiParameterEnabled());
 
-  const NAV_ITEMS = [
-    { id: "api",      label: m.settings_nav_api(),             icon: "M12 2a10 10 0 100 20A10 10 0 0012 2zm0 3v2m0 10v2M5.22 5.22l1.42 1.42m10.72 10.72l1.42 1.42M2 12h2m16 0h2M5.22 18.78l1.42-1.42M17.36 6.64l1.42-1.42" },
-    { id: "language", label: m.settings_section_language(),    icon: "M12 21a9 9 0 100-18 9 9 0 000 18zm0 0c2.21 0 4-4.03 4-9s-1.79-9-4-9-4 4.03-4 9 1.79 9 4 9zM3.5 12h17M5 7.5h14M5 16.5h14" },
-    { id: "behavior", label: m.settings_section_ai_behavior(), icon: "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" },
+  const CATEGORIES: Category[] = [
+    { id: "provider", label: m.settings_category_provider(), description: m.settings_category_provider_description(), mobileDescription: m.settings_category_provider_mobile_description(), icon: "M4 7h16M6 3h12v18H6zM9 11h6M9 15h6" },
+    { id: "memory", label: m.settings_category_memory(), description: m.settings_category_memory_description(), mobileDescription: m.settings_category_memory_mobile_description(), icon: "M9 4.5a3 3 0 015.83-1M9 4.5A3 3 0 003.5 6v1A3.5 3.5 0 005 13.7V15a4 4 0 004 4M15 4.5A3 3 0 0120.5 6v1A3.5 3.5 0 0119 13.7V15a4 4 0 01-4 4M9 4.5V19M15 4.5V19M9 9h2M13 14h2" },
+    { id: "parameters", label: m.settings_section_ai_behavior(), description: m.settings_category_parameters_description(), mobileDescription: m.settings_category_parameters_mobile_description(), icon: "M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5M14 4v4M6 10v4M11 16v4" },
+    { id: "language", label: m.settings_section_language(), description: m.settings_category_language_description(), mobileDescription: m.settings_category_language_description(), icon: "M12 21a9 9 0 100-18 9 9 0 000 18zm0 0c2.21 0 4-4.03 4-9s-1.79-9-4-9-4 4.03-4 9 1.79 9 4 9zM3.5 12h17" },
+    { id: "advanced", label: m.settings_category_advanced(), description: m.settings_category_advanced_description(), mobileDescription: m.settings_category_advanced_mobile_description(), icon: "M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM19 12h2M3 12h2M12 3v2M12 19v2M5.64 5.64l1.42 1.42M16.94 16.94l1.42 1.42M18.36 5.64l-1.42 1.42M7.06 16.94l-1.42 1.42" },
+    { id: "about", label: m.settings_category_about(), description: m.settings_category_about_description(), mobileDescription: m.settings_category_about_description(), icon: "M12 17v-5M12 8h.01M12 22a10 10 0 110-20 10 10 0 010 20z" },
   ];
 
-  let activeSection = $state("api");
+  let activeSection = $state<SettingsCategory>("provider");
+  let mobileCategoryOpen = $state(false);
   let isSaving = $state(false);
-  let sectionEls: Record<string, HTMLElement> = {};
+  let settingsReady = $state(false);
+  let settingsContentEl: HTMLDivElement;
+  const activeCategory = $derived(CATEGORIES.find((item) => item.id === activeSection) ?? CATEGORIES[0]);
+  const generalCategory = $derived(activeSection === "language" ? "language" : activeSection === "advanced" ? "advanced" : "parameters");
+  const additionalApiParametersValidation = $derived(validateAdditionalApiParameters(appState.apiSettings.additionalApiParameters));
 
-  function scrollToSection(id: string) {
+  function selectCategory(id: SettingsCategory, mobile = false) {
     activeSection = id;
-    sectionEls[id]?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (settingsContentEl) settingsContentEl.scrollTop = 0;
+    if (mobile) mobileCategoryOpen = true;
   }
 
-  const SETTINGS_MAP: Record<string, (value: string) => void> = {
-    api_url:              (v) => (appState.apiSettings.url = v),
-    api_key:              (v) => (appState.apiSettings.apiKey = v),
-    api_model:            (v) => (appState.apiSettings.model = v),
-    api_custom_mode:      (v) => (appState.apiSettings.customMode = v === "true"),
-    thinking_mode:        (v) => (appState.apiSettings.isThinkingModel = v === "true"),
-    system_prompt:        (v) => (appState.apiSettings.systemPrompt = v),
-    api_temperature:      (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.temperature = n; },
-    api_max_tokens:       (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.maxTokens = n; },
-    api_thinking_budget:  (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.thinkingBudget = n; },
-    api_presence_penalty: (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.presencePenalty = n; },
-    api_context_limit:    (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.contextLimit = n; },
-    api_top_p:             (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.topP = n; },
-    api_top_k:             (v) => { const n = parseInt(v); if (!isNaN(n)) appState.apiSettings.topK = n; },
-    api_min_p:              (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.minP = n; },
-    api_frequency_penalty: (v) => { const n = parseFloat(v); if (!isNaN(n)) appState.apiSettings.frequencyPenalty = n; },
-    settings_power_user:  (v) => { powerUser = v === "true"; },
-  };
+  function handleConnectionChange(previousConnectionId: string) {
+    const previous = appState.apiConnections.find(connection => connection.id === previousConnectionId);
+    if (previous) previous.parameterEnabled = { ...parameterEnabled };
+    parameterEnabled = { ...appState.apiSettings.parameterEnabled };
+  }
 
   onMount(loadSettings);
 
   async function loadSettings() {
     try {
       const settings = await getAllSettings();
-      parameterEnabled = readApiParameterEnabled(settings);
-      for (const row of settings) SETTINGS_MAP[row.key]?.(row.value);
+      hydrateApiConnections(settings);
+      parameterEnabled = { ...appState.apiSettings.parameterEnabled };
+      powerUser = settings.find(row => row.key === 'settings_power_user')?.value === 'true';
       if (appState.apiSettings.maxTokens == null) appState.apiSettings.maxTokens = 300;
       if (appState.apiSettings.presencePenalty == null) appState.apiSettings.presencePenalty = 1.1;
       if (appState.apiSettings.thinkingBudget == null) appState.apiSettings.thinkingBudget = 2500;
@@ -72,292 +85,228 @@
       if (appState.apiSettings.topK == null) appState.apiSettings.topK = 40;
       if (appState.apiSettings.minP == null) appState.apiSettings.minP = 0.05;
       if (appState.apiSettings.frequencyPenalty == null) appState.apiSettings.frequencyPenalty = 0;
-
-      console.log("[Settings] Loaded values:", {
-        url:             appState.apiSettings.url,
-        apiKeyConfigured: Boolean(appState.apiSettings.apiKey),
-        model:           appState.apiSettings.model,
-        isThinkingModel: appState.apiSettings.isThinkingModel,
-        systemPrompt:    appState.apiSettings.systemPrompt,
-        temperature:     appState.apiSettings.temperature,
-        maxTokens:       appState.apiSettings.maxTokens,
-        presencePenalty: appState.apiSettings.presencePenalty,
-        thinkingBudget:  appState.apiSettings.thinkingBudget,
-        contextLimit:    appState.apiSettings.contextLimit,
-        topP:            appState.apiSettings.topP,
-        topK:            appState.apiSettings.topK,
-        minP:            appState.apiSettings.minP,
-        frequencyPenalty: appState.apiSettings.frequencyPenalty,
-        parameterEnabled: { ...parameterEnabled },
-        powerUser,
-      });
-    } catch (err) {
-      console.error("[Settings] Failed to load:", err);
-    }
+    } catch (err) { reportDiagnostic('settings'); }
+    finally { settingsReady = true; }
   }
 
   async function saveSettings() {
+    if (!additionalApiParametersValidation.valid) return;
     isSaving = true;
     try {
+      appState.apiSettings.parameterEnabled = { ...parameterEnabled };
+      appState.apiSettings.contextLimit = resolvedHardContextLimit(appState.apiSettings);
       await Promise.all([
-        saveSetting("api_url",              appState.apiSettings.url),
-        saveSetting("api_key",              appState.apiSettings.apiKey),
-        saveSetting("api_model",            appState.apiSettings.model),
-        saveSetting("api_custom_mode",      appState.apiSettings.customMode),
-        saveSetting("thinking_mode",        appState.apiSettings.isThinkingModel),
-        saveSetting("system_prompt",        appState.apiSettings.systemPrompt),
-        saveSetting("api_temperature",      appState.apiSettings.temperature ?? 0.7),
-        saveSetting("api_max_tokens",       appState.apiSettings.maxTokens ?? 300),
-        saveSetting("api_thinking_budget",  appState.apiSettings.thinkingBudget ?? 2500),
-        saveSetting("api_presence_penalty", appState.apiSettings.presencePenalty ?? 1.1),
-        saveSetting("api_context_limit",    appState.apiSettings.contextLimit ?? 4096),
-        saveSetting("api_top_p",             appState.apiSettings.topP ?? 0.9),
-        saveSetting("api_top_k",             appState.apiSettings.topK ?? 40),
-        saveSetting("api_min_p",             appState.apiSettings.minP ?? 0.05),
+        persistApiConnections(),
+        saveSetting("api_url", appState.apiSettings.url), saveSetting("api_key", appState.apiSettings.apiKey),
+        saveSetting("api_model", appState.apiSettings.model), saveSetting("api_custom_mode", appState.apiSettings.customMode),
+        saveSetting("system_prompt", appState.apiSettings.systemPrompt),
+        saveSetting("api_temperature", appState.apiSettings.temperature ?? 0.7), saveSetting("api_max_tokens", appState.apiSettings.maxTokens ?? 300),
+        saveSetting("api_thinking_budget", appState.apiSettings.thinkingBudget ?? 2500), saveSetting("api_presence_penalty", appState.apiSettings.presencePenalty ?? 1.1),
+        saveSetting("api_context_limit", appState.apiSettings.contextLimit ?? 4096), saveSetting("api_top_p", appState.apiSettings.topP ?? 0.9),
+        saveSetting("api_top_k", appState.apiSettings.topK ?? 40), saveSetting("api_min_p", appState.apiSettings.minP ?? 0.05),
         saveSetting("api_frequency_penalty", appState.apiSettings.frequencyPenalty ?? 0),
-        ...Object.entries(API_PARAMETER_SETTING_KEYS).map(([parameter, settingKey]) =>
-          saveSetting(settingKey, parameterEnabled[parameter as ApiParameterKey])
-        ),
-        saveSetting("settings_power_user",  powerUser),
+        saveSetting("api_additional_parameters", appState.apiSettings.additionalApiParameters),
+        ...Object.entries(API_PARAMETER_SETTING_KEYS).map(([parameter, key]) => saveSetting(key, parameterEnabled[parameter as ApiParameterKey])),
+        saveSetting("settings_power_user", powerUser),
+        saveSetting(LONG_TERM_MEMORY_KEY, appState.longTermMemory),
+        saveSetting(SUMMARY_CONNECTION_KEY, appState.summaryConnectionId),
       ]);
       const locale = appState.pendingUiLocale;
       if (locale) setLocale(locale as any);
       goBack();
-    } catch (err) {
-      console.error("[Settings] Save failed:", err);
-    }
-    isSaving = false;
+    } catch (err) { reportDiagnostic('settings'); }
+    finally { isSaving = false; }
   }
 
-  function goBack() {
-    appState.currentView = "lobby";
+  function goBack() { returnTo('lobby'); }
+
+  async function openExternalLink(url: string) {
+    try { await openUrl(url); }
+    catch (error) { reportDiagnostic('settings'); }
   }
+
+  $effect(() => {
+    if (!mobileCategoryOpen) return;
+    return registerBackHandler(() => {
+      mobileCategoryOpen = false;
+      return true;
+    });
+  });
 </script>
 
-{#snippet navHeader({ mobile }: { mobile: boolean })}
-  {#if !mobile}
-    <h2 class="text-lg font-medium text-ryokan-accent">{m.settings_title()}</h2>
-  {/if}
+{#snippet backIcon()}
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round" /></svg>
 {/snippet}
 
-{#snippet powerToggle({ compact = false }: { compact?: boolean } = {})}
-  <label class="power-user-toggle" class:compact title={m.settings_power_user_title()}>
-    <div class="power-icon" class:active={powerUser}>
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-      </svg>
-    </div>
-    <span class="power-label">{m.settings_power_user_label()}</span>
-    <input type="checkbox" bind:checked={powerUser} class="sr-only peer" />
-    <div class="power-track
-                peer-checked:bg-ryokan-accent/20 peer-checked:border-ryokan-accent/40
-                after:content-[''] after:absolute after:top-[3px] after:start-[3px]
-                after:bg-[#5a5a5e] after:rounded-full
-                after:h-[14px] after:w-[14px] after:transition-all
-                peer-checked:after:translate-x-[18px] peer-checked:after:bg-ryokan-accent">
-    </div>
+{#snippet communityLinks()}
+  <div class="community-card" role="group" aria-label="Ryokan community links">
+    <button type="button" class="discord-link" aria-label="Open Ryokan Discord" title="Discord" onclick={() => openExternalLink('https://discord.gg/shrZCsfGWK')}>
+      <span class="discord-icon"><svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.545 2.907a13.2 13.2 0 0 0-3.257-1.011.05.05 0 0 0-.052.025c-.141.25-.297.577-.406.833a12.2 12.2 0 0 0-3.658 0 8 8 0 0 0-.412-.833.05.05 0 0 0-.052-.025c-1.125.194-2.22.534-3.257 1.011a.04.04 0 0 0-.021.018C.356 6.024-.213 9.047.066 12.032q.003.022.021.037a13.3 13.3 0 0 0 3.995 2.02.05.05 0 0 0 .056-.019q.463-.63.818-1.329a.05.05 0 0 0-.01-.059l-.018-.011a9 9 0 0 1-1.248-.595.05.05 0 0 1-.02-.066l.015-.019q.127-.095.248-.195a.05.05 0 0 1 .051-.007c2.619 1.196 5.454 1.196 8.041 0a.05.05 0 0 1 .053.007q.121.1.248.195a.05.05 0 0 1-.004.085 8 8 0 0 1-1.249.594.05.05 0 0 0-.03.03.05.05 0 0 0 .003.041c.24.465.515.909.817 1.329a.05.05 0 0 0 .056.019 13.2 13.2 0 0 0 4.001-2.02.05.05 0 0 0 .021-.037c.334-3.451-.559-6.449-2.366-9.106a.03.03 0 0 0-.02-.019m-8.198 7.307c-.789 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.45.73 1.438 1.613 0 .888-.637 1.612-1.438 1.612m5.316 0c-.788 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.451.73 1.438 1.613 0 .888-.631 1.612-1.438 1.612"/></svg></span>
+      <span class="discord-label">Discord</span>
+    </button>
+    <button type="button" class="github-link" aria-label="Open Ryokan on GitHub" title="GitHub" onclick={() => openExternalLink('https://github.com/Finn-Hecker/RyokanApp')}>
+      <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.64 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.51-2.01.38-2.53-.5-2.69-.96-.09-.23-.48-.96-.82-1.15-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.83.72 1.23 1.87.88 2.33.67.07-.53.28-.88.51-1.08-1.78-.21-3.64-.91-3.64-4.02 0-.89.31-1.62.82-2.19-.08-.2-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.5 7.5 0 0 1 8 3.9c.68 0 1.36.09 2 .28 1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.96.08 2.16.51.57.82 1.3.82 2.19 0 3.12-1.87 3.81-3.65 4.02.29.25.54.74.54 1.5 0 1.08-.01 1.95-.01 2.22 0 .22.15.47.55.39A8.14 8.14 0 0 0 16 8.13C16 3.64 12.42 0 8 0"/></svg>
+      <span class="github-label">GitHub</span>
+    </button>
+  </div>
+{/snippet}
+
+{#snippet categoryIcon(item: Category)}
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+    {#each item.icon.split("M").filter(Boolean) as d}<path d="M{d}" stroke-linecap="round" stroke-linejoin="round" />{/each}
+  </svg>
+{/snippet}
+
+{#snippet saveButton()}
+  <Button variant="secondary" disabled={isSaving || !additionalApiParametersValidation.valid} onclick={saveSettings}>
+    {#if isSaving}<span class="save-spinner"></span>{:else}{m.settings_btn_save()}{/if}
+  </Button>
+{/snippet}
+
+{#snippet powerToggle()}
+  <label class="power-user-toggle" title={m.settings_power_user_title()}>
+    <span class="power-icon" class:active={powerUser}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg></span>
+    <span class="power-copy"><span class="power-label">{m.settings_power_user_label()}</span><span class="power-description">{m.settings_power_user_description()}</span></span>
+    <input type="checkbox" bind:checked={powerUser} class="settings-switch-input sr-only" />
+    <span class="settings-switch-track"><span class="settings-switch-thumb"></span></span>
   </label>
 {/snippet}
 
-{#snippet navFooter()}
-  <div class="nav-footer-divider"></div>
-  {@render powerToggle({})}
-{/snippet}
+<div class="settings-shell" role="region" aria-label={m.settings_title()}>
+  <aside class="desktop-sidebar" aria-label={m.settings_categories_aria()}>
+    <div class="sidebar-title">{m.settings_title()}</div>
+    <nav class="category-nav">
+      {#each CATEGORIES as item}
+        <button type="button" class="category-nav-item" class:category-nav-item--active={activeSection === item.id} aria-current={activeSection === item.id ? "page" : undefined} onclick={() => selectCategory(item.id)}>
+          {@render categoryIcon(item)}<span>{item.label}</span>
+        </button>
+      {/each}
+    </nav>
+    <div class="sidebar-footer">{@render communityLinks()}</div>
+  </aside>
 
-{#snippet actions()}
-  <div class="flex w-full items-center justify-between gap-3 md:w-auto md:justify-start">
-    <Button variant="icon" ariaLabel={m.create_page_aria_back()} onclick={goBack}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </Button>
+  <main class="settings-main">
+    <header class="app-page-header desktop-header">
+      <div><h1>{activeCategory.label}</h1><p>{activeCategory.description}</p></div>
+      <div class="header-actions"><Button variant="icon" ariaLabel={m.create_page_aria_back()} onclick={goBack}>{@render backIcon()}</Button>{@render saveButton()}</div>
+    </header>
 
-    <Button variant="secondary" disabled={isSaving} onclick={saveSettings}>
-      {#if isSaving}
-        <span class="save-spinner"></span>
-      {:else}
-        {m.settings_btn_save()}
-      {/if}
-    </Button>
-  </div>
-{/snippet}
+    <header class="app-page-header mobile-header">
+      <Button variant="icon" ariaLabel={mobileCategoryOpen ? m.settings_back_to_overview() : m.create_page_aria_back()} onclick={() => mobileCategoryOpen ? (mobileCategoryOpen = false) : goBack()}>{@render backIcon()}</Button>
+      <h1>{mobileCategoryOpen ? activeCategory.label : m.settings_title()}</h1>
+      {@render saveButton()}
+    </header>
 
-{#snippet mobileNav()}
-  {#each NAV_ITEMS as item}
-    <button
-      onclick={() => scrollToSection(item.id)}
-      class="flex-1 basis-0 min-w-0 px-4 py-2 rounded-full text-xs font-semibold border transition-all
-        {activeSection === item.id
-          ? 'bg-white/[0.07] border-white/[0.08] text-white'
-          : 'bg-white/[0.03] border-white/[0.06] text-gray-500 hover:text-white hover:bg-white/[0.05]'}"
-    >
-      {item.label}
-    </button>
-  {/each}
-{/snippet}
-
-{#snippet mobileFooter()}
-  {@render powerToggle({ compact: true })}
-{/snippet}
-
-<PageWithNavSidebar
-  pageTitle={m.settings_title()}
-  navItems={NAV_ITEMS}
-  {activeSection}
-  onSectionClick={scrollToSection}
-  {navHeader}
-  {navFooter}
-  {actions}
-  {mobileNav}
-  {mobileFooter}
->
-  <div class="max-w-xl mx-auto px-4 md:px-8 pb-32 space-y-10 pt-8">
-    <div bind:this={sectionEls["api"]}>
-      <ApiSection {powerUser} />
+    <div class="mobile-overview" class:mobile-overview--hidden={mobileCategoryOpen}>
+      <nav class="mobile-category-list" aria-label={m.settings_categories_aria()}>
+        {#each CATEGORIES as item}
+          <button type="button" class="mobile-category-row" onclick={() => selectCategory(item.id, true)}>
+            <span class="mobile-category-icon">{@render categoryIcon(item)}</span>
+            <span class="mobile-category-copy"><span class="mobile-category-label">{item.label}</span><span class="mobile-category-description">{item.mobileDescription}</span></span>
+            <svg class="mobile-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </button>
+        {/each}
+      </nav>
+      <div class="mobile-footer">{@render communityLinks()}</div>
     </div>
 
-    <div bind:this={sectionEls["language"]}>
-      <GeneralSection {powerUser} behaviorOnly={false} languageOnly={true} />
+    <div bind:this={settingsContentEl} class="settings-content" class:settings-content--mobile-hidden={!mobileCategoryOpen}>
+      <div class="content-panel" hidden={activeSection !== "provider" && activeSection !== "memory"}><ApiSection powerUser={powerUser} active={activeSection === "provider"} section={activeSection === "memory" ? "memory" : "provider"} {settingsReady} onConnectionChange={handleConnectionChange} /></div>
+      <div class="content-panel" hidden={activeSection === "provider" || activeSection === "memory"}>
+        {#if activeSection === "advanced"}
+          <div class="advanced-mode">{@render powerToggle()}</div>
+        {/if}
+        {#if activeSection === "about"}
+          <UpdateSection />
+          <div class="advanced-mode">
+            <p class="power-label">{m.settings_diagnostics_title()}</p>
+            <p class="power-description" style="margin: 8px 0 14px">{m.settings_diagnostics_description()}</p>
+            <Button variant="secondary" disabled={exportingDiagnostics} onclick={exportDiagnostics}>
+              {exportingDiagnostics ? m.settings_diagnostics_exporting() : m.settings_diagnostics_export()}
+            </Button>
+            <p class="power-description" role="status" style="margin-top: 8px">{diagnosticsStatus}</p>
+          </div>
+        {/if}
+        {#if activeSection !== "about"}
+          <GeneralSection powerUser={powerUser} bind:parameterEnabled category={generalCategory} />
+        {/if}
+      </div>
     </div>
-
-    <div bind:this={sectionEls["behavior"]}>
-      <GeneralSection {powerUser} bind:parameterEnabled behaviorOnly={true} />
-    </div>
-  </div>
-</PageWithNavSidebar>
+  </main>
+</div>
 
 <style>
-  .save-spinner {
-    width: 12px;
-    height: 12px;
-    border: 2px solid rgba(255, 255, 255, 0.12);
-    border-top-color: rgba(255, 255, 255, 0.6);
-    border-radius: 50%;
-    animation: spin 0.6s linear infinite;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  .nav-footer-divider {
-    height: 1px;
-    background: rgba(255,255,255,0.05);
-    margin: 12px 0;
-  }
-  .power-user-toggle {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    padding: 8px 10px;
-    border-radius: 10px;
-    transition: background 0.15s;
-    user-select: none;
-  }
-  .power-user-toggle:hover { background: rgba(255,255,255,0.04); }
-
-  /* On mobile the footer row is a standalone touch target, not tucked
-     into a narrow sidebar — give it more breathing room and a slightly
-     larger hit area so it's comfortable to tap. */
-  .power-user-toggle.compact {
-    width: 100%;
-    padding: 10px 12px;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-  }
-  .power-user-toggle.compact:hover,
-  .power-user-toggle.compact:active {
-    background: rgba(255, 255, 255, 0.05);
-  }
-  .power-user-toggle.compact .power-label {
-    font-size: 12.5px;
-  }
-  .power-user-toggle.compact .power-track {
-    width: 40px;
-    height: 22px;
-  }
-
-  .power-icon {
-    color: #48484a;
-    transition: color 0.2s;
-    display: flex;
-    align-items: center;
-  }
-  .power-icon.active { color: #d4b483; }
-  .power-label {
-    font-size: 12px;
-    font-weight: 600;
-    color: #5a5a5e;
-    flex: 1;
-    letter-spacing: 0.03em;
-  }
-  .power-track {
-    position: relative;
-    flex-shrink: 0;
-    width: 36px;
-    height: 20px;
-    border-radius: 9999px;
-    transition: background 0.2s, border-color 0.2s;
-    background: rgba(255,255,255,0.07);
-    border: 1px solid rgba(255,255,255,0.08);
-  }
-
-  :global(.settings-card) {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 16px;
-    padding: 20px;
-    transition: border-color 0.2s;
-  }
-  :global(.settings-card:hover) { border-color: rgba(255, 255, 255, 0.09); }
-  :global(.settings-section-title) {
-    display: block;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: #48484a;
-    margin-bottom: 10px;
-  }
-  :global(.settings-label) {
-    display: block;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: #555;
-    margin-bottom: 8px;
-  }
-  :global(.settings-input) {
-    width: 100%;
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    border-radius: 10px;
-    padding: 10px 14px;
-    font-size: 13px;
-    color: #e5e5ea;
-    outline: none;
-    transition: all 0.15s ease;
-    box-sizing: border-box;
-    font-family: inherit;
-    color-scheme: dark;
-  }
-  :global(select.settings-input option) {
-    background-color: #1c1c1e;
-    color: #e5e5ea;
-  }
-  :global(select.settings-input option:checked) {
-    background-color: #2c2c2e;
-    color: #d4b483;
-  }
-  :global(.settings-input:focus) {
-    border-color: rgba(212, 180, 131, 0.4);
-    background: rgba(212, 180, 131, 0.03);
-    box-shadow: 0 0 0 3px rgba(212, 180, 131, 0.06);
-  }
-  :global(.settings-input::placeholder) { color: #3a3a3c; }
-  :global(.settings-divider) {
-    height: 1px;
-    background: rgba(255, 255, 255, 0.05);
-    margin: 16px 0;
+  .settings-shell { height:100%; width:100%; display:flex; overflow:hidden; background:var(--color-ryokan-bg,#111); }
+  .desktop-sidebar,.desktop-header { display:none; }
+  .settings-main { min-width:0; flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  .mobile-header { flex:0 0 auto; display:grid; grid-template-columns:40px minmax(0,1fr) auto; align-items:center; gap:8px; border-bottom:1px solid rgba(255,255,255,.05); }
+  .mobile-header h1 { min-width:0; color:#e7e2da; font-size:17px; font-weight:650; letter-spacing:-.01em; overflow-wrap:anywhere; }
+  .mobile-overview { flex:1; display:flex; flex-direction:column; overflow-y:auto; padding:var(--page-content-top) var(--page-gutter) calc(28px + env(safe-area-inset-bottom)); }
+  .mobile-overview,.settings-content { -ms-overflow-style:none; scrollbar-width:none; }
+  .mobile-overview::-webkit-scrollbar,.settings-content::-webkit-scrollbar { display:none; }
+  .mobile-overview--hidden,.settings-content--mobile-hidden { display:none; }
+  .mobile-category-list { flex:0 0 auto; overflow:hidden; border-radius:15px; background:rgba(255,255,255,.025); }
+  .mobile-category-row { width:100%; min-height:64px; display:flex; align-items:center; gap:13px; padding:10px 14px; color:#c9c7ca; text-align:left; cursor:pointer; transition:background 140ms ease; }
+  .mobile-category-row + .mobile-category-row { border-top:1px solid rgba(255,255,255,.055); }
+  .mobile-category-row:hover,.mobile-category-row:active { background:rgba(255,255,255,.045); }
+  .mobile-category-icon { width:32px; height:32px; flex:0 0 auto; display:grid; place-items:center; border-radius:9px; color:#d4b483; background:rgba(212,180,131,.09); }
+  .mobile-category-copy { min-width:0; flex:1; display:flex; flex-direction:column; gap:2px; }
+  .mobile-category-label { font-size:14px; font-weight:620; color:#e1dfe2; }
+  .mobile-category-description { font-size:11px; line-height:1.35; color:#65656a; }
+  .mobile-chevron { flex:0 0 auto; color:#444448; }
+  .mobile-footer { flex:0 0 auto; margin-top:auto; padding-top:20px; }
+  .community-card { width:100%; min-height:52px; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); overflow:hidden; border:1px solid rgba(255,255,255,.055); border-radius:12px; background:rgba(255,255,255,.025); transition:border-color .15s; }
+  .community-card:hover { border-color:rgba(145,152,229,.18); }
+  .discord-link,.github-link { width:100%; min-width:0; min-height:50px; display:flex; align-items:center; justify-content:center; gap:7px; padding:8px; font-size:12px; font-weight:600; white-space:nowrap; cursor:pointer; transition:color .15s,background .15s; }
+  .discord-link { color:#aaa8ac; }
+  .discord-link:hover { color:#e0dce5; background:rgba(255,255,255,.025); }
+  .discord-link:active { background:rgba(145,152,229,.1); }
+  .discord-icon { width:24px; height:24px; flex:0 0 auto; display:grid; place-items:center; border-radius:7px; color:#a7adeb; background:rgba(145,152,229,.12); }
+  .discord-icon svg { width:16px; height:16px; }
+  .discord-label,.github-label { flex:0 0 auto; overflow:visible; text-overflow:clip; }
+  .github-link { border-left:1px solid rgba(255,255,255,.065); color:#8d8b8f; }
+  .github-link svg { width:17px; height:17px; flex:0 0 auto; }
+  .github-link:hover { color:#d8d5d1; background:rgba(255,255,255,.04); }
+  .github-link:active { background:rgba(212,180,131,.08); }
+  .discord-link:focus-visible,.github-link:focus-visible { position:relative; z-index:1; outline:2px solid #d4b483; outline-offset:-2px; }
+  .settings-content { flex:1; overflow-y:auto; overflow-x:hidden; padding:var(--page-content-top) var(--page-gutter) calc(36px + env(safe-area-inset-bottom)); }
+  .content-panel { width:100%; max-width:660px; margin:0 auto; }
+  .content-panel[hidden] { display:none; }
+  .advanced-mode { margin-bottom:22px; padding-bottom:22px; border-bottom:1px solid rgba(255,255,255,.055); }
+  .power-user-toggle { min-height:58px; display:flex; align-items:center; gap:12px; padding:4px 2px; cursor:pointer; user-select:none; }
+  .power-icon { width:34px; height:34px; flex:0 0 auto; display:grid; place-items:center; border-radius:10px; color:#57575c; background:rgba(255,255,255,.035); transition:color .18s,background .18s; }
+  .power-icon.active { color:#d4b483; background:rgba(212,180,131,.09); }
+  .power-copy { min-width:0; flex:1; display:flex; flex-direction:column; gap:3px; }
+  .power-label { color:#d1cfd2; font-size:13px; font-weight:650; }
+  .power-description { color:#5e5e63; font-size:11px; line-height:1.35; }
+  :global(.settings-switch-track) { position:relative; width:42px; height:24px; flex:0 0 auto; border-radius:999px; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.08); transition:background .2s,border-color .2s; }
+  :global(.settings-switch-thumb) { position:absolute; width:16px; height:16px; left:3px; top:3px; border-radius:50%; background:#5a5a5e; transition:transform .2s,background .2s; }
+  :global(.settings-switch-input:checked + .settings-switch-track) { background:rgba(212,180,131,.2); border-color:rgba(212,180,131,.4); }
+  :global(.settings-switch-input:checked + .settings-switch-track .settings-switch-thumb) { transform:translateX(18px); background:#d4b483; }
+  :global(.settings-switch-input:focus-visible + .settings-switch-track) { outline:2px solid #d4b483; outline-offset:3px; }
+  .save-spinner { width:12px; height:12px; border:2px solid rgba(255,255,255,.12); border-top-color:rgba(255,255,255,.6); border-radius:50%; animation:spin .6s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  :global(.settings-card) { padding:0; background:transparent; border:0; border-radius:0; }
+  :global(.settings-section-title) { display:none; }
+  :global(.settings-label) { display:block; margin-bottom:8px; color:#68686d; font-size:11px; font-weight:650; letter-spacing:.055em; text-transform:uppercase; }
+  :global(.settings-input) { width:100%; box-sizing:border-box; padding:11px 14px; border:1px solid rgba(255,255,255,.07); border-radius:11px; outline:none; background:rgba(0,0,0,.2); color:#e5e5ea; color-scheme:dark; font:inherit; font-size:13px; transition:border-color .15s,background .15s,box-shadow .15s; }
+  :global(select.settings-input option) { background:#1c1c1e; color:#e5e5ea; }
+  :global(.settings-input:focus) { border-color:rgba(212,180,131,.4); background:rgba(212,180,131,.03); box-shadow:0 0 0 3px rgba(212,180,131,.06); }
+  :global(.settings-input::placeholder) { color:#3a3a3c; }
+  :global(.settings-divider) { height:1px; margin:20px 0; background:rgba(255,255,255,.05); }
+  @media (min-width:768px) {
+    .desktop-sidebar { width:256px; flex:0 0 auto; display:flex; flex-direction:column; border-right:1px solid rgba(255,255,255,.055); background:var(--color-ryokan-sidebar,#151515); }
+    .sidebar-title { height:var(--page-header-height); display:flex; align-items:center; padding:0 24px; color:#d4b483; font-size:18px; font-weight:650; border-bottom:1px solid rgba(255,255,255,.045); }
+    .category-nav { padding:14px 12px; display:flex; flex-direction:column; gap:3px; }
+    .category-nav-item { min-height:42px; width:100%; display:flex; align-items:center; gap:11px; padding:9px 12px; border-radius:10px; color:#6d6d72; text-align:left; font-size:13px; font-weight:560; cursor:pointer; transition:color .15s,background .15s; }
+    .category-nav-item:hover { color:#bbb8b5; background:rgba(255,255,255,.03); }
+    .category-nav-item--active { color:#d8c5a8; background:rgba(212,180,131,.075); }
+    .sidebar-footer { margin-top:auto; padding:14px 12px 16px; border-top:1px solid rgba(255,255,255,.055); }
+    .desktop-header { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:24px; border-bottom:1px solid rgba(255,255,255,.045); }
+    .desktop-header h1 { color:#e4e0da; font-size:18px; font-weight:650; letter-spacing:-.01em; }
+    .desktop-header p { margin-top:2px; color:#5e5e63; font-size:11px; }
+    .header-actions { display:flex; align-items:center; gap:10px; }
+    .mobile-header,.mobile-overview { display:none; }
+    .settings-content,.settings-content--mobile-hidden { display:block; padding:var(--page-content-top) var(--page-gutter) 72px; }
   }
 </style>

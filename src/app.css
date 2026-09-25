@@ -15,6 +15,13 @@
   --accent: #d4b483;
   --accent-rgb: 212, 180, 131;
 
+  /* Shared non-chat page shell spacing. */
+  --page-gutter: 1rem;
+  --page-header-height: 4.75rem;
+  --page-header-top: calc(1rem + env(safe-area-inset-top));
+  --page-header-bottom: 1rem;
+  --page-content-top: 1rem;
+
   --surface-1: rgba(255, 255, 255, 0.03);
   --surface-2: rgba(255, 255, 255, 0.06);
   --surface-hover: rgba(255, 255, 255, 0.07);
@@ -25,6 +32,15 @@
 
   --radius-card: 14px;
   --radius-xl: 16px;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --page-gutter: 2rem;
+    --page-header-top: 1.5rem;
+    --page-content-top: 2rem;
+  }
+
 }
 
 body {
@@ -106,4 +122,20 @@ body {
 
 ::-webkit-scrollbar-thumb:active {
   background: rgba(255, 255, 255, 0.4);
+}
+
+.app-page-header {
+  padding: var(--page-header-top) var(--page-gutter) var(--page-header-bottom);
+}
+
+.app-page-content {
+  padding-top: var(--page-content-top);
+  padding-inline: var(--page-gutter);
+}
+
+@media (min-width: 768px) {
+  .app-page-header {
+    height: var(--page-header-height);
+    padding-block: 0.9375rem;
+  }
 }

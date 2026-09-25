@@ -1,3 +1,4 @@
+import { reportDiagnostic } from '$lib/utils/diagnostics';
 export function selectInitialGreeting(character: {
   name: string;
   greeting?: string;
@@ -16,7 +17,7 @@ export function selectInitialGreeting(character: {
       ));
     }
   } catch (error) {
-    console.warn('Could not parse alternative greetings:', error);
+    reportDiagnostic('character', true);
   }
 
   if (greetings.length === 0) return null;

@@ -11,7 +11,9 @@
     onEdit,
     onDelete,
     onToggleHide,
-    onTogglePin
+    onTogglePin,
+    onStartAs,
+    menuMode = 'full'
   }: {
     characters: any[];
     showHidden: boolean;
@@ -20,6 +22,8 @@
     onDelete: (e: MouseEvent, char: any) => void;
     onToggleHide: (e: MouseEvent, char: any) => void;
     onTogglePin: (e: MouseEvent, char: any) => void;
+    onStartAs: (e: MouseEvent, char: any) => void;
+    menuMode?: 'full' | 'manage' | 'none';
   } = $props();
 
   // Tracks which card is currently being pressed. Driven by pointer events on
@@ -68,13 +72,16 @@
         {/if}
       </div>
 
-      <div class="absolute top-1.5 right-1.5 z-20 pointer-events-auto transition-all duration-200 opacity-100 md:opacity-0 md:group-hover:opacity-100">
-        <CharacterContextMenu
-          {char} {isHidden} {isPinned}
-          size="sm"
-          {onEdit} {onTogglePin} {onToggleHide} {onDelete}
-        />
-      </div>
+      {#if menuMode !== 'none' && (menuMode === 'full' || char.isCustom)}
+        <div class="absolute top-1.5 right-1.5 z-20 pointer-events-auto transition-all duration-200 opacity-100 md:opacity-0 md:group-hover:opacity-100">
+          <CharacterContextMenu
+            {char} {isHidden} {isPinned}
+            size="sm"
+            {menuMode}
+            {onEdit} {onTogglePin} {onToggleHide} {onDelete} {onStartAs}
+          />
+        </div>
+      {/if}
 
       <div class="relative z-10 px-2.5 py-2 pointer-events-none">
         <h3 class="text-xs font-semibold text-gray-100 truncate group-hover:text-ryokan-accent transition-colors">{char.name}</h3>

@@ -12,6 +12,7 @@
     onDelete,
     onToggleHide,
     onTogglePin,
+    onStartAs = () => {},
     resolveDesc,
     menuMode = 'full'
   }: {
@@ -22,6 +23,7 @@
     onDelete: (e: MouseEvent, char: any) => void;
     onToggleHide: (e: MouseEvent, char: any) => void;
     onTogglePin: (e: MouseEvent, char: any) => void;
+    onStartAs?: (e: MouseEvent, char: any) => void;
     resolveDesc: (char: any) => string;
     menuMode?: 'full' | 'manage' | 'none';
   } = $props();
@@ -74,21 +76,12 @@
 
       {#if menuMode !== 'none' && (menuMode === 'full' || char.isCustom)}
         <div class="absolute top-2.5 right-2.5 z-20 pointer-events-auto transition-all duration-200 opacity-100 translate-y-0 md:opacity-0 md:group-hover:opacity-100 md:translate-y-1 md:group-hover:translate-y-0">
-          {#if menuMode === 'manage'}
-            <button
-              type="button"
-              onclick={(event) => onEdit(event, char)}
-              class="rounded-lg border border-white/[0.07] bg-black/45 px-2.5 py-1.5 text-xs text-gray-300 backdrop-blur-sm transition-colors hover:border-white/15 hover:bg-black/65 hover:text-gray-100"
-            >
-              {m.play_mp_picker_manage()}
-            </button>
-          {:else}
-            <CharacterContextMenu
-              {char} {isHidden} {isPinned}
-              size="lg"
-              {onEdit} {onTogglePin} {onToggleHide} {onDelete}
-            />
-          {/if}
+          <CharacterContextMenu
+            {char} {isHidden} {isPinned}
+            size="lg"
+            {menuMode}
+            {onEdit} {onTogglePin} {onToggleHide} {onDelete} {onStartAs}
+          />
         </div>
       {/if}
 

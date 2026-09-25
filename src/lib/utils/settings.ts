@@ -1,3 +1,4 @@
+import { reportDiagnostic } from '$lib/utils/diagnostics';
 import { invoke } from "@tauri-apps/api/core";
 
 export interface SettingRow {
@@ -9,7 +10,7 @@ export async function getAllSettings(): Promise<SettingRow[]> {
   try {
     return await invoke<SettingRow[]>("get_all_settings");
   } catch (e) {
-    console.error("Failed to load settings:", e);
+    reportDiagnostic('settings');
     return [];
   }
 }
@@ -18,9 +19,8 @@ export async function saveSetting(key: string, value: string | boolean | number)
   try {
     const stringValue = String(value);
     await invoke("save_setting", { key, value: stringValue });
-    console.log(`Saved setting '${key}' = ${stringValue}`);
   } catch (e) {
-    console.error(`Failed to save setting '${key}':`, e);
+    reportDiagnostic('settings');
   }
 }
 
@@ -31,6 +31,22 @@ export async function getSetting(key: string): Promise<string | null> {
 }
 
 // Does NOT catch — throws the real Rust error string so the UI can display it directly.
-export async function fetchModels(url: string, apiKey: string): Promise<string[]> {
-  return await invoke<string[]>("fetch_models", { url, apiKey });
+export interface ModelInfo {
+  id: string;
+  contextLength?: number | null;
+  architecture?: {
+    inputModalities: string[];
+    outputModalities: string[];
+    modality?: string | null;
+    tokenizer?: string | null;
+    instructType?: string | null;
+  } | null;
+  pricing?: {
+    prompt?: string | null;
+    completion?: string | null;
+  } | null;
+}
+
+export async function fetchModels(url: string, apiKey: string): Promise<ModelInfo[]> {
+  return await invoke<ModelInfo[]>("fetch_models", { url, apiKey });
 }

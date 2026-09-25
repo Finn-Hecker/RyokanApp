@@ -1,12 +1,15 @@
 <script lang="ts">
+  import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { invoke } from '@tauri-apps/api/core';
-  import { appState } from '$lib/stores/appState.svelte';
+  import { appState, snapshotActiveApiConnection } from '$lib/stores/appState.svelte';
+  import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { tick, onMount, onDestroy } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { chatState, addMessage, addSwipeVariant, loadMessages, updateMessage, deleteMessage, setSwipeIndex, loadMoreMessages, cloneChatFromMessage } from '$lib/stores/chatStore.svelte';
-  import { runGeneration } from '$lib/utils/chatApi';
+  import { chatState, addMessage, addSwipeVariant, loadMessages, updateMessage, deleteMessage, setSwipeIndex, loadMoreMessages, cloneChatFromMessage, type DisplayMessage } from '$lib/stores/chatStore.svelte';
+  import { runGeneration, type GenerationOptions } from '$lib/utils/chatApi';
+  import { describeGenerationError, type GenerationErrorInfo } from '$lib/utils/generationError';
   import { positionSentChatMessage } from '$lib/utils/chatScroll';
-  import { summaryState, checkAndSummarizeIfNeeded } from '$lib/utils/rollingSummary.svelte';
+  import { summaryState, checkAndSummarizeIfNeeded, assertPreparedGenerationFits, rememberGenerationAnchor, cancelActiveSummary, SummaryCancelledError } from '$lib/utils/rollingSummary.svelte';
   import * as m from '$lib/paraglide/messages';
   import ChatHeader from './ChatHeader.svelte';
   import ChatInput from './ChatInput.svelte';
@@ -24,9 +27,13 @@
   let errorMessage = $state('');
   let pendingUserMessage = $state('');
   let retryingMsgId = $state<string | null>(null);
+  let generationError = $state<GenerationErrorInfo | null>(null);
+  let failedRetryMsgId = $state<string | null>(null);
+  let activeGenerationId = $state<string | null>(null);
   let isLoadingMore = $state(false);
   let cloneCooldown = $state(false);
   let cloneCooldownTimer: ReturnType<typeof setTimeout> | undefined;
+  let mobileActionMessageId = $state<string | null>(null);
 
   let isBlocked = $derived(isGenerating || summaryState.isSummarizing);
 
@@ -38,13 +45,29 @@
 
   let unlistenClose: (() => void) | undefined;
 
+  $effect(() => {
+    if (!showErrorModal) return;
+    return registerBackHandler(() => {
+      void closeErrorModal();
+      return true;
+    });
+  });
+
+  $effect(() => {
+    if (!mobileActionMessageId) return;
+    return registerBackHandler(() => {
+      mobileActionMessageId = null;
+      return true;
+    });
+  });
+
   onMount(async () => {
     if (chatState.activeChatId) await loadMessages(chatState.activeChatId);
 
     const win = getCurrentWindow();
     unlistenClose = await win.onCloseRequested(async (event) => {
       event.preventDefault();
-      await invoke('stop_generation');
+      await stopGeneration();
       await win.destroy();
     });
 
@@ -52,7 +75,12 @@
   });
 
   onDestroy(() => {
-    if (isGenerating) invoke('stop_generation');
+    if (isGenerating) {
+      void cancelActiveSummary();
+      if (activeGenerationId) {
+        void invoke('stop_generation', { generationId: activeGenerationId });
+      }
+    }
     unlistenClose?.();
     window.removeEventListener('keydown', handleArrowKey);
     if (cloneCooldownTimer) clearTimeout(cloneCooldownTimer);
@@ -75,10 +103,12 @@
     const currentIndex  = lastAiMsg.swipe_index ?? 0;
 
     if (e.key === 'ArrowLeft') {
-      if (currentIndex > 0) setSwipeIndex(msgId, currentIndex - 1);
+      if (currentIndex > 0) {
+        void setSwipeIndex(msgId, currentIndex - 1).catch(() => undefined);
+      }
     } else {
       if (currentIndex < totalVariants - 1) {
-        setSwipeIndex(msgId, currentIndex + 1);
+        void setSwipeIndex(msgId, currentIndex + 1).catch(() => undefined);
       } else {
         handleRetry({ msgId });
       }
@@ -86,7 +116,7 @@
   }
 
   let displayMessages = $derived((() => {
-    const msgs = chatState.currentMessages.map(msg => {
+    const msgs: DisplayMessage[] = chatState.currentMessages.map(msg => {
       const isBeingRetried = isGenerating && retryingMsgId !== null && msg.id?.toString() === retryingMsgId;
       return {
         id: msg.id?.toString() || Math.random().toString(),
@@ -111,6 +141,13 @@
       });
     }
 
+    if (generationError) {
+      msgs.push({
+        id: 'temp-generation-error', text: '', isUser: false,
+        senderName: appState.activeCharacter?.name || m.chat_sender_ai(),
+        swipeVariants: [''], swipeIndex: 0, generationError,
+      });
+    }
     return msgs;
   })());
 
@@ -166,7 +203,11 @@
   }
 
   async function generate(prompt: string, saveUserMessage: boolean) {
+    const chatId = chatState.activeChatId;
+    if (!chatId) return;
     isGenerating = true;
+    generationError = null;
+    failedRetryMsgId = null;
     resetStreamState();
 
     if (saveUserMessage) {
@@ -186,18 +227,22 @@
       }
     }
 
-    const generationOptions = {
+    const generationOptions: GenerationOptions = {
       character:      appState.activeCharacter,
-      apiSettings:    appState.apiSettings,
+      apiSettings:    snapshotActiveApiConnection(),
       recentMessages: chatState.currentMessages,
       userPrompt:     undefined as string | undefined,
     };
 
-    await checkAndSummarizeIfNeeded(chatState.currentMessages, generationOptions);
-
-    generationOptions.recentMessages = chatState.currentMessages;
-
     try {
+      const prepared = await checkAndSummarizeIfNeeded(chatId, generationOptions);
+      if (chatState.activeChatId !== chatId) throw new SummaryCancelledError();
+      generationOptions.recentMessages = prepared.recentMessages;
+      generationOptions.summaryMeta = prepared.summaryMeta;
+      generationOptions.requestParameterConfig = prepared.requestParameterConfig;
+      activeGenerationId = crypto.randomUUID();
+      generationOptions.generationId = activeGenerationId;
+      await assertPreparedGenerationFits(generationOptions);
       const result = await runGeneration(
         generationOptions,
         {
@@ -205,15 +250,18 @@
           onThinkingPhaseChange: (v) => { isThinkingPhase = v; },
         }
       );
-      await addMessage('assistant', result);
+      if (chatState.activeChatId !== chatId) return;
+      await addMessage('assistant', result.text, result.usage);
+      rememberGenerationAnchor(chatId, result.promptSnapshot, chatState.currentMessages.at(-1));
     } catch (err) {
-      console.error(err);
-      errorMessage = m.chat_error_connection();
-      showErrorModal = true;
+      if (err instanceof SummaryCancelledError) return;
+      reportDiagnostic('chat');
+      generationError = describeGenerationError(err);
     } finally {
       isGenerating = false;
       streamingText = '';
       isThinkingPhase = false;
+      activeGenerationId = null;
     }
   }
 
@@ -247,33 +295,54 @@
 
     retryingMsgId = msgId;
     isGenerating = true;
+    generationError = null;
+    failedRetryMsgId = null;
     resetStreamState();
-
-    const historySlice = msgs.slice(0, idx);
+    const chatId = chatState.activeChatId;
+    if (!chatId) return;
 
     try {
+      const generationOptions: GenerationOptions = {
+        character: appState.activeCharacter,
+        apiSettings: snapshotActiveApiConnection(),
+        recentMessages: msgs.slice(0, idx),
+        userPrompt: undefined,
+        generationId: crypto.randomUUID(),
+      };
+      const prepared = await checkAndSummarizeIfNeeded(chatId, generationOptions, msgId);
+      if (chatState.activeChatId !== chatId) throw new SummaryCancelledError();
+      generationOptions.recentMessages = prepared.recentMessages;
+      generationOptions.summaryMeta = prepared.summaryMeta;
+      generationOptions.requestParameterConfig = prepared.requestParameterConfig;
+      activeGenerationId = generationOptions.generationId ?? null;
+      await assertPreparedGenerationFits(generationOptions);
       const result = await runGeneration(
-        {
-          character: appState.activeCharacter,
-          apiSettings: appState.apiSettings,
-          recentMessages: historySlice,
-          userPrompt: undefined,
-        },
+        generationOptions,
         {
           onStreamUpdate: (text) => { streamingText = text; },
           onThinkingPhaseChange: (v) => { isThinkingPhase = v; },
         }
       );
-      await addSwipeVariant(msgId, result);
+      if (chatState.activeChatId !== chatId) return;
+      await addSwipeVariant(msgId, result.text, result.usage);
+      rememberGenerationAnchor(
+        chatId,
+        result.promptSnapshot,
+        chatState.currentMessages.at(-1)?.id === msgId
+          ? chatState.currentMessages.at(-1)
+          : undefined,
+      );
     } catch (err) {
-      console.error(err);
-      errorMessage = m.chat_error_connection();
-      showErrorModal = true;
+      if (err instanceof SummaryCancelledError) return;
+      reportDiagnostic('chat');
+      generationError = describeGenerationError(err);
+      failedRetryMsgId = msgId;
     } finally {
       retryingMsgId = null;
       isGenerating = false;
       streamingText = '';
       isThinkingPhase = false;
+      activeGenerationId = null;
     }
   }
 
@@ -284,20 +353,25 @@
 
     const editedMsg = msgs[idx];
 
-    if (editedMsg.role === 'user') {
-      await updateMessage(msgId, newContent);
+    try {
+      if (editedMsg.role === 'user') {
+        await updateMessage(msgId, newContent);
 
-      // Delete every message that came after it (the AI reply and any further turns)
-      const toDelete = msgs.slice(idx + 1);
-      for (const msg of toDelete) {
-        if (msg.id) await deleteMessage(msg.id);
+        // Delete every message that came after it (the AI reply and any further turns)
+        const toDelete = msgs.slice(idx + 1);
+        for (const msg of toDelete) {
+          if (msg.id) await deleteMessage(msg.id);
+        }
+
+        // history is already up-to-date in chatState after the deletes
+        pendingUserMessage = newContent;
+        await generate(newContent, false);
+      } else {
+        await updateMessage(msgId, newContent);
       }
-
-      // history is already up-to-date in chatState after the deletes
-      pendingUserMessage = newContent;
-      await generate(newContent, false);
-    } else {
-      await updateMessage(msgId, newContent);
+    } catch {
+      // Store operations already log their concrete persistence error. Most
+      // importantly, do not continue deleting/regenerating after invalidation fails.
     }
   }
 
@@ -324,17 +398,46 @@
     if (pendingUserMessage) await generate(pendingUserMessage, false);
   }
 
+  function showMobileActions(msgId: string) {
+    mobileActionMessageId = msgId;
+  }
+
+  function closeMobileActions() {
+    mobileActionMessageId = null;
+  }
+
+  async function retryGenerationError() {
+    const msgId = failedRetryMsgId;
+    generationError = null;
+    if (msgId) await handleRetry({ msgId });
+    else if (pendingUserMessage) await generate(pendingUserMessage, false);
+  }
+
+  async function dismissGenerationError() {
+    generationError = null;
+    failedRetryMsgId = null;
+  }
+
   async function closeErrorModal() {
     showErrorModal = false;
     if (pendingUserMessage) {
       const lastUserMsg = [...chatState.currentMessages].reverse().find(msg => msg.role === 'user');
-      if (lastUserMsg?.id) await deleteMessage(lastUserMsg.id);
+      if (lastUserMsg?.id) {
+        try {
+          await deleteMessage(lastUserMsg.id);
+        } catch {
+          return;
+        }
+      }
     }
     pendingUserMessage = '';
   }
 
   async function stopGeneration() {
-    await invoke('stop_generation');
+    if (await cancelActiveSummary(chatState.activeChatId ?? undefined)) return;
+    if (activeGenerationId) {
+      await invoke('stop_generation', { generationId: activeGenerationId });
+    }
   }
 </script>
 
@@ -349,7 +452,7 @@
       chatState.currentMessages = [];
       chatState.hasMoreMessages = false;
       appState.activeCharacter = null;
-      appState.currentView = 'lobby';
+      returnTo('lobby');
     }}
   />
 
@@ -388,7 +491,13 @@
           )}
           canCloneFrom={!isBlocked && !msg.isUser && msg.id !== 'temp-stream'}
           cloneDisabled={cloneCooldown}
+          interactionMode={appState.interactionMode}
+          mobileActionsOpen={mobileActionMessageId === msg.id}
+          onMobileActionsOpen={showMobileActions}
+          onMobileActionsClose={closeMobileActions}
           onRetry={handleRetry}
+          onGenerationRetry={retryGenerationError}
+          onGenerationDismiss={dismissGenerationError}
           onEditSave={handleEditSave}
           onCloneFrom={handleCloneFromMessage}
         />

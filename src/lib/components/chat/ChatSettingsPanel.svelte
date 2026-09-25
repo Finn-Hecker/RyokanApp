@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { appState } from "$lib/stores/appState.svelte";
   import { getAllSettings, saveSetting } from "$lib/utils/settings";
   import * as m from "$lib/paraglide/messages";
@@ -8,9 +9,9 @@
   import {
     API_PARAMETER_SETTING_KEYS,
     createDefaultApiParameterEnabled,
-    readApiParameterEnabled,
     type ApiParameterKey,
   } from "$lib/utils/apiParameters";
+  import { persistApiConnections } from '$lib/utils/apiConnections';
 
   let { onClose }: { onClose: () => void } = $props();
 
@@ -26,15 +27,15 @@
       const settings = await getAllSettings();
       const row = settings.find(r => r.key === "settings_power_user");
       if (row) powerUser = row.value === "true";
-      parameterEnabled = readApiParameterEnabled(settings);
+      parameterEnabled = { ...appState.apiSettings.parameterEnabled };
     } catch (err) {
-      console.error("[ChatSettingsPanel] Failed to load settings:", err);
+      reportDiagnostic('settings');
     }
   });
 
   function persist(key: string, value: unknown) {
     saveSetting(key, value as any).catch(err =>
-      console.error(`[ChatSettingsPanel] Failed to save "${key}":`, err)
+      reportDiagnostic('settings')
     );
   }
 
@@ -45,7 +46,9 @@
 
   function toggleParameter(key: ApiParameterKey) {
     parameterEnabled[key] = !parameterEnabled[key];
+    appState.apiSettings.parameterEnabled = { ...parameterEnabled };
     persist(API_PARAMETER_SETTING_KEYS[key], parameterEnabled[key]);
+    void persistApiConnections();
   }
 
   const TEMPERATURES = $derived([
@@ -111,19 +114,15 @@
 
   // Every setter updates the live appState (so the next message picks it up
   // immediately) and persists it, since this panel has no separate "Save" button.
-  function setTemperature(v: number) { appState.apiSettings.temperature = v; persist("api_temperature", v); }
-  function setMaxTokens(v: number) { appState.apiSettings.maxTokens = v; persist("api_max_tokens", v); }
-  function setPresencePenalty(v: number) { appState.apiSettings.presencePenalty = v; persist("api_presence_penalty", v); }
-  function setThinkingBudget(v: number) { appState.apiSettings.thinkingBudget = v; persist("api_thinking_budget", v); }
-  function setTopP(v: number) { appState.apiSettings.topP = v; persist("api_top_p", v); }
-  function setTopK(v: number) { appState.apiSettings.topK = v; persist("api_top_k", v); }
-  function setMinP(v: number) { appState.apiSettings.minP = v; persist("api_min_p", v); }
-  function setFreqPenalty(v: number) { appState.apiSettings.frequencyPenalty = v; persist("api_frequency_penalty", v); }
-
-  function toggleThinkingModel() {
-    appState.apiSettings.isThinkingModel = !appState.apiSettings.isThinkingModel;
-    persist("thinking_mode", appState.apiSettings.isThinkingModel);
-  }
+  function persistActive() { void persistApiConnections(); }
+  function setTemperature(v: number) { appState.apiSettings.temperature = v; persist("api_temperature", v); persistActive(); }
+  function setMaxTokens(v: number) { appState.apiSettings.maxTokens = v; persist("api_max_tokens", v); persistActive(); }
+  function setPresencePenalty(v: number) { appState.apiSettings.presencePenalty = v; persist("api_presence_penalty", v); persistActive(); }
+  function setThinkingBudget(v: number) { appState.apiSettings.thinkingBudget = v; persist("api_thinking_budget", v); persistActive(); }
+  function setTopP(v: number) { appState.apiSettings.topP = v; persist("api_top_p", v); persistActive(); }
+  function setTopK(v: number) { appState.apiSettings.topK = v; persist("api_top_k", v); persistActive(); }
+  function setMinP(v: number) { appState.apiSettings.minP = v; persist("api_min_p", v); persistActive(); }
+  function setFreqPenalty(v: number) { appState.apiSettings.frequencyPenalty = v; persist("api_frequency_penalty", v); persistActive(); }
 
   function handleWindowKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') onClose();
@@ -313,26 +312,7 @@
 
         <div class="settings-divider"></div>
 
-        <div
-          role="switch"
-          aria-checked={appState.apiSettings.isThinkingModel}
-          tabindex="0"
-          onclick={toggleThinkingModel}
-          onkeydown={(e) => (e.key === " " || e.key === "Enter") && toggleThinkingModel()}
-          class="thinking-toggle-row"
-        >
-          <div class="thinking-toggle-text">
-            <span class="thinking-toggle-label">{m.settings_thinking_label()}</span>
-            <span class="thinking-toggle-sub">{m.settings_thinking_sub()}</span>
-          </div>
-          <div class="toggle-track" class:toggle-track--on={appState.apiSettings.isThinkingModel}>
-            <div class="toggle-thumb" class:toggle-thumb--on={appState.apiSettings.isThinkingModel}></div>
-          </div>
-        </div>
-
-        {#if appState.apiSettings.isThinkingModel}
-          <div in:fade={{ duration: 250, delay: 30 }}>
-            <div class="settings-divider"></div>
+          <div>
             <div>
               <div class="flex items-center justify-between mb-2">
                 <div style="display:flex;align-items:center;gap:8px;">
@@ -378,7 +358,6 @@
               {/if}
             </div>
           </div>
-        {/if}
 
         <div class="sampling-divider" role="separator">
           <span class="sampling-divider-line"></span>
@@ -903,70 +882,6 @@
     font-size: 9px;
     color: #3a3a3c;
     letter-spacing: 0.04em;
-  }
-
-  .toggle-track {
-    position: relative;
-    flex-shrink: 0;
-    width: 44px;
-    height: 24px;
-    border-radius: 9999px;
-    background: rgba(255,255,255,0.07);
-    border: 1px solid rgba(255,255,255,0.08);
-    transition: background 0.2s, border-color 0.2s;
-  }
-  .toggle-track--on {
-    background: rgba(212,180,131,0.2);
-    border-color: rgba(212,180,131,0.4);
-  }
-  .toggle-thumb {
-    position: absolute;
-    top: 3px;
-    left: 3px;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #5a5a5e;
-    transition: transform 0.2s, background 0.2s;
-  }
-  .toggle-thumb--on {
-    transform: translateX(20px);
-    background: #d4b483;
-  }
-
-  .thinking-toggle-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    cursor: pointer;
-    user-select: none;
-    padding: 12px 14px;
-    border-radius: 12px;
-    border: 1px solid rgba(255,255,255,0.06);
-    background: rgba(255,255,255,0.02);
-    transition: background 0.15s ease, border-color 0.15s ease;
-  }
-  .thinking-toggle-row:hover {
-    background: rgba(255,255,255,0.04);
-    border-color: rgba(255,255,255,0.10);
-  }
-  .thinking-toggle-text {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-  .thinking-toggle-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: #d1d1d6;
-    line-height: 1.3;
-  }
-  .thinking-toggle-sub {
-    font-size: 11px;
-    color: #d4b483;
-    opacity: 0.7;
-    line-height: 1.4;
   }
 
   /* ---------- Power-user toggle (footer) ---------- */

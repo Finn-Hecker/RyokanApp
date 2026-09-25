@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { fade, fly } from 'svelte/transition';
   import { appState } from '$lib/stores/appState.svelte';
   import { saveSetting, fetchModels } from '$lib/utils/settings';
   import { setLocale } from '$lib/paraglide/runtime';
+  import { persistApiConnections } from '$lib/utils/apiConnections';
 
   let selectedLanguage = $state<'English' | 'German'>('English');
 
@@ -95,7 +97,7 @@
         }
       }
 
-      models = await fetchModels(apiUrl, apiKey);
+      models = (await fetchModels(apiUrl, apiKey)).map(model => model.id);
       if (models.length > 0) selectedModel = models[0];
 
     } catch (e: any) {
@@ -113,21 +115,25 @@
       await saveSetting('api_url', apiUrl);
       await saveSetting('api_key', apiKey);
       await saveSetting('api_model', selectedModel);
+      appState.apiSettings.url = apiUrl;
+      appState.apiSettings.apiKey = apiKey;
+      appState.apiSettings.model = selectedModel;
+      appState.apiSettings.name = activePreset || 'Default';
+      appState.apiSettings.providerKind = activePreset === 'OpenRouter' ? 'openrouter'
+        : activePreset === 'LM Studio' ? 'lm_studio'
+        : activePreset === 'Ollama' ? 'ollama'
+        : activePreset === 'KoboldCPP' ? 'koboldcpp'
+        : activePreset === 'llama.cpp' ? 'llama_cpp'
+        : 'generic_openai';
+      await persistApiConnections();
       await saveSetting('onboarding_completed', 'true');
 
       setLocale(selectedLanguage === 'English' ? 'en' : 'de');
 
-      appState.apiSettings = {
-        ...appState.apiSettings,
-        url:        apiUrl,
-        apiKey:     apiKey,
-        model:      selectedModel
-      };
-
       appState.isOnboarding = false;
 
     } catch (error) {
-      console.error('Failed to save settings:', error);
+      reportDiagnostic('settings');
       modelError = 'Database error while saving. Please try again.';
     } finally {
       saving = false;

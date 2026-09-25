@@ -1,9 +1,10 @@
 [package]
 name = "ryokan"
-version = "0.5.0"
+version = "0.6.0"
 description = "An immersive, local-first AI Roleplay Engine."
 authors = ["Finn-Hecker"]
 edition = "2021"
+rust-version = "1.89"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,6 +17,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+serde_json = "1"
 
 [dependencies]
 tauri = { version = "2", features = [] }
@@ -43,3 +45,6 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
+
+[target.'cfg(windows)'.dependencies]
+tauri-plugin-updater = "2.12.0"

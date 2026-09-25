@@ -3,17 +3,47 @@ mod database;
 mod import;
 mod export;
 mod tokenizer;
+mod diagnostics;
+
+#[tauri::command]
+fn supports_updates() -> bool {
+    cfg!(windows)
+}
+
+#[tauri::command]
+fn get_interaction_mode() -> &'static str {
+    if cfg!(any(target_os = "android", target_os = "ios")) {
+        "mobile"
+    } else {
+        "desktop"
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            database::init_db(app.handle())?;
+            #[cfg(windows)]
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            diagnostics::init(app.handle());
+            if let Err(error) = database::init_db(app.handle()) {
+                diagnostics::record(diagnostics::Event::DatabaseFailed);
+                return Err(error.into());
+            }
+            diagnostics::record(diagnostics::Event::DatabaseReady);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            get_interaction_mode,
+            supports_updates,
+            diagnostics::record_frontend_event,
+            diagnostics::record_diagnostic_decision,
+            diagnostics::export_diagnostics,
             ai::call_ai_api,
             ai::fetch_models,
+            ai::detect_context,
+            ai::get_effective_api_parameter_config,
             ai::stop_generation,
             database::chats::get_conversations,
             database::chats::create_chat,
@@ -22,8 +52,15 @@ pub fn run() {
             database::chats::toggle_pin_chat,
             database::chats::get_conversations_page,
             database::chats::save_summary_meta,
+            database::chats::compare_and_swap_summary_meta,
             database::chats::get_summary_meta,
             database::chats::clone_chat_from_message,
+            database::folders::get_chat_folders,
+            database::folders::create_chat_folder,
+            database::folders::rename_chat_folder,
+            database::folders::set_chat_folder_collapsed,
+            database::folders::delete_chat_folder,
+            database::folders::save_sidebar_organization,
             database::messages::get_messages,
             database::messages::add_message,
             database::messages::delete_message,
@@ -33,8 +70,11 @@ pub fn run() {
             database::messages::get_messages_page,
             database::settings::get_all_settings,
             database::settings::save_setting,
+            database::settings::save_api_connections,
             database::characters::get_custom_characters,
             database::characters::get_character_avatar,
+            database::characters::get_bundled_role_avatar,
+            database::characters::get_bundled_role_snapshots,
             database::characters::create_character,
             database::characters::delete_character,
             database::characters::update_character,
@@ -42,6 +82,9 @@ pub fn run() {
             database::characters::get_hidden_character_ids,
             database::characters::get_pinned_character_ids,
             database::characters::set_character_pinned,
+            database::characters::set_character_role_policy,
+            database::characters::add_bundled_role_snapshot,
+            database::characters::remove_bundled_role_snapshot,
             database::roles::get_roles,
             database::roles::get_role_avatar,
             database::roles::create_role,

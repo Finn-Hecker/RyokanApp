@@ -4,7 +4,8 @@ import {
   updateCharacter,
   deleteCharacter as storeDeleteCharacter
 } from '$lib/stores/characterStore.svelte';
-import type { PlayMode } from '$lib/stores/characterStore.svelte';
+import type { PlayMode, PortableBundledRoleSnapshot, RolePolicy } from '$lib/stores/characterStore.svelte';
+import type { WorldInfoFormData } from '$lib/components/editor/worldinfo/worldInfoLogic';
 
 export interface CharFormData {
   name: string;
@@ -13,10 +14,13 @@ export interface CharFormData {
   alternate_greetings: string[];
   play_mode: PlayMode;
   world_info_ids?: string[];
+  role_policy?: RolePolicy;
+  bundled_roles?: PortableBundledRoleSnapshot[];
 }
 
 export interface ImportResult extends Partial<CharFormData> {
   avatarDataUrl?: string;
+  world_info?: WorldInfoFormData | null;
 }
 
 export async function saveCharacter(
@@ -24,7 +28,7 @@ export async function saveCharacter(
   editChar: any | null,
   avatarPreview: string | null,
   avatarChanged: boolean
-): Promise<void> {
+): Promise<string> {
   const validAltGreetings = formData.alternate_greetings
     .filter(g => g.trim().length > 0);
 
@@ -37,13 +41,15 @@ export async function saveCharacter(
     world_info_ids: formData.world_info_ids ?? [],
     initials: formData.name.substring(0, 1).toUpperCase(),
     color: editChar?.color ?? 'bg-indigo-600',
-    avatar: avatarChanged ? (avatarPreview ?? null) : null
+    avatar: avatarChanged ? (avatarPreview ?? null) : null,
+    role_policy: formData.role_policy ?? 'open',
+    bundled_roles: formData.bundled_roles,
   };
 
   if (editChar?.isCustom) {
-    await updateCharacter(String(editChar.id), charData);
+    return updateCharacter(String(editChar.id), charData);
   } else {
-    await createCharacter(charData);
+    return createCharacter(charData);
   }
 }
 
@@ -90,7 +96,15 @@ export async function importCharacterFromFile(
   const arrayBuffer = await file.arrayBuffer();
   const uint8Array = new Uint8Array(arrayBuffer);
 
-  const metadata = await invoke<{ name: string | null; prompt: string; first_mes: string | null; alternate_greetings: string[] }>('parse_character_card', {
+  const metadata = await invoke<{
+    name: string | null;
+    prompt: string;
+    first_mes: string | null;
+    alternate_greetings: string[];
+    role_policy: RolePolicy;
+    bundled_roles: PortableBundledRoleSnapshot[];
+    world_info: WorldInfoFormData | null;
+  }>('parse_character_card', {
     imageData: Array.from(uint8Array)
   });
 
@@ -103,6 +117,9 @@ export async function importCharacterFromFile(
   if (metadata.alternate_greetings.length > 0) {
     result.alternate_greetings = metadata.alternate_greetings;
   }
+  result.role_policy = metadata.role_policy;
+  result.bundled_roles = metadata.bundled_roles;
+  result.world_info = metadata.world_info;
 
 
   return result;

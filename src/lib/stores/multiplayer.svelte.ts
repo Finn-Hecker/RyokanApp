@@ -1,3 +1,4 @@
+import { reportDiagnostic } from '$lib/utils/diagnostics';
 /**
  * Multiplayer client for the zero knowledge relay server.
  *
@@ -17,12 +18,14 @@
  * plaintext either.
  */
 
-import { appState } from './appState.svelte';
+import { appState, snapshotActiveApiConnection } from './appState.svelte';
+import { navigateTo, returnTo } from './navigation';
 import { invoke } from '@tauri-apps/api/core';
 import { processThinkingOutput } from '$lib/utils/chatApi';
 import { getClientLanguageName } from '$lib/utils/clientLanguage';
 import { selectInitialGreeting } from '$lib/utils/characterGreeting';
 import type { Character } from './characterStore.svelte';
+import type { TokenUsage } from '$lib/utils/tokenUsage';
 
 // Configuration
 
@@ -41,6 +44,7 @@ const MAX_MESSAGE_ID_CHARS = 128;
 const MAX_LLM_DELTA_CHARS = 64 * 1024;
 const MAX_LLM_FINAL_CHARS = 512 * 1024;
 const MAX_SNAPSHOT_MESSAGES = 1000;
+const RECONNECT_MAX_DELAY_MS = 8000;
 
 // Types and reactive state
 
@@ -65,6 +69,23 @@ export interface MpMessage {
   ts: number;
   /** true while an LLM stream is still writing into this message */
   streaming?: boolean;
+  usage?: TokenUsage | null;
+}
+
+function parseRelayUsage(value: unknown): TokenUsage | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  const fields = ['inputTokens', 'cachedInputTokens', 'outputTokens', 'reasoningTokens'] as const;
+  for (const field of fields) {
+    const count = record[field];
+    if (count != null && (!Number.isSafeInteger(count) || (count as number) < 0)) return null;
+  }
+  return {
+    inputTokens: (record.inputTokens as number | null) ?? null,
+    cachedInputTokens: (record.cachedInputTokens as number | null) ?? null,
+    outputTokens: (record.outputTokens as number | null) ?? null,
+    reasoningTokens: (record.reasoningTokens as number | null) ?? null,
+  };
 }
 
 export interface SessionCharacter {
@@ -144,6 +165,8 @@ let remoteTypingTimer: ReturnType<typeof setTimeout> | null = null;
 let localTyping = false;
 let lastTypingSentAt = 0;
 let typingRelayChain = Promise.resolve();
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectAttempt = 0;
 
 interface ActiveGeneration {
   id: string;
@@ -244,7 +267,7 @@ export function prepareCreate(character: Character): void {
   appState.activeCharacter = character;
   mpState.characterName = character.name;
   mpState.pending = { mode: 'create' };
-  appState.currentView = 'multiplayerRoom';
+  navigateTo('multiplayerRoom');
 }
 
 /**
@@ -260,7 +283,7 @@ export function prepareJoin(input: string): boolean {
   resetRoomState();
   appState.activeCharacter = null;
   mpState.pending = { mode: 'join', ...parsed };
-  appState.currentView = 'multiplayerRoom';
+  navigateTo('multiplayerRoom');
   return true;
 }
 
@@ -276,7 +299,7 @@ export function checkJoinLink(): void {
   resetRoomState();
   appState.activeCharacter = null;
   mpState.pending = { mode: 'join', ...parsed };
-  appState.currentView = 'multiplayerRoom';
+  navigateTo('multiplayerRoom');
 }
 
 function parseLink(input: string): Omit<PendingJoin, 'mode'> | null {
@@ -516,6 +539,7 @@ async function persistMessage(message: MpMessage, conversationId?: string | null
     // collide with a different local conversation.
     messageId: `${chatId}:${message.id}`,
     createdAt: new Date(message.ts).toISOString(),
+    usage: message.kind === 'llm' ? message.usage ?? null : null,
   });
 }
 
@@ -586,13 +610,18 @@ async function createRoom(): Promise<void> {
 // WebSocket lifecycle
 
 function connect(roomId: string): void {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
   mpState.roomId = roomId;
+  mpState.connecting = true;
   const socket = new WebSocket(`${RELAY_WS}/ws/${roomId}`);
   let incomingFrameChain = Promise.resolve();
   ws = socket;
 
   socket.onopen = () => {
-    ws?.send(JSON.stringify({
+    if (ws !== socket) return;
+    socket.send(JSON.stringify({
       t: 'hello',
       host_token: hostToken,
       guest_token: hostToken ? undefined : guestToken,
@@ -612,25 +641,31 @@ function connect(roomId: string): void {
         return handleServerMsg(msg);
       })
       .catch((error) => {
-        console.error('Failed to process multiplayer frame', error);
+        reportDiagnostic('multiplayer');
       });
   };
 
   socket.onclose = (ev) => {
-    const wasConnected = mpState.connected;
+    if (ws !== socket) return;
+    ws = null;
     mpState.connected = false;
-    mpState.connecting = false;
     cancelActiveGeneration(false);
     if (mpState.closedReason) return; // room_closed already carried a reason
-    mpState.closedReason = mapCloseCode(ev.code, wasConnected);
+    const terminal = mapTerminalCloseCode(ev.code);
+    if (terminal) {
+      mpState.connecting = false;
+      mpState.closedReason = terminal;
+      return;
+    }
+    scheduleReconnect();
   };
 
-  ws.onerror = () => {
+  socket.onerror = () => {
     /* onclose fires right after anyway */
   };
 }
 
-function mapCloseCode(code: number, wasConnected: boolean): ClosedReason {
+function mapTerminalCloseCode(code: number): ClosedReason {
   switch (code) {
     case 4001:
       return 'host_left';
@@ -639,28 +674,64 @@ function mapCloseCode(code: number, wasConnected: boolean): ClosedReason {
     case 4403:
       return 'bad_token';
     case 4409:
-      return 'host_taken';
-    case 4008:
-      return 'idle';
-    case 4413:
-      return 'slow';
-    case 1000:
-      return wasConnected ? 'left' : 'error';
+      // A suspended mobile socket may still be registered briefly. Keep
+      // retrying the same host token until that stale connection is reaped.
+      return hostToken ? '' : 'host_taken';
     default:
-      return 'error';
+      // Idle, slow-consumer, ordinary and abnormal transport closes are all
+      // recoverable while the relay retains the room.
+      return '';
   }
+}
+
+function scheduleReconnect(immediate = false): void {
+  if (reconnectTimer || mpState.closedReason || !mpState.roomId || mpState.viewingHistory) return;
+  mpState.connecting = true;
+  // Do not fight the mobile OS or keep recreating sockets in the background.
+  // The visibility listener resumes immediately when the app is foregrounded.
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+  const delay = immediate
+    ? 0
+    : Math.min(500 * (2 ** reconnectAttempt++), RECONNECT_MAX_DELAY_MS);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect(mpState.roomId);
+  }, delay);
+}
+
+function reconnectOnForeground(): void {
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+  if (mpState.connected || mpState.closedReason || !mpState.roomId) return;
+  if (ws?.readyState === WebSocket.CONNECTING) return;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  scheduleReconnect(true);
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', reconnectOnForeground);
+  document.addEventListener('visibilitychange', reconnectOnForeground);
 }
 
 export function leaveRoom(): void {
   mpState.closedReason = 'left';
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'leave' }));
   ws?.close(1000);
   ws = null;
   cancelActiveGeneration(false);
   appState.activeCharacter = null;
-  appState.currentView = 'play';
+  returnTo('play');
 }
 
 function resetRoomState(): void {
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  reconnectAttempt = 0;
+  if (mpState.connected && ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ t: 'leave' }));
+  }
   ws?.close(1000);
   ws = null;
   cancelActiveGeneration(false);
@@ -720,6 +791,7 @@ function resetRoomState(): void {
 async function handleServerMsg(msg: any): Promise<void> {
   switch (msg.t) {
     case 'welcome':
+      reconnectAttempt = 0;
       mpState.connected = true;
       mpState.connecting = false;
       mpState.pending = null;
@@ -727,7 +799,9 @@ async function handleServerMsg(msg: any): Promise<void> {
       mpState.role = msg.role;
       mpState.count = msg.count;
       mpState.lockedBy = msg.locked_by ?? null;
-      mpState.everyoneCanGenerate = false;
+      if (msg.role === 'host') {
+        mpState.everyoneCanGenerate = msg.everyone_can_generate === true;
+      }
       if (mpState.role === 'host') {
         mpState.characterName = appState.activeCharacter?.name ?? '';
       }
@@ -735,6 +809,7 @@ async function handleServerMsg(msg: any): Promise<void> {
       if (addInitialGreeting) shouldInsertInitialGreeting = false;
       await ensurePersistentSession();
       if (addInitialGreeting) await insertInitialGreeting();
+      if (mpState.role === 'host' && !addInitialGreeting) scheduleSnapshot();
       break;
 
     case 'joined':
@@ -780,6 +855,7 @@ async function handleServerMsg(msg: any): Promise<void> {
       break;
 
     case 'room_closed':
+      mpState.connecting = false;
       mpState.closedReason = msg.reason === 'expired' ? 'expired' : 'host_left';
       break;
 
@@ -893,7 +969,7 @@ async function handleDecrypted(inner: any, sourceId: number): Promise<void> {
         completedStreamIds.add(mid);
         mpState.messages = mpState.messages.filter((message) => message.id !== mid);
         void discardPersistedMessage(mid).catch((error) => {
-          console.error('Failed to discard cancelled multiplayer generation', error);
+          reportDiagnostic('multiplayer');
         });
         break;
       }
@@ -904,6 +980,7 @@ async function handleDecrypted(inner: any, sourceId: number): Promise<void> {
         : null;
       const finalAuthor = typeof inner.name === 'string' ? inner.name : null;
       const finalTimestamp = safeTimestamp(inner.ts, 0);
+      const finalUsage = parseRelayUsage(inner.usage);
       let m = mpState.messages.find((x) => x.id === mid);
       if (!m && finalText !== null) {
         m = {
@@ -912,10 +989,12 @@ async function handleDecrypted(inner: any, sourceId: number): Promise<void> {
           author: finalAuthor ?? mpState.characterName ?? 'AI',
           text: finalText,
           ts: finalTimestamp || Date.now(),
+          usage: finalUsage,
         };
         seenIds.add(mid);
         insertSorted(m);
       } else if (m) {
+        m.usage = finalUsage;
         if (finalText !== null) m.text = finalText;
         if (finalAuthor !== null) m.author = finalAuthor;
         if (finalTimestamp) {
@@ -1035,15 +1114,23 @@ function hostSignatureInput(sequence: number, body: unknown): Uint8Array {
 async function verifyHostEnvelope(envelope: any): Promise<unknown | null> {
   if (!signingPublicKey || envelope?.v !== 1 || !Number.isSafeInteger(envelope.sequence)) return null;
   if (envelope.sequence <= lastVerifiedHostSequence || typeof envelope.sig !== 'string') return null;
+
   try {
+    const signature = new Uint8Array(b64u.decode(envelope.sig));
+    const input = new Uint8Array(
+      hostSignatureInput(envelope.sequence, envelope.body),
+    );
+
     const valid = await crypto.subtle.verify(
       { name: 'ECDSA', hash: 'SHA-256' },
       signingPublicKey,
-      new Uint8Array(b64u.decode(envelope.sig)),
-      hostSignatureInput(envelope.sequence, envelope.body),
+      signature,
+      input,
     );
+
     if (!valid) return null;
     if (!hostStateInitialized && envelope.body?.k !== 'snap') return null;
+
     lastVerifiedHostSequence = envelope.sequence;
     hostStateInitialized = true;
     return envelope.body;
@@ -1061,7 +1148,7 @@ function sendHostRelay(body: unknown): Promise<void> {
       const signature = await crypto.subtle.sign(
         { name: 'ECDSA', hash: 'SHA-256' },
         signingPrivateKey,
-        hostSignatureInput(sequence, body),
+        new Uint8Array(hostSignatureInput(sequence, body)).buffer,
       );
       await sendRelay({
         k: 'host',
@@ -1198,7 +1285,7 @@ function cancelActiveGeneration(releaseLock: boolean, discardPartial = false): v
   // Rust owns the HTTP stream. The id prevents a delayed abort command from
   // cancelling a subsequent generation that has already become active.
   void invoke('stop_generation', { generationId: generation.id }).catch((error) => {
-    console.error('Failed to stop multiplayer generation', error);
+    reportDiagnostic('multiplayer');
   });
 }
 
@@ -1258,7 +1345,7 @@ async function runGeneration(): Promise<void> {
   const localMsg = mpState.messages.find((m) => m.id === mid)!;
 
   let raw = '';
-  const s = appState.apiSettings;
+  const s = snapshotActiveApiConnection();
 
   try {
     // Capture the stable conversation before generation can finish. This
@@ -1272,9 +1359,7 @@ async function runGeneration(): Promise<void> {
       (ev) => {
         if (generation.aborted || ev.payload.generationId !== generation.id) return;
         raw += ev.payload.token;
-        const visible = s.isThinkingModel
-          ? processThinkingOutput(raw, false).text
-          : raw;
+        const visible = processThinkingOutput(raw, false).text;
         // Diff against the visible text already added to the local message.
         const delta = visible.slice(localMsg.text.length);
         if (delta) {
@@ -1294,32 +1379,31 @@ async function runGeneration(): Promise<void> {
     }
 
     if (!generation.aborted) {
-      await invoke('call_ai_api', {
+      localMsg.usage = await invoke<TokenUsage | null>('call_ai_api', {
         payload: {
           generation_id: generation.id,
+          provider_kind: s.providerKind,
           url: s.url,
           api_key: s.apiKey,
           model: s.model,
-          messages: buildLlmMessages(),
+          messages: buildLlmMessages(s),
           temperature: s.temperature,
-          max_tokens: s.maxTokens,
+          max_tokens: s.maxTokens + (s.thinkingBudget ?? 2500),
           presence_penalty: s.presencePenalty,
           top_p: s.topP,
           top_k: s.topK,
           min_p: s.minP,
           frequency_penalty: s.frequencyPenalty,
-          is_thinking_model: s.isThinkingModel,
+          thinking_budget: s.thinkingBudget,
         },
       });
     }
-    if (s.isThinkingModel) {
-      const { text } = processThinkingOutput(raw, true);
-      const delta = text.slice(localMsg.text.length);
-      if (delta) { localMsg.text = text; generation.buffer += delta; }
-    }
+    const { text } = processThinkingOutput(raw, true);
+    const delta = text.slice(localMsg.text.length);
+    if (delta) { localMsg.text = text; generation.buffer += delta; }
   } catch (error) {
     if (!generation.aborted) {
-      console.error('Multiplayer generation failed', error);
+      reportDiagnostic('multiplayer');
       if (!localMsg.text.trim()) localMsg.text = '⚠';
     }
   } finally {
@@ -1354,6 +1438,7 @@ async function runGeneration(): Promise<void> {
           text: localMsg.text,
           name: generation.author,
           ts: generation.timestamp,
+          usage: localMsg.usage ?? null,
         };
     await queueGenerationRelay(generation, completion).catch(() => undefined);
 
@@ -1365,20 +1450,19 @@ async function runGeneration(): Promise<void> {
       try {
         await discardPersistedMessage(mid, generation.conversationId);
       } catch (error) {
-        console.error('Failed to discard cancelled multiplayer generation', error);
+        reportDiagnostic('multiplayer');
       }
     } else if (meaningful) {
       try {
         await persistMessageOnce(localMsg, generation.conversationId);
       } catch (error) {
-        console.error('Failed to persist multiplayer generation', error);
+        reportDiagnostic('multiplayer');
       }
     }
   }
 }
 
-function buildLlmMessages(): Array<{ role: string; content: string }> {
-  const s = appState.apiSettings;
+function buildLlmMessages(s = appState.apiSettings): Array<{ role: string; content: string }> {
   const char = mpState.sessionCharacter ?? appState.activeCharacter;
   let system = s.systemPrompt || '';
   if (char?.prompt) {
