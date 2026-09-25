@@ -3,6 +3,7 @@
   import { appState } from '$lib/stores/appState.svelte';
   import { navigateTo, registerBackHandler } from '$lib/stores/navigation';
   import { characterState, loadCharacters, toggleHideCharacter, togglePinCharacter, deleteCharacter, loadHiddenIds, loadPinnedIds } from '$lib/stores/characterStore.svelte';
+  import { SOLO_CHARACTERS } from '$lib/data/characters';
   import { startNewChat } from '$lib/stores/chatStore.svelte';
   import type { RoleSelection } from '$lib/stores/chatStore.svelte';
   import { loadRoles, roleState } from '$lib/stores/roleStore.svelte';
@@ -58,6 +59,15 @@
   });
 
   onMount(() => {
+    // Decode the bundled cards while the lobby is opening. On phones the
+    // second card starts below the fold, where WebView may otherwise decode it
+    // during the first scroll and briefly stall that gesture.
+    for (const char of SOLO_CHARACTERS) {
+      const image = new Image();
+      image.src = char.avatarUrl;
+      void image.decode().catch(() => {});
+    }
+
     void (async () => {
       await loadHiddenIds();
       await loadPinnedIds();
