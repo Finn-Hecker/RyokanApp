@@ -24,22 +24,11 @@
   }
 </script>
 
-<div class="hero">
-  <div class="hero-icon">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-  </div>
-  <div class="min-w-0 flex-1">
-    <h1 class="text-[1.75rem] font-medium leading-tight tracking-tight text-gray-100">{m.roles_list_title()}</h1>
-    <p class="mt-1 text-sm leading-relaxed text-gray-500">{m.roles_list_subtitle()}</p>
-  </div>
-  {#if roleState.roles.length}<span class="count-badge">{roleState.roles.length}</span>{/if}
-</div>
-
-<div class="flex flex-col gap-2">
+<div class="list">
   {#each roleState.roles as role (role.id)}
     {@const avatar = role.avatarUrl}
-    <div class="role-card" role="button" tabindex="0" onclick={() => openEdit(role)} onkeydown={(event) => event.key === 'Enter' && openEdit(role)}>
-      <div class="avatar" class:avatar--image={!!avatar}>
+    <div class="role-card" role="button" tabindex="0" onclick={() => openEdit(role)} onkeydown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openEdit(role); } }}>
+      <div class="avatar">
         {#if avatar}
           <img src={avatar} alt="" />
         {:else}
@@ -47,8 +36,8 @@
         {/if}
       </div>
       <div class="min-w-0 flex-1">
-        <h3 class="truncate text-sm font-semibold text-gray-200">{role.name}</h3>
-        <p class="mt-0.5 line-clamp-2 text-xs leading-relaxed text-gray-600">{role.prompt || m.role_editor_empty_prompt()}</p>
+        <h3 class="wi-name">{role.name}</h3>
+        <p class="wi-desc line-clamp-2">{role.prompt || m.role_editor_empty_prompt()}</p>
       </div>
       <div class="actions">
         <button
@@ -59,34 +48,16 @@
           aria-pressed={roleState.defaultRoleId === role.id}
           onclick={(event) => { event.stopPropagation(); void setDefaultRole(role.id); }}
         >{roleState.defaultRoleId === role.id ? '★' : '☆'}</button>
-        <button class="action-btn" title={m.list_btn_edit()} onclick={(event) => { event.stopPropagation(); openEdit(role); }}>✎</button>
-        <button class="action-btn action-btn--danger" title={m.list_btn_delete()} disabled={deletingId === role.id} onclick={(event) => handleDelete(role.id, event)}>{deletingId === role.id ? '…' : '×'}</button>
+        <button class="action-btn" aria-label={m.list_btn_edit()} title={m.list_btn_edit()} onclick={(event) => { event.stopPropagation(); openEdit(role); }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="action-btn action-btn--danger" aria-label={m.list_btn_delete()} title={m.list_btn_delete()} disabled={deletingId === role.id} onclick={(event) => handleDelete(role.id, event)}>{#if deletingId === role.id}<svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56" stroke-linecap="round"/></svg>{:else}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2"/></svg>{/if}</button>
       </div>
     </div>
   {/each}
 
   {#if roleState.roles.length === 0}
-    <div class="rounded-2xl border border-dashed border-white/[.07] bg-white/[.02] px-6 py-12 text-center">
-      <p class="text-sm font-medium text-gray-400">{m.roles_list_empty_title()}</p>
-      <p class="mx-auto mt-2 max-w-sm text-xs leading-relaxed text-gray-600">{m.roles_list_empty_sub()}</p>
+    <div class="empty-state">
+      <p class="empty-title">{m.roles_list_empty_title()}</p>
+      <p class="empty-sub">{m.roles_list_empty_sub()}</p>
     </div>
   {/if}
 </div>
-
-<style>
-  .hero { display:flex; align-items:flex-start; gap:16px; margin-bottom:32px; }
-  .hero-icon { width:52px; height:52px; flex:none; border-radius:16px; display:flex; align-items:center; justify-content:center; color:#d4b483; background:linear-gradient(135deg,rgba(212,180,131,.16),rgba(212,180,131,.07)); border:1px solid rgba(212,180,131,.2); }
-  .count-badge { margin-top:6px; border:1px solid rgba(212,180,131,.2); border-radius:20px; padding:3px 10px; color:#d4b483; background:rgba(212,180,131,.1); font-size:11px; font-weight:700; }
-  .role-card { display:flex; align-items:center; gap:14px; padding:14px 18px; border:1px solid rgba(255,255,255,.06); border-radius:14px; background:rgba(255,255,255,.03); cursor:pointer; transition:.18s; }
-  .role-card:hover { transform:translateY(-1px); border-color:rgba(212,180,131,.22); background:rgba(255,255,255,.055); }
-  .avatar { width:46px; height:46px; flex:none; overflow:hidden; border-radius:13px; display:flex; align-items:center; justify-content:center; color:#d4b483; background:rgba(212,180,131,.08); border:1px solid rgba(212,180,131,.16); font-weight:700; }
-  .avatar img { width:100%; height:100%; object-fit:cover; }
-  .actions { display:flex; gap:5px; opacity:0; transition:opacity .15s; }
-  .role-card:hover .actions, .role-card:focus-within .actions { opacity:1; }
-  .action-btn { width:30px; height:30px; border-radius:8px; border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.05); color:#6b7280; cursor:pointer; }
-  .action-btn:hover { color:#e5e7eb; background:rgba(255,255,255,.1); }
-  .action-btn--star { font-size:17px; }
-  .action-btn--star.active { color:#d4b483; }
-  .action-btn--danger:hover { color:#f87171; background:rgba(239,68,68,.12); }
-  @media (max-width: 640px) { .actions { opacity:1; } .role-card { padding:12px; } }
-</style>

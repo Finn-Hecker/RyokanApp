@@ -20,7 +20,7 @@
   import type { WorldInfoEntry } from '$lib/components/editor/worldinfo/worldInfoLogic';
   import { createWorldInfo, deleteWorldInfo, updateWorldInfo, type WorldInfoFormData } from '$lib/components/editor/worldinfo/worldInfoLogic';
   import { loadWorldInfos } from '$lib/stores/worldInfoStore.svelte';
-  import { createRole, updateRole } from '$lib/stores/roleStore.svelte';
+  import { createRole, updateRole, deleteRole } from '$lib/stores/roleStore.svelte';
 
   import {
     saveCharacter,
@@ -57,6 +57,11 @@
   let isEditMode = $derived(!!editChar);
   let isHidden = $derived(editChar?.id != null ? characterState.hiddenCharacterIds.has(editChar.id) : false);
   let isAnyEditMode = $derived(isEditMode);
+  let hasMenuActions = $derived(
+    activeTab === 'character'
+      ? !isEditMode || !!editChar?.isCustom
+      : isEditMode
+  );
 
   // Character States
   let charName = $state('');
@@ -339,12 +344,16 @@
   }
 
   async function handleDelete() {
+    if (!editChar?.id || isDeleting) return;
     isDeleting = true;
     try {
-      if (editChar?.isCustom) {
+      if (activeTab === 'role') {
+        await deleteRole(String(editChar.id));
+      } else if (activeTab === 'worldinfo') {
+        await deleteWorldInfo(editChar.id);
+        await loadWorldInfos();
+      } else if (editChar.isCustom) {
         await removeCharacter(editChar);
-      } else if (activeTab === 'worldinfo' && editChar?.id) {
-        //await deleteWorldInfo(editChar.id);
       }
       goBack();
     } finally {
@@ -380,6 +389,7 @@
   {#if showDeleteConfirm}
     <DeleteConfirmDialog
       characterName={editChar?.name ?? ''}
+      description={activeTab === 'character' ? m.delete_confirm_desc() : m.delete_confirm_entry_desc()}
       {isDeleting}
       onConfirm={handleDelete}
       onCancel={() => (showDeleteConfirm = false)}
@@ -409,20 +419,21 @@
   {/snippet}
 
   {#snippet actions()}
-    <div class="flex items-center gap-2">
+    <div class="relative flex items-center gap-2" bind:this={menuRef}>
       <div class="hidden md:block">{@render backAction()}</div>
 
-      <div class="relative" bind:this={menuRef}>
-        <Button variant="icon" ariaLabel={m.create_page_aria_more_options()} onclick={toggleMenu}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="5"  r="1.2" fill="currentColor" stroke="none"/>
-            <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/>
-            <circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/>
-          </svg>
-        </Button>
+      {#if hasMenuActions}
+        <div>
+          <Button variant="icon" ariaLabel={m.create_page_aria_more_options()} onclick={toggleMenu}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="5"  r="1.2" fill="currentColor" stroke="none"/>
+              <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/>
+              <circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/>
+            </svg>
+          </Button>
 
-        {#if menuOpen}
-          <div class="dropdown-menu">
+          {#if menuOpen}
+            <div class="dropdown-menu">
 
             {#if activeTab === 'character'}
               {#if !isEditMode}
@@ -483,7 +494,7 @@
               {/if}
             {/if}
 
-            {#if activeTab === 'worldinfo'}
+            {#if isEditMode && (activeTab === 'role' || activeTab === 'worldinfo')}
               <button class="menu-item menu-item--danger" onclick={handleDeleteClick}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="3 6 5 6 21 6"/>
@@ -491,13 +502,14 @@
                   <path d="M10 11v6M14 11v6"/>
                   <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
                 </svg>
-                <span>Delete</span>
+                <span>{m.create_page_delete()}</span>
               </button>
             {/if}
 
-          </div>
-        {/if}
-      </div>
+            </div>
+          {/if}
+        </div>
+      {/if}
 
       <Button variant="secondary" disabled={!canSave || isSaving} onclick={handleSave}>
         {#if isSaving}
@@ -617,7 +629,7 @@
   .tab-content { position: relative; }
   .dropdown-menu {
     position: absolute; top: calc(100% + 8px); right: 0; z-index: 50;
-    min-width: 210px; background: #1c1c1e;
+    width: min(210px, calc(100vw - 24px)); max-width: calc(100vw - 24px); background: #1c1c1e;
     border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 14px;
     padding: 6px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
     animation: menu-in 0.15s ease;
@@ -627,12 +639,13 @@
     to   { opacity: 1; transform: translateY(0)    scale(1); }
   }
   .menu-item {
-    display: flex; align-items: center; gap: 10px; width: 100%;
+    display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0;
     padding: 9px 12px; border-radius: 9px; border: none;
     background: transparent; color: #a1a1aa; font-size: 13px;
     font-family: inherit; cursor: pointer; text-align: left;
     transition: background 0.12s, color 0.12s; letter-spacing: 0.01em;
   }
+  .menu-item span { min-width: 0; overflow-wrap: anywhere; }
   .menu-item:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); color: #f9fafb; }
   .menu-item:disabled          { opacity: 0.4; cursor: default; }
   .menu-item--danger           { color: #f87171; }

@@ -17,7 +17,7 @@
   import { validateAdditionalApiParameters } from "$lib/utils/additionalApiParameters";
   import { hydrateApiConnections, LONG_TERM_MEMORY_KEY, persistApiConnections, resolvedHardContextLimit, SUMMARY_CONNECTION_KEY } from "$lib/utils/apiConnections";
 
-  type SettingsCategory = "provider" | "memory" | "parameters" | "language" | "advanced";
+  type SettingsCategory = "provider" | "memory" | "parameters" | "language" | "advanced" | "about";
   type Category = { id: SettingsCategory; label: string; description: string; mobileDescription: string; icon: string };
 
   let powerUser = $state(false);
@@ -45,6 +45,7 @@
     { id: "parameters", label: m.settings_section_ai_behavior(), description: m.settings_category_parameters_description(), mobileDescription: m.settings_category_parameters_mobile_description(), icon: "M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5M14 4v4M6 10v4M11 16v4" },
     { id: "language", label: m.settings_section_language(), description: m.settings_category_language_description(), mobileDescription: m.settings_category_language_description(), icon: "M12 21a9 9 0 100-18 9 9 0 000 18zm0 0c2.21 0 4-4.03 4-9s-1.79-9-4-9-4 4.03-4 9 1.79 9 4 9zM3.5 12h17" },
     { id: "advanced", label: m.settings_category_advanced(), description: m.settings_category_advanced_description(), mobileDescription: m.settings_category_advanced_mobile_description(), icon: "M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM19 12h2M3 12h2M12 3v2M12 19v2M5.64 5.64l1.42 1.42M16.94 16.94l1.42 1.42M18.36 5.64l-1.42 1.42M7.06 16.94l-1.42 1.42" },
+    { id: "about", label: m.settings_category_about(), description: m.settings_category_about_description(), mobileDescription: m.settings_category_about_description(), icon: "M12 17v-5M12 8h.01M12 22a10 10 0 110-20 10 10 0 010 20z" },
   ];
 
   let activeSection = $state<SettingsCategory>("provider");
@@ -213,8 +214,10 @@
       <div class="content-panel" hidden={activeSection !== "provider" && activeSection !== "memory"}><ApiSection powerUser={powerUser} active={activeSection === "provider"} section={activeSection === "memory" ? "memory" : "provider"} {settingsReady} onConnectionChange={handleConnectionChange} /></div>
       <div class="content-panel" hidden={activeSection === "provider" || activeSection === "memory"}>
         {#if activeSection === "advanced"}
-          <UpdateSection />
           <div class="advanced-mode">{@render powerToggle()}</div>
+        {/if}
+        {#if activeSection === "about"}
+          <UpdateSection />
           <div class="advanced-mode">
             <p class="power-label">{m.settings_diagnostics_title()}</p>
             <p class="power-description" style="margin: 8px 0 14px">{m.settings_diagnostics_description()}</p>
@@ -224,7 +227,9 @@
             <p class="power-description" role="status" style="margin-top: 8px">{diagnosticsStatus}</p>
           </div>
         {/if}
-        <GeneralSection powerUser={powerUser} bind:parameterEnabled category={generalCategory} />
+        {#if activeSection !== "about"}
+          <GeneralSection powerUser={powerUser} bind:parameterEnabled category={generalCategory} />
+        {/if}
       </div>
     </div>
   </main>

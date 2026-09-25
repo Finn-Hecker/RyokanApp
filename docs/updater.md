@@ -10,7 +10,7 @@ stable release containing the manifest, even when adding Android assets later.
 
 One shared store owns the native update resource and serializes checks, downloads, and
 installation across Settings navigation. A single nonblocking startup check shows a
-small lobby notice if an update exists. Settings → Advanced → App updates shows the
+small lobby notice if an update exists. Settings → About Ryokan → App updates shows the
 actual native version, manual check, download progress, and **Install and restart**.
 Download completion is not treated as verification: installation becomes available
 only after Tauri's download promise succeeds, including signature verification.

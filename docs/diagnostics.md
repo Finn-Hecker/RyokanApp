@@ -1,6 +1,6 @@
 # Local diagnostics
 
-Settings → Advanced → Export Diagnostics downloads a JSON report using the same
+Settings → About Ryokan → Export Diagnostics downloads a JSON report using the same
 WebView download mechanism as character export. The UI reports a download request,
 not a confirmed save (the WebView controls the destination). Nothing is uploaded.
 Exported files are user-owned; delete them when no longer needed.

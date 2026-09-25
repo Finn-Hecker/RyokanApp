@@ -5,11 +5,13 @@
 
   let {
     characterName = '',
+    description = m.delete_confirm_desc(),
     isDeleting = false,
     onConfirm,
     onCancel
   }: {
     characterName?: string;
+    description?: string;
     isDeleting?: boolean;
     onConfirm?: () => void;
     onCancel?: () => void;
@@ -22,7 +24,7 @@
 >
   <div class="bg-[#1a1a1a] border border-white/10 rounded-2xl p-6 mx-4 max-w-sm w-full shadow-2xl">
     <h3 class="text-white font-semibold text-lg mb-2">{m.delete_confirm_title({ name: characterName })}</h3>
-    <p class="text-gray-400 text-sm mb-6">{m.delete_confirm_desc()}</p>
+    <p class="text-gray-400 text-sm mb-6">{description}</p>
     <div class="flex gap-3">
       <Button variant="ghost" onclick={() => onCancel?.()}>
         {m.delete_confirm_cancel()}

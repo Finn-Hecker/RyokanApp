@@ -75,6 +75,8 @@
   "settings_category_advanced": "Advanced",
   "settings_category_advanced_description": "Power User mode and sampling controls",
   "settings_category_advanced_mobile_description": "Power user & sampling",
+  "settings_category_about": "About Ryokan",
+  "settings_category_about_description": "Version, Updates & App Info",
   "settings_power_user_description": "Use precise sliders instead of presets",
   "settings_additional_api_parameters_label": "Additional API Parameters",
   "settings_additional_api_parameters_description": "Power-user option: these values are added to outgoing API requests for provider-specific options. Ryokan-controlled fields (messages, model, stream) cannot be changed here.",
@@ -414,6 +416,7 @@
   "delete_confirm_title": "Delete {name}?",
   "delete_confirm_desc": "This character will be permanently deleted. All associated chats will be lost as well. This action cannot be undone.",
   "delete_confirm_cancel": "Cancel",
+  "delete_confirm_entry_desc": "This entry will be permanently deleted. This action cannot be undone.",
   "delete_confirm_delete": "Delete",
   
   "toast_export_success": "Saved as PNG",
@@ -676,5 +679,5 @@
   "update_manual": "In-app installation is available on Windows. On Android, download the latest APK from releases and open it to update through Android. Keep the app installed to preserve your data.",
   "update_releases": "Open latest release",
   "update_link_error": "Could not open the release page. Try again.",
-  "update_banner": "Ryokan {version} is available. Open Settings → Advanced → App updates."
+  "update_banner": "Ryokan {version} is available. Open Settings → About Ryokan → App updates."
 }

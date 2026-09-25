@@ -1,0 +1,110 @@
+.library-shell .list {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .055);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, .025);
+}
+
+.library-shell .role-card,
+.library-shell .wi-card__inner {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 16px;
+  min-height: 76px;
+}
+
+.library-shell .role-card,
+.library-shell .wi-card {
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.library-shell .role-card + .role-card,
+.library-shell .wi-card + .wi-card {
+  border-top: 1px solid rgba(255, 255, 255, .055);
+}
+
+.library-shell .role-card:hover,
+.library-shell .wi-card:not(.wi-card--readonly):hover {
+  background: rgba(255, 255, 255, .045);
+}
+
+.library-shell .role-card:focus-visible,
+.library-shell .wi-card:focus-visible,
+.library-shell .action-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.library-shell .wi-card--readonly { cursor: default; }
+
+.library-shell .avatar,
+.library-shell .wi-icon {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 10px;
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), .09);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.library-shell .avatar img { width: 100%; height: 100%; object-fit: cover; }
+.library-shell .wi-info { flex: 1; min-width: 0; }
+.library-shell .wi-name { color: #e1dfe2; font-size: 14px; font-weight: 620; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.library-shell .wi-desc { margin-top: 3px; color: #85858b; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.library-shell .wi-empty-hint { margin-top: 4px; color: #85858b; font-size: 12px; }
+.library-shell .wi-card__right { flex: none; }
+.library-shell .actions { display: flex; align-items: center; gap: 4px; }
+
+.library-shell .action-btn {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #85858b;
+  cursor: pointer;
+  transition: color .15s, background .15s;
+}
+
+.library-shell .action-btn svg { width: 16px; height: 16px; }
+.library-shell .action-btn:hover { color: #e1dfe2; background: rgba(255, 255, 255, .06); }
+.library-shell .action-btn--star { font-size: 20px; }
+.library-shell .action-btn--star.active { color: var(--accent); background: rgba(var(--accent-rgb), .09); }
+.library-shell .action-btn--danger:hover { color: #f87171; background: rgba(239, 68, 68, .12); }
+.library-shell .action-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+.library-shell .section-divider { padding: 20px 16px 8px; border-top: 1px solid rgba(255, 255, 255, .055); }
+.library-shell .section-label { color: #85858b; font-size: 11px; font-weight: 650; letter-spacing: .055em; text-transform: uppercase; }
+.library-shell .wi-stats { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.library-shell .stat-pill,
+.library-shell .badge-standard { padding: 3px 7px; border-radius: 6px; background: rgba(255, 255, 255, .045); color: #929096; font-size: 10px; font-weight: 560; }
+.library-shell .badge-standard { display: inline-block; white-space: nowrap; color: #d8c5a8; background: rgba(var(--accent-rgb), .075); }
+.library-shell .empty-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 40px 24px; text-align: center; }
+.library-shell .empty-icon { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 4px; border-radius: 12px; color: var(--accent); background: rgba(var(--accent-rgb), .09); }
+.library-shell .empty-title { color: #d1cfd2; font-size: 14px; font-weight: 600; }
+.library-shell .empty-sub { max-width: 320px; color: #85858b; font-size: 12px; line-height: 1.6; }
+.library-shell .spin { animation: library-spin .6s linear infinite; }
+@keyframes library-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 767px) {
+  .library-shell .role-card,
+  .library-shell .wi-card__inner { padding: 12px 14px; gap: 12px; }
+  .library-shell .role-card { position: relative; padding-right: 62px; }
+  .library-shell .role-card,
+  .library-shell .wi-card:not(.wi-card--readonly) { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  .library-shell .role-card .actions { position: absolute; top: 6px; right: 8px; }
+  .library-shell .action-btn:not(.action-btn--star),
+  .library-shell .wi-card:not(.wi-card--readonly) .wi-card__right { display: none; }
+  .library-shell .action-btn--star { width: 44px; height: 44px; }
+}
