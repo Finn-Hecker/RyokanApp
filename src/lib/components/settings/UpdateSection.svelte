@@ -15,8 +15,8 @@
 
 <section class="updates" aria-label={m.update_title()}>
   <h2>{m.update_title()}</h2>
-  <p>{m.update_version({ version: $updater.currentVersion || '—' })}</p>
-  <div role="status" aria-live="polite">
+  <p class="version">{m.update_version({ version: $updater.currentVersion || '—' })}</p>
+  <div class="update-status" role="status" aria-live="polite">
     {#if $updater.error}
       <p class="error">{$updater.error === 'download' ? m.update_download_error() : $updater.error === 'install' ? m.update_install_error() : m.update_check_error()}</p>
     {:else if $updater.phase === 'current'}<p>{m.update_current()}</p>
@@ -25,16 +25,16 @@
   {#if !$updater.initialized}
     <Button onclick={() => updater.initialize()}>{m.update_check()}</Button>
   {:else if !$updater.supported}
-    <p>{m.update_manual()}</p>
+    <p class="detail">{m.update_manual()}</p>
     <Button onclick={openReleases}>{m.update_releases()}</Button>
   {:else if $updater.phase === 'downloading'}
-    <p>{m.update_downloading()}</p>
+    <p class="detail">{m.update_downloading()}</p>
     <progress aria-label={m.update_downloading()} max={$updater.total || 1} value={$updater.total ? Math.min($updater.downloaded, $updater.total) : undefined}></progress>
   {:else if $updater.phase === 'ready'}
-    <p>{m.update_restart_notice()}</p>
+    <p class="detail">{m.update_restart_notice()}</p>
     <Button variant="primary" onclick={() => updater.install()}>{m.update_install()}</Button>
   {:else if $updater.phase === 'installing'}
-    <p>{m.update_installing()}</p>
+    <p class="detail">{m.update_installing()}</p>
   {:else if $updater.phase === 'available'}
     <Button onclick={() => updater.download()}>{m.update_download()}</Button>
   {:else}
@@ -45,14 +45,17 @@
   {#if $updater.supported && $updater.error}
     <div class="release-link"><Button variant="ghost" onclick={openReleases}>{m.update_releases()}</Button></div>
   {/if}
-  {#if linkFailed}<p class="error" role="alert">{m.update_link_error()}</p>{/if}
+  {#if linkFailed}<p class="error link-error" role="alert">{m.update_link_error()}</p>{/if}
 </section>
 
 <style>
-  .updates { padding:18px; margin-bottom:20px; border:1px solid rgba(255,255,255,.06); border-radius:12px; background:rgba(255,255,255,.025); }
-  h2 { color:#e7e2da; font-size:14px; font-weight:600; }
-  p { color:#99979b; font-size:12px; line-height:1.6; margin:8px 0 12px; }
-  .error { color:#fca5a5; }
-  progress { width:100%; accent-color:#d4b483; }
+  .updates { margin-bottom:22px; padding-bottom:22px; border-bottom:1px solid rgba(255,255,255,.055); }
+  h2 { margin:0; color:#d1cfd2; font-size:13px; font-weight:650; }
+  p { margin:0; color:#5e5e63; font-size:11px; line-height:1.5; }
+  .version { margin:8px 0 14px; }
+  .update-status p, .detail { margin:0 0 14px; }
+  .update-status .error, .error { color:#e88787; }
+  .link-error { margin-top:8px; }
+  progress { display:block; width:100%; height:5px; margin-top:10px; accent-color:#d4b483; }
   .release-link { margin-top:8px; }
 </style>
