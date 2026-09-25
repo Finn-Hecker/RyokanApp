@@ -649,7 +649,7 @@
   "mp_sys_left": "Participant {id} left the room",
   "mp_closed_host_left": "The host disconnected. The session has ended – without the host, history and character are no longer available.",
   "mp_closed_expired": "The room expired because no host ever joined.",
-  "mp_closed_not_found": "This room doesn't exist (anymore). Rooms end when the host leaves.",
+  "mp_closed_not_found": "This room no longer exists. It was closed or the reconnection window expired.",
   "mp_closed_bad_token": "The host link is invalid.",
   "mp_closed_host_taken": "A host is already connected to this room.",
   "mp_closed_idle": "The connection was idle for too long and was closed.",

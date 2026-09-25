@@ -651,7 +651,7 @@
   "mp_sys_left": "Teilnehmer {id} hat den Raum verlassen",
   "mp_closed_host_left": "Der Host wurde getrennt. Die Sitzung ist beendet – ohne Host sind Verlauf und Charakter nicht mehr verfügbar.",
   "mp_closed_expired": "Der Raum ist abgelaufen, weil kein Host beigetreten ist.",
-  "mp_closed_not_found": "Diesen Raum gibt es nicht (mehr). Räume enden, sobald der Host geht.",
+  "mp_closed_not_found": "Diesen Raum gibt es nicht mehr. Er wurde geschlossen oder die Wiederverbindungsfrist ist abgelaufen.",
   "mp_closed_bad_token": "Der Host-Link ist ungültig.",
   "mp_closed_host_taken": "In diesem Raum ist bereits ein Host verbunden.",
   "mp_closed_idle": "Die Verbindung war zu lange inaktiv und wurde getrennt.",
