@@ -17,7 +17,7 @@
     "postinstall": "node scripts/download-tokenizer.js",
     "test:updater": "node --experimental-strip-types --test src/lib/utils/updater.test.mjs scripts/updater-config.test.mjs"
   },
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-opener": "^2",
