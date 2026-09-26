@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { appState } from '$lib/stores/appState.svelte';
   import CharacterLobby from '$lib/components/lobby/CharacterLobby.svelte';
   import ChatRoom from '$lib/components/chat/ChatRoom.svelte';
@@ -11,7 +11,6 @@
   import Multiplayer   from '$lib/components/play/MultiplayerRoom.svelte';
   import { getAllSettings } from '$lib/utils/settings';
   import { onBackButtonPress } from '@tauri-apps/api/app';
-  import { getCurrentWindow } from '@tauri-apps/api/window';
   import { handleBackNavigation } from '$lib/stores/navigation';
   import { invoke } from '@tauri-apps/api/core';
   import { loadWorldInfos } from '$lib/stores/worldInfoStore.svelte';
@@ -20,20 +19,44 @@
   import * as m from '$lib/paraglide/messages';
 
   let loaded = $state(false); 
+  let viewContainer = $state<HTMLDivElement>();
+  let backTransition: Animation | undefined;
+
+  async function handleAndroidBack() {
+    const previousView = appState.currentView;
+    if (handleBackNavigation()) {
+      if (previousView !== appState.currentView && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        await tick();
+        backTransition?.cancel();
+        backTransition = viewContainer?.animate(
+          [{ opacity: 0.8 }, { opacity: 1 }],
+          { duration: 160, easing: 'ease-out' },
+        );
+      }
+      return;
+    }
+
+    // Views use our own navigation stack, not the WebView's browsing history.
+    // Finish the Android Activity instead of destroying its WebView/window.
+    await invoke('finish_android_activity');
+  }
 
   onMount(() => {
+    let disposed = false;
     let backButtonListener: { unregister: () => Promise<void> } | undefined;
-    void onBackButtonPress(({ canGoBack }) => {
-      if (handleBackNavigation()) return;
-      if (canGoBack) {
-        window.history.back();
-      } else {
-        void getCurrentWindow().destroy();
-      }
-    }).then(listener => { backButtonListener = listener; });
+    void onBackButtonPress(() => {
+      if (!disposed) void handleAndroidBack().catch(error => console.error('Android back navigation failed', error));
+    }).then(async listener => {
+      if (disposed) await listener.unregister();
+      else backButtonListener = listener;
+    }).catch(error => console.error('Could not register Android back listener', error));
 
     void loadApp();
-    return () => { void backButtonListener?.unregister(); };
+    return () => {
+      disposed = true;
+      backTransition?.cancel();
+      void backButtonListener?.unregister().catch(error => console.error('Could not unregister Android back listener', error));
+    };
   });
 
   async function loadApp() {
@@ -63,7 +86,7 @@
     {#if appState.currentView === 'lobby' && ['available', 'ready'].includes($updater.phase)}
       <p class="px-4 py-2 text-xs text-center text-ryokan-accent" role="status">{m.update_banner({ version: $updater.version })}</p>
     {/if}
-    <div class="flex-1 overflow-hidden relative z-0">
+    <div bind:this={viewContainer} class="flex-1 overflow-hidden relative z-0">
       {#if appState.currentView === 'lobby'}
         <CharacterLobby />
       {:else if appState.currentView === 'create' || appState.currentView === 'roleEditor' || appState.currentView === 'worldInfoEditor'}

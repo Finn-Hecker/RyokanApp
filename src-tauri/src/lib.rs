@@ -5,6 +5,30 @@ mod export;
 mod tokenizer;
 mod diagnostics;
 
+// Closing the WebView is not the Android Activity lifecycle operation.
+// Run finish() on its UI thread so Android handles the closing transition.
+#[tauri::command]
+async fn finish_android_activity(webview: tauri::Webview) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        webview.with_webview(move |platform_webview| {
+            platform_webview.jni_handle().exec(move |env, activity, _| {
+                let result = env.call_method(activity, "finish", "()V", &[])
+                    .map(|_| ())
+                    .map_err(|error| error.to_string());
+                let _ = sender.send(result);
+            });
+        }).map_err(|error| error.to_string())?;
+        receiver.await.map_err(|error| error.to_string())?
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = webview;
+        Err("Finishing an Activity is only supported on Android".into())
+    }
+}
+
 #[tauri::command]
 fn supports_updates() -> bool {
     cfg!(windows)
@@ -36,6 +60,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_interaction_mode,
+            finish_android_activity,
             supports_updates,
             diagnostics::record_frontend_event,
             diagnostics::record_diagnostic_decision,
