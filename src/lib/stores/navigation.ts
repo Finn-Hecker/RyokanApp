@@ -10,7 +10,8 @@ let nextHandlerId = 0;
 
 export function navigateTo(view: RyokanView) {
   if (view === appState.currentView) return;
-  history.push(appState.currentView);
+  if (view === 'lobby') history.length = 0;
+  else history.push(appState.currentView);
   appState.currentView = view;
 }
 
@@ -32,8 +33,11 @@ export function handleBackNavigation(): boolean {
     if (handlers[index]()) return true;
   }
 
-  const previous = history.pop();
-  if (!previous) return false;
-  appState.currentView = previous;
+  if (appState.currentView === 'lobby') {
+    history.length = 0;
+    return false;
+  }
+
+  appState.currentView = history.pop() ?? 'lobby';
   return true;
 }

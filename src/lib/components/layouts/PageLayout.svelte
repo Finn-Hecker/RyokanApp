@@ -2,6 +2,7 @@
   import { fade, fly } from 'svelte/transition';
   import type { Snippet } from 'svelte';
   import { appState, type InteractionMode } from '$lib/stores/appState.svelte';
+  import { registerBackHandler } from '$lib/stores/navigation';
 
   type SidebarLayout = 'inline' | 'drawer';
   type SidebarContext = {
@@ -30,6 +31,15 @@
   } = $props();
 
   let isMobileSidebarOpen = $state(false);
+
+  $effect(() => {
+    if (!showSidebar || !isMobileSidebarOpen) return;
+    return registerBackHandler(() => {
+      if (!showSidebar || !isMobileSidebarOpen) return false;
+      isMobileSidebarOpen = false;
+      return true;
+    });
+  });
 </script>
 
 <div 
