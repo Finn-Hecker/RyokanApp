@@ -18,7 +18,6 @@
   import ErrorModal from './ErrorModal.svelte';
 
   let inputText = $state('');
-  let isOOC = $state(false);
   let chatContainer = $state<HTMLDivElement | null>(null);
   let isGenerating = $state(false);
   let isThinkingPhase = $state(false);
@@ -300,11 +299,8 @@
     const rawPrompt = inputText;
     inputText = '';
 
-    const prompt = isOOC ? `[OOC: ${rawPrompt}]` : rawPrompt;
-    isOOC = false;
-
-    pendingUserMessage = prompt;
-    await generate(prompt, true);
+    pendingUserMessage = rawPrompt;
+    await generate(rawPrompt, true);
   }
 
   async function handleRetry({ msgId }: { msgId: string }) {
@@ -542,7 +538,6 @@
 
   <ChatInput
     bind:value={inputText}
-    bind:isOOC
     isGenerating={isBlocked}
     isSummarizing={summaryState.isSummarizing}
     onSend={sendMessage}

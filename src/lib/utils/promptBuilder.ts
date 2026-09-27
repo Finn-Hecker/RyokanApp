@@ -25,9 +25,7 @@ export function buildSystemPrompt({
 
 You are speaking with the user. React to them as ${charName} naturally would throughout the entire conversation.
 
-Stay fully in character.
-
-If a message is prefixed with [OOC:], treat it as a director's instruction. Do NOT respond as ${charName}. Silently incorporate it into your next in-character response, then seamlessly return to character.`;
+Stay fully in character.`;
 
   const cardPrompt = prompt?.trim()
     ? replacePlaceholders(prompt.trim(), charName)

@@ -304,9 +304,9 @@
               </div>
             {:else}
               <div data-message-id={msg.id} class="mb-6 flex {msg.author === mpState.displayName ? 'justify-end' : 'justify-start'}">
-                <div class="max-w-[82%] sm:max-w-[68%]">
+                <div class="min-w-0 {msg.author === mpState.displayName ? 'max-w-[92%] sm:max-w-[min(88%,42rem)]' : 'max-w-[82%] sm:max-w-[68%]'}">
                   <p class="mb-1 px-1 text-[11px] text-gray-500 {msg.author === mpState.displayName ? 'text-right' : ''}">{msg.author}</p>
-                  <p class="whitespace-pre-wrap break-words rounded-2xl border border-white/[0.04] px-4 py-3 text-[15px] leading-relaxed text-gray-200 {msg.author === mpState.displayName ? 'rounded-tr-sm bg-[#1e1e22]' : 'rounded-tl-sm bg-white/[0.035]'}">{msg.text}</p>
+                  <p class="whitespace-pre-wrap break-words border px-4 py-2.5 text-[15px] leading-[1.55] text-gray-200 {msg.author === mpState.displayName ? 'rounded-[14px] border-ryokan-accent/[0.12] bg-[#252422] sm:px-[18px] sm:py-3' : 'rounded-2xl rounded-tl-sm border-white/[0.04] bg-white/[0.035] py-3'}">{msg.text}</p>
                 </div>
               </div>
             {/if}

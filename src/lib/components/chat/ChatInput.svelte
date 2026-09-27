@@ -5,7 +5,6 @@
     isGenerating = false,
     isSummarizing = false,
     value = $bindable(''),
-    isOOC = $bindable(false),
     placeholder = undefined,
     onSend,
     onStop
@@ -13,7 +12,6 @@
     isGenerating?: boolean;
     isSummarizing?: boolean;
     value?: string;
-    isOOC?: boolean;
     placeholder?: string;
     onSend?: () => void;
     onStop?: () => void;
@@ -24,7 +22,7 @@
       onSend?.();
       setTimeout(() => {
         const ta = document.getElementById('chat-input-textarea');
-        if (ta) ta.style.height = '60px';
+        if (ta) ta.style.height = '44px';
       }, 10);
     }
   }
@@ -40,30 +38,21 @@
     const target = e.target as HTMLTextAreaElement;
     const currentHeight = target.style.height;
     target.style.transition = 'none';
-    target.style.height = '60px';
+    target.style.height = '44px';
     const newHeight = Math.min(target.scrollHeight, 400);
-    target.style.height = currentHeight || '60px';
+    target.style.height = currentHeight || '44px';
     void target.offsetHeight;
-    target.style.transition = 'height 0.2s cubic-bezier(0.2, 0, 0, 1), color 0.3s ease';
+    target.style.transition = 'height 0.2s cubic-bezier(0.2, 0, 0, 1)';
     target.style.height = newHeight + 'px';
-  }
-
-  function toggleOOC() {
-    isOOC = !isOOC;
   }
 </script>
 
-<div class="px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-6 shrink-0 w-full relative z-10">
+<div class="px-4 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:pt-3 sm:pb-4 shrink-0 w-full relative z-10">
   <div class="max-w-3xl mx-auto">
 
-    <div class="rounded-[20px] transition-all duration-500 ease-out p-px
-      {isSummarizing
-        ? 'bg-white/[0.035]'
-        : isOOC
-          ? 'bg-gradient-to-b from-ryokan-accent/40 to-ryokan-accent/5'
-          : 'bg-white/6'}"
+    <div class="rounded-2xl p-px {isSummarizing ? 'bg-white/[0.04]' : 'bg-white/10'}"
     >
-      <div class="flex flex-col rounded-[19px] transition-all duration-500 ease-out overflow-hidden bg-ryokan-sidebar custom-chat-shadow">
+      <div class="flex flex-col rounded-[15px] overflow-hidden bg-ryokan-sidebar custom-chat-shadow">
 
         <textarea
           id="chat-input-textarea"
@@ -73,43 +62,29 @@
           maxlength="4000"
           placeholder={isSummarizing
             ? m.chat_summarizing_memories()
-            : placeholder ?? (isOOC ? m.chat_input_placeholder_ooc() : m.chat_placeholder())}
+            : placeholder ?? m.chat_placeholder()}
           rows="1"
-          class="w-full bg-transparent px-5 pt-4 pb-2 outline-none resize-none text-[15px] leading-relaxed placeholder:select-none
-            {isOOC
-              ? 'text-ryokan-text placeholder-ryokan-accent/60 italic'
-              : isSummarizing
-                ? 'text-ryokan-text placeholder-ryokan-accent/35 italic'
-                : 'text-ryokan-text placeholder-[#44444c]'}"
+          class="w-full bg-transparent px-4 pt-3 pb-1 outline-none resize-none text-[14px] leading-[21px] placeholder:select-none
+            {isSummarizing
+              ? 'text-ryokan-text placeholder-ryokan-accent/35 italic'
+              : 'text-ryokan-text placeholder-[#44444c]'}"
           style="
-            min-height: 60px;
+            min-height: 44px;
             max-height: 400px;
             overflow-y: auto;
             scrollbar-width: none;
-            transition: height 0.2s cubic-bezier(0.2, 0, 0, 1), color 0.5s ease;
+            transition: height 0.2s cubic-bezier(0.2, 0, 0, 1);
           "
         ></textarea>
 
-        <div class="flex items-center justify-between px-3 pb-3 pt-1">
-
+        <div class="flex items-center justify-end px-2.5 pb-2 pt-0.5">
           <button
-            onclick={toggleOOC}
-            title={isOOC ? m.chat_input_ooc_title_active() : m.chat_input_ooc_title_inactive()}
-            class="ooc-btn"
-            class:ooc-btn--active={isOOC}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-            </svg>
-            <span class="text-[11.5px] font-bold tracking-widest">{m.chat_input_director_button()}</span>
-          </button>
-
-          <button
+            type="button"
             onclick={() => isGenerating ? onStop?.() : handleSend()}
             disabled={!isGenerating && value.trim().length === 0}
+            aria-label={isGenerating ? m.chat_stop_generating() : m.chat_send_message()}
             class="send-btn"
-            class:send-btn--active={!isGenerating && value.trim().length > 0 && !isOOC}
-            class:send-btn--ooc={!isGenerating && value.trim().length > 0 && isOOC}
+            class:send-btn--active={!isGenerating && value.trim().length > 0}
             class:send-btn--stop={isGenerating}
             class:send-btn--disabled={!isGenerating && value.trim().length === 0}
           >
@@ -138,54 +113,17 @@
   }
 
   .custom-chat-shadow {
-    box-shadow:
-      0 0.25rem 1.25rem hsl(var(--always-black) / 3.5%),
-      0 0 0 0.5px color-mix(in srgb, var(--color-ryokan-accent) 12%, transparent);
-  }
-
-  .ooc-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    height: 38px;
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    background: rgba(255, 255, 255, 0.04);
-    color: rgba(255, 255, 255, 0.32);
-    font-family: inherit;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: background 0.18s, color 0.18s, border-color 0.18s;
-  }
-
-  .ooc-btn:hover {
-    background: rgba(255, 255, 255, 0.07);
-    color: rgba(255, 255, 255, 0.60);
-    border-color: rgba(255, 255, 255, 0.12);
-  }
-
-  .ooc-btn--active {
-    background: rgba(212, 180, 131, 0.10);
-    color: #d4b483;
-    border-color: rgba(212, 180, 131, 0.28);
-  }
-
-  .ooc-btn--active:hover {
-    background: rgba(212, 180, 131, 0.15);
-    color: #dfc090;
-    border-color: rgba(212, 180, 131, 0.38);
+    box-shadow: 0 4px 16px hsl(var(--always-black) / 8%);
   }
 
   .send-btn {
     flex-shrink: 0;
-    width: 38px;
-    height: 38px;
+    width: 30px;
+    height: 30px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 12px;
+    border-radius: 9px;
     border: 1px solid transparent;
     cursor: pointer;
     font-family: inherit;
@@ -205,26 +143,12 @@
     background: #f0f0f2;
     border-color: rgba(255, 255, 255, 0.20);
     color: #0e0e12;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255,255,255,0.08) inset;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.16);
   }
 
   .send-btn--active:hover {
     background: #ffffff;
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255,255,255,0.12) inset;
-    transform: translateY(-1px);
-  }
-
-  .send-btn--ooc {
-    background: #d4b483;
-    border-color: rgba(212, 180, 131, 0.50);
-    color: #0e0e12;
-    box-shadow: 0 2px 14px rgba(212, 180, 131, 0.30), 0 0 0 1px rgba(255,255,255,0.08) inset;
-  }
-
-  .send-btn--ooc:hover {
-    background: #dfc090;
-    box-shadow: 0 4px 20px rgba(212, 180, 131, 0.42);
-    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
   .send-btn--stop {

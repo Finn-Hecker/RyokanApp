@@ -75,10 +75,6 @@
   // Swipe animation state — null means no animation (e.g. on mount or after streaming)
   let slideDir = $state<null | 'left' | 'right' | 'enter'>(null);
 
-  let isOocMsg    = $derived(msg.isUser && /^\[OOC:\s/.test(msg.text));
-  let displayText = $derived(
-    isOocMsg ? msg.text.replace(/^\[OOC:\s*/, '').replace(/\]$/, '') : msg.text
-  );
   let cleanHtml = $derived(renderMessageMarkdown(msg.text));
 
   // Swipe
@@ -239,15 +235,15 @@
 >
 
 {#if msg.isUser}
-  <div class="max-w-[88%] sm:max-w-[65%] group/usermsg">
+  <div class="min-w-0 max-w-[92%] sm:max-w-[min(88%,42rem)] group/usermsg">
     {#if editMode}
-      <div class="user-edit-wrap rounded-2xl rounded-tr-sm p-[1.5px]">
-        <div class="rounded-[14px] rounded-tr-[3px] bg-ryokan-bg overflow-hidden">
+      <div class="user-edit-wrap rounded-[15px] p-[1.5px]">
+        <div class="rounded-[13px] bg-ryokan-bg overflow-hidden">
           <textarea
             bind:value={editValue}
             onkeydown={handleEditKeydown}
-            class="w-full min-w-[220px] bg-transparent text-gray-200 text-[15px] leading-relaxed
-                   resize-none outline-none px-5 py-3.5 block"
+            class="w-full min-w-[220px] bg-transparent text-gray-200 text-[15px] leading-[1.55]
+                   resize-none outline-none px-4 py-3 block"
             rows={Math.max(2, editValue.split('\n').length)}
           ></textarea>
           <div class="flex items-center justify-between px-4 pb-3">
@@ -271,12 +267,10 @@
       </div>
     {:else}
       <div class="relative">
-        <div class="px-3.5 py-2.5 sm:px-5 sm:py-3.5 rounded-2xl rounded-tr-sm
-          {isOocMsg
-            ? 'bg-ryokan-accent/[0.07] border border-ryokan-accent/25 text-ryokan-accent italic'
-            : 'bg-[#1e1e22] border border-white/[0.04] text-gray-200'}
-          user-message-text text-[15px] leading-relaxed break-words shadow-sm transition-colors">
-          {displayText}
+        <div class="user-message-text rounded-[14px] px-4 py-2.5 sm:px-[18px] sm:py-3
+          bg-[#252422] border border-ryokan-accent/[0.12] text-gray-200
+          text-[15px] leading-[1.55] break-words whitespace-pre-wrap transition-colors">
+          {msg.text}
         </div>
         {#if !isMobileViewport && canEdit && !isGenerating}
           <div class="user-ctrl-bar
@@ -745,7 +739,7 @@
   }
 
   .mobile-message-typography .user-message-text {
-    font-size: 17px;
+    font-size: 14px;
     line-height: 1.5;
     -webkit-text-size-adjust: none;
     text-size-adjust: none;

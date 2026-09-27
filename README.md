@@ -90,7 +90,6 @@ They do not need a Ryokan installation, an account, an API key, or their own lan
 
 ### Roleplay First
 
-* **Director Mode:** Step outside the story to guide the narrative or correct the AI without filling the conversation with OOC messages.
 * **Edit & Retry:** Edit your latest message and regenerate the AI response.
 * **Swipe to Reroll:** Move between alternative AI responses without losing previous generations.
 * **Chat Cloning:** Branch an existing conversation into a new chat and explore another direction without destroying the original.
