@@ -63,7 +63,11 @@ fn migrate_api_connections(conn: &Connection) -> Result<bool, String> {
     };
     let enabled = |key: &str| get(key, "false") == "true";
     let url = get("api_url", "http://127.0.0.1:1234/v1");
-    let legacy_context = integer("api_context_limit", 8192).clamp(1024, 16_777_216);
+    // This migration also initializes fresh installs. Only an existing legacy
+    // limit should enable the manual cap; missing values use the frontend's 32K fallback.
+    let legacy_context = setting(conn, "api_context_limit").map_err(|e| e.to_string())?
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(|value| value.clamp(1024, 16_777_216));
     let connection = json!({
         "id": "default", "name": "Default", "providerKind": legacy_provider_kind(&url),
         "url": url, "apiKey": get("api_key", ""), "model": get("api_model", ""),
@@ -72,7 +76,7 @@ fn migrate_api_connections(conn: &Connection) -> Result<bool, String> {
         "topP": number("api_top_p", 0.9), "topK": integer("api_top_k", 40), "minP": number("api_min_p", 0.05),
         "frequencyPenalty": number("api_frequency_penalty", 0.0), "thinkingBudget": integer("api_thinking_budget", 2500),
         "customMode": get("api_custom_mode", "false") == "true", "additionalApiParameters": get("api_additional_parameters", ""),
-        "manualContextCap": legacy_context, "contextLimit": legacy_context, "detectedContext": Value::Null,
+        "manualContextCap": legacy_context, "contextLimit": legacy_context.unwrap_or(32_768), "detectedContext": Value::Null,
         "contextDetectionError": Value::Null, "contextStrategy": "balanced",
         "parameterEnabled": {
             "temperature": enabled("api_temperature_enabled"), "maxTokens": enabled("api_max_tokens_enabled"),
@@ -508,6 +512,23 @@ mod tests {
             )
             .unwrap();
         assert_eq!(budget, "2500");
+    }
+
+    #[test]
+    fn fresh_api_connection_starts_without_manual_cap_and_keeps_defaults_on_restart() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);").unwrap();
+
+        assert!(migrate_api_connections(&conn).unwrap());
+        let raw: String = conn.query_row("SELECT value FROM settings WHERE key='api_connections'", [], |row| row.get(0)).unwrap();
+        let connections: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(connections[0]["manualContextCap"], serde_json::Value::Null);
+        assert_eq!(connections[0]["contextLimit"], 32768);
+        assert_eq!(connections[0]["detectedContext"], serde_json::Value::Null);
+
+        assert!(!migrate_api_connections(&conn).unwrap());
+        let restarted: String = conn.query_row("SELECT value FROM settings WHERE key='api_connections'", [], |row| row.get(0)).unwrap();
+        assert_eq!(restarted, raw);
     }
 
     #[test]
