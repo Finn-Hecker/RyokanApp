@@ -298,6 +298,7 @@
   "chat_generation_api_message": "API-Meldung",
   "chat_stop_generating": "Antwort stoppen",
   "chat_edit": "Bearbeiten",
+  "chat_copy": "Kopieren",
   "chat_retry": "Erneut versuchen",
   "chat_previous_variant": "Vorherige Variante",
   "chat_next_variant": "Nächste Variante",

@@ -296,6 +296,7 @@
   "chat_generation_api_message": "API message",
   "chat_stop_generating": "Stop generating",
   "chat_edit": "Edit",
+  "chat_copy": "Copy",
   "chat_retry": "Retry",
   "chat_previous_variant": "Previous variant",
   "chat_next_variant": "Next variant",

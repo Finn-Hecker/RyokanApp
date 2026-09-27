@@ -89,6 +89,7 @@
 
   let showControls  = $derived(canSwipe || (canEdit && !isGenerating) || (canCloneFrom && !isGenerating));
   let hasMobileActions = $derived(
+    Boolean(msg.text) ||
     (canSwipe && (canGoLeft || canGoRight || canRetry)) ||
     (canEdit && !isGenerating) ||
     (canCloneFrom && !isGenerating && !cloneDisabled && !isCloning)
@@ -185,6 +186,23 @@
     if (window.matchMedia('(max-width: 639px)').matches) event.preventDefault();
   }
 
+  async function copyMessage() {
+    try {
+      await navigator.clipboard.writeText(msg.text);
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = msg.text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      const copied = document.execCommand('copy');
+      textarea.remove();
+      if (!copied) return;
+    }
+    closeMobileActions();
+  }
+
   function openMobileEdit() {
     closeMobileActions();
     void handleEditOpen();
@@ -221,7 +239,7 @@
 >
 
 {#if msg.isUser}
-  <div class="max-w-[75%] sm:max-w-[65%] group/usermsg">
+  <div class="max-w-[88%] sm:max-w-[65%] group/usermsg">
     {#if editMode}
       <div class="user-edit-wrap rounded-2xl rounded-tr-sm p-[1.5px]">
         <div class="rounded-[14px] rounded-tr-[3px] bg-ryokan-bg overflow-hidden">
@@ -253,7 +271,7 @@
       </div>
     {:else}
       <div class="relative">
-        <div class="px-5 py-3.5 rounded-2xl rounded-tr-sm
+        <div class="px-3.5 py-2.5 sm:px-5 sm:py-3.5 rounded-2xl rounded-tr-sm
           {isOocMsg
             ? 'bg-ryokan-accent/[0.07] border border-ryokan-accent/25 text-ryokan-accent italic'
             : 'bg-[#1e1e22] border border-white/[0.04] text-gray-200'}
@@ -469,6 +487,9 @@
     <div class="mobile-action-sheet" role="dialog" aria-modal="true" aria-label="Message actions">
       <div class="mobile-action-sheet-handle" aria-hidden="true"></div>
       <div class="mobile-action-sheet-actions">
+        {#if msg.text}
+          <button class="mobile-action" onclick={copyMessage}><span>{m.chat_copy()}</span></button>
+        {/if}
         {#if canSwipe && canGoLeft}
           <button class="mobile-action" onclick={() => openMobileSwipe('left')}>
             <span>{m.chat_previous_variant()}</span>

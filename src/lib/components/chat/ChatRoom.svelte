@@ -116,8 +116,9 @@
 
   function handleArrowKey(e: KeyboardEvent) {
     const tag = (e.target as HTMLElement)?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || isBlocked) return;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable || isBlocked) return;
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    if (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || !window.getSelection()?.isCollapsed) return;
 
     e.preventDefault();
 
@@ -488,7 +489,7 @@
   <div
     bind:this={chatContainer}
     onscroll={handleScroll}
-    class="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 pt-4 pb-4"
+    class="chat-scroll flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 pt-4 pb-4"
     style="overflow-anchor: none; overscroll-behavior: contain;"
   >
     <div class="max-w-3xl mx-auto w-full">
@@ -558,3 +559,14 @@
     onClose={closeErrorModal}
   />
 {/if}
+
+<style>
+  .chat-scroll {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .chat-scroll::-webkit-scrollbar {
+    display: none;
+  }
+</style>
