@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { flushSync, onMount } from 'svelte';
   import * as m from '$lib/paraglide/messages';
   import { renderMessageMarkdown } from '$lib/utils/renderMessageMarkdown';
   import { setSwipeIndex } from '$lib/stores/chatStore.svelte';
@@ -49,6 +49,7 @@
   let editMode = $state(false);
   let editValue = $state('');
   let msgEl = $state<HTMLDivElement | null>(null);
+  let editEl = $state<HTMLDivElement | null>(null);
   let editWidth = $state(0);
   let editHeight = $state(0);
   let isCloning = $state(false);
@@ -114,13 +115,28 @@
     });
   }
 
-  async function handleEditOpen() {
+  function handleEditOpen() {
     if (msgEl) {
       editWidth  = msgEl.offsetWidth;
       editHeight = msgEl.offsetHeight;
     }
     editValue = msg.text;
-    editMode  = true;
+    // Render and focus in the click handler so mobile browsers open the keyboard.
+    flushSync(() => { editMode = true; });
+    if (editEl) {
+      editEl.textContent = editValue;
+      editEl.focus();
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(editEl);
+      range.collapse(false);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }
+  }
+
+  function handleEditInput(event: Event) {
+    editValue = (event.currentTarget as HTMLDivElement).innerText;
   }
 
   function handleEditSave() {
@@ -136,8 +152,14 @@
   }
 
   function handleEditKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleEditSave();
-    if (e.key === 'Escape') handleEditCancel();
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleEditSave();
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      handleEditCancel();
+    }
   }
 
   async function handleCloneFromHere() {
@@ -151,7 +173,7 @@
   }
 
   function startMobileLongPress(event: PointerEvent) {
-    if (!window.matchMedia('(max-width: 639px)').matches || event.pointerType !== 'touch' || !hasMobileActions || (event.target as HTMLElement).closest('button, input, textarea, a')) return;
+    if (editMode || !window.matchMedia('(max-width: 639px)').matches || event.pointerType !== 'touch' || !hasMobileActions || (event.target as HTMLElement).closest('button, input, textarea, a, [contenteditable]')) return;
     longPressStart = { x: event.clientX, y: event.clientY };
     mobileLongPressPending = true;
     longPressTimer = setTimeout(() => {
@@ -179,7 +201,7 @@
   }
 
   function preventMobileTextSelection(event: MouseEvent) {
-    if (window.matchMedia('(max-width: 639px)').matches) event.preventDefault();
+    if (!editMode && window.matchMedia('(max-width: 639px)').matches) event.preventDefault();
   }
 
   async function copyMessage() {
@@ -235,44 +257,25 @@
 >
 
 {#if msg.isUser}
-  <div class="min-w-0 max-w-[92%] sm:max-w-[min(88%,42rem)] group/usermsg">
+  <div class="relative min-w-0 max-w-[92%] sm:max-w-[min(88%,42rem)] group/usermsg" style={editMode ? `width: ${editWidth}px` : undefined}>
+    <div bind:this={msgEl} class="user-message-text rounded-[14px] px-4 py-2.5 sm:px-[18px] sm:py-3
+      bg-[#252422] border border-ryokan-accent/[0.12] text-gray-200
+      text-[15px] leading-[1.55] break-words whitespace-pre-wrap" style:min-height={editMode ? `${editHeight}px` : undefined}>
+      {#if editMode}
+        <div bind:this={editEl} contenteditable="plaintext-only" role="textbox" tabindex="0" aria-label={m.chat_edit()}
+          aria-multiline="true" spellcheck="true" oninput={handleEditInput} onkeydown={handleEditKeydown}
+          class="inline-edit-text outline-none"></div>
+      {:else}
+        {msg.text}
+      {/if}
+    </div>
     {#if editMode}
-      <div class="user-edit-wrap rounded-[15px] p-[1.5px]">
-        <div class="rounded-[13px] bg-ryokan-bg overflow-hidden">
-          <textarea
-            bind:value={editValue}
-            onkeydown={handleEditKeydown}
-            class="w-full min-w-[220px] bg-transparent text-gray-200 text-[15px] leading-[1.55]
-                   resize-none outline-none px-4 py-3 block"
-            rows={Math.max(2, editValue.split('\n').length)}
-          ></textarea>
-          <div class="flex items-center justify-between px-4 pb-3">
-            <p class="text-[10px] text-gray-600">{m.chat_edit_shortcut()}</p>
-            <div class="flex gap-2">
-              <button
-                onclick={handleEditCancel}
-                class="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] rounded-xl transition-all duration-150"
-              >
-                {m.chat_cancel()}
-              </button>
-              <button
-                onclick={handleEditSave}
-                class="px-3 py-1.5 text-xs bg-ryokan-accent/90 hover:bg-ryokan-accent text-ryokan-bg font-medium rounded-xl transition-all duration-150"
-              >
-                {m.chat_save()}
-              </button>
-            </div>
-          </div>
-        </div>
+      <div class="inline-edit-actions inline-edit-actions--user">
+        <button onclick={handleEditCancel}>{m.chat_cancel()}</button>
+        <button class="inline-edit-save" onclick={handleEditSave}>{m.chat_save()}</button>
       </div>
     {:else}
-      <div class="relative">
-        <div class="user-message-text rounded-[14px] px-4 py-2.5 sm:px-[18px] sm:py-3
-          bg-[#252422] border border-ryokan-accent/[0.12] text-gray-200
-          text-[15px] leading-[1.55] break-words whitespace-pre-wrap transition-colors">
-          {msg.text}
-        </div>
-        {#if !isMobileViewport && canEdit && !isGenerating}
+      {#if !isMobileViewport && canEdit && !isGenerating}
           <div class="user-ctrl-bar
             opacity-100 translate-y-0 pointer-events-auto
             sm:opacity-0 sm:group-hover/usermsg:opacity-100
@@ -291,8 +294,7 @@
               <span>{m.chat_edit()}</span>
             </button>
           </div>
-        {/if}
-      </div>
+      {/if}
     {/if}
   </div>
 
@@ -311,45 +313,20 @@
 
     <div class="relative group/message flex-1 min-w-0 pb-1">
 
-      {#if editMode}
-        <div class="edit-border-wrap rounded-xl p-[1.5px]" style="width: {editWidth}px;">
-          <div class="rounded-[10px] bg-ryokan-bg overflow-hidden">
-            <textarea
-              bind:value={editValue}
-              onkeydown={handleEditKeydown}
-              class="w-full bg-transparent text-gray-200 text-sm leading-relaxed
-                     resize-none outline-none px-3.5 py-3 block"
-              style="height: {editHeight}px;"
-            ></textarea>
-            <div class="flex items-center justify-between px-3.5 pb-3">
-              <p class="text-[10px] text-gray-600">{m.chat_edit_shortcut()}</p>
-              <div class="flex gap-2">
-                <button
-                  onclick={handleEditCancel}
-                  class="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-200 hover:bg-white/[0.06] rounded-xl transition-all duration-150"
-                >
-                  {m.chat_cancel()}
-                </button>
-                <button
-                  onclick={handleEditSave}
-                  class="px-3 py-1.5 text-xs bg-ryokan-accent/90 hover:bg-ryokan-accent text-ryokan-bg font-medium rounded-xl transition-all duration-150"
-                >
-                  {m.chat_save()}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-      {:else}
         <div
           bind:this={msgEl}
           class="text-gray-200 break-words prose-custom swipe-bubble"
-          class:swipe-exit-left={slideDir === 'left'}
-          class:swipe-exit-right={slideDir === 'right'}
-          class:swipe-enter={slideDir === 'enter'}
+          style:min-height={editMode ? `${editHeight}px` : undefined}
+          class:swipe-exit-left={!editMode && slideDir === 'left'}
+          class:swipe-exit-right={!editMode && slideDir === 'right'}
+          class:swipe-enter={!editMode && slideDir === 'enter'}
         >
-          {@html cleanHtml}
+          {#if editMode}
+            <div bind:this={editEl} contenteditable="plaintext-only" role="textbox" tabindex="0" aria-label={m.chat_edit()}
+              aria-multiline="true" spellcheck="true" oninput={handleEditInput} onkeydown={handleEditKeydown}
+              class="inline-edit-text outline-none"></div>
+          {:else}
+            {@html cleanHtml}
 
           {#if msg.generationError}
             <div class="generation-error" role="alert">
@@ -375,9 +352,15 @@
               <span class="breathe-dot" style="animation-delay: 0.44s"></span>
             </span>
           {/if}
+          {/if}
         </div>
 
-        {#if !isMobileViewport && showControls}
+        {#if editMode}
+          <div class="inline-edit-actions">
+            <button onclick={handleEditCancel}>{m.chat_cancel()}</button>
+            <button class="inline-edit-save" onclick={handleEditSave}>{m.chat_save()}</button>
+          </div>
+        {:else if !isMobileViewport && showControls}
           <div class="controls-bar
             opacity-100 translate-y-0 pointer-events-auto
             sm:opacity-0 sm:group-hover/message:opacity-100
@@ -467,8 +450,6 @@
 
           </div>
         {/if}
-
-      {/if}
     </div>
   </div>
 {/if}
@@ -512,26 +493,50 @@
 {/if}
 
 <style>
-  @property --border-angle {
-    syntax: '<angle>';
-    initial-value: 0deg;
-    inherits: false;
+  .inline-edit-text {
+    min-width: 1ch;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    caret-color: #d4b483;
+    cursor: text;
+    -webkit-user-select: text;
+    user-select: text;
   }
 
-  .edit-border-wrap {
-    background: conic-gradient(
-      from var(--border-angle),
-      transparent 60%,
-      #d4b483 80%,
-      #f0d49a 90%,
-      #d4b483 95%,
-      transparent 100%
-    );
-    animation: border-spin 2.4s linear infinite;
+  .inline-edit-actions {
+    position: absolute;
+    bottom: -24px;
+    left: 0;
+    display: flex;
+    gap: 2px;
+    z-index: 1;
   }
 
-  @keyframes border-spin {
-    to { --border-angle: 360deg; }
+  .inline-edit-actions--user {
+    left: auto;
+    right: 0;
+  }
+
+  .inline-edit-actions button {
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: transparent;
+    color: #9ca3af;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 18px;
+    cursor: pointer;
+  }
+
+  .inline-edit-actions button:hover,
+  .inline-edit-actions button:focus-visible {
+    background: rgba(255, 255, 255, .07);
+    color: #e5e5ea;
+  }
+
+  .inline-edit-actions .inline-edit-save {
+    color: #d4b483;
   }
 
   .swipe-bubble {
@@ -591,6 +596,13 @@
       -webkit-touch-callout: none;
       -webkit-user-select: none;
       user-select: none;
+    }
+
+    [data-message-id] .inline-edit-text {
+      -webkit-user-select: text;
+      user-select: text;
+      touch-action: auto;
+      -webkit-touch-callout: default;
     }
   }
 
@@ -682,18 +694,6 @@
     background: rgba(255, 255, 255, 0.10);
     margin: 0 3px;
     flex-shrink: 0;
-  }
-
-  .user-edit-wrap {
-    background: conic-gradient(
-      from var(--border-angle),
-      transparent 60%,
-      #d4b483 80%,
-      #f0d49a 90%,
-      #d4b483 95%,
-      transparent 100%
-    );
-    animation: border-spin 2.4s linear infinite;
   }
 
   .user-ctrl-bar {
