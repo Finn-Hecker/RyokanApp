@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import * as m from '$lib/paraglide/messages';
 
   let {
@@ -7,7 +8,8 @@
     value = $bindable(''),
     placeholder = undefined,
     onSend,
-    onStop
+    onStop,
+    onResize
   }: {
     isGenerating?: boolean;
     isSummarizing?: boolean;
@@ -15,7 +17,18 @@
     placeholder?: string;
     onSend?: () => void;
     onStop?: () => void;
+    onResize?: (height: number) => void;
   } = $props();
+
+  let inputLayer: HTMLDivElement;
+
+  onMount(() => {
+    const resizeObserver = new ResizeObserver(([entry]) => {
+      onResize?.(entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height);
+    });
+    resizeObserver.observe(inputLayer);
+    return () => resizeObserver.disconnect();
+  });
 
   function handleSend() {
     if (value.trim().length > 0) {
@@ -47,12 +60,15 @@
   }
 </script>
 
-<div class="px-4 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:pt-3 sm:pb-4 shrink-0 w-full relative z-10">
+<div
+  bind:this={inputLayer}
+  class="composer-shell absolute inset-x-0 bottom-0 z-20 w-full px-4 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))] pointer-events-none sm:px-6 sm:pt-3 sm:pb-4"
+>
   <div class="max-w-3xl mx-auto">
 
-    <div class="rounded-2xl p-px {isSummarizing ? 'bg-white/[0.04]' : 'bg-white/10'}"
+    <div class="composer-frame pointer-events-auto rounded-2xl p-px {isSummarizing ? 'bg-white/[0.04]' : 'bg-white/10'}"
     >
-      <div class="flex flex-col rounded-[15px] overflow-hidden bg-ryokan-sidebar custom-chat-shadow">
+      <div class="flex flex-col rounded-[15px] overflow-hidden bg-ryokan-sidebar">
 
         <textarea
           id="chat-input-textarea"
@@ -108,12 +124,33 @@
 </div>
 
 <style>
-  #chat-input-textarea::-webkit-scrollbar {
-    display: none;
+  @media (max-width: 639px) {
+    .composer-frame {
+      padding: 0;
+      background: transparent;
+    }
+
+    .composer-shell::before {
+      content: '';
+      position: absolute;
+      left: 50%;
+      bottom: 0;
+      z-index: -1;
+      width: 100vw;
+      height: calc(100% + 1.25rem);
+      transform: translateX(-50%);
+      pointer-events: none;
+      background: linear-gradient(
+        to bottom,
+        transparent 0,
+        rgb(0 0 0 / 10%) 1.25rem,
+        rgb(0 0 0 / 82%) 100%
+      );
+    }
   }
 
-  .custom-chat-shadow {
-    box-shadow: 0 4px 16px hsl(var(--always-black) / 8%);
+  #chat-input-textarea::-webkit-scrollbar {
+    display: none;
   }
 
   .send-btn {

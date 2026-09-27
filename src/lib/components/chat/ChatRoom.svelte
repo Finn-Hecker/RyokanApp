@@ -33,6 +33,7 @@
   let cloneCooldown = $state(false);
   let cloneCooldownTimer: ReturnType<typeof setTimeout> | undefined;
   let mobileActionMessageId = $state<string | null>(null);
+  let composerHeight = $state(96);
 
   let isBlocked = $derived(isGenerating || summaryState.isSummarizing);
 
@@ -485,7 +486,8 @@
   <div
     bind:this={chatContainer}
     onscroll={handleScroll}
-    class="chat-scroll flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 pt-4 pb-4"
+    class="chat-scroll flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 pt-4"
+    style:padding-bottom={`${composerHeight + 16}px`}
     style="overflow-anchor: none; overscroll-behavior: contain;"
   >
     <div class="max-w-3xl mx-auto w-full">
@@ -542,6 +544,7 @@
     isSummarizing={summaryState.isSummarizing}
     onSend={sendMessage}
     onStop={stopGeneration}
+    onResize={(height) => { composerHeight = height; }}
   />
 
 </div>
@@ -564,4 +567,5 @@
   .chat-scroll::-webkit-scrollbar {
     display: none;
   }
+
 </style>
