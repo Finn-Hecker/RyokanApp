@@ -791,6 +791,8 @@
     font: inherit;
     font-size: 13px;
   }
+  select.connection-input { color-scheme: dark; }
+  select.connection-input option { background: #1c1c1e; color: #e5e5ea; }
   .connection-input:focus-visible { outline: none; border-color: rgba(212,180,131,0.4); box-shadow: 0 0 0 3px rgba(212,180,131,0.06); }
   .model-trigger { display:flex; align-items:center; justify-content:space-between; gap:10px; text-align:left; cursor:pointer; }
   .model-trigger span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
