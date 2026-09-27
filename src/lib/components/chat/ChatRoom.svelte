@@ -44,6 +44,26 @@
   let clonedFromTitle = $derived(activeConversation?.cloned_from_title ?? null);
 
   let unlistenClose: (() => void) | undefined;
+  let chatResizeObserver: ResizeObserver | undefined;
+  let previousChatHeight = 0;
+  let bottomGap = Number.POSITIVE_INFINITY;
+
+  function measureBottomGap() {
+    if (!chatContainer) return;
+    bottomGap = chatContainer.scrollHeight - chatContainer.clientHeight - chatContainer.scrollTop;
+  }
+
+  function handleChatResize() {
+    if (!chatContainer) return;
+    const height = chatContainer.clientHeight;
+    // A resize changes the scroll viewport, not the user's chosen position.
+    // Keep the last message visible when the conversation was already at its end.
+    if (previousChatHeight && height !== previousChatHeight && bottomGap <= 48) {
+      chatContainer.scrollTop = chatContainer.scrollHeight - height;
+    }
+    previousChatHeight = height;
+    measureBottomGap();
+  }
 
   $effect(() => {
     if (!showErrorModal) return;
@@ -63,6 +83,13 @@
 
   onMount(async () => {
     if (chatState.activeChatId) await loadMessages(chatState.activeChatId);
+    await tick();
+    if (chatContainer) {
+      previousChatHeight = chatContainer.clientHeight;
+      measureBottomGap();
+      chatResizeObserver = new ResizeObserver(handleChatResize);
+      chatResizeObserver.observe(chatContainer);
+    }
 
     const win = getCurrentWindow();
     unlistenClose = await win.onCloseRequested(async (event) => {
@@ -82,6 +109,7 @@
       }
     }
     unlistenClose?.();
+    chatResizeObserver?.disconnect();
     window.removeEventListener('keydown', handleArrowKey);
     if (cloneCooldownTimer) clearTimeout(cloneCooldownTimer);
   });
@@ -171,6 +199,7 @@
 
   async function handleScroll() {
     if (!chatContainer) return;
+    measureBottomGap();
     const { scrollTop, scrollHeight } = chatContainer;
 
     // INFINITE SCROLL: Load more when we're near the top (< 100px)
@@ -460,7 +489,7 @@
     bind:this={chatContainer}
     onscroll={handleScroll}
     class="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 pt-4 pb-4"
-    style="overflow-anchor: none;"
+    style="overflow-anchor: none; overscroll-behavior: contain;"
   >
     <div class="max-w-3xl mx-auto w-full">
       {#if isLoadingMore}
