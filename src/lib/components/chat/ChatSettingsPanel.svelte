@@ -672,12 +672,12 @@
 
   .settings-panel {
     position: relative;
-    width: min(400px, 100%);
+    width: min(440px, 100%);
     height: 100%;
     display: flex;
     flex-direction: column;
-    background: rgba(20, 20, 26, 0.98);
-    border-left: 1px solid rgba(255,255,255,0.09);
+    background: var(--color-ryokan-bg, #131314);
+    border-left: 1px solid rgba(255,255,255,0.055);
     box-shadow: -24px 0 70px rgba(0,0,0,0.5), -4px 0 16px rgba(0,0,0,0.35);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
@@ -723,15 +723,15 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 16px 16px 14px 20px;
+    padding: 18px 20px;
     flex-shrink: 0;
-    border-bottom: 1px solid rgba(255,255,255,0.07);
+    border-bottom: 1px solid rgba(255,255,255,0.055);
   }
 
   .settings-panel-title {
-    font-size: 14px;
+    font-size: 17px;
     font-weight: 650;
-    color: rgba(255,255,255,0.95);
+    color: #e7e2da;
     letter-spacing: -0.01em;
   }
 
@@ -758,20 +758,23 @@
   .settings-panel-body {
     flex: 1;
     min-height: 0;
-    padding: 18px 20px 22px;
+    padding: 24px 24px 36px;
     overflow-y: auto;
+    overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
+
+  .settings-panel-body::-webkit-scrollbar { display: none; }
 
   .connection-card {
     display: grid;
     gap: 12px;
-    margin-bottom: 12px;
-    padding: 14px;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 16px;
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.055);
   }
   .connection-field { min-width: 0; }
   .connection-field .settings-label { margin-bottom: 6px; }
@@ -781,14 +784,14 @@
     min-width: 0;
     height: 38px;
     padding: 0 10px;
-    border: 1px solid rgba(255,255,255,0.12);
-    border-radius: 9px;
-    background: #222228;
-    color: rgba(255,255,255,0.9);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 11px;
+    background: rgba(0,0,0,0.2);
+    color: #e5e5ea;
     font: inherit;
     font-size: 13px;
   }
-  .connection-input:focus-visible { outline: 2px solid #d4b483; outline-offset: 2px; }
+  .connection-input:focus-visible { outline: none; border-color: rgba(212,180,131,0.4); box-shadow: 0 0 0 3px rgba(212,180,131,0.06); }
   .model-trigger { display:flex; align-items:center; justify-content:space-between; gap:10px; text-align:left; cursor:pointer; }
   .model-trigger span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .model-trigger svg { flex:0 0 auto; }
@@ -804,16 +807,16 @@
   .settings-panel-footer {
     flex-shrink: 0;
     padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
-    border-top: 1px solid rgba(255,255,255,0.07);
+    border-top: 1px solid rgba(255,255,255,0.055);
   }
 
   /* ---------- Settings primitives (mirrors the main Settings page) ---------- */
 
   .settings-card {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 16px;
-    padding: 16px;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
   }
 
   @media (max-width: 639px) {
@@ -827,10 +830,9 @@
     .settings-panel-header { padding: 10px 14px 9px 16px; }
     .settings-panel-body { padding: 12px 12px 16px; }
     .settings-panel-footer { padding: 5px 10px calc(6px + env(safe-area-inset-bottom)); }
-    .settings-card { padding: 12px; }
-    .settings-divider { margin: 11px 0; }
+    .settings-divider { margin: 16px 0; }
     .preset-btn { padding: 8px 3px; }
-    .connection-card { padding: 12px; gap: 10px; }
+    .connection-card { gap: 10px; margin-bottom: 16px; padding-bottom: 16px; }
     .sampling-subheading { margin: 7px 0 9px; }
   }
 
@@ -844,14 +846,14 @@
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #555;
+    color: #68686d;
     margin-bottom: 8px;
   }
 
   .settings-divider {
     height: 1px;
     background: rgba(255, 255, 255, 0.05);
-    margin: 16px 0;
+    margin: 20px 0;
   }
 
   .preset-btn {
@@ -1033,16 +1035,21 @@
   .power-user-toggle:hover { background: rgba(255,255,255,0.04); }
 
   .power-icon {
-    color: #48484a;
+    width: 30px;
+    height: 30px;
+    justify-content: center;
+    border-radius: 9px;
+    color: #57575c;
+    background: rgba(255,255,255,0.035);
     transition: color 0.2s;
     display: flex;
     align-items: center;
   }
-  .power-icon.active { color: #d4b483; }
+  .power-icon.active { color: #d4b483; background: rgba(212,180,131,0.09); }
   .power-label {
     font-size: 12px;
     font-weight: 600;
-    color: #5a5a5e;
+    color: #d1cfd2;
     flex: 1;
     letter-spacing: 0.03em;
   }

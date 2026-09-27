@@ -21,6 +21,7 @@
   let wrapper: HTMLDivElement;
   let tooltip: HTMLDivElement;
   let tooltipStyle = $state('');
+  let positionReady = $state(false);
   let placement = $state<'top' | 'bottom'>('top');
 
   const visible = $derived(open || hovered || focused);
@@ -57,12 +58,25 @@
     const desiredTop = placement === 'top' ? preferredTop : preferredBottom;
     const top = Math.min(Math.max(desiredTop, viewportTop + VIEWPORT_MARGIN), maxTop);
 
-    tooltipStyle = `left: ${left}px; top: ${top}px;`;
+    const arrowLeft = Math.min(
+      Math.max(triggerRect.left + triggerRect.width / 2 - left, 12),
+      tooltipRect.width - 12
+    );
+    tooltipStyle = `left: ${left}px; top: ${top}px; --tooltip-arrow-left: ${arrowLeft}px;`;
+    positionReady = true;
   }
 
   $effect(() => {
     if (visible) void updatePosition();
+    else positionReady = false;
   });
+
+  // A transformed dialog changes the containing block of fixed descendants.
+  // Keep the popup at document level so viewport coordinates stay accurate.
+  function portal(node: HTMLDivElement) {
+    document.body.appendChild(node);
+    return { destroy: () => node.remove() };
+  }
 
   function toggle(e: MouseEvent) {
     e.stopPropagation();
@@ -72,11 +86,15 @@
   onMount(() => {
     const reposition = () => void updatePosition();
     window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
     window.visualViewport?.addEventListener('resize', reposition);
+    window.visualViewport?.addEventListener('scroll', reposition);
 
     return () => {
       window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
       window.visualViewport?.removeEventListener('resize', reposition);
+      window.visualViewport?.removeEventListener('scroll', reposition);
     };
   });
 </script>
@@ -117,8 +135,9 @@
 
   <div
     bind:this={tooltip}
+    use:portal
     class="ryokan-tooltip-text ryokan-tooltip-text--{align} ryokan-tooltip-text--{placement}"
-    class:ryokan-tooltip-text--visible={visible}
+    class:ryokan-tooltip-text--visible={visible && positionReady}
     style="width: min({width}px, calc(100vw - {VIEWPORT_MARGIN * 2}px)); {tooltipStyle}"
   >
     {@render children?.()}
@@ -164,7 +183,7 @@
     font-weight: 400;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
     transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
-    z-index: 50;
+    z-index: 300;
     pointer-events: none;
     line-height: 1.5;
     box-sizing: border-box;
@@ -179,18 +198,10 @@
     display: none;
   }
 
-  .ryokan-tooltip-text--center::after,
-  .ryokan-tooltip-text--center::before {
-    left: 50%;
+  .ryokan-tooltip-text::after,
+  .ryokan-tooltip-text::before {
+    left: var(--tooltip-arrow-left, 50%);
     transform: translateX(-50%);
-  }
-  .ryokan-tooltip-text--left::after,
-  .ryokan-tooltip-text--left::before {
-    left: 10px;
-  }
-  .ryokan-tooltip-text--right::after,
-  .ryokan-tooltip-text--right::before {
-    right: 10px;
   }
 
   .ryokan-tooltip-text::after {
