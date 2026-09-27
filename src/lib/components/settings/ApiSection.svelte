@@ -11,7 +11,7 @@
     type CuratedProviderGroupId,
   } from '$lib/utils/modelProviderGroups';
   import { deleteConnectionSafely, ensureContextDetection, invalidateDetectedContext, normalizeSummaryConnectionId, refreshContextDetection, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION } from '$lib/utils/apiConnections';
-  import { resolvedWorkingContextTarget, resolveSummaryConnection } from '$lib/utils/connectionCore';
+  import { CONSERVATIVE_CONTEXT_FALLBACK, resolvedWorkingContextTarget, resolveSummaryConnection } from '$lib/utils/connectionCore';
 
   const NEW_CONNECTION_ACTION = '__new_connection__';
 
@@ -902,7 +902,7 @@
         <label class="manual-limit-toggle">
           <span class="setting-toggle-copy"><strong>{m.settings_context_manual_limit()}</strong><small>{m.settings_context_manual_help()}</small></span>
           <input class="settings-switch-input sr-only" type="checkbox" checked={appState.apiSettings.manualContextCap !== null} onchange={(event) => {
-            appState.apiSettings.manualContextCap = event.currentTarget.checked ? resolvedHardContextLimit(appState.apiSettings) : null;
+            appState.apiSettings.manualContextCap = event.currentTarget.checked ? CONSERVATIVE_CONTEXT_FALLBACK : null;
             appState.apiSettings.contextLimit = resolvedHardContextLimit(appState.apiSettings);
           }} />
           <span class="settings-switch-track" aria-hidden="true"><span class="settings-switch-thumb"></span></span>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { reportDiagnostic } from '$lib/utils/diagnostics';
-  import { appState } from "$lib/stores/appState.svelte";
-  import { getAllSettings, saveSetting } from "$lib/utils/settings";
+  import { activateApiConnection, appState } from "$lib/stores/appState.svelte";
+  import { fetchModels, getAllSettings, saveSetting, type ModelInfo } from "$lib/utils/settings";
   import * as m from "$lib/paraglide/messages";
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
   import { fade } from "svelte/transition";
@@ -11,7 +11,8 @@
     createDefaultApiParameterEnabled,
     type ApiParameterKey,
   } from "$lib/utils/apiParameters";
-  import { persistApiConnections } from '$lib/utils/apiConnections';
+  import { ensureContextDetection, invalidateDetectedContext, persistApiConnections } from '$lib/utils/apiConnections';
+  import ChatModelPicker from './ChatModelPicker.svelte';
 
   let { onClose }: { onClose: () => void } = $props();
 
@@ -21,6 +22,55 @@
   let parameterEnabled = $state<Record<ApiParameterKey, boolean>>(
     createDefaultApiParameterEnabled(),
   );
+  let availableModels = $state<string[]>([]);
+  let modelMetadata = $state<Record<string, ModelInfo>>({});
+  let modelsLoading = $state(false);
+  let modelsError = $state('');
+  let modelPickerOpen = $state(false);
+  let modelRequest = 0;
+
+  async function loadModels() {
+    const connection = appState.apiSettings;
+    const request = ++modelRequest;
+    availableModels = [];
+    modelMetadata = {};
+    modelsError = '';
+    modelsLoading = false;
+    if (!connection.url.trim()) return;
+    modelsLoading = true;
+    try {
+      const models = await fetchModels(connection.url, connection.apiKey);
+      if (request !== modelRequest || appState.apiSettings !== connection) return;
+      availableModels = models.map(model => model.id);
+      modelMetadata = Object.fromEntries(models.map(model => [model.id, model]));
+      if (!models.length) modelsError = m.settings_model_error_no_models();
+    } catch (error) {
+      if (request !== modelRequest || appState.apiSettings !== connection) return;
+      modelsError = m.settings_model_error_fetch({ error: error instanceof Error ? error.message : String(error) });
+    } finally {
+      if (request === modelRequest) modelsLoading = false;
+    }
+  }
+
+  function selectConnection(id: string) {
+    if (id === appState.activeApiConnectionId || !activateApiConnection(id)) return;
+    parameterEnabled = { ...appState.apiSettings.parameterEnabled };
+    modelPickerOpen = false;
+    void persistApiConnections().catch(() => reportDiagnostic('settings'));
+    void loadModels();
+  }
+
+  function selectModel(value: string) {
+    const model = value.trim();
+    modelPickerOpen = false;
+    if (!model || model === appState.apiSettings.model) return;
+    const connection = appState.apiSettings;
+    invalidateDetectedContext(connection);
+    connection.model = model;
+    persist('api_model', model);
+    void persistApiConnections().catch(() => reportDiagnostic('settings'));
+    void ensureContextDetection(connection).then(() => persistApiConnections()).catch(() => reportDiagnostic('settings'));
+  }
 
   onMount(async () => {
     try {
@@ -28,6 +78,7 @@
       const row = settings.find(r => r.key === "settings_power_user");
       if (row) powerUser = row.value === "true";
       parameterEnabled = { ...appState.apiSettings.parameterEnabled };
+      void loadModels();
     } catch (err) {
       reportDiagnostic('settings');
     }
@@ -125,7 +176,10 @@
   function setFreqPenalty(v: number) { appState.apiSettings.frequencyPenalty = v; persist("api_frequency_penalty", v); persistActive(); }
 
   function handleWindowKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') onClose();
+    if (e.key === 'Escape') {
+      if (modelPickerOpen) modelPickerOpen = false;
+      else onClose();
+    }
   }
 
   // Closes only when the backdrop itself is clicked, so no
@@ -168,7 +222,25 @@
     </div>
 
     <div class="settings-panel-body">
-      <div class="settings-card space-y-4">
+      <div class="connection-card">
+        <div class="connection-field">
+          <label class="settings-label" for="chat-active-connection">{m.settings_connection_label()}</label>
+          <select id="chat-active-connection" class="connection-input" value={appState.activeApiConnectionId} onchange={(event) => selectConnection(event.currentTarget.value)}>
+            {#each appState.apiConnections as connection (connection.id)}
+              <option value={connection.id}>{connection.name}</option>
+            {/each}
+          </select>
+        </div>
+        <div class="connection-field">
+          <label class="settings-label" for="chat-active-model">{m.settings_model_label()}</label>
+          <button id="chat-active-model" type="button" class="connection-input model-trigger" aria-haspopup="dialog" aria-expanded={modelPickerOpen} onclick={() => modelPickerOpen = true}>
+            <span>{appState.apiSettings.model || m.settings_model_loading()}</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+          </button>
+          {#if modelsError}<span class="model-status model-status--error">{modelsError}</span>{/if}
+        </div>
+      </div>
+      <div class="settings-card">
 
         <div>
           <div class="flex items-center justify-between mb-2">
@@ -573,6 +645,9 @@
       </label>
     </div>
   </div>
+  {#if modelPickerOpen}
+    <ChatModelPicker models={availableModels} metadata={modelMetadata} selectedModel={appState.apiSettings.model} providerKind={appState.apiSettings.providerKind} loading={modelsLoading} error={modelsError} onSelect={selectModel} onRetry={loadModels} onClose={() => modelPickerOpen = false} />
+  {/if}
 </div>
 
 <style>
@@ -689,6 +764,43 @@
     overscroll-behavior: contain;
   }
 
+  .connection-card {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 14px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px;
+  }
+  .connection-field { min-width: 0; }
+  .connection-field .settings-label { margin-bottom: 6px; }
+  .connection-input {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    height: 38px;
+    padding: 0 10px;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 9px;
+    background: #222228;
+    color: rgba(255,255,255,0.9);
+    font: inherit;
+    font-size: 13px;
+  }
+  .connection-input:focus-visible { outline: 2px solid #d4b483; outline-offset: 2px; }
+  .model-trigger { display:flex; align-items:center; justify-content:space-between; gap:10px; text-align:left; cursor:pointer; }
+  .model-trigger span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .model-trigger svg { flex:0 0 auto; }
+  .model-status {
+    display: block;
+    margin-top: 6px;
+    font-size: 11px;
+    color: #99999f;
+    overflow-wrap: anywhere;
+  }
+  .model-status--error { color: #e7a3a3; }
+
   .settings-panel-footer {
     flex-shrink: 0;
     padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
@@ -702,6 +814,28 @@
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 16px;
     padding: 16px;
+  }
+
+  @media (max-width: 639px) {
+    .settings-overlay { align-items: flex-end; }
+    .settings-panel {
+      height: min(82dvh, 720px);
+      max-height: calc(100dvh - env(safe-area-inset-top) - 12px);
+      border-top: 1px solid rgba(255,255,255,0.12);
+      border-radius: 18px 18px 0 0;
+    }
+    .settings-panel-header { padding: 10px 14px 9px 16px; }
+    .settings-panel-body { padding: 12px 12px 16px; }
+    .settings-panel-footer { padding: 5px 10px calc(6px + env(safe-area-inset-bottom)); }
+    .settings-card { padding: 12px; }
+    .settings-divider { margin: 11px 0; }
+    .preset-btn { padding: 8px 3px; }
+    .connection-card { padding: 12px; gap: 10px; }
+    .sampling-subheading { margin: 7px 0 9px; }
+  }
+
+  @media (max-width: 639px) and (max-height: 500px) {
+    .settings-panel { height: 92dvh; }
   }
 
   .settings-label {

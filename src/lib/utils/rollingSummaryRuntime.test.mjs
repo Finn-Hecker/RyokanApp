@@ -144,11 +144,11 @@ test('same-as-chat and explicitly selected chat reuse capacity and one detection
   }
 });
 
-test('unknown summary capacity uses 8K fallback and chunks an oversized individual message', async () => {
-  const f = fixture({ summaryLimit: null, lengths: [100000, 20] });
+test('unknown summary capacity uses 32K fallback and chunks an oversized individual message', async () => {
+  const f = fixture({ summaryLimit: null, lengths: [200000, 20] });
   await f.run();
   assert.equal(f.summary.detectedContext, null);
-  assert.equal(resolvedHardContextLimit(f.summary), 8192);
+  assert.equal(resolvedHardContextLimit(f.summary), 32768);
   assert.ok(f.calls.length > 1);
 });
 
@@ -258,7 +258,7 @@ test('restart hydration recomputes stale limits and preserves summary selection'
     { key: connections.SUMMARY_CONNECTION_KEY, value: f.summary.id },
   ]);
   assert.equal(state.appState.apiSettings.contextLimit, 8192);
-  assert.equal(state.snapshotSummaryApiConnection(state.snapshotActiveApiConnection()).contextLimit, 8192);
+  assert.equal(state.snapshotSummaryApiConnection(state.snapshotActiveApiConnection()).contextLimit, 32768);
   assert.equal(state.appState.summaryConnectionId, f.summary.id);
 });
 

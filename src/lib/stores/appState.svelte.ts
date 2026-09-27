@@ -1,5 +1,5 @@
 import { createDefaultApiParameterEnabled, type ApiParameterKey } from '$lib/utils/apiParameters';
-import { resolvedHardContextLimit, resolveSummaryConnection, SAME_AS_CHAT_CONNECTION } from '$lib/utils/connectionCore';
+import { CONSERVATIVE_CONTEXT_FALLBACK, resolvedHardContextLimit, resolveSummaryConnection, SAME_AS_CHAT_CONNECTION } from '$lib/utils/connectionCore';
 
 export type ProviderKind = 'openrouter' | 'lm_studio' | 'llama_cpp' | 'koboldcpp' | 'ollama' | 'openai' | 'xai' | 'generic_openai';
 export type ContextStrategy = 'economy' | 'balanced' | 'maximum';
@@ -50,7 +50,7 @@ export function createDefaultConnection(id = DEFAULT_CONNECTION_ID, name = 'Defa
   return {
     id, name, providerKind: 'lm_studio', url: 'http://127.0.0.1:1234/v1', apiKey: '', model: '', systemPrompt: '',
     temperature: 0.8, thinkingBudget: 2500, maxTokens: 300, presencePenalty: 1.12, topP: 0.9,
-    topK: 40, minP: 0.05, frequencyPenalty: 0, contextLimit: 8192, manualContextCap: null,
+    topK: 40, minP: 0.05, frequencyPenalty: 0, contextLimit: CONSERVATIVE_CONTEXT_FALLBACK, manualContextCap: null,
     detectedContext: null, contextDetectionError: null, contextStrategy: 'balanced',
     parameterEnabled: createDefaultApiParameterEnabled(), customMode: false, additionalApiParameters: '',
   };

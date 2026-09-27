@@ -1,6 +1,6 @@
 export type ContextStrategy = 'economy' | 'balanced' | 'maximum';
 export const SAME_AS_CHAT_CONNECTION = 'same_as_chat';
-export const CONSERVATIVE_CONTEXT_FALLBACK = 8192;
+export const CONSERVATIVE_CONTEXT_FALLBACK = 32_768;
 const MIN_VALID_CONTEXT = 1024;
 const MAX_VALID_CONTEXT = 16_777_216;
 

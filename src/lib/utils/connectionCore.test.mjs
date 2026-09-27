@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { acceptDetectedContext, adaptiveSummaryOutputCap, CONSERVATIVE_CONTEXT_FALLBACK, connectionIdentity, deleteConnectionSafely, deriveWorkingContextTarget, normalizeSummaryConnectionId, resolveMemorySettings, resolveSummaryConnection, resolvedHardContextLimit, resolvedWorkingContextTarget, SAME_AS_CHAT_CONNECTION, shouldTriggerSummary, summaryCompressionGoal } from './connectionCore.ts';
 
 test('hard context precedence uses detection, caps it manually, and falls back conservatively', () => {
+  assert.equal(CONSERVATIVE_CONTEXT_FALLBACK, 32768);
   assert.equal(resolvedHardContextLimit({ detectedContext: { tokens: 131072, provenance: 'provider_advertised' }, manualContextCap: null }), 131072);
   assert.equal(resolvedHardContextLimit({ detectedContext: { tokens: 131072, provenance: 'provider_advertised' }, manualContextCap: 16384 }), 16384);
   assert.equal(resolvedHardContextLimit({ detectedContext: null, manualContextCap: 32768 }), 32768);
@@ -44,7 +45,7 @@ test('shared displayed/runtime working budget reacts to strategy, manual cap, an
   assert.equal(resolvedWorkingContextTarget(connection), 2048);
   connection.manualContextCap = null;
   connection.detectedContext = null;
-  assert.equal(resolvedWorkingContextTarget(connection), 4096);
+  assert.equal(resolvedWorkingContextTarget(connection), 16384);
 });
 
 test('provider or model identity changes invalidate the cache key', () => {
