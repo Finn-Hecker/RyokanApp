@@ -12,6 +12,7 @@
   } from '$lib/utils/modelProviderGroups';
   import { deleteConnectionSafely, ensureContextDetection, invalidateDetectedContext, normalizeSummaryConnectionId, refreshContextDetection, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION } from '$lib/utils/apiConnections';
   import { CONSERVATIVE_CONTEXT_FALLBACK, resolvedWorkingContextTarget, resolveSummaryConnection } from '$lib/utils/connectionCore';
+  import { formatContextTokens, getRecentModels, modelPrices } from '$lib/utils/modelPickerData';
 
   const NEW_CONNECTION_ACTION = '__new_connection__';
 
@@ -60,6 +61,7 @@
   let modelSearch     = $state("");
   let activeModelCategory = $state("all");
   let favoriteModels = $state<string[]>([]);
+  let recentModels = $state<string[]>([]);
   let modelResultsReady = $state(false);
   let lastAttemptedModelConfig = "";
   let modelLoadRequest = 0;
@@ -105,12 +107,13 @@
   type ModelCategory = {
     id: string;
     label: string;
-    kind: "all" | "free" | "favorites" | "provider";
+    kind: "all" | "recent" | "free" | "favorites" | "provider";
     providerGroup?: CuratedProviderGroupId | null;
   };
 
   const SPECIAL_MODEL_CATEGORIES: ModelCategory[] = [
     { id: "all", label: m.settings_model_category_all(), kind: "all" },
+    { id: "recent", label: m.settings_model_category_recent(), kind: "recent" },
   ];
 
   const FAVORITES_STORAGE_KEY = "ryokan-favorite-models";
@@ -118,33 +121,17 @@
   let renderedModelCount = $state(MODEL_RENDER_BATCH_SIZE);
 
   onMount(() => {
+    const refreshRecent = () => { recentModels = getRecentModels(); };
+    refreshRecent();
+    window.addEventListener('ryokan-model-used', refreshRecent);
     try {
       const stored = JSON.parse(localStorage.getItem(FAVORITES_STORAGE_KEY) ?? "[]");
       if (Array.isArray(stored)) favoriteModels = stored.filter((value): value is string => typeof value === "string");
     } catch {
       favoriteModels = [];
     }
+    return () => window.removeEventListener('ryokan-model-used', refreshRecent);
   });
-
-  function modelProviderKey(modelId: string): string {
-    const normalized = modelId.trim().toLowerCase();
-    const slashPrefix = normalized.split("/", 1)[0].replace(/^~+/, "");
-    if (normalized.includes("/") && slashPrefix) return slashPrefix;
-
-    // OpenAI-compatible local APIs often return an unnamespaced model ID. In
-    // that case, use its leading model-family prefix instead of inventing a vendor.
-    const familyPrefix = normalized.match(/^[a-z]+/)?.[0];
-    return familyPrefix || normalized;
-  }
-
-  function modelProviderLabel(providerKey: string): string {
-    const label = providerKey
-      .split(/[-_.]+/)
-      .filter(Boolean)
-      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ");
-    return label.replace(/\bOpenai\b/g, "OpenAI").replace(/\bDeepseek\b/g, "DeepSeek");
-  }
 
   function scrollDesktopCategories(event: WheelEvent) {
     if (!window.matchMedia("(min-width: 768px)").matches) return;
@@ -193,12 +180,16 @@
   const visibleModels = $derived.by(() => {
     const query = modelSearch.trim().toLowerCase();
     const category = modelCategoryTabs.find(item => item.id === activeModelCategory) ?? modelCategoryTabs[0];
-    return availableModels.filter(modelId => {
+    const source = !query && category.kind === 'recent'
+      ? recentModels.filter(id => availableModels.includes(id))
+      : availableModels;
+    return source.filter(modelId => {
       const matchesSearch = !query || modelId.toLowerCase().includes(query);
       const modelGroup = curatedProviderGroupForModel(modelMetadata[modelId] ?? { id: modelId });
       // Search is intentionally global, regardless of the currently selected browse group.
       const matchesCategory = Boolean(query)
         || category.kind === "all"
+        || category.kind === "recent"
         || (category.kind === "free" && isFreeModel(modelId))
         || (category.kind === "favorites" && favoriteModels.includes(modelId))
         || (category.kind === "provider" && (modelGroup?.id ?? null) === category.providerGroup);
@@ -444,12 +435,6 @@
     }
   }
 
-  function pricePerMillion(value: string | null | undefined): number | null {
-    if (value == null || value.trim() === "") return null;
-    const parsed = Number(value) * 1_000_000;
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
-  }
-
   function formatPrice(value: number): string {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -461,25 +446,27 @@
 
   function modelPriceLabel(modelId: string): string {
     if (!isOpenRouter) return "";
-    const pricing = modelMetadata[modelId]?.pricing;
-    const input = pricePerMillion(pricing?.prompt);
-    const output = pricePerMillion(pricing?.completion);
-    if (input === null || output === null || (input === 0 && output === 0)) return "";
-    return `${formatPrice(input)}/M input · ${formatPrice(output)}/M output`;
+    const prices = modelPrices(modelMetadata[modelId]);
+    if (!prices || (prices.input === 0 && prices.output === 0)) return "";
+    return `${formatPrice(prices.input)}/M input · ${formatPrice(prices.output)}/M output`;
+  }
+
+  function mobilePriceLabel(modelId: string): string {
+    if (!isOpenRouter) return "";
+    const prices = modelPrices(modelMetadata[modelId]);
+    if (!prices || (prices.input === 0 && prices.output === 0)) return "";
+    return `In ${formatPrice(prices.input)}/M · Out ${formatPrice(prices.output)}/M`;
   }
 
   function isFreeModel(modelId: string): boolean {
-    const pricing = modelMetadata[modelId]?.pricing;
-    return pricePerMillion(pricing?.prompt) === 0 && pricePerMillion(pricing?.completion) === 0;
+    const prices = modelPrices(modelMetadata[modelId]);
+    return prices?.input === 0 && prices.output === 0;
   }
 
   function contextLabel(modelId: string): string {
     if (!isOpenRouter) return "";
-    const contextLength = modelMetadata[modelId]?.contextLength;
-    if (!contextLength || contextLength <= 0) return "";
-    if (contextLength >= 1_000_000 && contextLength % 1_000_000 === 0) return `${contextLength / 1_000_000}M context`;
-    if (contextLength >= 1024 && contextLength % 1024 === 0) return `${contextLength / 1024}K context`;
-    return `${contextLength.toLocaleString()} context`;
+    const size = formatContextTokens(modelMetadata[modelId]?.contextLength);
+    return size ? m.settings_model_context({ size }) : "";
   }
 
   function afterNextPaint(): Promise<void> {
@@ -748,7 +735,6 @@
                         <span class="desktop-model-identity">
                           <span class="desktop-model-name">{modelId}</span>
                           <span class="desktop-model-meta">
-                            <span class="desktop-model-provider">{modelProviderLabel(modelProviderKey(modelId))}</span>
                             {#if isFreeModel(modelId)}<span class="free-badge">{m.settings_model_category_free()}</span>{/if}
                             {#if modelPriceLabel(modelId)}<span class="desktop-meta-badge">{modelPriceLabel(modelId)}</span>{/if}
                             {#if contextLabel(modelId)}<span class="desktop-meta-badge">{contextLabel(modelId)}</span>{/if}
@@ -822,11 +808,10 @@
                         class="mobile-model-select"
                         onclick={() => selectModel(modelId)}
                       >
-                        <span class="mobile-model-name">{modelId}</span>
+                        <span class="mobile-model-name" title={modelId}>{modelId}</span>
                         <span class="mobile-model-details">
-                          <span class="mobile-model-provider">{modelProviderLabel(modelProviderKey(modelId))}</span>
                           {#if isFreeModel(modelId)}<span class="free-badge">{m.settings_model_category_free()}</span>{/if}
-                          {#if modelPriceLabel(modelId)}<span class="mobile-model-price">{modelPriceLabel(modelId)}</span>{/if}
+                          {#if mobilePriceLabel(modelId)}<span class="mobile-model-price" title={modelPriceLabel(modelId)}>{mobilePriceLabel(modelId)}</span>{/if}
                           {#if contextLabel(modelId)}<span class="mobile-model-context">{contextLabel(modelId)}</span>{/if}
                         </span>
                       </button>
@@ -1178,9 +1163,8 @@
   .desktop-model-identity { min-width:0; flex:1; display:flex; flex-direction:column; gap:8px; }
   .desktop-model-name { overflow:hidden; text-overflow:ellipsis; color:inherit; font-size:15.5px; font-weight:620; letter-spacing:-.012em; line-height:1.2; white-space:nowrap; }
   .desktop-model-meta { display:flex; align-items:center; flex-wrap:wrap; gap:6px; min-height:18px; }
-  .desktop-model-provider { margin-right:2px; color:#66666b; font-size:9.5px; font-weight:750; letter-spacing:.065em; text-transform:uppercase; }
   .desktop-meta-badge { display:inline-flex; align-items:center; min-height:19px; padding:2px 7px; border:1px solid rgba(255,255,255,.055); border-radius:6px; background:rgba(0,0,0,.14); color:#77777c; font-size:10px; font-variant-numeric:tabular-nums; line-height:1.2; }
-  .desktop-model-row--selected .desktop-model-provider, .desktop-model-row--selected .desktop-meta-badge { color:#9b8667; }
+  .desktop-model-row--selected .desktop-meta-badge { color:#9b8667; }
   .desktop-selected-mark { display:grid; place-items:center; flex:0 0 auto; color:#d4b483; }
   .desktop-favorite-btn { width:52px; flex:0 0 auto; display:grid; place-items:center; margin:8px 7px 8px 0; border:0; border-radius:11px; background:transparent; color:#4e4e53; cursor:pointer; }
   .desktop-favorite-btn:hover { background:rgba(255,255,255,.055); color:#8d8d92; }
@@ -1309,7 +1293,7 @@
     .mobile-model-list .model-list-loading { gap:2px; }
     .mobile-model-list .model-row-skeleton { height:58px; border-color:transparent; border-radius:13px; }
     .mobile-model-row {
-      min-height:58px;
+      min-height:62px;
       display:flex;
       align-items:center;
       gap:2px;
@@ -1325,14 +1309,14 @@
     }
     .mobile-model-select {
       min-width:0;
-      min-height:58px;
+      min-height:60px;
       flex:1;
       display:flex;
       flex-direction:column;
-      align-items:flex-start;
+      align-items:stretch;
       justify-content:center;
-      gap:3px;
-      padding:9px 10px 9px 13px;
+      gap:4px;
+      padding:8px 5px 8px 12px;
       border:0;
       background:transparent;
       color:inherit;
@@ -1340,38 +1324,30 @@
       cursor:pointer;
     }
     .mobile-model-name {
-      max-width:100%;
+      min-width:0;
       overflow-wrap:anywhere;
       color:inherit;
       font-size:14px;
       font-weight:570;
       line-height:1.25;
     }
-    .mobile-model-provider {
-      color:#5f5f64;
-      font-size:10px;
-      font-weight:700;
-      letter-spacing:.055em;
-      text-transform:uppercase;
-    }
     .mobile-model-details {
       display:flex;
       align-items:center;
+      min-width:0;
       flex-wrap:wrap;
-      gap:4px 7px;
+      gap:3px 8px;
       color:#66666b;
       font-size:10.5px;
       line-height:1.35;
     }
     .mobile-model-price, .mobile-model-context { color:#727277; }
-    .mobile-model-price::before, .mobile-model-context::before { margin-right:7px; color:#454549; content:"·"; }
     .mobile-model-details .free-badge { min-height:16px; padding:0 5px; }
-    .mobile-model-row--selected .mobile-model-provider { color:#8d795c; }
     .mobile-model-row--selected .mobile-model-price,
     .mobile-model-row--selected .mobile-model-context { color:#9b8667; }
     .model-favorite-btn {
-      width:44px;
-      height:44px;
+      width:36px;
+      height:40px;
       display:grid;
       place-items:center;
       flex:0 0 auto;
@@ -1383,7 +1359,7 @@
     }
     .model-favorite-btn:active { background:rgba(255,255,255,.055); }
     .model-favorite-btn--active { color:#d4b483; }
-    .mobile-selected-check { flex:0 0 auto; margin:0 14px 0 4px; color:#d4b483; }
+    .mobile-selected-check { flex:0 0 auto; margin:0 8px 0 2px; color:#d4b483; }
     .mobile-model-no-results { padding-top:48px; font-size:13px; }
     @keyframes sheet-fade-in { from { opacity:0; } }
     @keyframes sheet-slide-in { from { transform:translateY(28px); opacity:.7; } }

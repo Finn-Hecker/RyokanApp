@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { recordModelUse } from '$lib/utils/modelPickerData';
 import { traceDecision, diagnosticOperation, diagnosticConnection } from '$lib/utils/diagnosticDecisions';
 import { worldInfoState } from '$lib/stores/worldInfoStore.svelte';
 import { chatState } from '$lib/stores/chatStore.svelte';
@@ -151,6 +152,7 @@ export async function runGeneration(
         const effectiveMaxTokens = effectiveBudget?.payloadMaxTokens
             ?? apiSettings.maxTokens + configuredThinkingBudget;
 
+        recordModelUse(apiSettings.model);
         const usage = await invoke<TokenUsage | null>('call_ai_api', {
             payload: {
                 generation_id:      generationId,

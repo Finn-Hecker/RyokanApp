@@ -103,6 +103,8 @@
   "settings_model_categories": "Model categories",
   "settings_model_category_others": "Others",
   "settings_model_category_all": "All",
+  "settings_model_category_recent": "Recent",
+  "settings_model_context": "{size} context",
   "settings_model_category_free": "Free",
   "settings_model_category_favorites": "Favorites",
   "settings_model_available_count": "{count} models available",

@@ -104,6 +104,8 @@
   "settings_model_categories": "Modellkategorien",
   "settings_model_category_others": "Weitere",
   "settings_model_category_all": "Alle",
+  "settings_model_category_recent": "Zuletzt",
+  "settings_model_context": "{size} Kontext",
   "settings_model_category_free": "Kostenlos",
   "settings_model_category_favorites": "Favoriten",
   "settings_model_available_count": "{count} Modelle verfügbar",

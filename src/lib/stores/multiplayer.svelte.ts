@@ -22,6 +22,7 @@ import { appState, snapshotActiveApiConnection } from './appState.svelte';
 import { navigateTo, returnTo } from './navigation';
 import { invoke } from '@tauri-apps/api/core';
 import { processThinkingOutput } from '$lib/utils/chatApi';
+import { recordModelUse } from '$lib/utils/modelPickerData';
 import { getClientLanguageName } from '$lib/utils/clientLanguage';
 import { selectInitialGreeting } from '$lib/utils/characterGreeting';
 import type { Character } from './characterStore.svelte';
@@ -1379,6 +1380,7 @@ async function runGeneration(): Promise<void> {
     }
 
     if (!generation.aborted) {
+      recordModelUse(s.model);
       localMsg.usage = await invoke<TokenUsage | null>('call_ai_api', {
         payload: {
           generation_id: generation.id,

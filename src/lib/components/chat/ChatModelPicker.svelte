@@ -4,6 +4,7 @@
   import type { ProviderKind } from '$lib/stores/appState.svelte';
   import type { ModelInfo } from '$lib/utils/settings';
   import { curatedProviderGroupForModel, curatedProviderGroups } from '$lib/utils/modelProviderGroups';
+  import { formatContextTokens, getRecentModels, modelPrices } from '$lib/utils/modelPickerData';
 
   let {
     models, metadata, selectedModel, providerKind, loading, error, onSelect, onRetry, onClose,
@@ -21,28 +22,32 @@
 
   const FAVORITES_KEY = 'ryokan-favorite-models';
   let favorites = $state<string[]>([]);
+  let recentModels = $state<string[]>([]);
   let search = $state('');
   let category = $state('all');
   let shown = $state(50);
 
   onMount(() => {
+    const refreshRecent = () => { recentModels = getRecentModels(); };
+    refreshRecent();
+    window.addEventListener('ryokan-model-used', refreshRecent);
     try {
       const stored = JSON.parse(localStorage.getItem(FAVORITES_KEY) ?? '[]');
       if (Array.isArray(stored)) favorites = stored.filter((value): value is string => typeof value === 'string');
     } catch { favorites = []; }
+    return () => window.removeEventListener('ryokan-model-used', refreshRecent);
   });
 
   function isFree(model: string): boolean {
-    const price = metadata[model]?.pricing;
-    const prompt = price?.prompt?.trim();
-    const completion = price?.completion?.trim();
-    return Boolean(prompt && completion) && Number(prompt) === 0 && Number(completion) === 0;
+    const prices = modelPrices(metadata[model]);
+    return prices?.input === 0 && prices.output === 0;
   }
 
   const categories = $derived.by(() => {
     const groups = new Set(models.map(model => curatedProviderGroupForModel(metadata[model] ?? { id: model })?.id));
     return [
       { id: 'all', label: m.settings_model_category_all() },
+      { id: 'recent', label: m.settings_model_category_recent() },
       ...(models.some(isFree) ? [{ id: 'free', label: m.settings_model_category_free() }] : []),
       ...(models.some(model => favorites.includes(model)) ? [{ id: 'favorites', label: m.settings_model_category_favorites() }] : []),
       ...curatedProviderGroups.filter(group => groups.has(group.id)).map(group => ({ id: group.id, label: group.label })),
@@ -50,11 +55,13 @@
     ];
   });
 
-  const filtered = $derived(models.filter(model => {
+  const filtered = $derived((!search.trim() && category === 'recent'
+    ? recentModels.filter(id => models.includes(id)) : models).filter(model => {
     if (search && !model.toLowerCase().includes(search.trim().toLowerCase())) return false;
     if (search || category === 'all') return true;
     if (category === 'free') return isFree(model);
     if (category === 'favorites') return favorites.includes(model);
+    if (category === 'recent') return true;
     const group = curatedProviderGroupForModel(metadata[model] ?? { id: model })?.id;
     return category === 'others' ? !group : group === category;
   }));
@@ -65,25 +72,16 @@
     try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites)); } catch { /* Session-only favorites. */ }
   }
 
-  function providerLabel(model: string): string {
-    const group = curatedProviderGroupForModel(metadata[model] ?? { id: model });
-    return group?.label ?? model.split('/')[0];
-  }
-
   function contextLabel(model: string): string {
     if (providerKind !== 'openrouter') return '';
-    const context = metadata[model]?.contextLength;
-    return context ? `${Math.round(context / 1024)}K context` : '';
+    const size = formatContextTokens(metadata[model]?.contextLength);
+    return size ? m.settings_model_context({ size }) : '';
   }
 
   function priceLabel(model: string): string {
     if (providerKind !== 'openrouter' || isFree(model)) return '';
-    const price = metadata[model]?.pricing;
-    if (!price?.prompt || !price?.completion) return '';
-    const input = Number(price.prompt) * 1_000_000;
-    const output = Number(price.completion) * 1_000_000;
-    return Number.isFinite(input) && Number.isFinite(output)
-      ? `$${input.toFixed(2)}/M input · $${output.toFixed(2)}/M output` : '';
+    const prices = modelPrices(metadata[model]);
+    return prices ? `$${prices.input.toFixed(2)}/M in · $${prices.output.toFixed(2)}/M out` : '';
   }
 
   function scrollList(event: Event) {
@@ -121,12 +119,11 @@
       {#each filtered.slice(0, shown) as model (model)}
         <div class="model-row" class:selected={selectedModel === model}>
           <button type="button" class="model-choice" role="option" aria-selected={selectedModel === model} onclick={() => onSelect(model)}>
-            <strong>{model}</strong>
+            <strong title={model}>{model}</strong>
             <span class="model-meta">
-              <span>{providerLabel(model)}</span>
               {#if isFree(model)}<span class="free-badge">{m.settings_model_category_free()}</span>{/if}
               {#if priceLabel(model)}<span>{priceLabel(model)}</span>{/if}
-              {#if contextLabel(model)}<span>{contextLabel(model)}</span>{/if}
+              {#if contextLabel(model)}<span class="context-meta">{contextLabel(model)}</span>{/if}
             </span>
           </button>
           {#if selectedModel === model}<span class="selected-check" aria-hidden="true">✓</span>{/if}
@@ -174,9 +171,10 @@
     .search-input { height:46px; font-size:16px; }
     .category-list button { min-height:38px; }
     .model-list { padding:8px 10px calc(14px + env(safe-area-inset-bottom)); }
-    .model-row { min-height:58px; margin-bottom:2px; border-color:transparent; }
-    .model-choice { padding:10px 12px; }
-    .model-choice strong { font-size:13px; }
-    .model-meta { gap:6px; }
+    .model-row { min-height:62px; margin-bottom:2px; border-color:transparent; }
+    .model-choice { align-items:stretch; gap:4px; padding:8px 6px 8px 12px; }
+    .model-choice strong { min-width:0; max-width:none; overflow:visible; white-space:normal; overflow-wrap:anywhere; font-size:13px; line-height:1.25; }
+    .model-meta { min-width:0; flex-wrap:wrap; gap:3px 8px; line-height:1.35; }
+    .favorite-button { width:36px; height:40px; margin-right:3px; font-size:22px; }
   }
 </style>
