@@ -29,6 +29,7 @@
   let generationError = $state<GenerationErrorInfo | null>(null);
   let failedRetryMsgId = $state<string | null>(null);
   let activeGenerationId = $state<string | null>(null);
+  let retryCancelled = false;
   let isLoadingMore = $state(false);
   let cloneCooldown = $state(false);
   let cloneCooldownTimer: ReturnType<typeof setTimeout> | undefined;
@@ -111,6 +112,7 @@
   });
 
   onDestroy(() => {
+    retryCancelled = true;
     if (isGenerating) {
       void cancelActiveSummary();
       if (activeGenerationId) {
@@ -158,13 +160,17 @@
       const isBeingRetried = isGenerating && retryingMsgId !== null && msg.id?.toString() === retryingMsgId;
       return {
         id: msg.id?.toString() || Math.random().toString(),
-        text: isBeingRetried && streamingText ? streamingText : msg.content,
+        text: isBeingRetried ? streamingText : msg.content,
         isUser: msg.role === 'user',
         senderName: msg.role === 'user'
           ? (msg.author || m.chat_sender_you())
           : (appState.activeCharacter?.name || m.chat_sender_ai()),
-        swipeVariants: msg.swipe_variants ?? [msg.content],
-        swipeIndex: msg.swipe_index ?? 0,
+        swipeVariants: isBeingRetried
+          ? [...(msg.swipe_variants ?? [msg.content]), streamingText]
+          : (msg.swipe_variants ?? [msg.content]),
+        swipeIndex: isBeingRetried
+          ? (msg.swipe_variants ?? [msg.content]).length
+          : (msg.swipe_index ?? 0),
       };
     });
 
@@ -307,13 +313,21 @@
   async function sendMessage() {
     if (!inputText.trim() || isBlocked || isSavingEdit) return;
     if (editingUserMessage && activeEditMessageId) {
+      const msgId = activeEditMessageId;
+      const editedText = inputText;
+      const newContent = editedText.trim();
+      const previousDraft = draftBeforeEdit;
       isSavingEdit = true;
+      activeEditMessageId = null;
+      inputText = '';
       try {
-        const saved = await handleEditSave({ msgId: activeEditMessageId, newContent: inputText.trim() });
+        const saved = await handleEditSave({ msgId, newContent });
         if (saved) {
-          activeEditMessageId = null;
-          inputText = draftBeforeEdit;
+          if (!inputText) inputText = previousDraft;
           draftBeforeEdit = '';
+        } else {
+          activeEditMessageId = msgId;
+          inputText = editedText;
         }
       } finally {
         isSavingEdit = false;
@@ -344,29 +358,32 @@
     }
     if (!precedingUserMsg) return;
 
+    const chatId = chatState.activeChatId;
+    if (!chatId) return;
+    retryCancelled = false;
+    const generationId = crypto.randomUUID();
+    activeGenerationId = generationId;
     retryingMsgId = msgId;
     isGenerating = true;
     generationError = null;
     failedRetryMsgId = null;
     resetStreamState();
-    const chatId = chatState.activeChatId;
-    if (!chatId) return;
-
     try {
       const generationOptions: GenerationOptions = {
         character: appState.activeCharacter,
         apiSettings: snapshotActiveApiConnection(),
         recentMessages: msgs.slice(0, idx),
         userPrompt: undefined,
-        generationId: crypto.randomUUID(),
+        generationId,
+        shouldCancel: () => retryCancelled,
       };
       const prepared = await checkAndSummarizeIfNeeded(chatId, generationOptions, msgId);
-      if (chatState.activeChatId !== chatId) throw new SummaryCancelledError();
+      if (retryCancelled || chatState.activeChatId !== chatId) throw new SummaryCancelledError();
       generationOptions.recentMessages = prepared.recentMessages;
       generationOptions.summaryMeta = prepared.summaryMeta;
       generationOptions.requestParameterConfig = prepared.requestParameterConfig;
-      activeGenerationId = generationOptions.generationId ?? null;
       await assertPreparedGenerationFits(generationOptions);
+      if (retryCancelled || chatState.activeChatId !== chatId) throw new SummaryCancelledError();
       const result = await runGeneration(
         generationOptions,
         {
@@ -374,7 +391,7 @@
           onThinkingPhaseChange: (v) => { isThinkingPhase = v; },
         }
       );
-      if (chatState.activeChatId !== chatId) return;
+      if (retryCancelled || chatState.activeChatId !== chatId || !result.text) return;
       await addSwipeVariant(msgId, result.text, result.usage);
       rememberGenerationAnchor(
         chatId,
@@ -384,7 +401,7 @@
           : undefined,
       );
     } catch (err) {
-      if (err instanceof SummaryCancelledError) return;
+      if (retryCancelled || err instanceof SummaryCancelledError) return;
       reportDiagnostic('chat');
       generationError = describeGenerationError(err);
       failedRetryMsgId = msgId;
@@ -512,6 +529,7 @@
   }
 
   async function stopGeneration() {
+    if (retryingMsgId) retryCancelled = true;
     if (await cancelActiveSummary(chatState.activeChatId ?? undefined)) return;
     if (activeGenerationId) {
       await invoke('stop_generation', { generationId: activeGenerationId });

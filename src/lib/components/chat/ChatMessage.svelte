@@ -101,13 +101,8 @@
   async function navigateSwipe(direction: 'left' | 'right') {
     if (!msg.id) return;
     const newIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
-
-    slideDir = direction === 'left' ? 'right' : 'left';
-    await new Promise(r => setTimeout(r, 130));
-
-    // Update content, then play enter animation
-    await setSwipeIndex(msg.id, newIndex);
     slideDir = 'enter';
+    await setSwipeIndex(msg.id, newIndex);
 
     // Clear after animation so subsequent re-renders don't re-trigger it
     await new Promise(r => setTimeout(r, 200));

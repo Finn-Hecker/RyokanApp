@@ -40,6 +40,8 @@ export interface GenerationOptions {
     summaryMeta?:   SummaryMarkerState;
     /** Scopes global Tauri stream events and cancellation to this request. */
     generationId?: string;
+    /** Prevents a stopped request from starting while stream listeners are being installed. */
+    shouldCancel?: () => boolean;
     /** Bound switches, token values, and custom fields for this exact request. */
     requestParameterConfig?: ApiRequestParameterConfig;
 }
@@ -139,6 +141,7 @@ export async function runGeneration(
     });
 
     try {
+        if (options.shouldCancel?.()) throw new Error('Generation cancelled');
         const configuredThinkingBudget = apiSettings.thinkingBudget ?? DEFAULT_THINKING_BUDGET;
         const effectiveBudget = options.requestParameterConfig
             ? deriveEffectiveTokenBudget(options.requestParameterConfig)

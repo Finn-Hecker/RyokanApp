@@ -391,22 +391,43 @@ export async function addSwipeVariant(messageId: string, content: string, usage:
     }
 }
 
+const pendingSwipeChanges = new Map<string, { tail: Promise<void>; committedIndex: number; revision: number }>();
+
 export async function setSwipeIndex(messageId: string, index: number): Promise<void> {
     const msg = chatState.currentMessages.find(m => m.id === messageId);
     const chatId = chatState.activeChatId;
+    if (!msg || !chatId) return;
+    const clamped = Math.max(0, Math.min(index, msg.swipe_variants.length - 1));
+    const key = `${chatId}:${messageId}`;
+    const pending = pendingSwipeChanges.get(key) ?? {
+        tail: Promise.resolve(), committedIndex: msg.swipe_index, revision: 0,
+    };
+    pendingSwipeChanges.set(key, pending);
+    const revision = ++pending.revision;
+    msg.swipe_index = clamped;
+    msg.content = msg.swipe_variants[clamped];
+    const task = pending.tail.catch(() => undefined).then(async () => {
     try {
-        if (chatId) await invalidateSummaryIfCovered(chatId, messageId);
-        await invoke('set_swipe_index', { messageId, index });
-        if (chatId) bumpConversationRevision(chatId);
-        if (msg) {
-            const clamped = Math.max(0, Math.min(index, msg.swipe_variants.length - 1));
-            msg.swipe_index = clamped;
-            msg.content = msg.swipe_variants[clamped];
-        }
+        await invalidateSummaryIfCovered(chatId, messageId);
+        await invoke('set_swipe_index', { messageId, index: clamped });
+        bumpConversationRevision(chatId);
+        pending.committedIndex = clamped;
     } catch (e) {
         reportDiagnostic('chat');
+        if (pending.revision === revision && chatState.activeChatId === chatId) {
+            const current = chatState.currentMessages.find(m => m.id === messageId);
+            if (current) {
+                current.swipe_index = pending.committedIndex;
+                current.content = current.swipe_variants[pending.committedIndex];
+            }
+        }
         throw e;
+    } finally {
+        if (pending.revision === revision) pendingSwipeChanges.delete(key);
     }
+    });
+    pending.tail = task;
+    return task;
 }
 
 export async function updateMessage(id: string, content: string) {
