@@ -19,6 +19,7 @@
   import CharacterGridView from '$lib/components/lobby/CharacterGridView.svelte';
   import CharacterCompactView from '$lib/components/lobby/CharacterCompactView.svelte';
   import CharacterListView from '$lib/components/lobby/CharacterListView.svelte';
+  import CharacterActionSheet from '$lib/components/lobby/CharacterActionSheet.svelte';
   import LobbyEmptyState from '$lib/components/lobby/LobbyEmptyState.svelte';
 
   let joinCode = $state('');
@@ -27,14 +28,16 @@
   let joinError = $state('');
   let displayName = $state('');
   let selectedScenario = $state<Character | null>(null);
+  let menuTarget = $state<Character | null>(null);
   let joinModalOpen = $state(false);
   let displayNameInput = $state<HTMLInputElement>();
   let joinCodeInput = $state<HTMLInputElement>();
 
   $effect(() => {
-    if (!selectedScenario && !joinModalOpen) return;
+    if (!selectedScenario && !joinModalOpen && !menuTarget) return;
     return registerBackHandler(() => {
-      closeModal();
+      if (menuTarget) menuTarget = null;
+      else closeModal();
       return true;
     });
   });
@@ -204,6 +207,7 @@
       characters={filteredScenarios}
       showHidden={false}
       onSelect={chooseScenario}
+      onOpenMenu={(character) => (menuTarget = character)}
       onEdit={manageScenario}
       onDelete={ignoreScenarioAction}
       onToggleHide={ignoreScenarioAction}
@@ -216,6 +220,7 @@
       characters={filteredScenarios}
       showHidden={false}
       onSelect={chooseScenario}
+      onOpenMenu={(character) => (menuTarget = character)}
       onEdit={manageScenario}
       onDelete={ignoreScenarioAction}
       onToggleHide={ignoreScenarioAction}
@@ -228,6 +233,7 @@
       characters={filteredScenarios}
       showHidden={false}
       onSelect={chooseScenario}
+      onOpenMenu={(character) => (menuTarget = character)}
       onEdit={manageScenario}
       onDelete={ignoreScenarioAction}
       onToggleHide={ignoreScenarioAction}
@@ -238,6 +244,21 @@
     />
   {/if}
 </PageLayout>
+
+{#if menuTarget}
+  <CharacterActionSheet
+    char={menuTarget}
+    isHidden={false}
+    isPinned={false}
+    menuMode="manage"
+    onClose={() => (menuTarget = null)}
+    onEdit={manageScenario}
+    onTogglePin={ignoreScenarioAction}
+    onToggleHide={ignoreScenarioAction}
+    onDelete={ignoreScenarioAction}
+    onStartAs={ignoreScenarioAction}
+  />
+{/if}
 
 {#if selectedScenario}
   <div

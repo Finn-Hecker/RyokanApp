@@ -19,12 +19,14 @@
   import CharacterGridView from './CharacterGridView.svelte';
   import CharacterCompactView from './CharacterCompactView.svelte';
   import CharacterListView from './CharacterListView.svelte';
+  import CharacterActionSheet from './CharacterActionSheet.svelte';
   import LobbyEmptyState from './LobbyEmptyState.svelte';
   import DeleteConfirmModal from './DeleteConfirmModal.svelte';
 
   let searchQuery = $state('');
   let viewMode = $state<'grid' | 'compact' | 'list'>('grid');
   let showHidden = $state(false);
+  let menuTarget = $state<any | null>(null);
 
   type GreetingPeriod = 'morning' | 'afternoon' | 'evening';
 
@@ -50,10 +52,11 @@
   let startError = $state('');
 
   $effect(() => {
-    if (!deleteTarget && !startTarget) return;
+    if (!deleteTarget && !startTarget && !menuTarget) return;
     return registerBackHandler(() => {
       if (deleteTarget) deleteTarget = null;
-      else startTarget = null;
+      else if (startTarget) startTarget = null;
+      else menuTarget = null;
       return true;
     });
   });
@@ -262,6 +265,7 @@
       characters={filtered}
       {showHidden}
       onSelect={onSelectChar}
+      onOpenMenu={(char) => (menuTarget = char)}
       onEdit={onEditChar}
       onDelete={onDeleteChar}
       {onStartAs}
@@ -274,6 +278,7 @@
       characters={filtered}
       {showHidden}
       onSelect={onSelectChar}
+      onOpenMenu={(char) => (menuTarget = char)}
       onEdit={onEditChar}
       onDelete={onDeleteChar}
       {onStartAs}
@@ -285,6 +290,7 @@
       characters={filtered}
       {showHidden}
       onSelect={onSelectChar}
+      onOpenMenu={(char) => (menuTarget = char)}
       onEdit={onEditChar}
       onDelete={onDeleteChar}
       {onStartAs}
@@ -298,6 +304,20 @@
     <LobbyEmptyState {searchQuery} onResetSearch={() => (searchQuery = '')} />
   {/if}
 </PageLayout>
+
+{#if menuTarget}
+  <CharacterActionSheet
+    char={menuTarget}
+    isHidden={characterState.hiddenCharacterIds.has(String(menuTarget?.id))}
+    isPinned={characterState.pinnedCharacterIds.has(String(menuTarget?.id))}
+    onClose={() => (menuTarget = null)}
+    onEdit={onEditChar}
+    onTogglePin={onTogglePin}
+    onToggleHide={onToggleHide}
+    onDelete={onDeleteChar}
+    {onStartAs}
+  />
+{/if}
 
 {#if deleteTarget}
   <DeleteConfirmModal

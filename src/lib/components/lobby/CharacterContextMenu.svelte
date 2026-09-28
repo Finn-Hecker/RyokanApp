@@ -11,6 +11,8 @@
     isPinned,
     size = 'md',
     menuMode = 'full',
+    sheet = false,
+    onClose = () => {},
     onEdit,
     onTogglePin,
     onToggleHide,
@@ -22,6 +24,8 @@
     isPinned: boolean;
     size?: 'sm' | 'md' | 'lg';
     menuMode?: 'full' | 'manage';
+    sheet?: boolean;
+    onClose?: () => void;
     onEdit: (e: MouseEvent, char: any) => void;
     onTogglePin: (e: MouseEvent, char: any) => void;
     onToggleHide: (e: MouseEvent, char: any) => void;
@@ -29,7 +33,7 @@
     onStartAs: (e: MouseEvent, char: any) => void;
   } = $props();
 
-  let menuId = $derived(String(char.id));
+  let menuId = $derived(String(char?.id));
   let open = $derived(activeMenuId === menuId);
 
   function toggle(e: MouseEvent) {
@@ -38,7 +42,17 @@
   }
 
   function close() {
+    if (sheet) {
+      onClose();
+      return;
+    }
     if (open) activeMenuId = null;
+  }
+
+  function runAction(event: MouseEvent, action: (event: MouseEvent, character: any) => void) {
+    const character = char;
+    close();
+    action(event, character);
   }
 
   function stopProp(e: MouseEvent | KeyboardEvent) {
@@ -58,8 +72,12 @@
   };
 </script>
 
-<svelte:window onclick={close} />
+<svelte:window
+  onclick={() => { if (!sheet) close(); }}
+  onkeydown={(event) => { if (event.key === 'Escape') close(); }}
+/>
 
+{#if !sheet}
 <button
   type="button"
   onclick={toggle}
@@ -74,22 +92,26 @@
     <circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/>
   </svg>
 </button>
+{/if}
 
-{#if open}
+{#if char && (sheet || open)}
   <div
     role="menu"
     aria-label={m.lobby_aria_character_options()}
     tabindex="-1"
     onclick={stopProp}
     onkeydown={stopProp}
-    class="absolute right-0 top-full mt-1.5 w-44 max-w-[calc(100vw-2rem)] bg-[#16161f] border border-ryokan-accent/[0.22] rounded-xl z-30 py-1 overflow-hidden"
-    style="box-shadow: 0 20px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(212,180,131,0.04) inset;"
+    class={sheet
+      ? 'sheet-action-list w-full max-h-[70vh] overflow-y-auto rounded-2xl border border-white/[0.06] bg-white/[0.025] p-1.5'
+      : 'absolute right-0 top-full mt-1.5 w-44 max-w-[calc(100vw-2rem)] bg-[#16161f] border border-ryokan-accent/[0.22] rounded-xl z-30 py-1 overflow-hidden'}
+    style={sheet ? '' : 'box-shadow: 0 20px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(212,180,131,0.04) inset;'}
   >
     {#if menuMode === 'manage'}
       <button
         type="button"
         role="menuitem"
-        onclick={(e) => { close(); onEdit(e, char); }}
+        onclick={(e) => runAction(e, onEdit)}
+        class:sheet-action={sheet}
         class="w-full flex items-center gap-2.5 px-3.5 py-2.5 touch-manipulation [-webkit-tap-highlight-color:transparent] text-sm text-gray-200 hover:text-white hover:bg-white/[0.06] transition-colors text-left"
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -103,7 +125,8 @@
       <button
         type="button"
         role="menuitem"
-        onclick={(e) => { close(); onStartAs(e, char); }}
+        onclick={(e) => runAction(e, onStartAs)}
+        class:sheet-action={sheet}
         class="w-full flex items-center gap-2.5 px-3.5 py-2.5 touch-manipulation [-webkit-tap-highlight-color:transparent] text-sm text-gray-200 hover:text-white hover:bg-white/[0.06] transition-colors text-left"
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -117,7 +140,8 @@
       <button
         type="button"
         role="menuitem"
-        onclick={(e) => { close(); onEdit(e, char); }}
+        onclick={(e) => runAction(e, onEdit)}
+        class:sheet-action={sheet}
         class="w-full flex items-center gap-2.5 px-3.5 py-2.5 touch-manipulation [-webkit-tap-highlight-color:transparent] text-sm text-gray-200 hover:text-white hover:bg-white/[0.06] transition-colors text-left"
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -131,7 +155,8 @@
     <button
       type="button"
       role="menuitem"
-      onclick={(e) => { close(); onTogglePin(e, char); }}
+      onclick={(e) => runAction(e, onTogglePin)}
+      class:sheet-action={sheet}
       class="w-full flex items-center gap-2.5 px-3.5 py-2.5 touch-manipulation [-webkit-tap-highlight-color:transparent] text-sm transition-colors text-left hover:bg-white/[0.06]
         {isPinned ? 'text-ryokan-accent hover:text-ryokan-accent/80' : 'text-gray-200 hover:text-white'}"
     >
@@ -144,7 +169,8 @@
     <button
       type="button"
       role="menuitem"
-      onclick={(e) => { close(); onToggleHide(e, char); }}
+      onclick={(e) => runAction(e, onToggleHide)}
+      class:sheet-action={sheet}
       class="w-full flex items-center gap-2.5 px-3.5 py-2.5 touch-manipulation [-webkit-tap-highlight-color:transparent] text-sm text-gray-200 hover:text-white hover:bg-white/[0.06] transition-colors text-left"
     >
       {#if isHidden}
@@ -168,7 +194,9 @@
       <button
         type="button"
         role="menuitem"
-        onclick={(e) => { close(); onDelete(e, char); }}
+        onclick={(e) => runAction(e, onDelete)}
+        class:sheet-action={sheet}
+        class:sheet-danger={sheet}
         class="w-full flex items-center gap-2.5 px-3.5 py-2.5 touch-manipulation [-webkit-tap-highlight-color:transparent] text-sm text-red-400 hover:text-red-300 hover:bg-red-500/[0.08] transition-colors text-left"
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -183,3 +211,48 @@
     {/if}
   </div>
 {/if}
+
+<style>
+  .sheet-action {
+    min-height: 52px;
+    padding: 12px 14px;
+    gap: 14px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 550;
+    line-height: 1.25;
+    transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+  }
+
+  .sheet-action :global(svg) {
+    width: 18px;
+    height: 18px;
+    flex: none;
+  }
+
+  .sheet-action:hover,
+  .sheet-action:focus-visible {
+    background: rgba(212, 180, 131, 0.09);
+    border-color: rgba(212, 180, 131, 0.2);
+    color: #f3e6d2;
+    outline: none;
+  }
+
+  .sheet-action:active {
+    background: rgba(212, 180, 131, 0.16);
+    border-color: rgba(212, 180, 131, 0.3);
+    transform: scale(0.985);
+  }
+
+  .sheet-danger:hover,
+  .sheet-danger:focus-visible {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
+  }
+
+  .sheet-danger:active {
+    background: rgba(239, 68, 68, 0.16);
+  }
+</style>
