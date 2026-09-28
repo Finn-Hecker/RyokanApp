@@ -1,7 +1,6 @@
 <script lang="ts">
   import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { onMount } from 'svelte';
-  import { fade } from 'svelte/transition';
   import { appState } from '$lib/stores/appState.svelte';
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { addBundledRoleSnapshot, characterState, normalizePlayMode, removeBundledRoleSnapshot, setCharacterRolePolicy, toggleHideCharacter } from '$lib/stores/characterStore.svelte';
@@ -98,6 +97,7 @@
   
   let menuRef = $state<HTMLDivElement | null>(null);
   let importInput = $state<HTMLInputElement | null>(null);
+  let editorRoot: HTMLDivElement;
   
   let exportToast = $state<'success' | 'error' | null>(null);
   let toastTimeout: ReturnType<typeof setTimeout>;
@@ -182,6 +182,12 @@
   }
 
   function toggleMenu() { menuOpen = !menuOpen; }
+
+  function selectTab(tab: Tab) {
+    if (activeTab === tab) return;
+    activeTab = tab;
+    editorRoot?.querySelector<HTMLElement>('.page-scroll')?.scrollTo({ top: 0 });
+  }
 
   function handleOutsideClick(e: MouseEvent) {
     if (menuOpen && menuRef && !menuRef.contains(e.target as Node)) {
@@ -383,7 +389,7 @@
 
 <svelte:window onmousedown={handleOutsideClick} />
 
-<div class="relative h-full w-full">
+<div bind:this={editorRoot} class="editor-page relative h-full w-full">
 
   {#if showDeleteConfirm}
     <DeleteConfirmDialog
@@ -523,7 +529,7 @@
   <SimpleFormPage maxWidth="max-w-[704px]" {leadingActions} {actions}>
 
   {#if !isAnyEditMode}
-    <div class="page-heading text-center">
+    <div class="page-heading">
       <h1 class="page-title">
         {activeTab === 'character'
           ? (isEditMode ? m.creator_title_edit_character() : m.creator_title_new_character())
@@ -545,7 +551,7 @@
             <button
               class="tab-btn"
               class:tab-btn--active={activeTab === tab.id}
-              onclick={() => (activeTab = tab.id)}
+              onclick={() => selectTab(tab.id)}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d={tab.icon}/>
@@ -558,8 +564,6 @@
     {/if}
 
     <div class="tab-content">
-      {#key activeTab}
-        <div in:fade={{ duration: 160, delay: 40 }} out:fade={{ duration: 80 }}>
           {#if activeTab === 'character'}
             <CharacterTab
               bind:name={charName}
@@ -589,21 +593,19 @@
               bind:entries={worldInfoEntries}
             />
           {/if}
-        </div>
-      {/key}
     </div>
 
   </SimpleFormPage>
 </div>
 
 <style>
-  .page-heading { margin-bottom: 28px; }
+  .page-heading { margin-bottom: 24px; }
   .page-title {
-    font-size: 1.75rem; font-weight: 500; color: #f3f4f6;
-    letter-spacing: -0.02em; line-height: 1.2; margin-bottom: 6px;
+    font-size: 1.875rem; font-weight: 600; color: #e7e2da;
+    letter-spacing: -0.025em; line-height: 1.2; margin-bottom: 6px;
   }
-  .page-subtitle { font-size: 0.9375rem; color: #6b7280; line-height: 1.5; }
-  .tab-row { display: flex; justify-content: center; margin-bottom: 32px; }
+  .page-subtitle { font-size: 0.9375rem; color: #77777c; line-height: 1.5; }
+  .tab-row { display: flex; justify-content: flex-start; margin-bottom: 24px; }
   .tab-bar {
     display: inline-flex; align-items: center; gap: 2px;
     background: rgba(255, 255, 255, 0.04);
@@ -622,10 +624,25 @@
     color: rgba(255, 255, 255, 0.6); background: rgba(255, 255, 255, 0.04);
   }
   .tab-btn--active {
-    background: rgba(255, 255, 255, 0.09); color: #f9fafb;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.06);
+    background: rgba(var(--accent-rgb), 0.11); color: #e7d5b9;
+    box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.12);
   }
   .tab-content { position: relative; }
+
+  @media (min-width: 768px) {
+    .page-heading { text-align: center; }
+    .tab-row { justify-content: center; }
+  }
+
+  @media (max-width: 767px) {
+    .page-heading { margin-bottom: 18px; }
+    .page-title { font-size: 1.625rem; }
+    .page-subtitle { min-height: 3rem; font-size: 0.875rem; line-height: 1.5rem; }
+    .tab-row { margin-bottom: 20px; }
+    .tab-bar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+    .tab-btn { min-width: 0; justify-content: center; padding: 8px 5px; font-size: 12px; }
+    .tab-btn svg { display: none; }
+  }
   .dropdown-menu {
     position: absolute; top: calc(100% + 8px); right: 0; z-index: 50;
     width: min(210px, calc(100vw - 24px)); max-width: calc(100vw - 24px); background: #1c1c1e;

@@ -36,12 +36,12 @@
 </div>
 
 <style>
-  .field-wrap { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06); border-radius: 16px; padding: 4px; transition: border-color .18s, background .18s; }
-  .field-wrap:focus-within { border-color: rgba(var(--accent-rgb, 167 139 250) / .4); background: rgba(255,255,255,.04); }
+  .field-wrap { background: rgba(255,255,255,.025); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 4px; transition: border-color .18s, background .18s; }
+  .field-wrap:focus-within { border-color: rgba(var(--accent-rgb),.4); background: rgba(var(--accent-rgb),.035); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),.045); }
   .field-label-row { display:flex; align-items:center; justify-content:space-between; padding:10px 14px 0; }
-  .field-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.12em; color:#6b7280; }
-  .field-input, .field-textarea { width:100%; background:transparent; border:0; outline:0; color:#d1d5db; padding:4px 14px 10px; font-family:inherit; }
-  .field-input { font-size:1.0625rem; color:#f9fafb; }
-  .field-textarea { font-size:.875rem; line-height:1.65; resize:vertical; }
-  .field-input::placeholder, .field-textarea::placeholder { color:#374151; }
+  .field-label { font-size:11px; font-weight:650; text-transform:uppercase; letter-spacing:.07em; color:#929299; }
+  .field-input, .field-textarea { width:100%; background:transparent; border:0; outline:0; color:#e5e5ea; padding:7px 14px 12px; font-family:inherit; font-size:14px; }
+  .field-input { min-height:44px; padding-bottom:11px; }
+  .field-textarea { line-height:1.6; resize:vertical; }
+  .field-input::placeholder, .field-textarea::placeholder { color:#77777c; font-size:14px; opacity:1; }
 </style>

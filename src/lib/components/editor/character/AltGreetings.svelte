@@ -98,7 +98,7 @@
 
   .greeting-item {
     background: rgba(255,255,255,0.025);
-    border: 1px solid rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.08);
     border-radius: 14px;
     overflow: hidden;
     transition: border-color 0.2s;
@@ -106,8 +106,9 @@
   }
 
   .greeting-item:focus-within {
-    border-color: rgba(var(--accent-rgb, 167 139 250) / 0.45);
-    background: rgba(255,255,255,0.04);
+    border-color: rgba(var(--accent-rgb), 0.4);
+    background: rgba(var(--accent-rgb), 0.035);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.045);
   }
 
   .greeting-header {
@@ -118,11 +119,11 @@
   }
 
   .greeting-label {
-    font-size: 10px;
+    font-size: 11px;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: rgba(255,255,255,0.3);
-    font-weight: 600;
+    letter-spacing: 0.07em;
+    color: #929299;
+    font-weight: 650;
   }
 
   .greeting-header-right {
@@ -156,9 +157,9 @@
     width: 100%;
     background: transparent;
     border: none;
-    color: rgba(255,255,255,0.8);
+    color: #e5e5ea;
     padding: 4px 14px 12px;
-    font-size: 13.5px;
+    font-size: 14px;
     line-height: 1.6;
     resize: none;
     outline: none;
@@ -168,7 +169,9 @@
   }
 
   .greeting-textarea::placeholder {
-    color: rgba(255,255,255,0.2);
+    color: #77777c;
+    font-size: 14px;
+    opacity: 1;
   }
 
   .add-btn {

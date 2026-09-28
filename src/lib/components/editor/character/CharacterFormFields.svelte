@@ -94,16 +94,17 @@
 
 <style>
   .field-wrap {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
     padding: 4px;
     transition: border-color 0.18s, background 0.18s;
   }
 
   .field-wrap:focus-within {
-    border-color: rgba(var(--accent-rgb, 167 139 250) / 0.4);
-    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(var(--accent-rgb), 0.4);
+    background: rgba(var(--accent-rgb), 0.035);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.045);
   }
 
   .field-wrap:hover:not(:focus-within) {
@@ -112,11 +113,11 @@
 
   .field-label {
     display: block;
-    font-size: 10px;
-    font-weight: 700;
+    font-size: 11px;
+    font-weight: 650;
     text-transform: uppercase;
-    letter-spacing: 0.12em;
-    color: #6b7280;
+    letter-spacing: 0.07em;
+    color: #929299;
   }
 
   .field-label-row {
@@ -144,34 +145,35 @@
 
   .field-input {
     width: 100%;
+    min-height: 44px;
     background: transparent;
     border: none;
-    color: #f9fafb;
-    padding: 4px 14px 10px;
+    color: #e5e5ea;
+    padding: 7px 14px 11px;
     font-family: inherit;
-    font-size: 0.9375rem;
+    font-size: 14px;
     outline: none;
   }
 
   .field-input--lg {
-    font-size: 1.0625rem;
+    font-size: 14px;
   }
 
-  .field-input::placeholder { color: #374151; }
+  .field-input::placeholder { color: #77777c; font-size: 14px; opacity: 1; }
 
   .field-textarea {
     width: 100%;
     background: transparent;
     border: none;
-    color: #d1d5db;
-    padding: 4px 14px 10px;
-    font-size: 0.875rem;
-    line-height: 1.65;
+    color: #e5e5ea;
+    padding: 7px 14px 12px;
+    font-size: 14px;
+    line-height: 1.6;
     resize: vertical;
     font-family: inherit;
     outline: none;
   }
 
-  .field-textarea::placeholder { color: #374151; }
+  .field-textarea::placeholder { color: #77777c; font-size: 14px; opacity: 1; }
 
 </style>
