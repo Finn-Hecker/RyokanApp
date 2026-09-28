@@ -1,4 +1,6 @@
-import type { SettingRow } from "$lib/utils/settings";
+import type { ApiConnection } from "../stores/appState.svelte";
+import type { ApiRequestParameterConfig } from "./rollingSummaryCore";
+import { validateAdditionalApiParameters } from "./additionalApiParameters.ts";
 
 export type ApiParameterKey =
   | "temperature"
@@ -9,17 +11,6 @@ export type ApiParameterKey =
   | "topK"
   | "minP"
   | "frequencyPenalty";
-
-export const API_PARAMETER_SETTING_KEYS: Record<ApiParameterKey, string> = {
-  temperature: "api_temperature_enabled",
-  maxTokens: "api_max_tokens_enabled",
-  presencePenalty: "api_presence_penalty_enabled",
-  thinkingBudget: "api_thinking_budget_enabled",
-  topP: "api_top_p_enabled",
-  topK: "api_top_k_enabled",
-  minP: "api_min_p_enabled",
-  frequencyPenalty: "api_frequency_penalty_enabled",
-};
 
 export function createDefaultApiParameterEnabled(): Record<ApiParameterKey, boolean> {
   return {
@@ -34,18 +25,17 @@ export function createDefaultApiParameterEnabled(): Record<ApiParameterKey, bool
   };
 }
 
-export function readApiParameterEnabled(
-  settings: SettingRow[],
-): Record<ApiParameterKey, boolean> {
-  const enabled = createDefaultApiParameterEnabled();
-  const values = new Map(settings.map(({ key, value }) => [key, value]));
-
-  for (const [parameter, settingKey] of Object.entries(API_PARAMETER_SETTING_KEYS) as [
-    ApiParameterKey,
-    string,
-  ][]) {
-    enabled[parameter] = values.get(settingKey) === "true";
-  }
-
-  return enabled;
+/** Request switches and custom fields come from the selected profile snapshot. */
+export function requestParameterConfig(connection: ApiConnection): ApiRequestParameterConfig {
+  const validated = validateAdditionalApiParameters(connection.additionalApiParameters || '');
+  const additionalParameters = validated.valid ? validated.value ?? {} : {};
+  const enabled = connection.parameterEnabled;
+  return {
+    temperatureEnabled: enabled.temperature, maxTokensEnabled: enabled.maxTokens,
+    presencePenaltyEnabled: enabled.presencePenalty, thinkingBudgetEnabled: enabled.thinkingBudget,
+    topPEnabled: enabled.topP, topKEnabled: enabled.topK, minPEnabled: enabled.minP,
+    frequencyPenaltyEnabled: enabled.frequencyPenalty,
+    maxTokens: connection.maxTokens, thinkingBudget: connection.thinkingBudget,
+    additionalParameters,
+  };
 }

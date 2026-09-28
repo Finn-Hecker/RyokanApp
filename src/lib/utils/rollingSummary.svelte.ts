@@ -4,6 +4,7 @@ import { reportDiagnostic } from '$lib/utils/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { appState, snapshotSummaryApiConnection } from '$lib/stores/appState.svelte';
+import { requestParameterConfig } from '$lib/utils/apiParameters';
 import { getClientLanguageName } from '$lib/utils/clientLanguage';
 import { chatState } from '$lib/stores/chatStore.svelte';
 import type { Message } from '$lib/stores/chatStore.svelte';
@@ -127,25 +128,7 @@ function contextLimit(configured = appState.apiSettings?.contextLimit ?? DEFAULT
 async function loadRequestParameterConfig(
     options: GenerationOptions,
 ): Promise<ApiRequestParameterConfig> {
-    let additionalParameters: Record<string, unknown> = {};
-    try {
-        const parsed = JSON.parse(options.apiSettings.additionalApiParameters || '{}');
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) additionalParameters = parsed;
-    } catch { /* Settings validation normally prevents invalid JSON. */ }
-    const enabled = options.apiSettings.parameterEnabled;
-    return {
-        temperatureEnabled: enabled?.temperature ?? false,
-        maxTokensEnabled: enabled?.maxTokens ?? false,
-        presencePenaltyEnabled: enabled?.presencePenalty ?? false,
-        thinkingBudgetEnabled: enabled?.thinkingBudget ?? false,
-        topPEnabled: enabled?.topP ?? false,
-        topKEnabled: enabled?.topK ?? false,
-        minPEnabled: enabled?.minP ?? false,
-        frequencyPenaltyEnabled: enabled?.frequencyPenalty ?? false,
-        maxTokens: options.apiSettings.maxTokens,
-        thinkingBudget: options.apiSettings.thinkingBudget,
-        additionalParameters,
-    };
+    return requestParameterConfig(options.apiSettings);
 }
 
 async function countAdditionalParameterTokens(

@@ -1,4 +1,3 @@
-use crate::database::get_connection;
 use eventsource_stream::Eventsource;
 use futures::stream::StreamExt;
 use once_cell::sync::Lazy;
@@ -7,10 +6,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{Emitter, Manager, Window};
+use tauri::{Emitter, Window};
 use tokio_util::sync::CancellationToken;
 
-const ADDITIONAL_API_PARAMETERS_SETTING: &str = "api_additional_parameters";
 const PROTECTED_API_PARAMETER_KEYS: [&str; 3] = ["messages", "model", "stream"];
 
 // Reusing a single HTTP client across the entire app lifecycle prevents connection
@@ -81,48 +79,6 @@ impl Default for ApiParameterFlags {
     }
 }
 
-/// Reads the persisted per-parameter switches. Missing keys default to disabled so
-/// generation parameters stay opt-in, matching the settings UI.
-fn load_api_parameter_flags(window: &Window) -> ApiParameterFlags {
-    let mut flags = ApiParameterFlags::default();
-
-    let Ok(conn) = get_connection(window.app_handle()) else {
-        return flags;
-    };
-
-    let mut stmt =
-        match conn.prepare("SELECT key, value FROM settings WHERE key LIKE 'api_%_enabled'") {
-            Ok(stmt) => stmt,
-            Err(_) => return flags,
-        };
-
-    let rows = match stmt.query_map([], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-    }) {
-        Ok(rows) => rows,
-        Err(_) => return flags,
-    };
-
-    for row in rows.flatten() {
-        let (key, value) = row;
-        let enabled = value != "false";
-
-        match key.as_str() {
-            "api_temperature_enabled" => flags.temperature = enabled,
-            "api_max_tokens_enabled" => flags.max_tokens = enabled,
-            "api_presence_penalty_enabled" => flags.presence_penalty = enabled,
-            "api_thinking_budget_enabled" => flags.thinking_budget = enabled,
-            "api_top_p_enabled" => flags.top_p = enabled,
-            "api_top_k_enabled" => flags.top_k = enabled,
-            "api_min_p_enabled" => flags.min_p = enabled,
-            "api_frequency_penalty_enabled" => flags.frequency_penalty = enabled,
-            _ => {}
-        }
-    }
-
-    flags
-}
-
 /// Parses a configured object without coercing any JSON values. Ryokan's core
 /// protocol fields are rejected as a group so a conflict can never partially
 /// apply or depend on merge order.
@@ -152,47 +108,6 @@ fn parse_additional_api_parameters(
     }
 
     Ok(object.clone())
-}
-
-/// Reads custom request fields at generation time so every caller of the shared
-/// OpenAI-compatible request command gets identical behavior.
-fn load_additional_api_parameters(window: &Window) -> serde_json::Map<String, serde_json::Value> {
-    let Ok(conn) = get_connection(window.app_handle()) else {
-        return serde_json::Map::new();
-    };
-
-    let raw = match conn.query_row(
-        "SELECT value FROM settings WHERE key = ?1",
-        [ADDITIONAL_API_PARAMETERS_SETTING],
-        |row| row.get::<_, String>(0),
-    ) {
-        Ok(value) => value,
-        Err(rusqlite::Error::QueryReturnedNoRows) => return serde_json::Map::new(),
-        Err(_) => {
-            crate::diagnostics::record(crate::diagnostics::Event::ParametersLoadFailed);
-            return serde_json::Map::new();
-        }
-    };
-
-    match parse_additional_api_parameters(&raw) {
-        Ok(parameters) => parameters,
-        Err(_) => {
-            // The settings UI prevents this state; this is a final safety net for
-            // externally modified or legacy databases. Invalid values are omitted.
-            crate::diagnostics::record(crate::diagnostics::Event::ParametersInvalid);
-            serde_json::Map::new()
-        }
-    }
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EffectiveApiParameterConfig {
-    max_tokens_enabled: bool,
-    thinking_budget_enabled: bool,
-    max_tokens: u32,
-    thinking_budget: u32,
-    additional_parameters: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Deserialize, Default)]
@@ -239,24 +154,6 @@ fn bind_request_parameter_config(
             0
         },
     ));
-}
-
-/// Binds the current numeric values to the same persisted switches and validated
-/// custom fields that `call_ai_api` will use for this solo request.
-#[tauri::command]
-pub fn get_effective_api_parameter_config(
-    window: Window,
-    max_tokens: u32,
-    thinking_budget: u32,
-) -> EffectiveApiParameterConfig {
-    let flags = load_api_parameter_flags(&window);
-    EffectiveApiParameterConfig {
-        max_tokens_enabled: flags.max_tokens,
-        thinking_budget_enabled: flags.thinking_budget,
-        max_tokens,
-        thinking_budget,
-        additional_parameters: load_additional_api_parameters(&window),
-    }
 }
 
 fn merge_additional_api_parameters(
@@ -389,7 +286,7 @@ pub(crate) struct AiRequest {
     #[serde(alias = "providerKind")]
     provider_kind: Option<String>,
     #[serde(alias = "requestParameterConfig")]
-    request_parameter_config: Option<RequestApiParameterConfig>,
+    request_parameter_config: RequestApiParameterConfig,
     url: String,
     api_key: String,
     model: String,
@@ -997,30 +894,19 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<Option<To
     // handle, but never a newer request that replaced it in the meantime.
     let _active_guard = ActiveCancellationGuard { request_id };
 
-    let mut parameter_flags = load_api_parameter_flags(&window);
+    let mut parameter_flags = ApiParameterFlags::default();
     let mut forwarded_max_tokens = payload.max_tokens;
     let mut forwarded_thinking_budget = payload.thinking_budget;
-    let additional_parameters = if let Some(config) = &payload.request_parameter_config {
-        let conflicts: Vec<&str> = PROTECTED_API_PARAMETER_KEYS
-            .iter()
-            .copied()
-            .filter(|key| config.additional_parameters.contains_key(*key))
-            .collect();
-        if !conflicts.is_empty() {
-            return Err(format!(
-                "protected fields cannot be overridden: {}",
-                conflicts.join(", ")
-            ));
-        }
+    let additional_parameters = {
+        let config = &payload.request_parameter_config;
+        let validated = parse_additional_api_parameters(&serde_json::Value::Object(config.additional_parameters.clone()).to_string())?;
         bind_request_parameter_config(
             &mut parameter_flags,
             &mut forwarded_max_tokens,
             &mut forwarded_thinking_budget,
             config,
         );
-        config.additional_parameters.clone()
-    } else {
-        load_additional_api_parameters(&window)
+        validated
     };
 
     let mut body = serde_json::json!({
@@ -1202,8 +1088,24 @@ mod tests {
     use super::{
         api_error_from_body, bind_request_parameter_config, cancellation_matches,
         merge_additional_api_parameters, parse_additional_api_parameters, ApiParameterFlags,
-        merge_token_usage, parse_token_usage, request_stream_usage, stream_token_usage, RequestApiParameterConfig, StreamChunk,
+        merge_token_usage, parse_token_usage, request_stream_usage, stream_token_usage, AiRequest, RequestApiParameterConfig, StreamChunk,
     };
+
+    #[test]
+    fn generation_requires_profile_bound_parameter_config() {
+        let mut payload = serde_json::json!({
+            "url": "http://localhost/v1", "api_key": "", "model": "test",
+            "messages": [], "temperature": 0.8,
+            "request_parameter_config": {
+                "maxTokensEnabled": true, "thinkingBudgetEnabled": false,
+                "maxTokens": 300, "thinkingBudget": 2500,
+                "additionalParameters": {}
+            }
+        });
+        assert!(serde_json::from_value::<AiRequest>(payload.clone()).is_ok());
+        payload.as_object_mut().unwrap().remove("request_parameter_config");
+        assert!(serde_json::from_value::<AiRequest>(payload).is_err());
+    }
 
     #[test]
     fn parses_provider_reported_usage_without_estimating_missing_metrics() {

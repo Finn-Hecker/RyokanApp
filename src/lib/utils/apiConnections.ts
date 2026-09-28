@@ -17,9 +17,36 @@ function traceDetection(connection: ApiConnection, outcome: Extract<DiagnosticDe
     detected_tokens: connection.detectedContext?.tokens ?? null, manual_cap: connection.manualContextCap,
     hard_limit: resolvedHardContextLimit(connection), provenance: connection.detectedContext?.provenance ?? 'unknown' });
 }
-function normalizeConnection(value: Partial<ApiConnection>): ApiConnection {
+function normalizeConnection(value: Partial<ApiConnection>, legacy: Map<string, string>): ApiConnection {
   const fallback = createDefaultConnection(value.id || crypto.randomUUID(), value.name || 'Connection');
-  const connection = { ...fallback, ...value, parameterEnabled: { ...fallback.parameterEnabled, ...value.parameterEnabled } };
+  // Older profile records may predate some generation fields. Copy legacy values
+  // only for missing fields; an explicit profile value always wins.
+  const legacyNumbers = {
+    temperature: 'api_temperature', maxTokens: 'api_max_tokens', presencePenalty: 'api_presence_penalty',
+    thinkingBudget: 'api_thinking_budget', topP: 'api_top_p', topK: 'api_top_k',
+    minP: 'api_min_p', frequencyPenalty: 'api_frequency_penalty',
+  } as const;
+  const generation = {} as Partial<ApiConnection>;
+  for (const [field, key] of Object.entries(legacyNumbers) as [keyof typeof legacyNumbers, string][]) {
+    if (value[field] == null) {
+      const parsed = Number(legacy.get(key));
+      if (legacy.has(key) && Number.isFinite(parsed)) (generation as any)[field] = parsed;
+    }
+  }
+  if (value.additionalApiParameters == null && legacy.has('api_additional_parameters')) {
+    generation.additionalApiParameters = legacy.get('api_additional_parameters') ?? '';
+  }
+  const enabled = { ...fallback.parameterEnabled, ...value.parameterEnabled };
+  const legacySwitches = {
+    temperature: 'api_temperature_enabled', maxTokens: 'api_max_tokens_enabled',
+    presencePenalty: 'api_presence_penalty_enabled', thinkingBudget: 'api_thinking_budget_enabled',
+    topP: 'api_top_p_enabled', topK: 'api_top_k_enabled', minP: 'api_min_p_enabled',
+    frequencyPenalty: 'api_frequency_penalty_enabled',
+  } as const;
+  for (const [field, key] of Object.entries(legacySwitches) as [keyof typeof legacySwitches, string][]) {
+    if (value.parameterEnabled?.[field] == null && legacy.has(key)) enabled[field] = legacy.get(key) === 'true';
+  }
+  const connection = { ...fallback, ...generation, ...value, parameterEnabled: enabled };
   if (!validContextSize(connection.manualContextCap)) connection.manualContextCap = null;
   if (!connection.detectedContext || !validContextSize(connection.detectedContext.tokens)) connection.detectedContext = null;
   if (connection.detectedContext && (connection.detectedContext.model !== connection.model
@@ -32,7 +59,8 @@ export function hydrateApiConnections(settings: SettingRow[]): void {
   const values = new Map(settings.map(row => [row.key, row.value]));
   try {
     const parsed = JSON.parse(values.get(API_CONNECTIONS_KEY) ?? '[]');
-    replaceApiConnections(Array.isArray(parsed) ? parsed.map(normalizeConnection) : [], values.get(ACTIVE_API_CONNECTION_KEY) ?? '');
+    const profiles = Array.isArray(parsed) ? parsed.filter(value => value && typeof value === 'object' && !Array.isArray(value)) : [];
+    replaceApiConnections(profiles.map(value => normalizeConnection(value, values)), values.get(ACTIVE_API_CONNECTION_KEY) ?? '');
     const memory = resolveMemorySettings(appState.apiConnections, values.get(LONG_TERM_MEMORY_KEY), values.get(SUMMARY_CONNECTION_KEY));
     appState.longTermMemory = memory.longTermMemory;
     appState.summaryConnectionId = memory.summaryConnectionId;

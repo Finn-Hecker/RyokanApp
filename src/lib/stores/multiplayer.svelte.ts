@@ -19,6 +19,7 @@ import { reportDiagnostic } from '$lib/utils/diagnostics';
  */
 
 import { appState, snapshotActiveApiConnection } from './appState.svelte';
+import { requestParameterConfig } from '$lib/utils/apiParameters';
 import { navigateTo, returnTo } from './navigation';
 import { invoke } from '@tauri-apps/api/core';
 import { processThinkingOutput } from '$lib/utils/chatApi';
@@ -1385,6 +1386,7 @@ async function runGeneration(): Promise<void> {
         payload: {
           generation_id: generation.id,
           provider_kind: s.providerKind,
+          request_parameter_config: requestParameterConfig(s),
           url: s.url,
           api_key: s.apiKey,
           model: s.model,

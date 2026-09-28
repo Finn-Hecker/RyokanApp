@@ -5,6 +5,7 @@ import { worldInfoState } from '$lib/stores/worldInfoStore.svelte';
 import { chatState } from '$lib/stores/chatStore.svelte';
 import { buildPromptMessages } from '$lib/utils/chatPromptBuilder';
 import { snapshotApiConnection, type ApiConnection } from '$lib/stores/appState.svelte';
+import { requestParameterConfig } from '$lib/utils/apiParameters';
 import type { Message } from '$lib/stores/chatStore.svelte';
 import {
     deriveEffectiveTokenBudget,
@@ -52,8 +53,6 @@ export interface ChatMessage {
     role:    ChatRole;
     content: string;
 }
-
-const DEFAULT_THINKING_BUDGET = 2500;
 
 export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
     return buildPromptMessages({
@@ -107,6 +106,7 @@ export async function runGeneration(
     // Defensive copy: every network payload is bound to one immutable settings
     // snapshot even if a caller accidentally passes the live Svelte object.
     const apiSettings = snapshotApiConnection(options.apiSettings);
+    const parameters = options.requestParameterConfig ?? requestParameterConfig(apiSettings);
     const generationId = options.generationId ?? crypto.randomUUID();
 
     const messages = buildApiMessages(options);
@@ -143,21 +143,16 @@ export async function runGeneration(
 
     try {
         if (options.shouldCancel?.()) throw new Error('Generation cancelled');
-        const configuredThinkingBudget = apiSettings.thinkingBudget ?? DEFAULT_THINKING_BUDGET;
-        const effectiveBudget = options.requestParameterConfig
-            ? deriveEffectiveTokenBudget(options.requestParameterConfig)
-            : null;
-        const thinkingBudget = effectiveBudget?.payloadThinkingBudget
-            ?? configuredThinkingBudget;
-        const effectiveMaxTokens = effectiveBudget?.payloadMaxTokens
-            ?? apiSettings.maxTokens + configuredThinkingBudget;
+        const effectiveBudget = deriveEffectiveTokenBudget(parameters);
+        const thinkingBudget = effectiveBudget.payloadThinkingBudget;
+        const effectiveMaxTokens = effectiveBudget.payloadMaxTokens;
 
         recordModelUse(apiSettings.model);
         const usage = await invoke<TokenUsage | null>('call_ai_api', {
             payload: {
                 generation_id:      generationId,
                 provider_kind:     apiSettings.providerKind,
-                request_parameter_config: options.requestParameterConfig,
+                request_parameter_config: parameters,
                 url:                apiSettings.url,
                 api_key:            apiSettings.apiKey,
                 model:              apiSettings.model,

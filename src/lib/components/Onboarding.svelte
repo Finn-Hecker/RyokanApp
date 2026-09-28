@@ -113,9 +113,6 @@
     modelError = '';
 
     try {
-      await saveSetting('api_url', apiUrl);
-      await saveSetting('api_key', apiKey);
-      await saveSetting('api_model', selectedModel);
       appState.apiSettings.url = apiUrl;
       appState.apiSettings.apiKey = apiKey;
       appState.apiSettings.model = selectedModel;

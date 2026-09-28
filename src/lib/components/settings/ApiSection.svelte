@@ -1,6 +1,6 @@
 <script lang="ts">
   import { activateApiConnection, appState, createDefaultConnection, type ProviderKind } from "$lib/stores/appState.svelte";
-  import { fetchModels, saveSetting, type ModelInfo } from "$lib/utils/settings";
+  import { fetchModels, type ModelInfo } from "$lib/utils/settings";
   import * as m from "$lib/paraglide/messages";
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
   import { onMount, tick, untrack } from 'svelte';
@@ -13,6 +13,8 @@
   import { deleteConnectionSafely, ensureContextDetection, invalidateDetectedContext, normalizeSummaryConnectionId, refreshContextDetection, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION } from '$lib/utils/apiConnections';
   import { CONSERVATIVE_CONTEXT_FALLBACK, resolvedWorkingContextTarget, resolveSummaryConnection } from '$lib/utils/connectionCore';
   import { formatContextTokens, getRecentModels, modelPrices } from '$lib/utils/modelPickerData';
+  import { createDefaultApiParameterEnabled, type ApiParameterKey } from '$lib/utils/apiParameters';
+  import GeneralSection from './GeneralSection.svelte';
 
   const NEW_CONNECTION_ACTION = '__new_connection__';
 
@@ -21,12 +23,14 @@
     active = false,
     section = 'provider',
     settingsReady = false,
+    parameterEnabled = $bindable(createDefaultApiParameterEnabled()),
     onConnectionChange = (_previousConnectionId: string) => {},
   }: {
     powerUser?: boolean;
     active?: boolean;
     section?: 'provider' | 'memory';
     settingsReady?: boolean;
+    parameterEnabled?: Record<ApiParameterKey, boolean>;
     onConnectionChange?: (previousConnectionId: string) => void;
   } = $props();
 
@@ -315,7 +319,6 @@
           invalidateDetectedContext(appState.apiSettings);
           appState.apiSettings.model = availableModels[0];
         }
-        await saveSetting("api_model", appState.apiSettings.model);
       }
     } catch (e: any) {
       if (request !== modelLoadRequest || config !== modelConfigKey()) return;
@@ -338,12 +341,11 @@
     return () => window.clearTimeout(timeout);
   });
 
-  async function selectModel(modelId: string) {
+  function selectModel(modelId: string) {
     if (appState.apiSettings.model !== modelId) invalidateDetectedContext(appState.apiSettings);
     appState.apiSettings.model = modelId;
     modelMenuOpen = false;
     modelSearch = "";
-    await saveSetting("api_model", modelId);
   }
 
   function selectConnection(id: string) {
@@ -857,6 +859,16 @@
     </div>
 
   </div>
+  <div class="generation-section">
+    <div class="generation-group">
+      <h2 class="api-model-section-title">{m.settings_generation_basic()}</h2>
+      <GeneralSection {powerUser} bind:parameterEnabled category="parameters" />
+    </div>
+    <div class="generation-group">
+      <h3>{m.settings_generation_sampling()}</h3>
+      <GeneralSection {powerUser} bind:parameterEnabled category="advanced" />
+    </div>
+  </div>
   {:else}
   <span class="settings-section-title">{m.settings_category_memory()}</span>
   <div class="settings-card memory-settings">
@@ -959,6 +971,9 @@
 </section>
 
 <style>
+  .generation-section { margin-top:34px; padding-top:28px; border-top:1px solid rgba(255,255,255,.08); }
+  .generation-group + .generation-group { margin-top:28px; padding-top:24px; border-top:1px solid rgba(255,255,255,.055); }
+  .generation-group h3 { margin:0 0 20px; color:#aaa6a1; font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; }
   .api-model-section-title {
     margin: 0 0 14px;
     color: #d8c5a8;

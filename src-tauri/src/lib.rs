@@ -103,7 +103,6 @@ pub fn run() {
             ai::call_ai_api,
             ai::fetch_models,
             ai::detect_context,
-            ai::get_effective_api_parameter_config,
             ai::stop_generation,
             database::chats::get_conversations,
             database::chats::create_chat,
