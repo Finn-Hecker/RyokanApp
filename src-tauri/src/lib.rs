@@ -5,6 +5,40 @@ mod export;
 mod tokenizer;
 mod diagnostics;
 
+#[tauri::command]
+async fn write_android_export(webview: tauri::Webview, uri: String, bytes: Vec<u8>) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    {
+    if !uri.starts_with("content://") {
+        return Err("Expected an Android document URI".into());
+    }
+
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    webview.with_webview(move |platform_webview| {
+        platform_webview.jni_handle().exec(move |env, activity, _| {
+            let result = (|| {
+                let uri = jni::objects::JObject::from(env.new_string(uri)?);
+                let bytes = jni::objects::JObject::from(env.byte_array_from_slice(&bytes)?);
+                env.call_method(
+                    activity,
+                    "writeExportDocument",
+                    "(Ljava/lang/String;[B)V",
+                    &[jni::objects::JValue::Object(&uri), jni::objects::JValue::Object(&bytes)],
+                )?;
+                Ok::<(), jni::errors::Error>(())
+            })().map_err(|error| error.to_string());
+            let _ = sender.send(result);
+        });
+    }).map_err(|error| error.to_string())?;
+    receiver.await.map_err(|error| error.to_string())?
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (webview, uri, bytes);
+        Err("Android document export is only supported on Android".into())
+    }
+}
+
 // Closing the WebView is not the Android Activity lifecycle operation.
 // Run finish() on its UI thread so Android handles the closing transition.
 #[tauri::command]
@@ -47,6 +81,7 @@ fn get_interaction_mode() -> &'static str {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             #[cfg(windows)]
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
@@ -118,6 +153,7 @@ pub fn run() {
             import::parse_character_card,
             tokenizer::count_tokens,
             export::export_character_card,
+            write_android_export,
             database::world_info::get_world_infos,
             database::world_info::create_world_info,
             database::world_info::update_world_info,

@@ -1,4 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
+import { save } from '@tauri-apps/plugin-dialog';
+import { appState } from '$lib/stores/appState.svelte';
 import {
   createCharacter,
   updateCharacter,
@@ -57,15 +59,30 @@ export async function removeCharacter(editChar: any): Promise<void> {
   await storeDeleteCharacter(String(editChar.id));
 }
 
-export async function exportCharacterCard(id: string, name: string): Promise<void> {
+export async function exportCharacterCard(id: string, name: string): Promise<boolean> {
   const pngBytes: number[] = await invoke('export_character_card', { id: String(id) });
+  const filename = `${name.replace(/[^a-z0-9]/gi, '_') || 'character'}.png`;
+
+  if (appState.interactionMode === 'mobile') {
+    const uri = await save({
+      defaultPath: filename,
+      filters: [{ name: 'PNG', extensions: ['png'] }]
+    });
+    if (uri === null) return false;
+    await invoke('write_android_export', { uri, bytes: pngBytes });
+    return true;
+  }
+
   const blob = new Blob([new Uint8Array(pngBytes)], { type: 'image/png' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${name.replace(/[^a-z0-9]/gi, '_')}.png`;
+  a.download = filename;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
 }
 
 export function readImageAsDataUrl(file: File): Promise<string> {

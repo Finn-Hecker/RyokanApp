@@ -371,8 +371,7 @@
     menuOpen = false;
     isExporting = true;
     try {
-      await exportCharacterCard(editChar.id, charName);
-      showToast('success');
+      if (await exportCharacterCard(editChar.id, charName)) showToast('success');
     } catch (e) {
       reportDiagnostic('editor');
       showToast('error');
