@@ -157,6 +157,7 @@
   "settings_model_favorite": "Add {model} to favorites",
   "settings_model_unfavorite": "Remove {model} from favorites",
   "settings_model_error_no_models": "Server accessible, but no models returned.",
+  "settings_generation_capability_unreported": "This model does not report support for this parameter. The provider may ignore it or reject the request.",
   "settings_model_error_fetch": "Error: {error}",
   "settings_creativity_label": "Creativity",
   "settings_temp_precise": "Focused",

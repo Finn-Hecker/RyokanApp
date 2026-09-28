@@ -158,6 +158,7 @@
   "settings_model_favorite": "{model} zu Favoriten hinzufügen",
   "settings_model_unfavorite": "{model} aus Favoriten entfernen",
   "settings_model_error_no_models": "Server erreichbar, aber keine Modelle zurückgegeben.",
+  "settings_generation_capability_unreported": "Dieses Modell meldet diesen Parameter nicht als unterstützt. Der Provider kann ihn ignorieren oder die Anfrage ablehnen.",
   "settings_model_error_fetch": "Fehler: {error}",
   "settings_creativity_label": "Kreativität",
   "settings_temp_precise": "Fokussiert",
