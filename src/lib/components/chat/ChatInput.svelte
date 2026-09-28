@@ -5,18 +5,24 @@
   let {
     isGenerating = false,
     isSummarizing = false,
+    isEditing = false,
+    isSavingEdit = false,
     value = $bindable(''),
     placeholder = undefined,
     onSend,
     onStop,
+    onCancelEdit,
     onResize
   }: {
     isGenerating?: boolean;
     isSummarizing?: boolean;
+    isEditing?: boolean;
+    isSavingEdit?: boolean;
     value?: string;
     placeholder?: string;
     onSend?: () => void;
     onStop?: () => void;
+    onCancelEdit?: () => void;
     onResize?: (height: number) => void;
   } = $props();
 
@@ -93,16 +99,23 @@
           "
         ></textarea>
 
-        <div class="flex items-center justify-end px-2.5 pb-2 pt-0.5">
+        <div class="flex items-center justify-end gap-2 px-2.5 pb-2 pt-0.5">
+          {#if isEditing}
+            <span class="mr-auto pl-1 text-xs text-ryokan-accent">{m.chat_edit()}</span>
+            <button type="button" onclick={onCancelEdit} disabled={isSavingEdit}
+              class="text-xs text-gray-400 hover:text-gray-200 disabled:opacity-40">
+              {m.chat_cancel()}
+            </button>
+          {/if}
           <button
             type="button"
             onclick={() => isGenerating ? onStop?.() : handleSend()}
-            disabled={!isGenerating && value.trim().length === 0}
-            aria-label={isGenerating ? m.chat_stop_generating() : m.chat_send_message()}
+            disabled={!isGenerating && (value.trim().length === 0 || isSavingEdit)}
+            aria-label={isGenerating ? m.chat_stop_generating() : isEditing ? m.chat_save() : m.chat_send_message()}
             class="send-btn"
-            class:send-btn--active={!isGenerating && value.trim().length > 0}
+            class:send-btn--active={!isGenerating && !isSavingEdit && value.trim().length > 0}
             class:send-btn--stop={isGenerating}
-            class:send-btn--disabled={!isGenerating && value.trim().length === 0}
+            class:send-btn--disabled={!isGenerating && (value.trim().length === 0 || isSavingEdit)}
           >
             {#if isGenerating}
               <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">

@@ -3,7 +3,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { appState, snapshotActiveApiConnection } from '$lib/stores/appState.svelte';
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
-  import { tick, onMount, onDestroy } from 'svelte';
+  import { tick, flushSync, onMount, onDestroy } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { chatState, addMessage, addSwipeVariant, loadMessages, updateMessage, deleteMessage, setSwipeIndex, loadMoreMessages, cloneChatFromMessage, type DisplayMessage } from '$lib/stores/chatStore.svelte';
   import { runGeneration, type GenerationOptions } from '$lib/utils/chatApi';
@@ -34,6 +34,15 @@
   let cloneCooldownTimer: ReturnType<typeof setTimeout> | undefined;
   let mobileActionMessageId = $state<string | null>(null);
   let composerHeight = $state(96);
+  let activeEditMessageId = $state<string | null>(null);
+  let draftBeforeEdit = '';
+  let isSavingEdit = $state(false);
+
+  let editingUserMessage = $derived(
+    activeEditMessageId !== null && chatState.currentMessages.some(
+      msg => msg.id?.toString() === activeEditMessageId && msg.role === 'user'
+    )
+  );
 
   let isBlocked = $derived(isGenerating || summaryState.isSummarizing);
 
@@ -296,7 +305,22 @@
   }
 
   async function sendMessage() {
-    if (!inputText.trim() || isBlocked) return;
+    if (!inputText.trim() || isBlocked || isSavingEdit) return;
+    if (editingUserMessage && activeEditMessageId) {
+      isSavingEdit = true;
+      try {
+        const saved = await handleEditSave({ msgId: activeEditMessageId, newContent: inputText.trim() });
+        if (saved) {
+          activeEditMessageId = null;
+          inputText = draftBeforeEdit;
+          draftBeforeEdit = '';
+        }
+      } finally {
+        isSavingEdit = false;
+      }
+      return;
+    }
+    if (activeEditMessageId) handleEditCancel();
     const rawPrompt = inputText;
     inputText = '';
 
@@ -373,10 +397,34 @@
     }
   }
 
-  async function handleEditSave({ msgId, newContent }: { msgId: string; newContent: string }) {
+  function handleEditOpen({ msgId, isUser, content }: { msgId: string; isUser: boolean; content: string }) {
+    if (isBlocked || isSavingEdit) return;
+    if (editingUserMessage) inputText = draftBeforeEdit;
+    flushSync(() => {
+      activeEditMessageId = msgId;
+      if (isUser) {
+        draftBeforeEdit = inputText;
+        inputText = content;
+      }
+    });
+    if (isUser) {
+      const input = document.getElementById('chat-input-textarea') as HTMLTextAreaElement | null;
+      input?.focus();
+      input?.setSelectionRange(input.value.length, input.value.length);
+      input?.dispatchEvent(new Event('input'));
+    }
+  }
+
+  function handleEditCancel() {
+    if (editingUserMessage) inputText = draftBeforeEdit;
+    activeEditMessageId = null;
+    draftBeforeEdit = '';
+  }
+
+  async function handleEditSave({ msgId, newContent }: { msgId: string; newContent: string }): Promise<boolean> {
     const msgs = chatState.currentMessages;
     const idx  = msgs.findIndex(msg => msg.id?.toString() === msgId);
-    if (idx < 0) return;
+    if (idx < 0) return false;
 
     const editedMsg = msgs[idx];
 
@@ -396,9 +444,11 @@
       } else {
         await updateMessage(msgId, newContent);
       }
+      return true;
     } catch {
       // Store operations already log their concrete persistence error. Most
       // importantly, do not continue deleting/regenerating after invalidation fails.
+      return false;
     }
   }
 
@@ -417,6 +467,7 @@
     }
 
     // Jump straight into the freshly cloned chat.
+    handleEditCancel();
     await loadMessages(newChatId);
   }
 
@@ -475,6 +526,7 @@
     isTyping={isGenerating}
     {clonedFromTitle}
     onBack={() => {
+      handleEditCancel();
       chatState.activeChatId = null;
       chatState.currentMessages = [];
       chatState.hasMoreMessages = false;
@@ -517,6 +569,7 @@
               ? msg.id === lastUserMsgId
               : msg.id !== firstAiMsgId
           )}
+          {activeEditMessageId}
           canCloneFrom={!isBlocked && !msg.isUser && msg.id !== 'temp-stream'}
           cloneDisabled={cloneCooldown}
           interactionMode={appState.interactionMode}
@@ -527,6 +580,8 @@
           onGenerationRetry={retryGenerationError}
           onGenerationDismiss={dismissGenerationError}
           onEditSave={handleEditSave}
+          onEditOpen={handleEditOpen}
+          onEditCancel={handleEditCancel}
           onCloneFrom={handleCloneFromMessage}
         />
       {/each}
@@ -542,7 +597,10 @@
     bind:value={inputText}
     isGenerating={isBlocked}
     isSummarizing={summaryState.isSummarizing}
+    isEditing={editingUserMessage}
+    isSavingEdit={isSavingEdit}
     onSend={sendMessage}
+    onCancelEdit={handleEditCancel}
     onStop={stopGeneration}
     onResize={(height) => { composerHeight = height; }}
   />

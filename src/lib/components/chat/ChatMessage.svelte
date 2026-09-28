@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { flushSync, onMount } from 'svelte';
+  import { onMount } from 'svelte';
   import * as m from '$lib/paraglide/messages';
   import { renderMessageMarkdown } from '$lib/utils/renderMessageMarkdown';
   import { setSwipeIndex } from '$lib/stores/chatStore.svelte';
@@ -12,6 +12,7 @@
     isLast = false,
     canRetry = false,
     canEdit = false,
+    activeEditMessageId = null,
     canSwipe = false,
     canCloneFrom = false,
     cloneDisabled = false,
@@ -22,6 +23,8 @@
     onGenerationRetry,
     onGenerationDismiss,
     onEditSave,
+    onEditOpen,
+    onEditCancel,
     onCloneFrom,
     onMobileActionsOpen,
     onMobileActionsClose
@@ -31,6 +34,7 @@
     isLast?: boolean;
     canRetry?: boolean;
     canEdit?: boolean;
+    activeEditMessageId?: string | null;
     canSwipe?: boolean;
     canCloneFrom?: boolean;
     cloneDisabled?: boolean;
@@ -41,16 +45,17 @@
     onGenerationRetry?: () => void;
     onGenerationDismiss?: () => void;
     onEditSave?: (data: { msgId: string; newContent: string }) => void;
+    onEditOpen?: (data: { msgId: string; isUser: boolean; content: string }) => void;
+    onEditCancel?: () => void;
     onCloneFrom?: (data: { msgId: string }) => void;
     onMobileActionsOpen?: (msgId: string) => void;
     onMobileActionsClose?: () => void;
   } = $props();
 
-  let editMode = $state(false);
+  let editMode = $derived(activeEditMessageId === msg.id && !msg.isUser);
   let editValue = $state('');
   let msgEl = $state<HTMLDivElement | null>(null);
   let editEl = $state<HTMLDivElement | null>(null);
-  let editWidth = $state(0);
   let editHeight = $state(0);
   let isCloning = $state(false);
   let longPressTimer: ReturnType<typeof setTimeout> | undefined;
@@ -116,13 +121,16 @@
   }
 
   function handleEditOpen() {
+    if (msg.isUser) {
+      onEditOpen?.({ msgId: msg.id, isUser: true, content: msg.text });
+      return;
+    }
     if (msgEl) {
-      editWidth  = msgEl.offsetWidth;
       editHeight = msgEl.offsetHeight;
     }
     editValue = msg.text;
     // Render and focus in the click handler so mobile browsers open the keyboard.
-    flushSync(() => { editMode = true; });
+    onEditOpen?.({ msgId: msg.id, isUser: false, content: msg.text });
     if (editEl) {
       editEl.textContent = editValue;
       editEl.focus();
@@ -142,12 +150,12 @@
   function handleEditSave() {
     if (editValue.trim()) {
       onEditSave?.({ msgId: msg.id, newContent: editValue.trim() });
+      onEditCancel?.();
     }
-    editMode = false;
   }
 
   function handleEditCancel() {
-    editMode  = false;
+    onEditCancel?.();
     editValue = '';
   }
 
@@ -257,24 +265,12 @@
 >
 
 {#if msg.isUser}
-  <div class="relative min-w-0 max-w-[92%] sm:max-w-[min(88%,42rem)] group/usermsg" style={editMode ? `width: ${editWidth}px` : undefined}>
+  <div class="relative min-w-0 max-w-[92%] sm:max-w-[min(88%,42rem)] group/usermsg">
     <div bind:this={msgEl} class="user-message-text rounded-[14px] px-4 py-2.5 sm:px-[18px] sm:py-3
       bg-[#252422] border border-ryokan-accent/[0.12] text-gray-200
-      text-[15px] leading-[1.55] break-words whitespace-pre-wrap" style:min-height={editMode ? `${editHeight}px` : undefined}>
-      {#if editMode}
-        <div bind:this={editEl} contenteditable="plaintext-only" role="textbox" tabindex="0" aria-label={m.chat_edit()}
-          aria-multiline="true" spellcheck="true" oninput={handleEditInput} onkeydown={handleEditKeydown}
-          class="inline-edit-text outline-none"></div>
-      {:else}
-        {msg.text}
-      {/if}
+      text-[15px] leading-[1.55] break-words whitespace-pre-wrap">
+      {msg.text}
     </div>
-    {#if editMode}
-      <div class="inline-edit-actions inline-edit-actions--user">
-        <button onclick={handleEditCancel}>{m.chat_cancel()}</button>
-        <button class="inline-edit-save" onclick={handleEditSave}>{m.chat_save()}</button>
-      </div>
-    {:else}
       {#if !isMobileViewport && canEdit && !isGenerating}
           <div class="user-ctrl-bar
             opacity-100 translate-y-0 pointer-events-auto
@@ -295,7 +291,6 @@
             </button>
           </div>
       {/if}
-    {/if}
   </div>
 
 {:else}
@@ -510,11 +505,6 @@
     display: flex;
     gap: 2px;
     z-index: 1;
-  }
-
-  .inline-edit-actions--user {
-    left: auto;
-    right: 0;
   }
 
   .inline-edit-actions button {
