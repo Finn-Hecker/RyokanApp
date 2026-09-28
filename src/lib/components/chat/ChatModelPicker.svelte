@@ -139,7 +139,7 @@
 
 <style>
   .picker-backdrop { position:fixed; inset:0; z-index:1; background:rgba(0,0,0,.65); backdrop-filter:blur(4px); }
-  .picker-dialog { position:fixed; z-index:2; top:50%; left:50%; transform:translate(-50%,-50%); width:min(920px,calc(100vw - 64px)); height:min(720px,calc(100dvh - 64px)); display:flex; flex-direction:column; overflow:hidden; border:1px solid rgba(255,255,255,.1); border-radius:22px; background:#18181a; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+  .picker-dialog { position:fixed; z-index:2; top:50%; left:50%; transform:translate(-50%,-50%); width:min(920px,calc(100vw - 64px)); height:min(720px,calc(var(--app-visible-height, 100dvh) - 64px)); display:flex; flex-direction:column; overflow:hidden; border:1px solid rgba(255,255,255,.1); border-radius:22px; background:#18181a; box-shadow:0 20px 60px rgba(0,0,0,.5); }
   .picker-handle { display:none; }
   .picker-header { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:20px 22px 14px; border-bottom:1px solid rgba(255,255,255,.06); }
   .picker-header h2 { margin:0; color:#eeeae4; font-size:21px; font-weight:680; }
@@ -166,7 +166,7 @@
   .empty-state { display:flex; flex-direction:column; align-items:center; gap:12px; padding:55px 12px; color:#999; font-size:13px; text-align:center; overflow-wrap:anywhere; }
   .empty-state button { padding:8px 14px; border:1px solid rgba(212,180,131,.35); border-radius:8px; color:#d4b483; }
   @media (max-width:767px) {
-    .picker-dialog { top:auto; bottom:0; left:0; transform:none; width:100%; height:min(86dvh,760px); max-height:calc(100dvh - env(safe-area-inset-top) - 8px); border-radius:22px 22px 0 0; }
+    .picker-dialog { top:auto; bottom:0; left:0; transform:none; width:100%; height:min(calc(var(--app-visible-height, 100dvh) * 0.86),760px); max-height:calc(var(--app-visible-height, 100dvh) - env(safe-area-inset-top) - 8px); border-radius:22px 22px 0 0; }
     .picker-handle { display:block; width:38px; height:4px; flex:0 0 auto; margin:9px auto 2px; border-radius:999px; background:rgba(255,255,255,.14); }
     .picker-header { padding:8px 16px 11px 20px; }
     .picker-header h2 { font-size:20px; }

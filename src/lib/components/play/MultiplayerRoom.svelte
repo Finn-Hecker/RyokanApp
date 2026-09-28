@@ -270,7 +270,7 @@
     {/if}
 
   {:else}
-    <div class="flex h-[calc(100dvh-7rem)] min-h-[24rem] flex-col md:h-[calc(100dvh-7.5rem)]">
+    <div class="multiplayer-room flex h-[calc(var(--app-visible-height,100dvh)-7rem)] min-h-[24rem] flex-col md:h-[calc(var(--app-visible-height,100dvh)-7.5rem)]">
       {#if mpState.viewingHistory}
         <div class="mx-auto mb-2 flex w-full max-w-3xl items-center justify-between gap-4 rounded-xl bg-white/[0.035] px-4 py-2.5">
           <div class="min-w-0">
@@ -380,6 +380,7 @@
 </PageLayout>
 
 <style>
+  :global(.android-viewport) .multiplayer-room { min-height: 0; }
   :global(.prose-custom p)            { margin-bottom: 1.2em; }
   :global(.prose-custom p:last-child) { margin-bottom: 0; }
   :global(.prose-custom strong)       { color: #ffffff; font-weight: 600; }

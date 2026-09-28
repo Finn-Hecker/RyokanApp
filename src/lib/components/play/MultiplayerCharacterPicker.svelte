@@ -42,7 +42,7 @@
     aria-modal="true"
     aria-labelledby="multiplayer-character-picker-title"
     tabindex="-1"
-    class="flex max-h-[min(720px,calc(100vh-2rem))] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#12121a] shadow-2xl"
+    class="flex max-h-[min(720px,calc(var(--app-visible-height,100vh)-2rem))] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#12121a] shadow-2xl"
   >
     <header class="flex items-start justify-between gap-4 border-b border-white/[0.07] px-5 py-4 sm:px-6">
       <div>

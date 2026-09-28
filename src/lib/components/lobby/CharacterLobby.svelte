@@ -329,7 +329,7 @@
 
 {#if startTarget}
   <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center sm:p-4" role="presentation" onclick={(event) => event.target === event.currentTarget && (startTarget = null)}>
-    <div role="dialog" aria-modal="true" aria-labelledby="role-start-title" class="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#12121a] p-5 shadow-2xl sm:p-6">
+    <div role="dialog" aria-modal="true" aria-labelledby="role-start-title" class="max-h-[calc(var(--app-visible-height,100vh)*0.85)] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#12121a] p-5 shadow-2xl sm:p-6">
       <div class="mb-5 flex items-start justify-between gap-4">
         <div>
           <h2 id="role-start-title" class="font-medium text-gray-100">{m.role_start_title({ character: startTarget.name })}</h2>

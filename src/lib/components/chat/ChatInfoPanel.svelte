@@ -296,7 +296,7 @@
 
     .info-panel {
       width: 100%;
-      height: min(640px, 88dvh);
+      height: min(640px, calc(var(--app-visible-height, 100dvh) * 0.88));
       border-radius: 20px 20px 0 0;
       border-left: none;
       border-right: none;
@@ -335,7 +335,7 @@
     position: relative;
     width: min(560px, 100%);
     /* Fixed height: the panel keeps its size regardless of tab content */
-    height: min(640px, 85dvh);
+    height: min(640px, calc(var(--app-visible-height, 100dvh) * 0.85));
     display: flex;
     flex-direction: column;
     background: rgba(20, 20, 26, 0.98);

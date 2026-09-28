@@ -102,7 +102,7 @@
     onclick={stopProp}
     onkeydown={stopProp}
     class={sheet
-      ? 'sheet-action-list w-full max-h-[70vh] overflow-y-auto rounded-2xl border border-white/[0.06] bg-white/[0.025] p-1.5'
+      ? 'sheet-action-list w-full max-h-[calc(var(--app-visible-height,100vh)*0.7)] overflow-y-auto rounded-2xl border border-white/[0.06] bg-white/[0.025] p-1.5'
       : 'absolute right-0 top-full mt-1.5 w-44 max-w-[calc(100vw-2rem)] bg-[#16161f] border border-ryokan-accent/[0.22] rounded-xl z-30 py-1 overflow-hidden'}
     style={sheet ? '' : 'box-shadow: 0 20px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(212,180,131,0.04) inset;'}
   >

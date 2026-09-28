@@ -140,6 +140,13 @@ body {
   }
 }
 
+.android-viewport {
+  position: fixed;
+  inset: 0;
+  /* Fixed dialogs and sheets use the same visible area as the app shell. */
+  transform: translateZ(0);
+}
+
 .editor-page .page-scroll,
 .editor-page textarea {
   scrollbar-width: none;
@@ -153,26 +160,4 @@ body {
 .editor-page .page-scroll::-webkit-scrollbar,
 .editor-page textarea::-webkit-scrollbar {
   display: none;
-}
-
-/* Let the active editor text field use the viewport left above the Android IME. */
-.android-keyboard-open .editor-page:has(textarea:focus) .app-page-header {
-  display: none;
-}
-
-.android-keyboard-open .editor-page:has(textarea:focus) .page-scroll {
-  scroll-padding-top: 8px;
-}
-
-.android-keyboard-open .editor-page:has(textarea:focus) .app-page-content {
-  padding-top: 8px;
-  padding-bottom: 16px;
-}
-
-.android-keyboard-open .editor-page textarea:focus {
-  box-sizing: border-box;
-  height: clamp(160px, calc(var(--visual-viewport-height) - 88px), 640px) !important;
-  overflow-y: auto !important;
-  resize: none;
-  scroll-margin-top: 8px;
 }

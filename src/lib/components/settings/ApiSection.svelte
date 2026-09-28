@@ -1155,7 +1155,7 @@
   .model-sheet-backdrop, .mobile-model-sheet { display:none; }
 
   .desktop-model-backdrop { position:fixed; z-index:70; inset:0; background:rgba(0,0,0,.7); backdrop-filter:blur(4px); animation:sheet-fade-in .16s ease-out; }
-  .desktop-model-browser { position:fixed; z-index:71; top:50%; left:50%; width:min(1080px,calc(100vw - 72px)); height:min(760px,calc(100dvh - 72px)); display:flex; flex-direction:column; overflow:hidden; transform:translate(-50%,-50%); border:1px solid rgba(255,255,255,.1); border-radius:22px; background:#18181a; box-shadow:0 12px 32px rgba(0,0,0,.22); animation:browser-pop-in .18s cubic-bezier(.22,.8,.3,1); }
+  .desktop-model-browser { position:fixed; z-index:71; top:50%; left:50%; width:min(1080px,calc(100vw - 72px)); height:min(760px,calc(var(--app-visible-height, 100dvh) - 72px)); display:flex; flex-direction:column; overflow:hidden; transform:translate(-50%,-50%); border:1px solid rgba(255,255,255,.1); border-radius:22px; background:#18181a; box-shadow:0 12px 32px rgba(0,0,0,.22); animation:browser-pop-in .18s cubic-bezier(.22,.8,.3,1); }
   .desktop-model-header { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:22px 24px 16px; border-bottom:1px solid rgba(255,255,255,.055); }
   .desktop-model-header h3 { margin:0; color:#eeeae4; font-size:22px; font-weight:680; letter-spacing:-.025em; }
   .desktop-model-header p { margin:4px 0 0; color:#626267; font-size:11.5px; }
@@ -1205,7 +1205,7 @@
       right:0;
       bottom:0;
       left:0;
-      height:min(86dvh, 760px);
+      height:min(calc(var(--app-visible-height, 100dvh) * 0.86), 760px);
       display:flex;
       flex-direction:column;
       overflow:hidden;

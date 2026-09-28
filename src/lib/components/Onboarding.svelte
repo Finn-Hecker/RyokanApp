@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { androidViewport } from '$lib/utils/androidViewport';
   import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { fade, fly } from 'svelte/transition';
   import { appState } from '$lib/stores/appState.svelte';
@@ -142,6 +143,7 @@
 </script>
 
 <div
+  use:androidViewport
   class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm overflow-hidden"
   in:fade={{ duration: 250 }}
 >

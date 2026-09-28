@@ -34,7 +34,7 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="character-action-title"
-    class="relative w-full max-h-[85vh] overflow-y-auto select-none [-webkit-user-select:none] [-webkit-touch-callout:none] rounded-t-[26px] border-t border-ryokan-accent/20 bg-ryokan-bg px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-18px_50px_rgba(0,0,0,0.45)]"
+    class="relative w-full max-h-[calc(var(--app-visible-height,100vh)*0.85)] overflow-y-auto select-none [-webkit-user-select:none] [-webkit-touch-callout:none] rounded-t-[26px] border-t border-ryokan-accent/20 bg-ryokan-bg px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-18px_50px_rgba(0,0,0,0.45)]"
   >
     <div class="mx-auto mb-4 h-1 w-10 rounded-full bg-white/20"></div>
     {#if char}

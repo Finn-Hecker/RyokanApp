@@ -17,14 +17,11 @@
   import { hydrateApiConnections } from '$lib/utils/apiConnections';
   import { updater } from '$lib/stores/updater';
   import * as m from '$lib/paraglide/messages';
+  import { androidViewport } from '$lib/utils/androidViewport';
 
   let loaded = $state(false); 
   let viewContainer = $state<HTMLDivElement>();
   let backTransition: Animation | undefined;
-  let isAndroid = $state(false);
-  let viewportHeight = $state<string | undefined>();
-  let viewportTop = $state<string | undefined>();
-  let keyboardOpen = $state(false);
 
   async function handleAndroidBack() {
     const previousView = appState.currentView;
@@ -48,39 +45,6 @@
   onMount(() => {
     let disposed = false;
     let backButtonListener: { unregister: () => Promise<void> } | undefined;
-    let viewportFrame = 0;
-    let fullViewportHeight = 0;
-    let viewportWidth = 0;
-    isAndroid = /Android/i.test(navigator.userAgent);
-
-    function updateViewportHeight() {
-      viewportFrame = 0;
-      // The visual viewport follows the IME animation, including edge-to-edge WebViews.
-      const viewport = window.visualViewport;
-      const height = viewport?.height ?? window.innerHeight;
-      const width = viewport?.width ?? window.innerWidth;
-      if (Math.abs(width - viewportWidth) > 1) {
-        viewportWidth = width;
-        fullViewportHeight = height;
-      } else {
-        fullViewportHeight = Math.max(fullViewportHeight, height);
-      }
-      viewportHeight = `${height}px`;
-      keyboardOpen = fullViewportHeight - height > 120;
-      // A focused field can pan the visual viewport independently of its height.
-      viewportTop = keyboardOpen ? `${viewport?.offsetTop ?? 0}px` : undefined;
-    }
-
-    function scheduleViewportUpdate() {
-      if (!viewportFrame) viewportFrame = requestAnimationFrame(updateViewportHeight);
-    }
-
-    if (isAndroid) {
-      updateViewportHeight();
-      window.visualViewport?.addEventListener('resize', scheduleViewportUpdate);
-      window.visualViewport?.addEventListener('scroll', scheduleViewportUpdate);
-      window.addEventListener('resize', scheduleViewportUpdate);
-    }
     void onBackButtonPress(() => {
       if (!disposed) void handleAndroidBack().catch(error => console.error('Android back navigation failed', error));
     }).then(async listener => {
@@ -91,10 +55,6 @@
     void loadApp();
     return () => {
       disposed = true;
-      if (viewportFrame) cancelAnimationFrame(viewportFrame);
-      window.visualViewport?.removeEventListener('resize', scheduleViewportUpdate);
-      window.visualViewport?.removeEventListener('scroll', scheduleViewportUpdate);
-      window.removeEventListener('resize', scheduleViewportUpdate);
       backTransition?.cancel();
       void backButtonListener?.unregister().catch(error => console.error('Could not unregister Android back listener', error));
     };
@@ -124,12 +84,8 @@
   <Onboarding />
 {:else}
   <main
+    use:androidViewport
     class="h-screen w-screen flex flex-col bg-ryokan-bg text-gray-200 overflow-hidden relative"
-    class:android-viewport={isAndroid}
-    class:android-keyboard-open={isAndroid && keyboardOpen}
-    style:height={viewportHeight}
-    style:top={viewportTop}
-    style:--visual-viewport-height={viewportHeight}
   >
     {#if appState.currentView === 'lobby' && ['available', 'ready'].includes($updater.phase)}
       <p class="px-4 py-2 text-xs text-center text-ryokan-accent" role="status">{m.update_banner({ version: $updater.version })}</p>
@@ -153,10 +109,3 @@
     </div>
   </main>
 {/if}
-
-<style>
-  main.android-viewport {
-    position: fixed;
-    inset: 0;
-  }
-</style>

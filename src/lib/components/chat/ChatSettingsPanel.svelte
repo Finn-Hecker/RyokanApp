@@ -824,8 +824,8 @@
   @media (max-width: 639px) {
     .settings-overlay { align-items: flex-end; }
     .settings-panel {
-      height: min(82dvh, 720px);
-      max-height: calc(100dvh - env(safe-area-inset-top) - 12px);
+      height: min(calc(var(--app-visible-height, 100dvh) * 0.82), 720px);
+      max-height: calc(var(--app-visible-height, 100dvh) - env(safe-area-inset-top) - 12px);
       border-top: 1px solid rgba(255,255,255,0.12);
       border-radius: 18px 18px 0 0;
     }
@@ -839,7 +839,7 @@
   }
 
   @media (max-width: 639px) and (max-height: 500px) {
-    .settings-panel { height: 92dvh; }
+    .settings-panel { height: calc(var(--app-visible-height, 100dvh) * 0.92); }
   }
 
   .settings-label {

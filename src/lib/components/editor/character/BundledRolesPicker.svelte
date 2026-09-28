@@ -117,7 +117,7 @@
   .validation-message { margin-top:10px; color:#fbbf24; font-size:12px; font-weight:500; }
   .picker-backdrop { position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(0,0,0,.58); backdrop-filter:blur(3px); }
   .backdrop-dismiss { position:absolute; inset:0; width:100%; height:100%; border:0; background:transparent; cursor:default; }
-  .role-picker { position:relative; width:min(420px,100%); max-height:min(560px,calc(100dvh - 40px)); display:flex; flex-direction:column; overflow:hidden; border:1px solid rgba(255,255,255,.09); border-radius:16px; background:#19191c; box-shadow:0 20px 60px rgba(0,0,0,.55); }
+  .role-picker { position:relative; width:min(420px,100%); max-height:min(560px,calc(var(--app-visible-height, 100dvh) - 40px)); display:flex; flex-direction:column; overflow:hidden; border:1px solid rgba(255,255,255,.09); border-radius:16px; background:#19191c; box-shadow:0 20px 60px rgba(0,0,0,.55); }
   .picker-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:18px 18px 14px; border-bottom:1px solid rgba(255,255,255,.06); }
   .picker-heading h3 { color:#e5e7eb; font-size:15px; font-weight:600; }
   .picker-heading p { margin-top:3px; color:#626873; font-size:12px; line-height:1.45; }
@@ -135,7 +135,7 @@
     .policy-select, .policy-select select { width:100%; }
     .add-role { width:100%; justify-content:center; min-height:44px; }
     .picker-backdrop { align-items:flex-end; padding:12px; }
-    .role-picker { max-height:calc(100dvh - 24px); border-radius:18px; }
+    .role-picker { max-height:calc(var(--app-visible-height, 100dvh) - 24px); border-radius:18px; }
     .picker-role { min-height:56px; }
   }
 </style>
