@@ -1,4 +1,12 @@
 {
+  "settings_chat_font_size_label": "Chat-Schriftgröße",
+  "settings_category_appearance": "Darstellung",
+  "settings_category_appearance_description": "Schriftgröße und Darstellung des Chats",
+  "settings_category_appearance_mobile_description": "Schriftgröße & Chat-Darstellung",
+  "settings_section_chat": "Chat",
+  "settings_chat_preview_label": "Live-Vorschau",
+  "settings_chat_preview_ai": "Die Laternen tauchen den Flur in warmes Licht.  \n*Sie öffnet die Tür einen Spalt und lächelt.*  \n„Komm herein, der Tee ist schon fertig.“",
+  "settings_chat_preview_user": "Gern, danke dir!",
   "settings_diagnostics_title": "Diagnose",
   "settings_diagnostics_description": "Lokale Protokolle werden bis zu 7 Tage aufbewahrt (maximal 48 MiB). Der Export enthält App- und Systemdetails, Anbietertyp, Modellkonfigurationsstatus, Kontext-/Token-/Zusammenfassungsentscheidungen und bis zu 2 MiB aktuelle Protokolldaten. Keine Schlüssel, URLs, Modellnamen, Prompts, Chats oder anderen privaten Inhalte. Es wird nichts automatisch hochgeladen.",
   "settings_diagnostics_export": "Diagnose exportieren",

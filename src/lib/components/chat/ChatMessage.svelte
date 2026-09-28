@@ -263,7 +263,7 @@
   <div class="relative min-w-0 max-w-[92%] sm:max-w-[min(88%,42rem)] group/usermsg">
     <div bind:this={msgEl} class="user-message-text rounded-[14px] px-4 py-2.5 sm:px-[18px] sm:py-3
       bg-[#252422] border border-ryokan-accent/[0.12] text-gray-200
-      text-[15px] leading-[1.55] break-words whitespace-pre-wrap">
+      leading-[1.55] break-words whitespace-pre-wrap">
       {msg.text}
     </div>
       {#if !isMobileViewport && canEdit && !isGenerating}
@@ -701,10 +701,11 @@
   }
 
   :global(.prose-custom) {
-    font-size: 1rem;
+    font-size: 1em;
     line-height: 1.8;
     color: #e5e5ea;
   }
+  .user-message-text { font-size: 0.9375em; }
   :global(.prose-custom p)            { margin-bottom: 1.2em; }
   :global(.prose-custom p:last-child) { margin-bottom: 0; }
   :global(.prose-custom strong)       { color: #ffffff; font-weight: 600; }
@@ -713,7 +714,7 @@
   /* Android WebView can inflate long text independently of its CSS font size.
      Anchor the two actual message render paths to the native interaction mode. */
   .mobile-message-typography :global(.prose-custom) {
-    font-size: 14.5px;
+    font-size: 0.90625em;
     line-height: 1.55;
     -webkit-text-size-adjust: none;
     text-size-adjust: none;
@@ -724,7 +725,7 @@
   }
 
   .mobile-message-typography .user-message-text {
-    font-size: 14px;
+    font-size: 0.875em;
     line-height: 1.5;
     -webkit-text-size-adjust: none;
     text-size-adjust: none;

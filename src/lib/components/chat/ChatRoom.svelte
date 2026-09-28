@@ -556,7 +556,8 @@
   <div
     bind:this={chatContainer}
     onscroll={handleScroll}
-    class="chat-scroll flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 pt-4"
+    class="chat-scroll chat-content flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 pt-4"
+    style:--chat-font-scale={appState.chatFontScale / 100}
     style:padding-bottom={`${composerHeight + 16}px`}
     style="overflow-anchor: none; overscroll-behavior: contain;"
   >

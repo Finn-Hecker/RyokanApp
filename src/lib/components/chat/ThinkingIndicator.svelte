@@ -22,7 +22,7 @@
         <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-ryokan-accent opacity-50"></span>
         <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-ryokan-accent/80"></span>
       </span>
-      <span class="text-xs font-medium italic tracking-wide">{m.chat_thinking()}</span>
+      <span class="text-[0.75em] font-medium italic tracking-wide">{m.chat_thinking()}</span>
     </div>
   </div>
 </div>

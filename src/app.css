@@ -140,6 +140,9 @@ body {
   }
 }
 
+/* Shared type scale for real chat messages and their settings preview. */
+.chat-content { font-size: calc(16px * var(--chat-font-scale, 1)); }
+
 .android-viewport {
   position: fixed;
   inset: 0;

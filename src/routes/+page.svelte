@@ -68,6 +68,8 @@
     ]);
     appState.interactionMode = interactionMode;
     const map = Object.fromEntries(settings.map(s => [s.key, s.value]));
+    const chatFontScale = Number(map['chat_font_scale']);
+    appState.chatFontScale = Number.isFinite(chatFontScale) && chatFontScale >= 80 && chatFontScale <= 140 ? chatFontScale : 100;
 
     hydrateApiConnections(settings);
 

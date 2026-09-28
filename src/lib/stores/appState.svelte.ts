@@ -67,6 +67,7 @@ export const appState = $state({
   isOnboarding: false,
   pendingUiLocale: '',
   interactionMode: 'desktop' as InteractionMode,
+  chatFontScale: 100,
   listTab: 'worldinfo' as 'roles' | 'worldinfo',
   apiConnections: [initialConnection] as ApiConnection[],
   activeApiConnectionId: initialConnection.id,

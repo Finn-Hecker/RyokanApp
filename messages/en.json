@@ -1,4 +1,12 @@
 {
+  "settings_chat_font_size_label": "Chat font size",
+  "settings_category_appearance": "Appearance",
+  "settings_category_appearance_description": "Chat font size and appearance",
+  "settings_category_appearance_mobile_description": "Font size & chat appearance",
+  "settings_section_chat": "Chat",
+  "settings_chat_preview_label": "Live preview",
+  "settings_chat_preview_ai": "Lantern light fills the hallway with a warm glow.  \n*She opens the door a little and smiles.*  \n\"Come in, the tea is ready.\"",
+  "settings_chat_preview_user": "Gladly, thank you!",
   "settings_diagnostics_title": "Diagnostics",
   "settings_diagnostics_description": "Local logs are kept for up to 7 days (48 MiB maximum). Export includes app and system details, provider type, model configuration status, context/token/summary decisions, and up to 2 MiB of recent log source data. No keys, URLs, model names, prompts, chats, or other private content. Nothing is uploaded automatically.",
   "settings_diagnostics_export": "Export Diagnostics",

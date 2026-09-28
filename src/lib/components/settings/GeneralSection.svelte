@@ -2,6 +2,7 @@
   import { appState } from "$lib/stores/appState.svelte";
   import { getLocale } from "$lib/paraglide/runtime";
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
+  import ChatMessage from '$lib/components/chat/ChatMessage.svelte';
   import * as m from "$lib/paraglide/messages";
   import { fade } from "svelte/transition";
   import {
@@ -11,7 +12,7 @@
   import { validateAdditionalApiParameters } from "$lib/utils/additionalApiParameters";
 
   export let powerUser: boolean = false;
-  export let category: "parameters" | "advanced" | "language" = "parameters";
+  export let category: "parameters" | "advanced" | "appearance" | "language" = "parameters";
 
   export let parameterEnabled: Record<ApiParameterKey, boolean> =
     createDefaultApiParameterEnabled();
@@ -577,6 +578,35 @@
 </section>
 {/if}
 
+{#if category === "appearance"}
+<section>
+  <h2 class="appearance-heading">{m.settings_section_chat()}</h2>
+  <div class="settings-card">
+    <div class="flex items-center justify-between mb-2">
+      <label class="settings-label" for="chat-font-scale" style="margin-bottom:0">{m.settings_chat_font_size_label()}</label>
+      <span class="power-value">{appState.chatFontScale} %</span>
+    </div>
+    <input id="chat-font-scale" type="range" min="80" max="140" step="1"
+      bind:value={appState.chatFontScale} class="power-slider" />
+    <div class="slider-bounds"><span>80 %</span><span>140 %</span></div>
+    <div class="chat-preview" role="group" aria-label={m.settings_chat_preview_label()}>
+      <div class="chat-preview-heading">{m.settings_chat_preview_label()}</div>
+      <div class="chat-content chat-preview-thread" style:--chat-font-scale={appState.chatFontScale / 100}>
+        <ChatMessage
+          msg={{ id: 'preview-ai', text: m.settings_chat_preview_ai(), isUser: false, senderName: 'Ryokan', swipeVariants: [], swipeIndex: 0 }}
+          character={{ name: 'Ryokan', initials: 'R' }}
+          interactionMode={appState.interactionMode}
+        />
+        <ChatMessage
+          msg={{ id: 'preview-user', text: m.settings_chat_preview_user(), isUser: true, senderName: 'You', swipeVariants: [], swipeIndex: 0 }}
+          interactionMode={appState.interactionMode}
+        />
+      </div>
+    </div>
+  </div>
+</section>
+{/if}
+
 {#if category === "language"}
 <section>
   <span class="settings-section-title">{m.settings_section_language()}</span>
@@ -620,6 +650,11 @@
 {/if}
 
 <style>
+  .appearance-heading { margin: 0 0 18px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,.055); color: #d1cfd2; font-size: 14px; font-weight: 650; }
+  .chat-preview { margin-top: 22px; padding: 14px 16px 2px; border: 1px solid rgba(255,255,255,.07); border-radius: 14px; background: rgba(255,255,255,.025); overflow: hidden; }
+  .chat-preview-heading { margin-bottom: 16px; color: #68686d; font-size: 10px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+  .chat-preview-thread { min-width: 0; }
+  :global(.chat-preview-thread [data-message-id]) { margin-bottom: 14px; }
   .additional-parameters-field {
     display: flex;
     flex-direction: column;
