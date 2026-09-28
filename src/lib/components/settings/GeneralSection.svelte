@@ -11,6 +11,8 @@
   } from "$lib/utils/apiParameters";
   import { validateAdditionalApiParameters } from "$lib/utils/additionalApiParameters";
   import GenerationCapabilityWarning from './GenerationCapabilityWarning.svelte';
+  import ReasoningControl from './ReasoningControl.svelte';
+  import ThinkingBudgetControl from './ThinkingBudgetControl.svelte';
 
   export let powerUser: boolean = false;
   export let category: "parameters" | "advanced" | "appearance" | "language" = "parameters";
@@ -55,12 +57,6 @@
     { label: m.settings_tokens_preset_chat(),   value: 150,  hint: m.settings_tokens_preset_chat_hint() },
     { label: m.settings_tokens_preset_paragraph(), value: 300,  hint: m.settings_tokens_preset_paragraph_hint() },
     { label: m.settings_tokens_preset_novel(),  value: 800,  hint: m.settings_tokens_preset_novel_hint() },
-  ];
-
-  $: THINKING_BUDGET_PRESETS = [
-    { label: m.settings_thinking_budget_fast(),     value: 1000, hint: m.settings_thinking_budget_fast_hint() },
-    { label: m.settings_thinking_budget_balanced(), value: 2500, hint: m.settings_thinking_budget_balanced_hint() },
-    { label: m.settings_thinking_budget_deep(),     value: 5000, hint: m.settings_thinking_budget_deep_hint() },
   ];
 
   $: PENALTY_PRESETS = [
@@ -108,9 +104,6 @@
   }
   function clampPenalty(v: number) {
     return Math.max(0.8, Math.min(2.0, Math.round(v * 100) / 100));
-  }
-  function clampThinkingBudget(v: number) {
-    return Math.max(500, Math.min(10000, Math.round(v / 100) * 100));
   }
   function clampTopP(v: number) {
     return Math.max(0, Math.min(1, Math.round(v * 100) / 100));
@@ -166,6 +159,9 @@
   <div class="settings-card space-y-4">
 
     {#if category === "parameters"}
+
+    <ReasoningControl connection={appState.apiSettings} />
+    <ThinkingBudgetControl connection={appState.apiSettings} {powerUser} />
 
     <div>
       <div class="flex items-center justify-between mb-2">
@@ -305,55 +301,6 @@
         </div>
       {/if}
     </div>
-
-    <div class="settings-divider"></div>
-
-      <div>
-        <div>
-          <div class="flex items-center justify-between mb-2">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span class="settings-label" style="margin-bottom:0">{m.settings_thinking_budget_label()}</span>
-              <Tooltip>
-                {m.settings_thinking_budget_tooltip_p1()}<br><br>
-                {m.settings_thinking_budget_tooltip_p2()}<br><br>
-                <span class="tooltip-hint">{m.settings_thinking_budget_tooltip_hint()}</span>
-              </Tooltip>
-            </div>
-            <div class="parameter-actions">
-              {#if powerUser}
-                <span class="power-value" class:power-value--disabled={!parameterEnabled.thinkingBudget}>{appState.apiSettings.thinkingBudget ?? 2500} Tokens</span>
-              {/if}
-              {@render parameterToggle("thinkingBudget")}
-            </div>
-          </div>
-          {#if powerUser}
-            <div in:fade={{ duration: 250, delay: 30 }}>
-              <input
-                type="range" min="500" max="10000" step="100"
-                value={appState.apiSettings.thinkingBudget ?? 2500}
-                on:input={(e) => { appState.apiSettings.thinkingBudget = clampThinkingBudget(+e.currentTarget.value); }}
-                class="power-slider"
-                disabled={!parameterEnabled.thinkingBudget}
-                aria-label={m.settings_thinking_budget_label()}
-              />
-              <div class="slider-bounds"><span>500</span><span>10 000</span></div>
-            </div>
-          {:else}
-            <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 30 }}>
-              {#each THINKING_BUDGET_PRESETS as preset}
-                <button
-                  on:click={() => (appState.apiSettings.thinkingBudget = preset.value)}
-                  disabled={!parameterEnabled.thinkingBudget}
-                  class="preset-btn {(appState.apiSettings.thinkingBudget ?? 2500) === preset.value ? 'preset-btn--active' : ''}"
-                >
-                  <span class="preset-label">{preset.label}</span>
-                  <span class="preset-hint">{preset.hint}</span>
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      </div>
 
     {/if}
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createDefaultApiParameterEnabled, requestParameterConfig } from './apiParameters.ts';
-import { generationParameterStatus, modelGenerationCapabilities, resolveGenerationCapabilities } from './generationCapabilities.ts';
+import { generationParameterStatus, modelGenerationCapabilities, reasoningCapability, reasoningDialect, resolveGenerationCapabilities } from './generationCapabilities.ts';
 
 test('OpenRouter metadata warns without changing request switches or custom parameters', () => {
   const connection = {
@@ -42,4 +42,34 @@ test('documented local API contract is available without model metadata', () => 
   assert.equal(resolveGenerationCapabilities(connection).supportedParameters.includes('min_p'), true);
   assert.equal(generationParameterStatus(connection, 'minP'), 'supported');
   assert.equal(generationParameterStatus(connection, 'thinkingBudget'), 'unknown');
+});
+
+test('reasoning levels come from matching provider metadata, never the model name', () => {
+  const router = { providerKind: 'openrouter', url: 'https://openrouter.ai/api/v1', model: 'vendor/reasoner' };
+  assert.equal(reasoningDialect(router), null);
+  router.generationCapabilities = modelGenerationCapabilities(router, ['temperature']);
+  assert.equal(reasoningDialect(router), null);
+  router.generationCapabilities = modelGenerationCapabilities(router, ['reasoning']);
+  assert.equal(reasoningDialect(router), 'openrouter');
+  assert.deepEqual(reasoningCapability(router).levels, ['auto', 'low', 'medium', 'high']);
+  assert.equal(reasoningCapability(router).certainty, 'unknown_levels');
+  router.model = 'vendor/other';
+  assert.equal(reasoningDialect(router), null);
+  for (const providerKind of ['openai', 'xai', 'generic_openai', 'llama_cpp']) {
+    assert.equal(reasoningDialect({ providerKind, url: 'http://localhost/v1', model: 'arbitrary' }), null);
+  }
+  const llama = { providerKind: 'llama_cpp', url: 'http://localhost:8080/v1', model: 'arbitrary' };
+  llama.generationCapabilities = modelGenerationCapabilities(llama, null, { supported: true });
+  assert.deepEqual(reasoningCapability(llama).levels, ['auto', 'low', 'medium', 'high']);
+  assert.equal(reasoningCapability(llama).certainty, 'unknown_levels');
+  const studio = { providerKind: 'lm_studio', url: 'http://localhost:1234/v1', model: 'arbitrary' };
+  studio.generationCapabilities = modelGenerationCapabilities(studio, null,
+    { supported: true, allowedOptions: ['off', 'low', 'medium', 'high', 'on'] });
+  assert.deepEqual(reasoningCapability(studio).levels, ['auto', 'low', 'medium', 'high']);
+  assert.equal(generationParameterStatus(studio, 'temperature'), 'supported');
+  studio.model = 'another';
+  assert.equal(reasoningCapability(studio), null);
+  studio.generationCapabilities = modelGenerationCapabilities(studio, null, { supported: true });
+  assert.deepEqual(reasoningCapability(studio).levels, ['auto', 'low', 'medium', 'high']);
+  assert.equal(reasoningCapability(studio).certainty, 'unknown_levels');
 });

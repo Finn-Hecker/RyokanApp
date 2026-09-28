@@ -13,6 +13,8 @@
   import { ensureContextDetection, invalidateDetectedContext, persistApiConnections } from '$lib/utils/apiConnections';
   import { modelGenerationCapabilities } from '$lib/utils/generationCapabilities';
   import GenerationCapabilityWarning from '$lib/components/settings/GenerationCapabilityWarning.svelte';
+  import ReasoningControl from '$lib/components/settings/ReasoningControl.svelte';
+  import ThinkingBudgetControl from '$lib/components/settings/ThinkingBudgetControl.svelte';
   import ChatModelPicker from './ChatModelPicker.svelte';
 
   let { onClose }: { onClose: () => void } = $props();
@@ -40,11 +42,11 @@
     if (!connection.url.trim()) return;
     modelsLoading = true;
     try {
-      const models = await fetchModels(connection.url, connection.apiKey);
+      const models = await fetchModels(connection.url, connection.apiKey, connection.providerKind);
       if (request !== modelRequest || appState.apiSettings !== connection) return;
       availableModels = models.map(model => model.id);
       modelMetadata = Object.fromEntries(models.map(model => [model.id, model]));
-      connection.generationCapabilities = modelGenerationCapabilities(connection, modelMetadata[connection.model]?.supportedParameters);
+      connection.generationCapabilities = modelGenerationCapabilities(connection, modelMetadata[connection.model]?.supportedParameters, modelMetadata[connection.model]?.reasoning);
       void persistApiConnections().catch(() => reportDiagnostic('settings'));
       if (!models.length) modelsError = m.settings_model_error_no_models();
     } catch (error) {
@@ -70,7 +72,7 @@
     const connection = appState.apiSettings;
     invalidateDetectedContext(connection);
     connection.model = model;
-    connection.generationCapabilities = modelGenerationCapabilities(connection, modelMetadata[model]?.supportedParameters);
+    connection.generationCapabilities = modelGenerationCapabilities(connection, modelMetadata[model]?.supportedParameters, modelMetadata[model]?.reasoning);
     void persistApiConnections().catch(() => reportDiagnostic('settings'));
     void ensureContextDetection(connection).then(() => persistApiConnections()).catch(() => reportDiagnostic('settings'));
   }
@@ -116,12 +118,6 @@
     { label: m.settings_tokens_preset_novel(),     value: 800, hint: m.settings_tokens_preset_novel_hint() },
   ]);
 
-  const THINKING_BUDGET_PRESETS = $derived([
-    { label: m.settings_thinking_budget_fast(),     value: 1000, hint: m.settings_thinking_budget_fast_hint() },
-    { label: m.settings_thinking_budget_balanced(), value: 2500, hint: m.settings_thinking_budget_balanced_hint() },
-    { label: m.settings_thinking_budget_deep(),     value: 5000, hint: m.settings_thinking_budget_deep_hint() },
-  ]);
-
   const PENALTY_PRESETS = $derived([
     { label: m.settings_penalty_preset_tolerant(), value: 1.0,  hint: m.settings_penalty_preset_tolerant_hint() },
     { label: m.settings_penalty_preset_normal(),   value: 1.12, hint: m.settings_penalty_preset_normal_hint() },
@@ -159,7 +155,6 @@
 
   function clampTokens(v: number) { return Math.max(50, Math.min(4000, Math.round(v))); }
   function clampPenalty(v: number) { return Math.max(0.8, Math.min(2.0, Math.round(v * 100) / 100)); }
-  function clampThinkingBudget(v: number) { return Math.max(500, Math.min(10000, Math.round(v / 100) * 100)); }
   function clampTopP(v: number) { return Math.max(0, Math.min(1, Math.round(v * 100) / 100)); }
   function clampTopK(v: number) { return Math.max(0, Math.min(200, Math.round(v))); }
   function clampMinP(v: number) { return Math.max(0, Math.min(0.5, Math.round(v * 100) / 100)); }
@@ -171,7 +166,6 @@
   function setTemperature(v: number) { appState.apiSettings.temperature = v; persistActive(); }
   function setMaxTokens(v: number) { appState.apiSettings.maxTokens = v; persistActive(); }
   function setPresencePenalty(v: number) { appState.apiSettings.presencePenalty = v; persistActive(); }
-  function setThinkingBudget(v: number) { appState.apiSettings.thinkingBudget = v; persistActive(); }
   function setTopP(v: number) { appState.apiSettings.topP = v; persistActive(); }
   function setTopK(v: number) { appState.apiSettings.topK = v; persistActive(); }
   function setMinP(v: number) { appState.apiSettings.minP = v; persistActive(); }
@@ -244,6 +238,9 @@
         </div>
       </div>
       <div class="settings-card">
+
+        <ReasoningControl connection={appState.apiSettings} onChange={persistActive} />
+        <ThinkingBudgetControl connection={appState.apiSettings} {powerUser} onChange={persistActive} />
 
         <div>
           <div class="flex items-center justify-between mb-2">
@@ -384,55 +381,6 @@
             </div>
           {/if}
         </div>
-
-        <div class="settings-divider"></div>
-
-          <div>
-            <div>
-              <div class="flex items-center justify-between mb-2">
-                <div style="display:flex;align-items:center;gap:8px;">
-                  <span class="settings-label" style="margin-bottom:0">{m.settings_thinking_budget_label()}</span>
-                  <Tooltip>
-                    {m.settings_thinking_budget_tooltip_p1()}<br><br>
-                    {m.settings_thinking_budget_tooltip_p2()}<br><br>
-                    <span class="tooltip-hint">{m.settings_thinking_budget_tooltip_hint()}</span>
-                  </Tooltip>
-                </div>
-                <div class="parameter-actions">
-                  {#if powerUser}
-                    <span class="power-value" class:power-value--disabled={!parameterEnabled.thinkingBudget}>{appState.apiSettings.thinkingBudget ?? 2500} Tokens</span>
-                  {/if}
-                  {@render parameterToggle("thinkingBudget")}
-                </div>
-              </div>
-              {#if powerUser}
-                <div in:fade={{ duration: 250, delay: 30 }}>
-                  <input
-                    type="range" min="500" max="10000" step="100"
-                    value={appState.apiSettings.thinkingBudget ?? 2500}
-                    oninput={(e) => setThinkingBudget(clampThinkingBudget(+e.currentTarget.value))}
-                    class="power-slider"
-                    disabled={!parameterEnabled.thinkingBudget}
-                    aria-label={m.settings_thinking_budget_label()}
-                  />
-                  <div class="slider-bounds"><span>500</span><span>10 000</span></div>
-                </div>
-              {:else}
-                <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 30 }}>
-                  {#each THINKING_BUDGET_PRESETS as preset}
-                    <button
-                      onclick={() => setThinkingBudget(preset.value)}
-                      disabled={!parameterEnabled.thinkingBudget}
-                      class="preset-btn {(appState.apiSettings.thinkingBudget ?? 2500) === preset.value ? 'preset-btn--active' : ''}"
-                    >
-                      <span class="preset-label">{preset.label}</span>
-                      <span class="preset-hint">{preset.hint}</span>
-                    </button>
-                  {/each}
-                </div>
-              {/if}
-            </div>
-          </div>
 
         <div class="sampling-divider" role="separator">
           <span class="sampling-divider-line"></span>

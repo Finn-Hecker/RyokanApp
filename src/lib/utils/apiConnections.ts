@@ -47,6 +47,7 @@ function normalizeConnection(value: Partial<ApiConnection>, legacy: Map<string, 
     if (value.parameterEnabled?.[field] == null && legacy.has(key)) enabled[field] = legacy.get(key) === 'true';
   }
   const connection = { ...fallback, ...generation, ...value, parameterEnabled: enabled };
+  if (!['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(connection.reasoningLevel)) connection.reasoningLevel = 'auto';
   if (!validContextSize(connection.manualContextCap)) connection.manualContextCap = null;
   if (!connection.detectedContext || !validContextSize(connection.detectedContext.tokens)) connection.detectedContext = null;
   if (connection.detectedContext && (connection.detectedContext.model !== connection.model

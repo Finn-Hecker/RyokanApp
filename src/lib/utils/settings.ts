@@ -34,6 +34,7 @@ export async function getSetting(key: string): Promise<string | null> {
 export interface ModelInfo {
   id: string;
   supportedParameters?: string[] | null;
+  reasoning?: { supported?: boolean | null; allowedOptions?: string[] | null } | null;
   contextLength?: number | null;
   architecture?: {
     inputModalities: string[];
@@ -48,6 +49,6 @@ export interface ModelInfo {
   } | null;
 }
 
-export async function fetchModels(url: string, apiKey: string): Promise<ModelInfo[]> {
-  return await invoke<ModelInfo[]>("fetch_models", { url, apiKey });
+export async function fetchModels(url: string, apiKey: string, providerKind?: string): Promise<ModelInfo[]> {
+  return await invoke<ModelInfo[]>("fetch_models", { url, apiKey, providerKind });
 }

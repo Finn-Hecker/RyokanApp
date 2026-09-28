@@ -114,6 +114,10 @@ fn parse_additional_api_parameters(
 #[serde(rename_all = "camelCase")]
 struct RequestApiParameterConfig {
     #[serde(default)]
+    reasoning_dialect: Option<String>,
+    #[serde(default)]
+    reasoning_level: Option<String>,
+    #[serde(default)]
     temperature_enabled: bool,
     max_tokens_enabled: bool,
     #[serde(default)]
@@ -166,6 +170,35 @@ fn merge_additional_api_parameters(
     // Power-user values intentionally win for non-protected keys. The parser
     // rejects protocol-critical conflicts before this deterministic merge.
     body.extend(parameters);
+}
+
+fn apply_reasoning_level(body: &mut serde_json::Value, provider_kind: Option<&str>, config: &RequestApiParameterConfig) {
+    let level = match config.reasoning_level.as_deref() {
+        Some(level @ ("none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max")) => Some(level),
+        _ => None,
+    };
+    match (provider_kind, config.reasoning_dialect.as_deref()) {
+        (Some("openrouter"), Some("openrouter")) if level.is_some() => body["reasoning"] = serde_json::json!({ "effort": level.unwrap() }),
+        (Some("lm_studio"), Some("lm_studio")) if level.is_some() => body["reasoning_effort"] = serde_json::json!(level.unwrap()),
+        (Some("llama_cpp"), Some("llama_cpp_effort")) if level.is_some() => body["reasoning_effort"] = serde_json::json!(level.unwrap()),
+        (Some("openai"), Some("openai")) => {
+            if let Some(level) = level { body["reasoning_effort"] = serde_json::json!(level); }
+            if level != Some("none") {
+                body.as_object_mut().unwrap().remove("temperature");
+                body.as_object_mut().unwrap().remove("top_p");
+            }
+            if let Some(max_tokens) = body.as_object_mut().unwrap().remove("max_tokens") {
+                body["max_completion_tokens"] = max_tokens;
+            }
+        }
+        (Some("xai"), Some("xai")) => {
+            if let Some(level) = level { body["reasoning_effort"] = serde_json::json!(level); }
+            body.as_object_mut().unwrap().remove("frequency_penalty");
+            body.as_object_mut().unwrap().remove("repetition_penalty");
+            body.as_object_mut().unwrap().remove("stop");
+        }
+        _ => {}
+    }
 }
 
 /// Called from the frontend to hard-stop the current stream.
@@ -479,9 +512,17 @@ pub struct ModelArchitecture {
 pub struct ModelInfo {
     id: String,
     supported_parameters: Option<Vec<String>>,
+    reasoning: Option<ModelReasoningInfo>,
     context_length: Option<u64>,
     pricing: Option<ModelPricing>,
     architecture: Option<ModelArchitecture>,
+}
+
+#[derive(Serialize, Debug, PartialEq, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelReasoningInfo {
+    supported: bool,
+    allowed_options: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Serialize, Debug, PartialEq)]
@@ -549,6 +590,7 @@ fn normalize_models(entries: Vec<ModelEntry>, text_output_only: bool) -> Vec<Mod
                 id: model.id,
                 supported_parameters: model.supported_parameters
                     .and_then(|value| serde_json::from_value::<Vec<String>>(value).ok()),
+                reasoning: None,
                 context_length: model.context_length,
                 architecture,
                 // OpenRouter normally returns a pricing object. Tiered or otherwise
@@ -566,7 +608,7 @@ fn normalize_models(entries: Vec<ModelEntry>, text_output_only: bool) -> Vec<Mod
 /// Uses the shared CLIENT with an optional Bearer token for providers like OpenRouter.
 /// Running the HTTP call on the Rust side avoids CORS issues in the Tauri WebView.
 #[tauri::command]
-pub async fn fetch_models(url: String, api_key: String) -> Result<Vec<ModelInfo>, String> {
+pub async fn fetch_models(url: String, api_key: String, provider_kind: Option<String>) -> Result<Vec<ModelInfo>, String> {
     let text_output_only = is_openrouter_url(&url);
     let mut req = CLIENT.get(format!("{}/models", url));
 
@@ -599,7 +641,57 @@ pub async fn fetch_models(url: String, api_key: String) -> Result<Vec<ModelInfo>
         )
     })?;
 
-    Ok(normalize_models(body.data, text_output_only))
+    let mut models = normalize_models(body.data, text_output_only);
+    if provider_kind.as_deref() == Some("lm_studio") {
+        if let Ok(base) = server_root(&url) {
+            let mut native_req = CLIENT.get(format!("{base}/api/v1/models")).timeout(Duration::from_secs(3));
+            if !api_key.is_empty() { native_req = native_req.bearer_auth(&api_key); }
+            if let Ok(response) = native_req.send().await {
+                if let Ok(metadata) = response.json::<serde_json::Value>().await {
+                    attach_lm_studio_reasoning(&mut models, &metadata);
+                }
+            }
+        }
+    }
+    if provider_kind.as_deref() == Some("llama_cpp") {
+        if let Ok(base) = server_root(&url) {
+            let mut props_req = CLIENT.get(format!("{base}/props")).timeout(Duration::from_secs(3));
+            if !api_key.is_empty() { props_req = props_req.bearer_auth(&api_key); }
+            if let Ok(response) = props_req.send().await {
+                if let Ok(props) = response.json::<serde_json::Value>().await {
+                    attach_llama_reasoning(&mut models, &props);
+                }
+            }
+        }
+    }
+    Ok(models)
+}
+
+fn attach_llama_reasoning(models: &mut [ModelInfo], props: &serde_json::Value) {
+    if props.pointer("/chat_template_caps/supports_reasoning_effort") != Some(&serde_json::Value::Bool(true)) { return; }
+    let Some(alias) = props.get("model_alias").and_then(serde_json::Value::as_str) else { return; };
+    for model in models.iter_mut().filter(|model| model.id == alias) {
+        model.reasoning = Some(ModelReasoningInfo { supported: true, allowed_options: None });
+    }
+}
+
+fn attach_lm_studio_reasoning(models: &mut [ModelInfo], metadata: &serde_json::Value) {
+    let Some(entries) = metadata.get("models").and_then(serde_json::Value::as_array) else { return; };
+    for entry in entries {
+        let Some(reasoning) = entry.pointer("/capabilities/reasoning") else { continue; };
+        let Some(reasoning) = reasoning.as_object() else { continue; };
+        let options = reasoning.get("allowed_options").and_then(serde_json::Value::as_array)
+            .and_then(|items| items.iter().map(|item| item.as_str().map(str::to_owned)).collect());
+        let key = entry.get("key").and_then(serde_json::Value::as_str);
+        let instances = entry.get("loaded_instances").and_then(serde_json::Value::as_array);
+        for model in models.iter_mut() {
+            let matches = key == Some(model.id.as_str()) || instances.is_some_and(|items| items.iter()
+                .any(|item| item.get("id").and_then(serde_json::Value::as_str) == Some(model.id.as_str())));
+            if matches {
+                model.reasoning = Some(ModelReasoningInfo { supported: true, allowed_options: options.clone() });
+            }
+        }
+    }
 }
 
 const MIN_CONTEXT_TOKENS: u64 = 1024;
@@ -791,6 +883,30 @@ mod model_tests {
     }
 
     #[test]
+    fn lm_studio_reasoning_metadata_matches_only_reported_model_identity() {
+        let mut result = models(r#"{"data":[{"id":"loaded-id"},{"id":"other"}]}"#, false);
+        let native = serde_json::json!({ "models": [{
+            "key": "model-key", "loaded_instances": [{"id": "loaded-id"}],
+            "capabilities": {"reasoning": {"allowed_options": ["off", "low", "high"]}}
+        }]});
+        attach_lm_studio_reasoning(&mut result, &native);
+        assert_eq!(result[0].reasoning, Some(ModelReasoningInfo {
+            supported: true, allowed_options: Some(vec!["off".into(), "low".into(), "high".into()]),
+        }));
+        assert_eq!(result[1].reasoning, None);
+    }
+
+    #[test]
+    fn llama_reasoning_support_requires_matching_alias_and_positive_template_capability() {
+        let mut result = models(r#"{"data":[{"id":"chosen"},{"id":"other"}]}"#, false);
+        attach_llama_reasoning(&mut result, &serde_json::json!({
+            "model_alias": "chosen", "chat_template_caps": {"supports_reasoning_effort": true}
+        }));
+        assert_eq!(result[0].reasoning.as_ref().map(|value| value.supported), Some(true));
+        assert_eq!(result[1].reasoning, None);
+    }
+
+    #[test]
     fn openrouter_catalog_keeps_only_exclusively_text_output_models() {
         let result = models(
             r#"{"data":[
@@ -967,15 +1083,20 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<Option<To
         }
     }
 
-    // Ask capable chat templates for reasoning output. The frontend detects
-    // inline <think> output automatically; non-thinking models ignore this.
-    body["chat_template_kwargs"] = serde_json::json!({ "enable_thinking": true });
+    // This is a local chat-template extension, not an OpenAI/xAI field.
+    if matches!(payload.provider_kind.as_deref(), Some("llama_cpp" | "lm_studio" | "koboldcpp" | "ollama")) {
+        body["chat_template_kwargs"] = serde_json::json!({ "enable_thinking": true });
+    }
     if parameter_flags.thinking_budget {
-        if let Some(budget) = forwarded_thinking_budget {
+        if payload.provider_kind.as_deref() == Some("llama_cpp") {
+          if let Some(budget) = forwarded_thinking_budget {
             // 0 = end reasoning immediately, N>0 = token budget, omit for server default (usually unrestricted).
             body["thinking_budget_tokens"] = serde_json::json!(budget);
+          }
         }
     }
+
+    apply_reasoning_level(&mut body, payload.provider_kind.as_deref(), &payload.request_parameter_config);
 
     merge_additional_api_parameters(&mut body, additional_parameters);
     if matches!(payload.provider_kind.as_deref(), Some("openrouter" | "llama_cpp" | "lm_studio" | "koboldcpp" | "ollama" | "openai" | "xai" | "generic_openai")) {
@@ -1101,7 +1222,7 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<Option<To
 #[cfg(test)]
 mod tests {
     use super::{
-        api_error_from_body, bind_request_parameter_config, cancellation_matches,
+        api_error_from_body, apply_reasoning_level, bind_request_parameter_config, cancellation_matches,
         merge_additional_api_parameters, parse_additional_api_parameters, ApiParameterFlags,
         merge_token_usage, parse_token_usage, request_stream_usage, stream_token_usage, AiRequest, RequestApiParameterConfig, StreamChunk,
     };
@@ -1188,6 +1309,42 @@ mod tests {
         let mut body = serde_json::json!({"stream_options": {"include_usage": false, "other": true}});
         request_stream_usage(&mut body);
         assert_eq!(body["stream_options"], serde_json::json!({"include_usage": true, "other": true}));
+    }
+
+    #[test]
+    fn reasoning_uses_only_the_selected_provider_dialect() {
+        let mut config = RequestApiParameterConfig {
+            reasoning_dialect: Some("openai".into()), reasoning_level: Some("low".into()),
+            ..Default::default()
+        };
+        let base = serde_json::json!({"temperature": 0.7, "top_p": 0.9, "max_tokens": 1300});
+        let mut body = base.clone();
+        apply_reasoning_level(&mut body, Some("openai"), &config);
+        assert_eq!(body["reasoning_effort"], "low");
+        assert_eq!(body["max_completion_tokens"], 1300);
+        assert!(body.get("max_tokens").is_none());
+        assert!(body.get("temperature").is_none());
+        let mut mismatch = base.clone();
+        apply_reasoning_level(&mut mismatch, Some("xai"), &config);
+        assert_eq!(mismatch, base);
+        config.reasoning_dialect = Some("openrouter".into());
+        config.reasoning_level = Some("high".into());
+        apply_reasoning_level(&mut mismatch, Some("openrouter"), &config);
+        assert_eq!(mismatch["reasoning"]["effort"], "high");
+        config.reasoning_dialect = Some("lm_studio".into());
+        config.reasoning_level = Some("medium".into());
+        let mut studio = serde_json::json!({});
+        apply_reasoning_level(&mut studio, Some("lm_studio"), &config);
+        assert_eq!(studio["reasoning_effort"], "medium");
+        config.reasoning_dialect = Some("openrouter".into());
+        config.reasoning_level = Some("auto".into());
+        let mut automatic = base.clone();
+        apply_reasoning_level(&mut automatic, Some("openrouter"), &config);
+        assert_eq!(automatic, base);
+        config.reasoning_dialect = Some("openai".into());
+        apply_reasoning_level(&mut automatic, Some("openai"), &config);
+        assert!(automatic.get("reasoning_effort").is_none());
+        assert_eq!(automatic["max_completion_tokens"], 1300);
     }
 
     #[test]

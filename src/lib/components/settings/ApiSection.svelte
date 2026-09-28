@@ -288,7 +288,7 @@
   }
 
   function modelConfigKey() {
-    return `${appState.apiSettings.url.trim()}\n${appState.apiSettings.apiKey.trim()}`;
+    return `${appState.apiSettings.providerKind}\n${appState.apiSettings.url.trim()}\n${appState.apiSettings.apiKey.trim()}`;
   }
 
   function canFetchModels() {
@@ -309,7 +309,7 @@
     modelSearch = "";
     activeModelCategory = "all";
     try {
-      const models = await fetchModels(appState.apiSettings.url, appState.apiSettings.apiKey);
+      const models = await fetchModels(appState.apiSettings.url, appState.apiSettings.apiKey, appState.apiSettings.providerKind);
       if (request !== modelLoadRequest || config !== modelConfigKey()) return;
       if (models.length === 0) {
         modelsError = m.settings_model_error_no_models();
@@ -321,7 +321,8 @@
           appState.apiSettings.model = availableModels[0];
         }
         appState.apiSettings.generationCapabilities = modelGenerationCapabilities(
-          appState.apiSettings, modelMetadata[appState.apiSettings.model]?.supportedParameters);
+          appState.apiSettings, modelMetadata[appState.apiSettings.model]?.supportedParameters,
+          modelMetadata[appState.apiSettings.model]?.reasoning);
       }
     } catch (e: any) {
       if (request !== modelLoadRequest || config !== modelConfigKey()) return;
@@ -347,7 +348,7 @@
   function selectModel(modelId: string) {
     if (appState.apiSettings.model !== modelId) invalidateDetectedContext(appState.apiSettings);
     appState.apiSettings.model = modelId;
-    appState.apiSettings.generationCapabilities = modelGenerationCapabilities(appState.apiSettings, modelMetadata[modelId]?.supportedParameters);
+    appState.apiSettings.generationCapabilities = modelGenerationCapabilities(appState.apiSettings, modelMetadata[modelId]?.supportedParameters, modelMetadata[modelId]?.reasoning);
     modelMenuOpen = false;
     modelSearch = "";
   }
