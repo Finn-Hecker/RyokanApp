@@ -4,7 +4,7 @@ version = "0.6.0"
 description = "An immersive, local-first AI Roleplay Engine."
 authors = ["Finn-Hecker"]
 edition = "2021"
-rust-version = "1.89"
+rust-version = "1.90"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,13 +16,13 @@ name = "ryokan_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.7.0", features = [] }
 serde_json = "1"
 
 [dependencies]
-tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
-tauri-plugin-dialog = "2"
+tauri = { version = "2.12.0", features = [] }
+tauri-plugin-opener = "2.6.0"
+tauri-plugin-dialog = "2.8.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "json", "stream"] }
@@ -48,7 +48,7 @@ opt-level = "s"
 strip = true
 
 [target.'cfg(windows)'.dependencies]
-tauri-plugin-updater = "2.12.0"
+tauri-plugin-updater = "2.13.0"
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
