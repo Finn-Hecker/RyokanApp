@@ -14,6 +14,7 @@
   import { CONSERVATIVE_CONTEXT_FALLBACK, resolvedWorkingContextTarget, resolveSummaryConnection } from '$lib/utils/connectionCore';
   import { formatContextTokens, getRecentModels, modelPrices } from '$lib/utils/modelPickerData';
   import { createDefaultApiParameterEnabled, type ApiParameterKey } from '$lib/utils/apiParameters';
+  import { modelGenerationCapabilities } from '$lib/utils/generationCapabilities';
   import GeneralSection from './GeneralSection.svelte';
 
   const NEW_CONNECTION_ACTION = '__new_connection__';
@@ -319,6 +320,8 @@
           invalidateDetectedContext(appState.apiSettings);
           appState.apiSettings.model = availableModels[0];
         }
+        appState.apiSettings.generationCapabilities = modelGenerationCapabilities(
+          appState.apiSettings, modelMetadata[appState.apiSettings.model]?.supportedParameters);
       }
     } catch (e: any) {
       if (request !== modelLoadRequest || config !== modelConfigKey()) return;
@@ -344,6 +347,7 @@
   function selectModel(modelId: string) {
     if (appState.apiSettings.model !== modelId) invalidateDetectedContext(appState.apiSettings);
     appState.apiSettings.model = modelId;
+    appState.apiSettings.generationCapabilities = modelGenerationCapabilities(appState.apiSettings, modelMetadata[modelId]?.supportedParameters);
     modelMenuOpen = false;
     modelSearch = "";
   }

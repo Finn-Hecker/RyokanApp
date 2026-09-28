@@ -450,6 +450,8 @@ struct ModelsResponse {
 struct ModelEntry {
     id: String,
     #[serde(default)]
+    supported_parameters: Option<serde_json::Value>,
+    #[serde(default)]
     context_length: Option<u64>,
     #[serde(default)]
     pricing: Option<serde_json::Value>,
@@ -476,6 +478,7 @@ pub struct ModelArchitecture {
 #[serde(rename_all = "camelCase")]
 pub struct ModelInfo {
     id: String,
+    supported_parameters: Option<Vec<String>>,
     context_length: Option<u64>,
     pricing: Option<ModelPricing>,
     architecture: Option<ModelArchitecture>,
@@ -544,6 +547,8 @@ fn normalize_models(entries: Vec<ModelEntry>, text_output_only: bool) -> Vec<Mod
 
             Some(ModelInfo {
                 id: model.id,
+                supported_parameters: model.supported_parameters
+                    .and_then(|value| serde_json::from_value::<Vec<String>>(value).ok()),
                 context_length: model.context_length,
                 architecture,
                 // OpenRouter normally returns a pricing object. Tiered or otherwise
@@ -773,6 +778,16 @@ mod model_tests {
     fn models(json: &str, text_output_only: bool) -> Vec<ModelInfo> {
         let response: ModelsResponse = serde_json::from_str(json).unwrap();
         normalize_models(response.data, text_output_only)
+    }
+
+    #[test]
+    fn preserves_advertised_generation_parameters_without_inference() {
+        let result = models(r#"{"data":[{"id":"known","supported_parameters":["temperature","top_p"]},{"id":"unknown"},{"id":"nonstandard","supported_parameters":{"temperature":true}}]}"#, false);
+        assert_eq!(result[0].supported_parameters, Some(vec!["temperature".into(), "top_p".into()]));
+        assert_eq!(result[1].supported_parameters, None);
+        assert_eq!(result[2].supported_parameters, None);
+        let serialized = serde_json::to_value(&result[0]).unwrap();
+        assert_eq!(serialized["supportedParameters"], serde_json::json!(["temperature", "top_p"]));
     }
 
     #[test]

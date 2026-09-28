@@ -33,6 +33,7 @@ export async function getSetting(key: string): Promise<string | null> {
 // Does NOT catch — throws the real Rust error string so the UI can display it directly.
 export interface ModelInfo {
   id: string;
+  supportedParameters?: string[] | null;
   contextLength?: number | null;
   architecture?: {
     inputModalities: string[];

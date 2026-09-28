@@ -11,6 +11,8 @@
     type ApiParameterKey,
   } from "$lib/utils/apiParameters";
   import { ensureContextDetection, invalidateDetectedContext, persistApiConnections } from '$lib/utils/apiConnections';
+  import { modelGenerationCapabilities } from '$lib/utils/generationCapabilities';
+  import GenerationCapabilityWarning from '$lib/components/settings/GenerationCapabilityWarning.svelte';
   import ChatModelPicker from './ChatModelPicker.svelte';
 
   let { onClose }: { onClose: () => void } = $props();
@@ -42,6 +44,8 @@
       if (request !== modelRequest || appState.apiSettings !== connection) return;
       availableModels = models.map(model => model.id);
       modelMetadata = Object.fromEntries(models.map(model => [model.id, model]));
+      connection.generationCapabilities = modelGenerationCapabilities(connection, modelMetadata[connection.model]?.supportedParameters);
+      void persistApiConnections().catch(() => reportDiagnostic('settings'));
       if (!models.length) modelsError = m.settings_model_error_no_models();
     } catch (error) {
       if (request !== modelRequest || appState.apiSettings !== connection) return;
@@ -66,6 +70,7 @@
     const connection = appState.apiSettings;
     invalidateDetectedContext(connection);
     connection.model = model;
+    connection.generationCapabilities = modelGenerationCapabilities(connection, modelMetadata[model]?.supportedParameters);
     void persistApiConnections().catch(() => reportDiagnostic('settings'));
     void ensureContextDetection(connection).then(() => persistApiConnections()).catch(() => reportDiagnostic('settings'));
   }
@@ -187,6 +192,7 @@
 </script>
 
 {#snippet parameterToggle(key: ApiParameterKey)}
+  <GenerationCapabilityWarning connection={appState.apiSettings} parameter={key} />
   <button
     type="button"
     class="parameter-switch"

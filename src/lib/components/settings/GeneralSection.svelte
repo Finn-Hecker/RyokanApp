@@ -10,6 +10,7 @@
     type ApiParameterKey,
   } from "$lib/utils/apiParameters";
   import { validateAdditionalApiParameters } from "$lib/utils/additionalApiParameters";
+  import GenerationCapabilityWarning from './GenerationCapabilityWarning.svelte';
 
   export let powerUser: boolean = false;
   export let category: "parameters" | "advanced" | "appearance" | "language" = "parameters";
@@ -126,6 +127,7 @@
 </script>
 
 {#snippet parameterToggle(key: ApiParameterKey)}
+  <GenerationCapabilityWarning connection={appState.apiSettings} parameter={key} />
   <button
     type="button"
     class="parameter-switch"

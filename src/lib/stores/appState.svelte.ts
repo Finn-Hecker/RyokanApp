@@ -1,4 +1,5 @@
 import { createDefaultApiParameterEnabled, type ApiParameterKey } from '$lib/utils/apiParameters';
+import type { SavedGenerationCapabilities } from '$lib/utils/generationCapabilities';
 import { CONSERVATIVE_CONTEXT_FALLBACK, resolvedHardContextLimit, resolveSummaryConnection, SAME_AS_CHAT_CONNECTION } from '$lib/utils/connectionCore';
 
 export type ProviderKind = 'openrouter' | 'lm_studio' | 'llama_cpp' | 'koboldcpp' | 'ollama' | 'openai' | 'xai' | 'generic_openai';
@@ -38,6 +39,7 @@ export interface ApiConnection extends ApiSettings {
   name: string;
   providerKind: ProviderKind;
   parameterEnabled: Record<ApiParameterKey, boolean>;
+  generationCapabilities?: SavedGenerationCapabilities | null;
   manualContextCap: number | null;
   detectedContext: DetectedContextMetadata | null;
   contextDetectionError: string | null;

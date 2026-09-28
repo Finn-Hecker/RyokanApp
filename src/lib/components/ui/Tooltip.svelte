@@ -8,10 +8,14 @@
   let {
     width = 230,
     align = 'center',
+    variant = 'info',
+    ariaLabel = 'Mehr Infos',
     children
   }: {
     width?: number;
     align?: 'left' | 'center' | 'right';
+    variant?: 'info' | 'warning';
+    ariaLabel?: string;
     children?: Snippet;
   } = $props();
 
@@ -109,12 +113,13 @@
   <button
     type="button"
     class="ryokan-tooltip-trigger"
+    class:ryokan-tooltip-trigger--warning={variant === 'warning'}
     onclick={toggle}
     onmouseenter={() => (hovered = true)}
     onmouseleave={() => (hovered = false)}
     onfocus={() => (focused = true)}
     onblur={() => (focused = false)}
-    aria-label="Mehr Infos"
+    aria-label={ariaLabel}
     aria-expanded={open}
   >
     <svg
@@ -127,9 +132,15 @@
       stroke-linejoin="round"
       aria-hidden="true"
     >
-      <circle cx="12" cy="12" r="10"/>
-      <line x1="12" y1="16" x2="12" y2="12"/>
-      <line x1="12" y1="8" x2="12.01" y2="8"/>
+      {#if variant === 'warning'}
+        <path d="M12 3 2 21h20L12 3Z" />
+        <path d="M12 9v5" />
+        <path d="M12 18h.01" />
+      {:else}
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="16" x2="12" y2="12"/>
+        <line x1="12" y1="8" x2="12.01" y2="8"/>
+      {/if}
     </svg>
   </button>
 
@@ -168,6 +179,7 @@
   .ryokan-tooltip-wrapper--open .ryokan-tooltip-trigger {
     color: #d4b483;
   }
+  .ryokan-tooltip-trigger--warning { color: #eab56a; }
 
   .ryokan-tooltip-text {
     visibility: hidden;
