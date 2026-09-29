@@ -48,6 +48,30 @@ const connections = await import(await loadProduction('$lib/utils/apiConnections
 const chatApi = await import(await loadProduction('$lib/utils/chatApi'));
 let serial = 0;
 
+test('service tiers survive persistence, profile switching and immutable snapshots; old records use Auto', async () => {
+  const profiles = ['auto', 'standard', 'flex', undefined, null, 'invalid'].map((serviceTier, index) => ({
+    ...state.createDefaultConnection(`tier-${index}`), serviceTier,
+  }));
+  let saved;
+  harness.invoke = async (command, args) => {
+    assert.equal(command, 'save_api_connections');
+    saved = args;
+  };
+  state.replaceApiConnections(profiles, 'tier-2');
+  await connections.persistApiConnections();
+  connections.hydrateApiConnections([
+    { key: connections.API_CONNECTIONS_KEY, value: saved.connectionsJson },
+    { key: connections.ACTIVE_API_CONNECTION_KEY, value: saved.activeConnectionId },
+  ]);
+  assert.deepEqual(state.appState.apiConnections.map(c => c.serviceTier), ['auto', 'standard', 'flex', 'auto', 'auto', 'auto']);
+  const snapshot = state.snapshotActiveApiConnection();
+  state.appState.apiSettings.serviceTier = 'standard';
+  state.activateApiConnection('tier-0');
+  assert.equal(snapshot.serviceTier, 'flex');
+  assert.equal(state.appState.apiSettings.serviceTier, 'auto');
+  assert.equal(state.createDefaultConnection().serviceTier, 'auto');
+});
+
 function fixture({ chatLimit = 524288, summaryLimit = 131072, same = false, manual = null, strategy = 'maximum', lengths = [100, 100, 100] } = {}) {
   const id = `fixture-${++serial}`;
   const connection = (name, capacity) => ({
@@ -116,6 +140,47 @@ function fixture({ chatLimit = 524288, summaryLimit = 131072, same = false, manu
   };
   return f;
 }
+
+test('chat and summary requests carry their own tiers, including same-as-chat', async () => {
+  for (const same of [false, true]) {
+    const f = fixture({ same, chatLimit: 8192, lengths: [16000, 16000, 20] });
+    for (const connection of [f.chat, f.summary]) {
+      connection.providerKind = 'openai';
+      connection.url = 'https://api.openai.com/v1';
+    }
+    f.summary.serviceTier = 'flex';
+    f.chat.serviceTier = 'standard';
+    const { options, prepared } = await f.run();
+    assert.ok(f.calls.length > 0);
+    assert.ok(f.calls.every(call => call.request_parameter_config.serviceTier === (same ? 'standard' : 'flex')));
+    const invoke = harness.invoke;
+    let chatPayload;
+    harness.invoke = async (command, args) => {
+      if (command !== 'call_ai_api') return invoke(command, args);
+      chatPayload = args.payload;
+      return null;
+    };
+    await chatApi.runGeneration({ ...options, ...prepared }, { onStreamUpdate() {}, onThinkingPhaseChange() {} });
+    assert.equal(chatPayload.request_parameter_config.serviceTier, 'standard');
+  }
+});
+
+test('a Flex API error propagates without a Standard retry', async () => {
+  const f = fixture();
+  f.chat.providerKind = 'openai';
+  f.chat.url = 'https://api.openai.com/v1';
+  f.chat.serviceTier = 'flex';
+  let requests = 0;
+  harness.invoke = async (command, args) => {
+    if (command !== 'call_ai_api') return;
+    requests++;
+    assert.equal(args.payload.request_parameter_config.serviceTier, 'flex');
+    throw new Error('429 Resource Unavailable');
+  };
+  await assert.rejects(chatApi.runGeneration({ apiSettings: state.snapshotActiveApiConnection(), recentMessages: [], character: null },
+    { onStreamUpdate() {}, onThinkingPhaseChange() {} }), /429 Resource Unavailable/);
+  assert.equal(requests, 1);
+});
 
 test('512K chat and 128K summary: early summary pressure, bounded chunks, independent chat target', async () => {
   const f = fixture({ lengths: [260000, 260000, 20] });

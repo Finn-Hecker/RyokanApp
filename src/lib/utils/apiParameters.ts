@@ -1,7 +1,7 @@
 import type { ApiConnection } from "../stores/appState.svelte";
 import type { ApiRequestParameterConfig } from "./rollingSummaryCore";
 import { validateAdditionalApiParameters } from "./additionalApiParameters.ts";
-import { reasoningCapability, type ReasoningLevel } from './generationCapabilities.ts';
+import { normalizeServiceTier, reasoningCapability, supportedServiceTiers, type ReasoningLevel } from './generationCapabilities.ts';
 
 export type ApiParameterKey =
   | "temperature"
@@ -33,7 +33,9 @@ export function requestParameterConfig(connection: ApiConnection): ApiRequestPar
   const enabled = connection.parameterEnabled;
   const capability = reasoningCapability(connection);
   const selected: ReasoningLevel = capability?.levels.includes(connection.reasoningLevel) ? connection.reasoningLevel : 'auto';
+  const tier = normalizeServiceTier(connection.serviceTier);
   return {
+    serviceTier: supportedServiceTiers(connection).includes(tier) ? tier : 'auto',
     temperatureEnabled: enabled.temperature, maxTokensEnabled: enabled.maxTokens,
     presencePenaltyEnabled: enabled.presencePenalty, thinkingBudgetEnabled: connection.providerKind === 'llama_cpp' && enabled.thinkingBudget,
     topPEnabled: enabled.topP, topKEnabled: enabled.topK, minPEnabled: enabled.minP,

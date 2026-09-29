@@ -66,6 +66,7 @@ export async function reconcilePromptTokens(
 }
 
 export interface ApiRequestParameterConfig {
+  readonly serviceTier?: 'auto' | 'standard' | 'flex';
   readonly reasoningDialect?: 'openrouter' | 'openai' | 'xai' | 'llama_cpp' | 'llama_cpp_effort' | 'lm_studio' | null;
   readonly reasoningLevel?: 'auto' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   readonly temperatureEnabled?: boolean;

@@ -14,7 +14,7 @@
   import { CONSERVATIVE_CONTEXT_FALLBACK, resolvedWorkingContextTarget, resolveSummaryConnection } from '$lib/utils/connectionCore';
   import { formatContextTokens, getRecentModels, modelPrices } from '$lib/utils/modelPickerData';
   import { createDefaultApiParameterEnabled, type ApiParameterKey } from '$lib/utils/apiParameters';
-  import { modelGenerationCapabilities } from '$lib/utils/generationCapabilities';
+  import { modelGenerationCapabilities, supportedServiceTiers } from '$lib/utils/generationCapabilities';
   import GeneralSection from './GeneralSection.svelte';
 
   const NEW_CONNECTION_ACTION = '__new_connection__';
@@ -866,6 +866,18 @@
   </div>
   <div class="generation-section">
     <div class="generation-group">
+      <label class="settings-label" for="service-tier">{m.settings_service_tier_label()}</label>
+      <select id="service-tier" class="settings-input" bind:value={appState.apiSettings.serviceTier} aria-describedby="service-tier-hint">
+        <option value="auto">Auto</option>
+        <option value="standard">Standard</option>
+        <option value="flex">Flex</option>
+      </select>
+      <p id="service-tier-hint" class="service-tier-hint">{m.settings_service_tier_hint()}</p>
+      {#if !supportedServiceTiers(appState.apiSettings).includes(appState.apiSettings.serviceTier)}
+        <p class="service-tier-hint" role="status">{m.settings_service_tier_unsupported()}</p>
+      {/if}
+    </div>
+    <div class="generation-group">
       <h2 class="api-model-section-title">{m.settings_generation_basic()}</h2>
       <GeneralSection {powerUser} bind:parameterEnabled category="parameters" />
     </div>
@@ -976,6 +988,7 @@
 </section>
 
 <style>
+  .service-tier-hint { font-size: 0.8rem; color: var(--text-muted, #999); margin-top: 8px; line-height: 1.5; }
   .generation-section { margin-top:34px; padding-top:28px; border-top:1px solid rgba(255,255,255,.08); }
   .generation-group + .generation-group { margin-top:28px; padding-top:24px; border-top:1px solid rgba(255,255,255,.055); }
   .generation-group h3 { margin:0 0 20px; color:#aaa6a1; font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; }

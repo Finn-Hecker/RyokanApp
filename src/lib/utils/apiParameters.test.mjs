@@ -3,6 +3,34 @@ import test from 'node:test';
 import { createDefaultApiParameterEnabled, requestParameterConfig } from './apiParameters.ts';
 import { modelGenerationCapabilities } from './generationCapabilities.ts';
 
+test('service tier stays profile-bound and is gated by the actual API endpoint', () => {
+  const connection = { providerKind: 'openai', url: 'https://api.openai.com/v1',
+    parameterEnabled: createDefaultApiParameterEnabled(), serviceTier: 'flex' };
+  const snapshot = requestParameterConfig(connection);
+  assert.equal(snapshot.serviceTier, 'flex');
+  connection.serviceTier = 'standard';
+  assert.equal(requestParameterConfig(connection).serviceTier, 'standard');
+  assert.equal(snapshot.serviceTier, 'flex');
+  for (const serviceTier of [undefined, null, 'auto', 'invalid']) {
+    assert.equal(requestParameterConfig({ ...connection, serviceTier }).serviceTier, 'auto');
+  }
+  for (const [providerKind, url, flexSupported, standardSupported] of [
+    ['openrouter', 'https://openrouter.ai/api/v1/', true, true],
+    ['xai', 'https://api.x.ai/v1', false, true],
+    ['openai', 'https://custom.example/v1', false, false],
+    ['openai', 'https://api.openai.com.evil.example/v1', false, false],
+    ['openai', 'https://api.openai.com/other', false, false],
+    ['openai', 'invalid', false, false],
+    ['openrouter', 'https://custom.example/api/v1', false, false],
+    ['generic_openai', 'https://api.openai.com/v1', false, false],
+    ...['llama_cpp', 'lm_studio', 'koboldcpp', 'ollama'].map(kind => [kind, 'http://localhost/v1', false, false]),
+  ]) {
+    const candidate = { ...connection, providerKind, url };
+    assert.equal(requestParameterConfig({ ...candidate, serviceTier: 'flex' }).serviceTier, flexSupported ? 'flex' : 'auto');
+    assert.equal(requestParameterConfig(candidate).serviceTier, standardSupported ? 'standard' : 'auto');
+  }
+});
+
 test('OpenRouter model changes and refreshed metadata invalidate saved efforts safely', () => {
   const connection = { providerKind: 'openrouter', url: 'https://openrouter.ai/api/v1', model: 'a',
     reasoningLevel: 'max', parameterEnabled: createDefaultApiParameterEnabled() };

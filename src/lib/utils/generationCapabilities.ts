@@ -21,6 +21,32 @@ export interface GenerationConnection {
   generationCapabilities?: SavedGenerationCapabilities | null;
 }
 
+export type ServiceTier = 'auto' | 'standard' | 'flex';
+
+export function normalizeServiceTier(value: unknown): ServiceTier {
+  return value === 'standard' || value === 'flex' ? value : 'auto';
+}
+
+/** Chat Completions API contracts; compatibility alone does not imply support.
+ * https://developers.openai.com/api/docs/guides/flex-processing
+ * https://openrouter.ai/docs/guides/features/service-tiers
+ * https://docs.x.ai/developers/advanced-api-usage/priority-processing
+ * Keep the final Rust request guard in sync. Model/account availability is decided by the API.
+ */
+export function supportedServiceTiers(connection: Pick<GenerationConnection, 'providerKind' | 'url'>): ServiceTier[] {
+  try {
+    const url = new URL(connection.url);
+    const path = url.pathname.replace(/\/+$/, '');
+    if (url.protocol !== 'https:') return ['auto'];
+    if (connection.providerKind === 'openai' && url.hostname === 'api.openai.com' && path === '/v1'
+      || connection.providerKind === 'openrouter' && url.hostname === 'openrouter.ai' && path === '/api/v1') {
+      return ['auto', 'standard', 'flex'];
+    }
+    if (connection.providerKind === 'xai' && url.hostname === 'api.x.ai' && path === '/v1') return ['auto', 'standard'];
+  } catch { /* Unknown endpoints keep their existing behavior. */ }
+  return ['auto'];
+}
+
 // These are endpoint contracts, not guesses based on model IDs. For services
 // with model-specific restrictions and no capability metadata, stay unknown.
 // Sources: llama.cpp tools/server/README.md; LM Studio

@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { traceDecision, diagnosticConnection, type DiagnosticDecision } from '$lib/utils/diagnosticDecisions';
 import { appState, createDefaultConnection, replaceApiConnections, type ApiConnection, type DetectedContextMetadata, type ProviderKind } from '$lib/stores/appState.svelte';
 import type { SettingRow } from '$lib/utils/settings';
+import { normalizeServiceTier } from '$lib/utils/generationCapabilities';
 import { acceptDetectedContext, connectionIdentity, resolveMemorySettings, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION, validContextSize } from '$lib/utils/connectionCore';
 export { acceptDetectedContext, adaptiveSummaryOutputCap, connectionIdentity, CONSERVATIVE_CONTEXT_FALLBACK, deleteConnectionSafely, deriveWorkingContextTarget, normalizeSummaryConnectionId, resolveMemorySettings, resolveSummaryConnection, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION, shouldTriggerSummary, summaryCompressionGoal, validContextSize } from '$lib/utils/connectionCore';
 
@@ -47,6 +48,7 @@ function normalizeConnection(value: Partial<ApiConnection>, legacy: Map<string, 
     if (value.parameterEnabled?.[field] == null && legacy.has(key)) enabled[field] = legacy.get(key) === 'true';
   }
   const connection = { ...fallback, ...generation, ...value, parameterEnabled: enabled };
+  connection.serviceTier = normalizeServiceTier(connection.serviceTier);
   if (!['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(connection.reasoningLevel)) connection.reasoningLevel = 'auto';
   if (!validContextSize(connection.manualContextCap)) connection.manualContextCap = null;
   if (!connection.detectedContext || !validContextSize(connection.detectedContext.tokens)) connection.detectedContext = null;

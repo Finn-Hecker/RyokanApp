@@ -3,7 +3,7 @@ import type { TokenUsage } from '$lib/utils/tokenUsage';
 import { reportDiagnostic } from '$lib/utils/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { appState, snapshotSummaryApiConnection } from '$lib/stores/appState.svelte';
+import { appState, snapshotSummaryApiConnection, type ApiConnection } from '$lib/stores/appState.svelte';
 import { requestParameterConfig } from '$lib/utils/apiParameters';
 import { getClientLanguageName } from '$lib/utils/clientLanguage';
 import { chatState } from '$lib/stores/chatStore.svelte';
@@ -254,8 +254,9 @@ async function selectNewestRawHistory(
     return { messages: history.slice(-1), measurement: newestMeasurement };
 }
 
-function summaryRequestPolicy(maximumSummaryTokens: number): ApiRequestParameterConfig {
+function summaryRequestPolicy(maximumSummaryTokens: number, connection: ApiConnection): ApiRequestParameterConfig {
     return {
+        serviceTier: requestParameterConfig(connection).serviceTier,
         temperatureEnabled: true,
         maxTokensEnabled: true,
         presencePenaltyEnabled: false,
@@ -1005,7 +1006,7 @@ export function checkAndSummarizeIfNeeded(
         chatId,
         generationId: null,
         cancelled: false,
-        requestParameterConfig: summaryRequestPolicy(maximumSummaryTokens),
+        requestParameterConfig: summaryRequestPolicy(maximumSummaryTokens, summaryConnection),
         contextLimit: summaryConnection.contextLimit,
         apiSettings: summaryConnection,
         maximumSummaryTokens,
@@ -1035,7 +1036,7 @@ export function checkAndSummarizeIfNeeded(
                         + await countAdditionalParameterTokens(operation.requestParameterConfig, operation.apiSettings.model);
                     operation.maximumSummaryTokens = boundedSummaryOutputCap(maximumSummaryTokens, operation.contextLimit, overhead);
                     if (operation.maximumSummaryTokens < 1) throw new ContextBudgetError('The summary instructions exceed the summary model context limit.');
-                    operation.requestParameterConfig = summaryRequestPolicy(operation.maximumSummaryTokens);
+                    operation.requestParameterConfig = summaryRequestPolicy(operation.maximumSummaryTokens, operation.apiSettings);
                 }
                 const prepared = await performSummaryCheck(operation, options, beforeMessageId);
                 traceSummaryState(operation, 'ready');

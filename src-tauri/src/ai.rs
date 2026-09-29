@@ -114,6 +114,8 @@ fn parse_additional_api_parameters(
 #[serde(rename_all = "camelCase")]
 struct RequestApiParameterConfig {
     #[serde(default)]
+    service_tier: Option<String>,
+    #[serde(default)]
     reasoning_dialect: Option<String>,
     #[serde(default)]
     reasoning_level: Option<String>,
@@ -134,6 +136,36 @@ struct RequestApiParameterConfig {
     max_tokens: u32,
     thinking_budget: u32,
     additional_parameters: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Guard the final body, including custom parameters. Auto preserves existing
+/// custom tiers on supported APIs; an explicit profile selection takes precedence.
+/// Contracts are documented alongside supportedServiceTiers in the frontend.
+fn apply_service_tier(
+    body: &mut serde_json::Value,
+    provider_kind: Option<&str>,
+    base_url: &str,
+    config: &RequestApiParameterConfig,
+) {
+    let url = reqwest::Url::parse(base_url).ok();
+    let support = url.as_ref().filter(|url| url.scheme() == "https").map(|url| {
+        match (provider_kind, url.host_str(), url.path().trim_end_matches('/')) {
+            (Some("openai"), Some("api.openai.com"), "/v1")
+            | (Some("openrouter"), Some("openrouter.ai"), "/api/v1") => (true, true),
+            (Some("xai"), Some("api.x.ai"), "/v1") => (true, false),
+            _ => (false, false),
+        }
+    }).unwrap_or((false, false));
+
+    match config.service_tier.as_deref() {
+        Some("standard") if support.0 => body["service_tier"] = serde_json::json!("default"),
+        Some("flex") if support.1 => body["service_tier"] = serde_json::json!("flex"),
+        _ => {}
+    }
+    // Never leak the field to a merely OpenAI-compatible server, or Flex to xAI.
+    if !support.0 || (!support.1 && body.get("service_tier").and_then(|v| v.as_str()) == Some("flex")) {
+        body.as_object_mut().unwrap().remove("service_tier");
+    }
 }
 
 fn bind_request_parameter_config(
@@ -1137,6 +1169,7 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<Option<To
     apply_reasoning_level(&mut body, payload.provider_kind.as_deref(), &payload.request_parameter_config);
 
     merge_additional_api_parameters(&mut body, additional_parameters);
+    apply_service_tier(&mut body, payload.provider_kind.as_deref(), &payload.url, &payload.request_parameter_config);
     if matches!(payload.provider_kind.as_deref(), Some("openrouter" | "llama_cpp" | "lm_studio" | "koboldcpp" | "ollama" | "openai" | "xai" | "generic_openai")) {
         request_stream_usage(&mut body);
     }
@@ -1260,10 +1293,64 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<Option<To
 #[cfg(test)]
 mod tests {
     use super::{
-        api_error_from_body, apply_reasoning_level, bind_request_parameter_config, cancellation_matches,
+        api_error_from_body, apply_reasoning_level, apply_service_tier, bind_request_parameter_config, cancellation_matches,
         merge_additional_api_parameters, parse_additional_api_parameters, ApiParameterFlags,
         merge_token_usage, parse_token_usage, request_stream_usage, stream_token_usage, AiRequest, RequestApiParameterConfig, StreamChunk,
     };
+
+    #[test]
+    fn service_tier_maps_only_supported_provider_endpoints() {
+        for (provider, url, standard, flex) in [
+            ("openai", "https://api.openai.com/v1", true, true),
+            ("openrouter", "https://openrouter.ai/api/v1/", true, true),
+            ("xai", "https://api.x.ai/v1", true, false),
+            ("openai", "https://api.openai.com.evil.example/v1", false, false),
+            ("openai", "https://api.openai.com/other", false, false),
+            ("openai", "invalid", false, false),
+            ("openrouter", "https://custom.example/api/v1", false, false),
+            ("generic_openai", "https://api.openai.com/v1", false, false),
+            ("llama_cpp", "http://localhost/v1", false, false),
+            ("lm_studio", "http://localhost/v1", false, false),
+            ("koboldcpp", "http://localhost/v1", false, false),
+            ("ollama", "http://localhost/v1", false, false),
+        ] {
+            for tier in [None, Some("auto"), Some("standard"), Some("flex"), Some("invalid")] {
+                let config = RequestApiParameterConfig {
+                    service_tier: tier.map(str::to_owned), ..Default::default()
+                };
+                let mut body = serde_json::json!({"model": "test", "stream": true});
+                apply_service_tier(&mut body, Some(provider), url, &config);
+                let expected = match tier {
+                    Some("standard") if standard => Some("default"),
+                    Some("flex") if flex => Some("flex"),
+                    _ => None,
+                };
+                assert_eq!(body.get("service_tier").and_then(|v| v.as_str()), expected, "{provider}: {tier:?}");
+                assert_eq!(body["model"], "test");
+                assert_eq!(body["stream"], true);
+            }
+        }
+    }
+
+    #[test]
+    fn service_tier_custom_parameters_respect_profile_selection_and_api_support() {
+        let mut config = RequestApiParameterConfig::default();
+        let custom = serde_json::json!({"service_tier": "flex", "seed": 7});
+        let mut body = custom.clone();
+        apply_service_tier(&mut body, Some("openai"), "https://api.openai.com/v1", &config);
+        assert_eq!(body, custom); // Auto keeps existing supported custom fields.
+        config.service_tier = Some("standard".into());
+        apply_service_tier(&mut body, Some("openai"), "https://api.openai.com/v1", &config);
+        assert_eq!(body["service_tier"], "default");
+        config.service_tier = Some("flex".into());
+        apply_service_tier(&mut body, Some("openai"), "https://api.openai.com/v1", &config);
+        assert_eq!(body["service_tier"], "flex");
+        for (provider, url) in [("xai", "https://api.x.ai/v1"), ("generic_openai", "https://custom.example/v1")] {
+            let mut body = custom.clone();
+            apply_service_tier(&mut body, Some(provider), url, &config);
+            assert_eq!(body, serde_json::json!({"seed": 7}));
+        }
+    }
 
     #[test]
     fn generation_requires_profile_bound_parameter_config() {
