@@ -15,7 +15,8 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
     "postinstall": "node scripts/download-tokenizer.js",
-    "test:updater": "node --experimental-strip-types --test src/lib/utils/updater.test.mjs scripts/updater-config.test.mjs"
+    "test:updater": "node --experimental-strip-types --test src/lib/utils/updater.test.mjs scripts/updater-config.test.mjs",
+    "test:usage": "node --experimental-strip-types --test src/lib/utils/tokenUsage.test.mjs"
   },
   "license": "GPL-3.0-only",
   "dependencies": {

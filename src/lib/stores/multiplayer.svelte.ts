@@ -27,7 +27,7 @@ import { recordModelUse } from '$lib/utils/modelPickerData';
 import { getClientLanguageName } from '$lib/utils/clientLanguage';
 import { selectInitialGreeting } from '$lib/utils/characterGreeting';
 import type { Character } from './characterStore.svelte';
-import type { TokenUsage } from '$lib/utils/tokenUsage';
+import { parseUsage as parseRelayUsage, persistedUsage, withConnection, type TokenUsage } from '$lib/utils/tokenUsage';
 
 // Configuration
 
@@ -72,22 +72,6 @@ export interface MpMessage {
   /** true while an LLM stream is still writing into this message */
   streaming?: boolean;
   usage?: TokenUsage | null;
-}
-
-function parseRelayUsage(value: unknown): TokenUsage | null {
-  if (!value || typeof value !== 'object') return null;
-  const record = value as Record<string, unknown>;
-  const fields = ['inputTokens', 'cachedInputTokens', 'outputTokens', 'reasoningTokens'] as const;
-  for (const field of fields) {
-    const count = record[field];
-    if (count != null && (!Number.isSafeInteger(count) || (count as number) < 0)) return null;
-  }
-  return {
-    inputTokens: (record.inputTokens as number | null) ?? null,
-    cachedInputTokens: (record.cachedInputTokens as number | null) ?? null,
-    outputTokens: (record.outputTokens as number | null) ?? null,
-    reasoningTokens: (record.reasoningTokens as number | null) ?? null,
-  };
 }
 
 export interface SessionCharacter {
@@ -362,6 +346,8 @@ export async function enterRoom(displayName: string): Promise<void> {
 }
 
 interface PersistedMpMessage {
+  usage_variants?: string | (TokenUsage | null)[];
+  swipe_index?: number;
   id: string;
   role: 'user' | 'assistant';
   content: string;
@@ -387,6 +373,7 @@ export async function openPersistentSession(
     author: row.author || (row.role === 'assistant' ? mpState.characterName : '?'),
     text: row.content,
     ts: Date.parse(row.created_at) || 0,
+    usage: row.role === 'assistant' ? persistedUsage(row.usage_variants, row.swipe_index) : null,
   }));
   for (const message of mpState.messages) seenIds.add(message.id);
 }
@@ -1382,7 +1369,7 @@ async function runGeneration(): Promise<void> {
 
     if (!generation.aborted) {
       recordModelUse(s.model);
-      localMsg.usage = await invoke<TokenUsage | null>('call_ai_api', {
+      localMsg.usage = withConnection(await invoke<TokenUsage | null>('call_ai_api', {
         payload: {
           generation_id: generation.id,
           provider_kind: s.providerKind,
@@ -1400,7 +1387,7 @@ async function runGeneration(): Promise<void> {
           frequency_penalty: s.frequencyPenalty,
           thinking_budget: s.thinkingBudget,
         },
-      });
+      }), s);
     }
     const { text } = processThinkingOutput(raw, true);
     const delta = text.slice(localMsg.text.length);

@@ -170,7 +170,7 @@ mod usage_tests {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         conn.execute_batch("CREATE TABLE messages (id TEXT PRIMARY KEY, content TEXT, swipe_variants TEXT, swipe_index INTEGER, usage_variants TEXT);
             INSERT INTO messages VALUES ('a', 'first', '[\"first\"]', 0, '[null]');").unwrap();
-        let usage = TokenUsage { input_tokens: Some(30), cached_input_tokens: Some(20), output_tokens: Some(7), reasoning_tokens: None };
+        let usage = TokenUsage { input_tokens: Some(30), cached_input_tokens: Some(20), output_tokens: Some(7), reasoning_tokens: None, cost_usd: Some(0.001), actual_model: Some("response-model".into()), service_tier: Some("flex".into()), connection_name: Some("Saved profile".into()) };
         assert_eq!(append_swipe_variant(&conn, "a", "second".into(), Some(usage.clone())).unwrap(), 1);
         let (text, index, usage_json): (String, i64, String) = conn.query_row(
             "SELECT content, swipe_index, usage_variants FROM messages WHERE id = 'a'", [],
@@ -179,6 +179,25 @@ mod usage_tests {
         let variants: Vec<Option<TokenUsage>> = serde_json::from_str(&usage_json).unwrap();
         assert_eq!((text.as_str(), index), ("second", 1));
         assert_eq!(variants, vec![None, Some(usage)]);
+    }
+
+    #[test]
+    fn swipe_tiers_round_trip_independently_through_ipc_and_database() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE messages (id TEXT PRIMARY KEY, content TEXT, swipe_variants TEXT, swipe_index INTEGER, usage_variants TEXT);
+            INSERT INTO messages VALUES ('tiers', 'legacy', '[\"legacy\"]', 0, '[]');").unwrap();
+        for (index, tier) in [Some("flex"), Some("default"), None].into_iter().enumerate() {
+            let ipc = serde_json::json!({"inputTokens":12,"serviceTier":tier});
+            let usage: TokenUsage = serde_json::from_value(ipc).unwrap();
+            assert_eq!(append_swipe_variant(&conn, "tiers", format!("variant {index}"), Some(usage)).unwrap(), index as i64 + 1);
+        }
+        let json: String = conn.query_row("SELECT usage_variants FROM messages WHERE id = 'tiers'", [], |row| row.get(0)).unwrap();
+        let restored: Vec<Option<TokenUsage>> = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.len(), 4);
+        assert!(restored[0].is_none());
+        assert_eq!(restored[1].as_ref().unwrap().service_tier.as_deref(), Some("flex"));
+        assert_eq!(restored[2].as_ref().unwrap().service_tier.as_deref(), Some("default"));
+        assert_eq!(restored[3].as_ref().unwrap().service_tier, None);
     }
 }
 

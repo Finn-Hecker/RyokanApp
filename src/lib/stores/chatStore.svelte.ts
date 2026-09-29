@@ -58,6 +58,7 @@ export interface ChatFolder {
 }
 
 export interface DisplayMessage {
+    usage?: TokenUsage | null;
     id: string;
     text: string;
     isUser: boolean;

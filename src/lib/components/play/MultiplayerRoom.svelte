@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
+  import UsageDetails from '$lib/components/chat/UsageDetails.svelte';
   import { appState } from '$lib/stores/appState.svelte';
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { loadAllConversations } from '$lib/stores/chatStore.svelte';
@@ -26,6 +27,8 @@
   let chatInput = $state('');
   let copied = $state(false);
   let roomMenuOpen = $state(false);
+  let usageMessageId = $state<string | null>(null);
+  let usageMessage = $derived(mpState.messages.find(message => message.id === usageMessageId));
   let messagesEl = $state<HTMLDivElement | null>(null);
   let loadedSessionId = '';
 
@@ -296,7 +299,9 @@
                   {/if}
                 </span>
                 <div class="min-w-0 max-w-[720px] flex-1">
-                  <p class="mb-1 text-[11px] font-medium text-ryokan-accent/80">{msg.author}</p>
+                  <p class="mb-1 text-[11px] font-medium text-ryokan-accent/80">{msg.author}
+                    {#if !msg.streaming}<button class="ml-2 inline-flex min-h-8 min-w-8 items-center justify-center text-gray-500 hover:text-gray-200" onclick={() => usageMessageId = msg.id} aria-label={m.usage_title()} title={m.usage_title()}>ⓘ</button>{/if}
+                  </p>
                   <div class="prose-custom break-words text-[15px] leading-relaxed text-gray-200">
                     {@html renderMessageMarkdown(msg.text)}{#if msg.streaming}<span class="ml-1 inline-block h-3.5 w-1 animate-pulse rounded-sm bg-ryokan-accent align-middle"></span>{/if}
                   </div>
@@ -386,3 +391,7 @@
   :global(.prose-custom strong)       { color: #ffffff; font-weight: 600; }
   :global(.prose-custom em)           { color: #a39887; font-style: italic; }
 </style>
+
+{#if usageMessage}
+  <UsageDetails usage={usageMessage.usage} swipeIndex={0} totalVariants={1} onClose={() => usageMessageId = null} />
+{/if}

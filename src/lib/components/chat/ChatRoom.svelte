@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectedUsage } from '$lib/utils/tokenUsage';
   import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { invoke } from '@tauri-apps/api/core';
   import { appState, snapshotActiveApiConnection } from '$lib/stores/appState.svelte';
@@ -161,6 +162,7 @@
       return {
         id: msg.id?.toString() || Math.random().toString(),
         text: isBeingRetried ? streamingText : msg.content,
+        usage: isBeingRetried ? null : selectedUsage(msg),
         isUser: msg.role === 'user',
         senderName: msg.role === 'user'
           ? (msg.author || m.chat_sender_you())

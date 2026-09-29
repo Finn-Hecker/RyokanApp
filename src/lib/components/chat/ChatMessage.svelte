@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import UsageDetails from './UsageDetails.svelte';
   import * as m from '$lib/paraglide/messages';
   import { renderMessageMarkdown } from '$lib/utils/renderMessageMarkdown';
   import { setSwipeIndex } from '$lib/stores/chatStore.svelte';
@@ -54,6 +55,8 @@
 
   let editMode = $derived(activeEditMessageId === msg.id && !msg.isUser);
   let editValue = $state('');
+  let usageOpen = $state(false);
+  let canShowUsage = $derived(!msg.isUser && !msg.generationError && !isGenerating && Boolean(msg.text));
   let msgEl = $state<HTMLDivElement | null>(null);
   let editEl = $state<HTMLDivElement | null>(null);
   let editHeight = $state(0);
@@ -89,7 +92,7 @@
   let canGoLeft     = $derived(canSwipe && currentIndex > 0);
   let canGoRight    = $derived(canSwipe && currentIndex < totalVariants - 1);
 
-  let showControls  = $derived(canSwipe || (canEdit && !isGenerating) || (canCloneFrom && !isGenerating));
+  let showControls  = $derived(canShowUsage || canSwipe || (canEdit && !isGenerating) || (canCloneFrom && !isGenerating));
   let hasMobileActions = $derived(
     Boolean(msg.text) ||
     (canSwipe && (canGoLeft || canGoRight || canRetry)) ||
@@ -357,6 +360,10 @@
             sm:translate-y-0.5 sm:group-hover/message:translate-y-0
             transition-all duration-200 ease-out sm:pointer-events-none sm:group-hover/message:pointer-events-auto">
 
+            {#if canShowUsage}
+              <button class="ctrl-btn ctrl-btn--label" onclick={() => usageOpen = true} title={m.usage_title()} aria-label={m.usage_title()}>ⓘ</button>
+            {/if}
+
             {#if canSwipe}
               <button
                 class="ctrl-btn"
@@ -452,6 +459,9 @@
     <div class="mobile-action-sheet" role="dialog" aria-modal="true" aria-label="Message actions">
       <div class="mobile-action-sheet-handle" aria-hidden="true"></div>
       <div class="mobile-action-sheet-actions">
+        {#if canShowUsage}
+          <button class="mobile-action" onclick={() => { closeMobileActions(); usageOpen = true; }}>{m.usage_title()}</button>
+        {/if}
         {#if msg.text}
           <button class="mobile-action" onclick={copyMessage}><span>{m.chat_copy()}</span></button>
         {/if}
@@ -482,7 +492,12 @@
   </div>
 {/if}
 
+{#if usageOpen && canShowUsage}
+  <UsageDetails usage={msg.usage} swipeIndex={currentIndex} {totalVariants} onClose={() => usageOpen = false} />
+{/if}
+
 <style>
+  .controls-bar:focus-within { opacity: 1; pointer-events: auto; }
   .inline-edit-text {
     min-width: 1ch;
     white-space: pre-wrap;
@@ -596,7 +611,7 @@
   @media (max-width: 639px) {
     .mobile-action-sheet-layer { display: block; position: fixed; z-index: 80; inset: 0; }
     .mobile-action-sheet-backdrop { position: absolute; inset: 0; width: 100%; border: 0; background: rgba(0,0,0,.52); backdrop-filter: blur(2px); animation: mobile-sheet-fade .16s ease-out; }
-    .mobile-action-sheet { position: absolute; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); left: 10px; max-width: 480px; margin: auto; padding: 8px; border: 1px solid rgba(255,255,255,.09); border-radius: 18px; background: rgba(25,25,29,.98); box-shadow: 0 -8px 32px rgba(0,0,0,.32); animation: mobile-sheet-enter .2s cubic-bezier(.22,.8,.3,1); will-change: transform, opacity; }
+    .mobile-action-sheet { position: absolute; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); left: 10px; max-width: 480px; margin: auto; padding: 8px; border: 1px solid rgba(255,255,255,.09); border-radius: 18px; background: rgba(25,25,29,.98); box-shadow: 0 -8px 32px rgba(0,0,0,.32); animation: mobile-sheet-enter .2s cubic-bezier(.22,.8,.3,1); will-change: transform, opacity; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
     .mobile-action-sheet-handle { width: 34px; height: 4px; margin: 2px auto 8px; border-radius: 999px; background: rgba(255,255,255,.16); }
     .mobile-action-sheet-actions { display: grid; gap: 3px; }
     .mobile-action { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 50px; padding: 0 14px; border: 0; border-radius: 12px; background: transparent; color: #e5e5ea; font: 500 15px/1.2 inherit; text-align: left; }

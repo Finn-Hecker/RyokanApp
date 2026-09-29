@@ -14,6 +14,7 @@ import {
 } from '$lib/utils/rollingSummaryCore';
 import { processThinkingOutput, stripThinkingContent } from '$lib/utils/thinkingOutput';
 import type { TokenUsage } from '$lib/utils/tokenUsage';
+import { withConnection } from '$lib/utils/tokenUsage';
 
 export { processThinkingOutput, stripThinkingContent } from '$lib/utils/thinkingOutput';
 
@@ -176,7 +177,7 @@ export async function runGeneration(
         });
         const { text } = processThinkingOutput(rawBuffer, true);
         callbacks.onStreamUpdate(text);
-        return { text, usage, promptSnapshot };
+        return { text, usage: withConnection(usage, apiSettings), promptSnapshot };
     } finally {
         // Always cleared, even on error — otherwise the UI can get stuck
         // showing a "thinking" state after a failed request.

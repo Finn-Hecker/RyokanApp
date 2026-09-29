@@ -706,5 +706,18 @@
   "update_manual": "Die Installation in der App ist unter Windows verfügbar. Lade unter Android die neueste APK herunter und öffne sie, um über Android zu aktualisieren. Lass die App installiert, damit deine Daten erhalten bleiben.",
   "update_releases": "Neueste Veröffentlichung öffnen",
   "update_link_error": "Die Veröffentlichungsseite konnte nicht geöffnet werden. Versuche es erneut.",
-  "update_banner": "Ryokan {version} ist verfügbar. Öffne Einstellungen → Über Ryokan → App-Updates."
+  "update_banner": "Ryokan {version} ist verfügbar. Öffne Einstellungen → Über Ryokan → App-Updates.",
+  "usage_title": "Generationsdetails",
+  "usage_input": "Input-Tokens",
+  "usage_cached": "Cached Input-Tokens",
+  "usage_output": "Output-Tokens",
+  "usage_reasoning": "Reasoning-Tokens",
+  "usage_cost": "Kosten",
+  "usage_model": "Modell",
+  "usage_connection": "Verbindung / Profil",
+  "usage_tier": "Service Tier",
+  "usage_variant": "Variante {current} / {total}",
+  "usage_legacy": "Für diese Variante sind keine Generationsdaten gespeichert.",
+  "usage_unavailable": "Nicht verfügbar",
+  "usage_note": "Tokenzahlen, Modell, Tier und Kosten stammen vom Provider. Der Profilname wurde beim Aufruf gespeichert. Fehlende Werte bedeuten nicht null Tokens oder kostenlose Nutzung. Cached und Reasoning Tokens werden nicht zu den Gesamtzahlen addiert."
 }

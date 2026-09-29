@@ -182,6 +182,21 @@ test('a Flex API error propagates without a Standard retry', async () => {
   assert.equal(requests, 1);
 });
 
+test('generation details bind the original profile and preserve response metadata across a settings change', async () => {
+  const f = fixture({ same: true });
+  f.chat.name = 'Original profile';
+  const providerUsage = { inputTokens: 120, cachedInputTokens: 80, outputTokens: 30, reasoningTokens: 10,
+    costUsd: 0.002, actualModel: 'resolved-model', serviceTier: 'default' };
+  harness.invoke = async command => {
+    assert.equal(command, 'call_ai_api');
+    f.chat.name = 'Changed during generation';
+    return providerUsage;
+  };
+  const result = await chatApi.runGeneration({ apiSettings: f.chat, recentMessages: [], character: null },
+    { onStreamUpdate() {}, onThinkingPhaseChange() {} });
+  assert.deepEqual(result.usage, { ...providerUsage, connectionName: 'Original profile' });
+});
+
 test('512K chat and 128K summary: early summary pressure, bounded chunks, independent chat target', async () => {
   const f = fixture({ lengths: [260000, 260000, 20] });
   const { options } = await f.run();

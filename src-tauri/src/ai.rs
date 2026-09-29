@@ -266,19 +266,24 @@ fn request_stream_usage(body: &mut serde_json::Value) {
 }
 
 /// Counts reported by the backend for this request, independent of model capacity.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenUsage {
     pub input_tokens: Option<u64>,
     pub cached_input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
     pub reasoning_tokens: Option<u64>,
+    pub cost_usd: Option<f64>,
+    pub actual_model: Option<String>,
+    pub service_tier: Option<String>,
+    pub connection_name: Option<String>,
 }
 
 impl TokenUsage {
     fn is_empty(&self) -> bool {
         self.input_tokens.is_none() && self.cached_input_tokens.is_none()
             && self.output_tokens.is_none() && self.reasoning_tokens.is_none()
+            && self.cost_usd.is_none() && self.actual_model.is_none() && self.service_tier.is_none()
     }
 }
 
@@ -307,16 +312,35 @@ fn parse_token_usage(value: &serde_json::Value) -> Option<TokenUsage> {
             &["completion_tokens_details", "reasoning_tokens"],
             &["output_tokens_details", "reasoning_tokens"],
         ]),
+        actual_model: response_text(value, "model"),
+        service_tier: response_text(value, "service_tier"),
+        ..Default::default()
     };
     (!result.is_empty()).then_some(result)
 }
 
 fn stream_token_usage(value: &serde_json::Value, provider_kind: Option<&str>) -> Option<TokenUsage> {
     let mut usage = parse_token_usage(value).unwrap_or_default();
+    // OpenRouter usage.cost is the account charge, not upstream_inference_cost.
+    // https://openrouter.ai/docs/cookbook/administration/usage-accounting
+    if provider_kind == Some("openrouter") {
+        usage.cost_usd = value.pointer("/usage/cost").and_then(|v| v.as_f64())
+            .filter(|cost| cost.is_finite() && *cost >= 0.0);
+    }
+    // Unit conversion of the billed amount, not a token-price estimate.
+    // https://docs.x.ai/developers/cost-tracking (10^10 ticks = 1 USD)
+    if provider_kind == Some("xai") {
+        usage.cost_usd = count_at(value, &["usage", "cost_in_usd_ticks"])
+            .map(|ticks| ticks as f64 / 10_000_000_000.0);
+    }
     if provider_kind == Some("llama_cpp") && usage.cached_input_tokens.is_none() {
         usage.cached_input_tokens = count_at(value, &["timings", "cache_n"]);
     }
     (!usage.is_empty()).then_some(usage)
+}
+
+fn response_text(value: &serde_json::Value, key: &str) -> Option<String> {
+    value.get(key)?.as_str().filter(|text| !text.trim().is_empty()).map(str::to_owned)
 }
 
 fn merge_token_usage(previous: Option<TokenUsage>, incoming: TokenUsage) -> TokenUsage {
@@ -326,6 +350,10 @@ fn merge_token_usage(previous: Option<TokenUsage>, incoming: TokenUsage) -> Toke
         cached_input_tokens: incoming.cached_input_tokens.or(previous.cached_input_tokens),
         output_tokens: incoming.output_tokens.or(previous.output_tokens),
         reasoning_tokens: incoming.reasoning_tokens.or(previous.reasoning_tokens),
+        cost_usd: incoming.cost_usd.or(previous.cost_usd),
+        actual_model: incoming.actual_model.or(previous.actual_model),
+        service_tier: incoming.service_tier.or(previous.service_tier),
+        connection_name: incoming.connection_name.or(previous.connection_name),
     }
 }
 
@@ -1297,6 +1325,110 @@ mod tests {
         merge_additional_api_parameters, parse_additional_api_parameters, ApiParameterFlags,
         merge_token_usage, parse_token_usage, request_stream_usage, stream_token_usage, AiRequest, RequestApiParameterConfig, StreamChunk,
     };
+
+    #[test]
+    fn generation_metadata_survives_sparse_stream_chunks() {
+        let initial = super::stream_token_usage(&serde_json::json!({"model":"actual-model", "service_tier":"flex"}), Some("openai"));
+        let final_chunk = super::stream_token_usage(&serde_json::json!({"usage":{"prompt_tokens":100, "cost":0.002}}), Some("openrouter")).unwrap();
+        let merged = super::merge_token_usage(initial, final_chunk);
+        assert_eq!(merged.actual_model.as_deref(), Some("actual-model"));
+        assert_eq!(merged.service_tier.as_deref(), Some("flex"));
+        assert_eq!(merged.cost_usd, Some(0.002));
+        assert_eq!(merged.input_tokens, Some(100));
+        let restored: super::TokenUsage = serde_json::from_str(&serde_json::to_string(&merged).unwrap()).unwrap();
+        assert_eq!(restored, merged);
+    }
+
+    #[tokio::test]
+    async fn openrouter_top_level_tier_survives_fragmented_sse_and_ipc() {
+        use eventsource_stream::Eventsource;
+        use futures::StreamExt;
+
+        // Exercise the same SSE decoder, JSON parser and accounting helpers as
+        // call_ai_api. Fixtures are synthetic protocol cases, not captured traffic.
+        for tier_position in 0..5 {
+            let mut chunks = vec![
+                serde_json::json!({"choices":[{"delta":{"role":"assistant"}}], "usage":null}),
+                serde_json::json!({"choices":[{"delta":{"content":"Hello"}}]}),
+                serde_json::json!({"choices":[{"delta":{},"finish_reason":"stop"}]}),
+                serde_json::json!({"choices":[],"usage":{"prompt_tokens":12,"completion_tokens":1}}),
+                serde_json::json!({}),
+            ];
+            chunks[tier_position]["service_tier"] = serde_json::json!("flex");
+            // Null and missing fields on later events must not erase the report.
+            chunks.push(serde_json::json!({"choices":[], "service_tier":null}));
+            let mut wire = String::from(": OPENROUTER PROCESSING\r\n\r\n");
+            for chunk in chunks { wire.push_str(&format!("data: {chunk}\r\n\r\n")); }
+            wire.push_str("data: [DONE]\r\n\r\n");
+            for fragment_size in [1, 7, 4096] {
+                let fragments: Vec<Result<Vec<u8>, std::io::Error>> = wire.as_bytes()
+                    .chunks(fragment_size).map(|bytes| Ok(bytes.to_vec())).collect();
+                let mut events = futures::stream::iter(fragments).eventsource();
+                let mut reported = None;
+                let mut reached_done = false;
+                while let Some(event) = events.next().await {
+                    let event = event.unwrap();
+                    if event.data == "[DONE]" { reached_done = true; break; }
+                    let value: serde_json::Value = serde_json::from_str(&event.data).unwrap();
+                    if let Some(usage) = stream_token_usage(&value, Some("openrouter")) {
+                        reported = Some(merge_token_usage(reported, usage));
+                    }
+                }
+                assert!(reached_done);
+                let reported = reported.unwrap();
+                assert_eq!(reported.service_tier.as_deref(), Some("flex"));
+                assert_eq!(reported.input_tokens, Some(12));
+                let ipc = serde_json::to_value(&reported).unwrap();
+                assert_eq!(ipc["serviceTier"], "flex");
+                assert!(ipc.get("service_tier").is_none());
+                assert_eq!(serde_json::from_value::<super::TokenUsage>(ipc).unwrap(), reported);
+            }
+        }
+    }
+
+    #[test]
+    fn openrouter_flex_request_does_not_supply_missing_or_different_response_tier() {
+        let mut body = serde_json::json!({"model":"test", "stream":true});
+        let config = RequestApiParameterConfig { service_tier: Some("flex".into()), ..Default::default() };
+        apply_service_tier(&mut body, Some("openrouter"), "https://openrouter.ai/api/v1", &config);
+        request_stream_usage(&mut body);
+        assert_eq!(body["service_tier"], "flex");
+        assert_eq!(body["stream"], true);
+        for tier in [None, Some(serde_json::Value::Null), Some(serde_json::json!("default")), Some(serde_json::json!("flex"))] {
+            let mut response = serde_json::json!({"usage":{"prompt_tokens":12}});
+            if let Some(value) = &tier { response["service_tier"] = value.clone(); }
+            let usage = stream_token_usage(&response, Some("openrouter")).unwrap();
+            assert_eq!(usage.service_tier.as_deref(), tier.as_ref().and_then(|v| v.as_str()));
+        }
+        // Chat Completions must read the top level, not another API's usage shape.
+        let response = serde_json::json!({"service_tier":"default", "usage":{"service_tier":"flex"}});
+        assert_eq!(stream_token_usage(&response, Some("openrouter")).unwrap().service_tier.as_deref(), Some("default"));
+    }
+
+    #[test]
+    fn costs_require_known_provider_and_valid_account_charge() {
+        for provider in [None, Some("openai"), Some("xai"), Some("generic_openai"), Some("llama_cpp")] {
+            assert!(super::stream_token_usage(&serde_json::json!({"usage":{"cost":0.1}}), provider).is_none());
+        }
+        for cost in [serde_json::json!(null), serde_json::json!(-1), serde_json::json!("0.1")] {
+            assert!(super::stream_token_usage(&serde_json::json!({"usage":{"cost":cost}}), Some("openrouter")).is_none());
+        }
+        assert!(super::stream_token_usage(&serde_json::json!({"usage":{"cost_details":{"upstream_inference_cost":19}}}), Some("openrouter")).is_none());
+        assert_eq!(super::stream_token_usage(&serde_json::json!({"usage":{"cost":0}}), Some("openrouter")).unwrap().cost_usd, Some(0.0));
+        assert!(super::stream_token_usage(&serde_json::json!({"model":"", "service_tier":null}), Some("openai")).is_none());
+    }
+
+    #[test]
+    fn xai_billed_ticks_convert_units_and_replace_running_totals() {
+        let first = stream_token_usage(&serde_json::json!({"usage":{"cost_in_usd_ticks":10000000}}), Some("xai"));
+        let last = stream_token_usage(&serde_json::json!({"usage":{"cost_in_usd_ticks":25000000}}), Some("xai")).unwrap();
+        assert_eq!(merge_token_usage(first, last).cost_usd, Some(0.0025));
+        assert_eq!(stream_token_usage(&serde_json::json!({"usage":{"cost_in_usd_ticks":0}}), Some("xai")).unwrap().cost_usd, Some(0.0));
+        for ticks in [serde_json::json!(-1), serde_json::json!("42"), serde_json::json!(0.5), serde_json::json!(null)] {
+            assert!(stream_token_usage(&serde_json::json!({"usage":{"cost_in_usd_ticks":ticks}}), Some("xai")).is_none());
+        }
+        assert!(stream_token_usage(&serde_json::json!({"usage":{"cost_in_usd_ticks":42}}), Some("generic_openai")).is_none());
+    }
 
     #[test]
     fn service_tier_maps_only_supported_provider_endpoints() {

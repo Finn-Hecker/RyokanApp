@@ -704,5 +704,18 @@
   "update_manual": "In-app installation is available on Windows. On Android, download the latest APK from releases and open it to update through Android. Keep the app installed to preserve your data.",
   "update_releases": "Open latest release",
   "update_link_error": "Could not open the release page. Try again.",
-  "update_banner": "Ryokan {version} is available. Open Settings → About Ryokan → App updates."
+  "update_banner": "Ryokan {version} is available. Open Settings → About Ryokan → App updates.",
+  "usage_title": "Generation details",
+  "usage_input": "Input tokens",
+  "usage_cached": "Cached input tokens",
+  "usage_output": "Output tokens",
+  "usage_reasoning": "Reasoning tokens",
+  "usage_cost": "Cost",
+  "usage_model": "Model",
+  "usage_connection": "Connection / profile",
+  "usage_tier": "Service tier",
+  "usage_variant": "Variant {current} / {total}",
+  "usage_legacy": "No generation data saved for this variant.",
+  "usage_unavailable": "Not available",
+  "usage_note": "Token counts, model, tier and costs come from the provider. The profile name was saved with the request. Missing values do not mean zero. Counts are shown as reported; cached and reasoning tokens are not added to the totals."
 }
