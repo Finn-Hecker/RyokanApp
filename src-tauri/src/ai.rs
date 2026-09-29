@@ -483,6 +483,8 @@ struct ModelsResponse {
 struct ModelEntry {
     id: String,
     #[serde(default)]
+    reasoning: Option<serde_json::Value>,
+    #[serde(default)]
     supported_parameters: Option<serde_json::Value>,
     #[serde(default)]
     context_length: Option<u64>,
@@ -590,7 +592,14 @@ fn normalize_models(entries: Vec<ModelEntry>, text_output_only: bool) -> Vec<Mod
                 id: model.id,
                 supported_parameters: model.supported_parameters
                     .and_then(|value| serde_json::from_value::<Vec<String>>(value).ok()),
-                reasoning: None,
+                // OpenRouter's /models metadata uses supported_efforts; expose it
+                // through the same normalized field as local provider metadata.
+                reasoning: model.reasoning.filter(|value| text_output_only && value.is_object())
+                    .map(|value| ModelReasoningInfo {
+                        supported: true,
+                        allowed_options: value.get("supported_efforts")
+                            .and_then(|options| serde_json::from_value::<Vec<String>>(options.clone()).ok()),
+                    }),
                 context_length: model.context_length,
                 architecture,
                 // OpenRouter normally returns a pricing object. Tiered or otherwise
@@ -880,6 +889,35 @@ mod model_tests {
         assert_eq!(result[2].supported_parameters, None);
         let serialized = serde_json::to_value(&result[0]).unwrap();
         assert_eq!(serialized["supportedParameters"], serde_json::json!(["temperature", "top_p"]));
+    }
+
+    #[test]
+    fn openrouter_reasoning_efforts_survive_normalization_and_serialization() {
+        let reasoning = [
+            serde_json::json!({"supported_efforts": ["max", "xhigh", "high", "medium", "low"], "default_effort": "high", "mandatory": true}),
+            serde_json::json!({"supported_efforts": ["none", "minimal", "high"]}),
+            serde_json::json!({"mandatory": true}),
+            serde_json::json!({"supported_efforts": []}),
+            serde_json::json!({"supported_efforts": "invalid"}),
+            serde_json::Value::Null,
+        ];
+        let data: Vec<_> = reasoning.iter().enumerate().map(|(index, reasoning)| serde_json::json!({
+            "id": format!("model-{index}"), "architecture": {"output_modalities": ["text"]},
+            "supported_parameters": ["reasoning"], "reasoning": reasoning,
+        })).collect();
+        let json = serde_json::json!({"data": data}).to_string();
+        let result = models(&json, true);
+        let serialized = serde_json::to_value(&result).unwrap();
+        for index in [0, 1, 3] {
+            assert_eq!(serialized[index]["reasoning"]["allowedOptions"], reasoning[index]["supported_efforts"]);
+            assert_eq!(serialized[index]["reasoning"]["supported"], true);
+        }
+        for index in [2, 4] {
+            assert_eq!(result[index].reasoning, Some(ModelReasoningInfo { supported: true, allowed_options: None }));
+        }
+        assert_eq!(result[5].reasoning, None);
+        // Other compatible providers continue to use their own capability metadata.
+        assert!(models(&json, false).iter().all(|model| model.reasoning.is_none()));
     }
 
     #[test]
@@ -1309,6 +1347,23 @@ mod tests {
         let mut body = serde_json::json!({"stream_options": {"include_usage": false, "other": true}});
         request_stream_usage(&mut body);
         assert_eq!(body["stream_options"], serde_json::json!({"include_usage": true, "other": true}));
+    }
+
+    #[test]
+    fn openrouter_efforts_keep_the_nested_request_dialect() {
+        for level in ["none", "minimal", "low", "medium", "high", "xhigh", "max", "auto", "invalid"] {
+            let config = RequestApiParameterConfig {
+                reasoning_dialect: Some("openrouter".into()), reasoning_level: Some(level.into()),
+                ..Default::default()
+            };
+            let mut body = serde_json::json!({});
+            apply_reasoning_level(&mut body, Some("openrouter"), &config);
+            if matches!(level, "auto" | "invalid") {
+                assert_eq!(body, serde_json::json!({}));
+            } else {
+                assert_eq!(body, serde_json::json!({"reasoning": {"effort": level}}));
+            }
+        }
     }
 
     #[test]

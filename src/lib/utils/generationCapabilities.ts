@@ -50,14 +50,17 @@ export interface ReasoningCapability {
 // documented for /api/v1/chat, but not for this client's /v1/chat/completions.
 const LM_CHAT_EFFORT_LEVELS: readonly ReasoningLevel[] = ['low', 'medium', 'high'];
 const UNCONFIRMED_EFFORT_LEVELS: readonly ReasoningLevel[] = ['low', 'medium', 'high'];
+const OPENROUTER_EFFORT_LEVELS: readonly ReasoningLevel[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 /** Only provider metadata for the selected model may populate effort choices. */
 export function reasoningCapability(connection: GenerationConnection): ReasoningCapability | null {
   if (!connection.model) return null;
   const metadata = resolveGenerationCapabilities(connection);
   if (connection.providerKind === 'openrouter' && isOpenRouterUrl(connection.url)
-    && metadata.supportedParameters.includes('reasoning')) {
-    return { dialect: 'openrouter', levels: ['auto', ...UNCONFIRMED_EFFORT_LEVELS], certainty: 'unknown_levels' };
+    && (metadata.reasoningSupported === true || metadata.supportedParameters.includes('reasoning'))) {
+    return { dialect: 'openrouter', levels: ['auto', ...(metadata.reasoningEffortLevels == null
+      ? UNCONFIRMED_EFFORT_LEVELS : OPENROUTER_EFFORT_LEVELS.filter(level => metadata.reasoningEffortLevels!.includes(level)))],
+      certainty: metadata.reasoningEffortLevels == null ? 'unknown_levels' : 'model_metadata' };
   }
   if (connection.providerKind === 'lm_studio' && metadata.reasoningSupported === true) {
     const levels = (metadata.reasoningEffortLevels ?? []).filter(level => LM_CHAT_EFFORT_LEVELS.includes(level));
@@ -85,9 +88,16 @@ function isOpenRouterUrl(url: string): boolean {
 export function modelGenerationCapabilities(connection: GenerationConnection, supportedParameters: unknown,
   reasoning?: { supported?: boolean | null; allowedOptions?: unknown } | null): SavedGenerationCapabilities | null {
   if (connection.providerKind === 'openrouter' && isOpenRouterUrl(connection.url)
-    && Array.isArray(supportedParameters) && supportedParameters.every(item => typeof item === 'string')) {
+    && (Array.isArray(supportedParameters) && supportedParameters.every(item => typeof item === 'string')
+      || reasoning?.supported === true)) {
+    const options = reasoning?.allowedOptions;
+    const levels = Array.isArray(options)
+      ? OPENROUTER_EFFORT_LEVELS.filter(level => options.includes(level)) : null;
     return { providerKind: connection.providerKind, url: connection.url, model: connection.model,
-      source: 'model_metadata', supportedParameters: [...new Set(supportedParameters)] };
+      source: 'model_metadata', supportedParameters: Array.isArray(supportedParameters)
+        ? [...new Set(supportedParameters.filter((item): item is string => typeof item === 'string'))] : [],
+      reasoningSupported: reasoning?.supported === true || Array.isArray(supportedParameters) && supportedParameters.includes('reasoning'),
+      reasoningEffortLevels: levels };
   }
   if ((connection.providerKind === 'lm_studio' || connection.providerKind === 'llama_cpp') && reasoning?.supported === true) {
     const levels = Array.isArray(reasoning.allowedOptions)

@@ -3,6 +3,26 @@ import test from 'node:test';
 import { createDefaultApiParameterEnabled, requestParameterConfig } from './apiParameters.ts';
 import { generationParameterStatus, modelGenerationCapabilities, reasoningCapability, reasoningDialect, resolveGenerationCapabilities } from './generationCapabilities.ts';
 
+test('OpenRouter exposes only advertised efforts in UI order for each model', () => {
+  const connection = { providerKind: 'openrouter', url: 'https://openrouter.ai/api/v1', model: 'a' };
+  for (const [allowedOptions, expected] of [
+    [['max', 'xhigh', 'high', 'medium', 'low'], ['auto', 'low', 'medium', 'high', 'xhigh', 'max']],
+    [['high', 'minimal', 'none', 'high'], ['auto', 'none', 'minimal', 'high']],
+    [['max', 'xhigh', 'high', 'medium', 'low', 'minimal', 'none'], ['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']],
+    [[], ['auto']],
+    [['future', 'auto', 42], ['auto']],
+  ]) {
+    connection.generationCapabilities = modelGenerationCapabilities(connection, ['reasoning'], { supported: true, allowedOptions });
+    assert.deepEqual(reasoningCapability(connection), { dialect: 'openrouter', levels: expected, certainty: 'model_metadata' });
+  }
+  connection.generationCapabilities = modelGenerationCapabilities(connection, null, { supported: true, allowedOptions: ['max'] });
+  assert.deepEqual(reasoningCapability(connection).levels, ['auto', 'max']);
+  for (const allowedOptions of [undefined, null, 'invalid']) {
+    connection.generationCapabilities = modelGenerationCapabilities(connection, ['reasoning'], { supported: true, allowedOptions });
+    assert.deepEqual(reasoningCapability(connection), { dialect: 'openrouter', levels: ['auto', 'low', 'medium', 'high'], certainty: 'unknown_levels' });
+  }
+});
+
 test('OpenRouter metadata warns without changing request switches or custom parameters', () => {
   const connection = {
     providerKind: 'openrouter', url: 'https://openrouter.ai/api/v1', model: 'a',

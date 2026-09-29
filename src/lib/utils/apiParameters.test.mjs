@@ -3,6 +3,31 @@ import test from 'node:test';
 import { createDefaultApiParameterEnabled, requestParameterConfig } from './apiParameters.ts';
 import { modelGenerationCapabilities } from './generationCapabilities.ts';
 
+test('OpenRouter model changes and refreshed metadata invalidate saved efforts safely', () => {
+  const connection = { providerKind: 'openrouter', url: 'https://openrouter.ai/api/v1', model: 'a',
+    reasoningLevel: 'max', parameterEnabled: createDefaultApiParameterEnabled() };
+  connection.generationCapabilities = modelGenerationCapabilities(connection, ['reasoning'],
+    { supported: true, allowedOptions: ['max', 'xhigh', 'high'] });
+  for (const level of ['max', 'xhigh', 'auto']) {
+    connection.reasoningLevel = level;
+    assert.equal(requestParameterConfig(connection).reasoningLevel, level);
+    assert.equal(requestParameterConfig(connection).reasoningDialect, 'openrouter');
+  }
+  connection.reasoningLevel = 'max';
+  connection.model = 'b';
+  assert.equal(requestParameterConfig(connection).reasoningLevel, 'auto');
+  assert.equal(requestParameterConfig(connection).reasoningDialect, null);
+  connection.generationCapabilities = modelGenerationCapabilities(connection, ['reasoning'],
+    { supported: true, allowedOptions: ['low', 'high'] });
+  assert.equal(requestParameterConfig(connection).reasoningLevel, 'auto');
+  connection.reasoningLevel = 'high';
+  assert.equal(requestParameterConfig(connection).reasoningLevel, 'high');
+  connection.generationCapabilities = modelGenerationCapabilities(connection, ['reasoning'],
+    { supported: true, allowedOptions: ['low'] });
+  assert.equal(requestParameterConfig(connection).reasoningLevel, 'auto');
+  assert.equal(connection.reasoningLevel, 'high');
+});
+
 test('request parameters stay bound to their selected connection', () => {
   const first = {
     maxTokens: 300, thinkingBudget: 2500,
