@@ -1,6 +1,6 @@
 [package]
 name = "ryokan"
-version = "0.6.0"
+version = "0.6.1"
 description = "An immersive, local-first AI Roleplay Engine."
 authors = ["Finn-Hecker"]
 edition = "2021"

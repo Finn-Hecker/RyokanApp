@@ -232,7 +232,7 @@
   "settings_thinking_budget_label": "Denkbudget",
   "settings_reasoning_label": "Denktiefe",
   "settings_reasoning_auto": "Auto",
-  "settings_reasoning_auto_hint": "Auto verwendet die Standardeinstellung des Anbieters. Es wird keine explizite Denkstufe gesendet.",
+  "settings_reasoning_auto_hint": "Auto verwendet die Standardeinstellung des Anbieters.",
   "settings_reasoning_none": "Aus",
   "settings_reasoning_minimal": "Minimal",
   "settings_reasoning_low": "Niedrig",

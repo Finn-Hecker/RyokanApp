@@ -231,7 +231,7 @@
   "settings_thinking_budget_label": "Thinking budget",
   "settings_reasoning_label": "Reasoning",
   "settings_reasoning_auto": "Auto",
-  "settings_reasoning_auto_hint": "Auto uses the provider default. No explicit reasoning effort is sent.",
+  "settings_reasoning_auto_hint": "Auto uses the provider default.",
   "settings_reasoning_none": "Off",
   "settings_reasoning_minimal": "Minimal",
   "settings_reasoning_low": "Low",
