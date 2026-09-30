@@ -866,9 +866,11 @@
 
   </div>
   <div class="generation-section">
-    <div class="generation-group">
-      <ServiceTierControl connection={appState.apiSettings} />
-    </div>
+    {#if powerUser}
+      <div class="generation-group">
+        <ServiceTierControl connection={appState.apiSettings} />
+      </div>
+    {/if}
     <div class="generation-group">
       <h2 class="api-model-section-title">{m.settings_generation_basic()}</h2>
       <GeneralSection {powerUser} bind:parameterEnabled category="parameters" />
