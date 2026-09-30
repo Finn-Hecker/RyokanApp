@@ -108,15 +108,17 @@ try {
     }
 
     $package = Get-Content -Raw 'package.json' | ConvertFrom-Json
-    $packageLock = Get-Content -Raw 'package-lock.json' | ConvertFrom-Json
+    $lockVersions = @(& node -e "const p=JSON.parse(require('fs').readFileSync('package-lock.json','utf8')); console.log(p.version); console.log(p.packages[''].version)")
+    if ($LASTEXITCODE -ne 0 -or $lockVersions.Count -lt 2) {
+        throw 'Could not read versions from package-lock.json.'
+    }
     $tauri = Get-Content -Raw 'src-tauri\tauri.conf.json' | ConvertFrom-Json
     $cargoVersion = Get-CargoPackageVersion 'src-tauri\Cargo.toml'
-    $lockRootPackage = $packageLock.packages.PSObject.Properties[''].Value
 
     $versions = [ordered]@{
         'package.json'              = [string]$package.version
-        'package-lock.json'         = [string]$packageLock.version
-        'package-lock root package' = [string]$lockRootPackage.version
+        'package-lock.json'         = [string]$lockVersions[0]
+        'package-lock root package' = [string]$lockVersions[1]
         'tauri.conf.json'           = [string]$tauri.version
         'Cargo.toml'                = [string]$cargoVersion
     }
