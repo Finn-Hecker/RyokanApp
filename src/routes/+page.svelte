@@ -45,7 +45,7 @@
   onMount(() => {
     let disposed = false;
     let backButtonListener: { unregister: () => Promise<void> } | undefined;
-    void onBackButtonPress(() => {
+    if (/Android/i.test(navigator.userAgent)) void onBackButtonPress(() => {
       if (!disposed) void handleAndroidBack().catch(error => console.error('Android back navigation failed', error));
     }).then(async listener => {
       if (disposed) await listener.unregister();

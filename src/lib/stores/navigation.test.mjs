@@ -55,7 +55,7 @@ test('a view without recorded history returns home before exiting', () => {
   assert.equal(n.appState.currentView, 'lobby');
 });
 
-function page({ reducedMotion = false, deferredListener = false } = {}) {
+function page({ reducedMotion = false, deferredListener = false, userAgent = 'Android WebView' } = {}) {
   const context = navigation();
   const invocations = [];
   const animations = [];
@@ -64,6 +64,7 @@ function page({ reducedMotion = false, deferredListener = false } = {}) {
   Object.assign(context, {
     console, $state: value => value, tick: async () => {},
     window: { matchMedia: () => ({ matches: reducedMotion }) },
+    navigator: { userAgent },
     onMount: callback => { mount = callback; },
     invoke: async command => { invocations.push(command); return 'mobile'; },
     onBackButtonPress: callback => {
@@ -109,6 +110,16 @@ for (const view of ['lobby', 'play']) {
     assert.equal(n.handleBackNavigation(), false);
   });
 }
+
+test('desktop loads the app without registering an Android back listener', async () => {
+  const h = page({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' });
+  const dispose = h.mount();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.throws(() => h.back(), TypeError);
+  assert.deepEqual(h.invocations, ['get_interaction_mode']);
+  assert.equal(h.unregistered(), 0);
+  dispose();
+});
 
 test('Android root back finishes the activity even when the WebView has history', async () => {
   const h = page();
