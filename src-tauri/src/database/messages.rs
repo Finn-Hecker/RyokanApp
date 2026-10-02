@@ -24,6 +24,20 @@ pub struct DbMessage {
     pub created_at: String,
 }
 
+fn message_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbMessage> {
+    Ok(DbMessage {
+        id: row.get(0)?,
+        conversation_id: row.get(1)?,
+        role: row.get(2)?,
+        content: row.get(3)?,
+        author: row.get(4)?,
+        swipe_variants: row.get(5)?,
+        swipe_index: row.get(6)?,
+        created_at: row.get(7)?,
+        usage_variants: row.get(8)?,
+    })
+}
+
 /// Retrieves the full, chronological message history for a specific conversation.
 /// rowid is a tiebreaker for rows sharing the same created_at second (e.g.
 /// rapid inserts, or messages copied in bulk when cloning a chat) — it
@@ -36,19 +50,7 @@ pub async fn get_messages(app: AppHandle, chat_id: String) -> Result<Vec<DbMessa
          FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC, rowid ASC"
     ).map_err(|e| e.to_string())?;
 
-    let rows = stmt.query_map(params![chat_id], |row| {
-        Ok(DbMessage {
-            id: row.get(0)?,
-            conversation_id: row.get(1)?,
-            role: row.get(2)?,
-            content: row.get(3)?,
-            author: row.get(4)?,
-            swipe_variants: row.get(5)?,
-            swipe_index: row.get(6)?,
-            created_at: row.get(7)?,
-            usage_variants: row.get(8)?,
-        })
-    }).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(params![chat_id], message_from_row).map_err(|e| e.to_string())?;
 
     let mut list = Vec::new();
     for row in rows { list.push(row.unwrap()); }
@@ -290,19 +292,7 @@ pub async fn get_messages_page(app: AppHandle, chat_id: String, limit: i64, offs
          LIMIT ?2 OFFSET ?3"
     ).map_err(|e| e.to_string())?;
 
-    let rows = stmt.query_map(params![chat_id, limit, offset], |row| {
-        Ok(DbMessage {
-            id: row.get(0)?,
-            conversation_id: row.get(1)?,
-            role: row.get(2)?,
-            content: row.get(3)?,
-            author: row.get(4)?,
-            swipe_variants: row.get(5)?,
-            swipe_index: row.get(6)?,
-            created_at: row.get(7)?,
-            usage_variants: row.get(8)?,
-        })
-    }).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(params![chat_id, limit, offset], message_from_row).map_err(|e| e.to_string())?;
 
     let mut list = Vec::new();
     for row in rows { list.push(row.unwrap()); }

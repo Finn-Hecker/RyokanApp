@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { activateApiConnection, appState, createDefaultConnection, type ProviderKind } from "$lib/stores/appState.svelte";
+  import { activateApiConnection, appState, createDefaultConnection } from "$lib/stores/appState.svelte";
   import { fetchModels, type ModelInfo } from "$lib/utils/settings";
   import * as m from "$lib/paraglide/messages";
   import ProviderSelect from '$lib/components/ui/ProviderSelect.svelte';

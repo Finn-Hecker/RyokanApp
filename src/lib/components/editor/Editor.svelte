@@ -55,7 +55,6 @@
   
   let isEditMode = $derived(!!editChar);
   let isHidden = $derived(editChar?.id != null ? characterState.hiddenCharacterIds.has(editChar.id) : false);
-  let isAnyEditMode = $derived(isEditMode);
   let hasMenuActions = $derived(
     activeTab === 'character'
       ? !isEditMode || !!editChar?.isCustom
@@ -528,7 +527,7 @@
 
   <SimpleFormPage maxWidth="max-w-[704px]" {leadingActions} {actions}>
 
-  {#if !isAnyEditMode}
+  {#if !isEditMode}
     <div class="page-heading">
       <h1 class="page-title">
         {activeTab === 'character'

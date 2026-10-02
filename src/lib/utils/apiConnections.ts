@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { traceDecision, diagnosticConnection, type DiagnosticDecision } from '$lib/utils/diagnosticDecisions';
-import { appState, createDefaultConnection, replaceApiConnections, type ApiConnection, type DetectedContextMetadata, type ProviderKind } from '$lib/stores/appState.svelte';
+import { appState, createDefaultConnection, replaceApiConnections, type ApiConnection, type DetectedContextMetadata } from '$lib/stores/appState.svelte';
 import type { SettingRow } from '$lib/utils/settings';
 import { normalizeServiceTier } from '$lib/utils/generationCapabilities';
 import { acceptDetectedContext, connectionIdentity, resolveMemorySettings, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION, validContextSize } from '$lib/utils/connectionCore';

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { createListbox } from '$lib/utils/listbox.svelte';
   import type { ApiConnection } from '$lib/stores/appState.svelte';
   import { reasoningCapability, type ReasoningLevel } from '$lib/utils/generationCapabilities';
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
@@ -14,106 +14,26 @@
   });
   const selectedLevel = $derived(capability?.levels.includes(connection.reasoningLevel) ? connection.reasoningLevel : 'auto');
 
-  let open = $state(false);
-  let mobile = $state(false);
   let trigger = $state<HTMLButtonElement | null>(null);
   let optionList = $state<HTMLDivElement | null>(null);
-  let popupStyle = $state('');
-
-  function portal(node: HTMLElement) {
-    document.body.appendChild(node);
-    return { destroy: () => node.remove() };
-  }
-
-  function updatePopupPosition() {
-    if (!trigger || mobile) return;
-    const rect = trigger.getBoundingClientRect();
-    const viewport = window.visualViewport;
-    const viewportLeft = viewport?.offsetLeft ?? 0;
-    const viewportTop = viewport?.offsetTop ?? 0;
-    const viewportWidth = viewport?.width ?? window.innerWidth;
-    const viewportHeight = viewport?.height ?? window.innerHeight;
-    const width = Math.max(220, rect.width);
-    const left = Math.min(Math.max(rect.left, viewportLeft + 12), viewportLeft + viewportWidth - width - 12);
-    const estimatedHeight = (capability?.levels.length ?? 1) * 44 + 14;
-    const roomBelow = viewportTop + viewportHeight - rect.bottom;
-    const top = roomBelow >= estimatedHeight + 12
-      ? rect.bottom + 7
-      : Math.max(viewportTop + 12, rect.top - estimatedHeight - 7);
-    popupStyle = `left:${left}px;top:${top}px;width:${width}px`;
-  }
-
-  async function show() {
-    open = true;
-    updatePopupPosition();
-    await tick();
-    updatePopupPosition();
-    optionList?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
-  }
-
-  function toggle(event: MouseEvent) {
-    event.stopPropagation();
-    if (open) open = false;
-    else void show();
-  }
+  const listbox = createListbox({
+    trigger: () => trigger, optionList: () => optionList,
+    optionCount: () => capability?.levels.length ?? 0,
+  });
+  const open = $derived(listbox.open);
+  const mobile = $derived(listbox.mobile);
+  const popupStyle = $derived(listbox.popupStyle);
+  const { portal, toggle, handleTriggerKeydown, handleOptionKeydown, handleWindowKeydown } = listbox;
 
   function select(level: ReasoningLevel) {
     connection.reasoningLevel = level;
     onChange();
-    open = false;
-    void tick().then(() => trigger?.focus());
+    listbox.close(true);
   }
 
-  function handleTriggerKeydown(event: KeyboardEvent) {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      if (!open) void show();
-    }
-  }
-
-  function handleOptionKeydown(event: KeyboardEvent, index: number) {
-    if (!capability) return;
-    const options = Array.from(optionList?.querySelectorAll<HTMLElement>('[role="option"]') ?? []);
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      const offset = event.key === 'ArrowDown' ? 1 : -1;
-      options[(index + offset + options.length) % options.length]?.focus();
-    } else if (event.key === 'Home' || event.key === 'End') {
-      event.preventDefault();
-      options[event.key === 'Home' ? 0 : options.length - 1]?.focus();
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      open = false;
-      void tick().then(() => trigger?.focus());
-    }
-  }
-
-  function handleWindowKeydown(event: KeyboardEvent) {
-    if (open && event.key === 'Escape') {
-      open = false;
-      void tick().then(() => trigger?.focus());
-    }
-  }
-
-  onMount(() => {
-    const query = window.matchMedia('(max-width: 767px)');
-    const syncViewport = () => {
-      mobile = query.matches;
-      if (open) updatePopupPosition();
-    };
-    syncViewport();
-    query.addEventListener('change', syncViewport);
-    window.addEventListener('resize', syncViewport);
-    window.visualViewport?.addEventListener('resize', syncViewport);
-    return () => {
-      query.removeEventListener('change', syncViewport);
-      window.removeEventListener('resize', syncViewport);
-      window.visualViewport?.removeEventListener('resize', syncViewport);
-    };
-  });
 </script>
 
-<svelte:window onclick={() => (open = false)} onkeydown={handleWindowKeydown} />
+<svelte:window onclick={() => listbox.close()} onkeydown={handleWindowKeydown} />
 
 {#if capability}
   <div class="reasoning-control">
@@ -148,7 +68,7 @@
 
     {#if open}
       <div use:portal class="reasoning-layer" class:reasoning-layer--mobile={mobile}>
-        {#if mobile}<button type="button" class="reasoning-backdrop" aria-label={m.settings_reasoning_label()} onclick={() => (open = false)}></button>{/if}
+        {#if mobile}<button type="button" class="reasoning-backdrop" aria-label={m.settings_reasoning_label()} onclick={() => listbox.close()}></button>{/if}
         <div
           bind:this={optionList}
           class="reasoning-popup"

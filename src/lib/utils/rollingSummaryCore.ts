@@ -327,48 +327,6 @@ export interface IdentifiedMessage {
   id?: string;
 }
 
-export interface TokenizedConversationMessage extends IdentifiedMessage {
-  role: string;
-  tokens: number;
-}
-
-/** Returns the earliest suffix boundary that fits, preferring complete user-led turns. */
-export function selectRecentTurnSuffix<T extends TokenizedConversationMessage>(
-  messages: T[],
-  tokenBudget: number,
-  minimumTurns = 2,
-): { retained: T[]; retainedTokens: number } {
-  if (messages.length === 0 || tokenBudget <= 0) return { retained: [], retainedTokens: 0 };
-  let start = messages.length;
-  let used = 0;
-  while (start > 0 && used + messages[start - 1].tokens <= tokenBudget) {
-    start -= 1;
-    used += messages[start].tokens;
-  }
-
-  // If the suffix starts with an assistant response, include its user message
-  // when affordable so ordinary conversational turns are not split.
-  if (start > 0 && messages[start]?.role === 'assistant'
-    && messages[start - 1]?.role === 'user'
-    && used + messages[start - 1].tokens <= tokenBudget) {
-    start -= 1;
-    used += messages[start].tokens;
-  }
-
-  const userStarts = messages
-    .map((message, index) => message.role === 'user' ? index : -1)
-    .filter(index => index >= 0);
-  const preferredStart = userStarts.at(-minimumTurns);
-  if (preferredStart !== undefined) {
-    const preferredTokens = messages.slice(preferredStart).reduce((sum, message) => sum + message.tokens, 0);
-    if (preferredTokens <= tokenBudget) {
-      start = Math.min(start, preferredStart);
-      used = messages.slice(start).reduce((sum, message) => sum + message.tokens, 0);
-    }
-  }
-  return { retained: messages.slice(start), retainedTokens: used };
-}
-
 export function resolveSummaryMarker(
   messages: IdentifiedMessage[],
   meta: SummaryMarkerState,

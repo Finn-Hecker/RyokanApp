@@ -7,16 +7,8 @@ import { getLocale } from '$lib/paraglide/runtime';
 import { bumpConversationRevision, isMessageCoveredBySummary } from '$lib/utils/rollingSummaryCore';
 import type { TokenUsage } from '$lib/utils/tokenUsage';
 
-export interface Message {
-    id?: string;
-    conversation_id: string;
-    role: 'user' | 'assistant';
-    content: string;
-    author?: string | null;
-    swipe_variants: string[];
-    swipe_index: number;
-    usage_variants: (TokenUsage | null)[];
-}
+import { decodeMessage, type Message, type PersistedMessageRow } from '$lib/utils/messageData';
+export type { Message } from '$lib/utils/messageData';
 
 export interface Conversation {
     id: string;
@@ -194,10 +186,6 @@ export async function loadMoreFolderConversations(folderId: string, reset = fals
     return false;
 }
 
-export function unloadFolderConversations(folderId: string) {
-    chatState.conversations = chatState.conversations.filter(chat => chat.folder_id !== folderId);
-}
-
 export async function startNewChat(character: any, roleSelection: RoleSelection | null = null) {
     try {
         const selectedGreeting = selectInitialGreeting(character);
@@ -285,17 +273,9 @@ export async function loadMessages(chatId: string) {
             : 25;
 
         // Use your get_messages_page function from the backend
-        const result = await invoke<any[]>('get_messages_page', { chatId, limit, offset: 0 });
+        const result = await invoke<PersistedMessageRow[]>('get_messages_page', { chatId, limit, offset: 0 });
         
-        chatState.currentMessages = result.map(row => ({
-            ...row,
-            swipe_variants: typeof row.swipe_variants === 'string'
-                ? JSON.parse(row.swipe_variants)
-                : (row.swipe_variants ?? [row.content]),
-            swipe_index: row.swipe_index ?? 0,
-            usage_variants: typeof row.usage_variants === 'string'
-                ? JSON.parse(row.usage_variants) : (row.usage_variants ?? []),
-        }));
+        chatState.currentMessages = result.map(decodeMessage);
         chatState.activeChatId = chatId;
         
         // If we hit the limit exactly, there are probably more messages available
@@ -310,7 +290,7 @@ export async function loadMoreMessages() {
 
     try {
         const currentLength = chatState.currentMessages.length;
-        const result = await invoke<any[]>('get_messages_page', {
+        const result = await invoke<PersistedMessageRow[]>('get_messages_page', {
             chatId,
             limit: 25,
             offset: currentLength,
@@ -321,15 +301,7 @@ export async function loadMoreMessages() {
             return;
         }
 
-        const parsed = result.map(row => ({
-            ...row,
-            swipe_variants: typeof row.swipe_variants === 'string'
-                ? JSON.parse(row.swipe_variants)
-                : (row.swipe_variants ?? [row.content]),
-            swipe_index: row.swipe_index ?? 0,
-            usage_variants: typeof row.usage_variants === 'string'
-                ? JSON.parse(row.usage_variants) : (row.usage_variants ?? []),
-        }));
+        const parsed = result.map(decodeMessage);
 
         // Prepend older messages at the beginning
         chatState.currentMessages = [...parsed, ...chatState.currentMessages];

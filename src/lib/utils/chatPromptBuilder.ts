@@ -103,7 +103,6 @@ export function buildPromptMessages(options: PromptBuildOptions): ChatPromptMess
     buildWiString(relevantEntries, 'before', recentContext),
     buildWiString(relevantEntries, 'after', recentContext),
     charName,
-    'ollama',
   );
 
   if (worldInfoBlock) {

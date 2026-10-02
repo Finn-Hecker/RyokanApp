@@ -94,44 +94,6 @@ fn resolve_role_snapshot(
     }
 }
 
-/// Retrieves all chat sessions, ordered by the most recently active.
-#[tauri::command]
-pub async fn get_conversations(app: AppHandle) -> Result<Vec<Conversation>, String> {
-    let conn = get_connection(&app)?;
-    let mut stmt = conn.prepare(
-        "SELECT id, title, character_id, mode, created_at, updated_at, is_pinned,
-                cloned_from_id, cloned_from_title, folder_id, sort_order, role_snapshot
-         FROM conversations
-         ORDER BY CASE WHEN folder_id IS NULL THEN 1 ELSE 0 END,
-                  CASE WHEN folder_id IS NOT NULL THEN folder_id END ASC,
-                  CASE WHEN folder_id IS NOT NULL THEN sort_order END ASC,
-                  CASE WHEN folder_id IS NULL THEN updated_at END DESC,
-                  CASE WHEN folder_id IS NULL THEN rowid END DESC,
-                  rowid ASC"
-    ).map_err(|e| e.to_string())?;
-    
-    let rows = stmt.query_map([], |row| {
-        Ok(Conversation {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            character_id: row.get(2)?,
-            mode: row.get(3)?,
-            created_at: row.get(4)?,
-            updated_at: row.get(5)?,
-            is_pinned: row.get::<_, i64>(6)? != 0,
-            cloned_from_id: row.get(7)?,
-            cloned_from_title: row.get(8)?,
-            folder_id: row.get(9)?,
-            sort_order: row.get(10)?,
-            role_snapshot: deserialize_role_snapshot(row.get(11)?),
-        })
-    }).map_err(|e| e.to_string())?;
-
-    let mut list = Vec::new();
-    for row in rows { list.push(row.unwrap()); }
-    Ok(list)
-}
-
 /// Retrieves a page of chat sessions for one experience, ordered by pinned first,
 /// then most recently active.
 #[tauri::command]
@@ -203,11 +165,7 @@ pub async fn create_chat(
         Some("multiplayer") => "multiplayer",
         _ => "singleplayer",
     };
-    let title = if mode == "multiplayer" {
-        format!("{}", character_name)
-    } else {
-        format!("{}", character_name)
-    };
+    let title = character_name;
     let role_snapshot = if mode == "singleplayer" {
         resolve_role_snapshot(&tx, character_id.as_deref(), role_selection.as_ref())?
     } else {

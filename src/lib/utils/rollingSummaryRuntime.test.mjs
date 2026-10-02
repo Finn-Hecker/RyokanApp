@@ -84,8 +84,11 @@ test('native normal and manual-thinking generations use the same total cap in pl
       const result = await chatApi.runGeneration({ apiSettings: profile, character: null, recentMessages: [], userPrompt: 'Hello' },
         { onStreamUpdate() {}, onThinkingPhaseChange() {} });
       assert.equal(payload.request_parameter_config.budgetProvider, providerKind);
-      assert.equal(payload.max_tokens, 4096);
-      assert.equal(payload.thinking_budget, thinkingBudgetEnabled ? 2048 : 0);
+      assert.equal(payload.request_parameter_config.maxTokens, 4096);
+      assert.equal(payload.request_parameter_config.thinkingBudget, 2048);
+      assert.equal(payload.request_parameter_config.thinkingBudgetEnabled, thinkingBudgetEnabled);
+      assert.equal(Object.hasOwn(payload, 'max_tokens'), false);
+      assert.equal(Object.hasOwn(payload, 'thinking_budget'), false);
       assert.equal(deriveEffectiveTokenBudget(payload.request_parameter_config).reserveTokens, 4096);
       assert.equal(result.text, 'Answer'); assert.equal(result.usage.reasoningTokens, 150);
     }
@@ -190,7 +193,7 @@ function fixture({ chatLimit = 524288, summaryLimit = 131072, same = false, manu
       const input = count(p.messages.map(m => `${m.role}\n${m.content}`).join('\n')) + p.messages.length * 4 + 3
         + (Object.keys(p.request_parameter_config.additionalParameters).length ? count(JSON.stringify(p.request_parameter_config.additionalParameters)) : 0);
       const capacity = resolvedHardContextLimit(summary);
-      assert.ok(input + p.max_tokens + summarySafetyMargin(capacity) <= capacity, 'every complete provider-bound request must fit');
+      assert.ok(input + deriveEffectiveTokenBudget(p.request_parameter_config).payloadMaxTokens + summarySafetyMargin(capacity) <= capacity, 'every complete provider-bound request must fit');
       assert.equal(p.model, summary.model);
       assert.equal(p.provider_kind, summary.providerKind);
       calls.push({ ...p, input });
@@ -313,8 +316,8 @@ test('small summary window sizes its output reserve and near-limit chunks safely
   const f = fixture({ summaryLimit: 2048, lengths: [30000, 20] });
   await f.run();
   assert.ok(f.calls.length > 1);
-  assert.ok(f.calls.every(p => p.max_tokens < 2048));
-  assert.ok(f.calls.some(p => p.input + p.max_tokens + summarySafetyMargin(2048) >= 2040));
+  assert.ok(f.calls.every(p => deriveEffectiveTokenBudget(p.request_parameter_config).payloadMaxTokens < 2048));
+  assert.ok(f.calls.some(p => p.input + deriveEffectiveTokenBudget(p.request_parameter_config).payloadMaxTokens + summarySafetyMargin(2048) >= 2040));
 });
 
 test('restored oversized summary is reprocessed for a smaller summary model', async () => {

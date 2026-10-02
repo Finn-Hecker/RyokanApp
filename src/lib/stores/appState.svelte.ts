@@ -4,7 +4,8 @@ import { CONSERVATIVE_CONTEXT_FALLBACK, resolvedHardContextLimit, resolveSummary
 
 import type { ProviderKind } from '$lib/utils/providers';
 export type { ProviderKind } from '$lib/utils/providers';
-export type ContextStrategy = 'economy' | 'balanced' | 'maximum';
+import type { ContextStrategy } from '$lib/utils/connectionCore';
+export type { ContextStrategy } from '$lib/utils/connectionCore';
 export type ContextProvenance = 'runtime' | 'provider_advertised' | 'theoretical' | 'kobold_true_max' | 'kobold_config_fallback';
 
 export interface DetectedContextMetadata {

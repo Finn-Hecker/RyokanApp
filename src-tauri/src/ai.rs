@@ -451,9 +451,6 @@ pub(crate) struct AiRequest {
     model: String,
     messages: Vec<serde_json::Value>,
     temperature: f32,
-    // Legacy duplicate values remain accepted; the request config is authoritative.
-    #[serde(rename = "max_tokens")]
-    _max_tokens: Option<u32>,
     // NOTE: historically named `presence_penalty` but intentionally mapped below to the
     // JSON key "repetition_penalty" — that's the llama.cpp/koboldcpp sampler local models
     // (LM Studio included) actually understand and it's the more effective anti-repeat
@@ -471,8 +468,6 @@ pub(crate) struct AiRequest {
     #[serde(alias = "frequencyPenalty")]
     frequency_penalty: Option<f32>,
 
-    #[serde(rename = "thinking_budget", alias = "thinkingBudget")]
-    _thinking_budget: Option<u32>,
 }
 
 /// Payload emitted back to the frontend containing the generated text.
@@ -1718,12 +1713,11 @@ mod tests {
     }
 
     #[test]
-    fn bound_request_uses_config_and_ignores_legacy_duplicate_token_values() {
+    fn bound_request_uses_config_without_duplicate_token_values() {
         for (enabled, expected) in [(false, 300), (true, 2800)] {
             let payload: super::AiRequest = serde_json::from_value(serde_json::json!({
                 "provider_kind":"llama_cpp", "url":"http://localhost/v1", "api_key":"", "model":"fixture",
                 "messages":[{"role":"user","content":"Hello"}], "temperature":0.7,
-                "max_tokens":999, "thinking_budget":999,
                 "request_parameter_config":{"maxTokensEnabled":true,"thinkingBudgetEnabled":enabled,
                     "maxTokens":300,"thinkingBudget":2500,"additionalParameters":{}}
             })).unwrap();

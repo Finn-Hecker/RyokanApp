@@ -104,7 +104,6 @@ pub fn run() {
             ai::fetch_models,
             ai::detect_context,
             ai::stop_generation,
-            database::chats::get_conversations,
             database::chats::create_chat,
             database::chats::delete_chat,
             database::chats::rename_chat,

@@ -3,11 +3,12 @@ import type { TokenUsage } from '$lib/utils/tokenUsage';
 import { reportDiagnostic } from '$lib/utils/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { appState, snapshotSummaryApiConnection, type ApiConnection } from '$lib/stores/appState.svelte';
-import { requestParameterConfig, summaryParameterConfig } from '$lib/utils/apiParameters';
+import { appState, snapshotSummaryApiConnection } from '$lib/stores/appState.svelte';
+import { requestParameterConfig as createRequestParameterConfig, summaryParameterConfig } from '$lib/utils/apiParameters';
 import { getClientLanguageName } from '$lib/utils/clientLanguage';
 import { chatState } from '$lib/stores/chatStore.svelte';
 import type { Message } from '$lib/stores/chatStore.svelte';
+import { decodeMessage, type PersistedMessageRow } from '$lib/utils/messageData';
 import { buildApiMessages, generationConfigurationFingerprint, messageFingerprint } from '$lib/utils/chatApi';
 import type { GenerationOptions, GenerationPromptSnapshot } from '$lib/utils/chatApi';
 import { processThinkingOutput, stripThinkingContent } from '$lib/utils/chatApi';
@@ -66,11 +67,6 @@ function summarySelectionFingerprint(): string {
         connection.apiKey, connection.manualContextCap, appState.apiSettings.contextStrategy]);
 }
 
-interface PersistedMessageRow extends Omit<Message, 'swipe_variants' | 'usage_variants'> {
-    swipe_variants: string[] | string;
-    usage_variants: Message['usage_variants'] | string;
-}
-
 export class SummaryCancelledError extends Error {
     constructor() {
         super('Summary generation was cancelled.');
@@ -116,12 +112,6 @@ async function countMessagesTokens(messages: { role: string; content: string }[]
 
 function contextLimit(configured = appState.apiSettings?.contextLimit ?? DEFAULT_CONTEXT_LIMIT): number {
     return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_CONTEXT_LIMIT;
-}
-
-async function loadRequestParameterConfig(
-    options: GenerationOptions,
-): Promise<ApiRequestParameterConfig> {
-    return requestParameterConfig(options.apiSettings);
 }
 
 async function countAdditionalParameterTokens(config: ApiRequestParameterConfig, model?: string): Promise<number> {
@@ -311,15 +301,7 @@ export async function cancelActiveSummary(chatId?: string): Promise<boolean> {
 
 async function loadPersistedMessages(chatId: string): Promise<Message[]> {
     const rows = await invoke<PersistedMessageRow[]>('get_messages', { chatId });
-    return rows.map((row) => ({
-        ...row,
-        swipe_variants: typeof row.swipe_variants === 'string'
-            ? JSON.parse(row.swipe_variants)
-            : (row.swipe_variants ?? [row.content]),
-        swipe_index: row.swipe_index ?? 0,
-        usage_variants: typeof row.usage_variants === 'string'
-            ? JSON.parse(row.usage_variants) : (row.usage_variants ?? []),
-    }));
+    return rows.map(decodeMessage);
 }
 
 async function loadPersistedSummary(chatId: string): Promise<SummaryMarkerState> {
@@ -510,13 +492,11 @@ async function requestSummary(
                     ),
                 }],
                 temperature: 0.3,
-                max_tokens: effectiveBudget.payloadMaxTokens,
                 presence_penalty: 0,
                 top_p: 1,
                 top_k: 0,
                 min_p: 0,
                 frequency_penalty: 0,
-                thinking_budget: effectiveBudget.payloadThinkingBudget,
             },
         });
         traceDecision({ kind: 'usage', operation: operation.diagnosticId, request: diagnosticOperation(),
@@ -649,7 +629,7 @@ async function performSummaryCheck(
         const [allMessages, persistedMeta, requestParameterConfig] = await Promise.all([
             loadPersistedMessages(chatId),
             loadPersistedSummary(chatId),
-            loadRequestParameterConfig(options),
+            createRequestParameterConfig(options.apiSettings),
         ]);
         assertOperationCurrent(operation);
 
@@ -937,7 +917,7 @@ async function fallbackAfterSummaryFailure(
     const [allMessages, persistedMeta, requestParameterConfig] = await Promise.all([
         loadPersistedMessages(operation.chatId),
         loadPersistedSummary(operation.chatId),
-        loadRequestParameterConfig(options),
+        createRequestParameterConfig(options.apiSettings),
     ]);
     let history = allMessages;
     if (beforeMessageId) {
@@ -1036,7 +1016,7 @@ export function checkAndSummarizeIfNeeded(
 /** Final provider-bound guard; rebuilds the prompt so dynamic World Info is re-evaluated. */
 export async function assertPreparedGenerationFits(options: GenerationOptions): Promise<void> {
     const requestParameterConfig = options.requestParameterConfig
-        ?? await loadRequestParameterConfig(options);
+        ?? createRequestParameterConfig(options.apiSettings);
     const measurement = await measureNormalRequest(
         options,
         options.recentMessages,

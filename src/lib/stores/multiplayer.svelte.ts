@@ -27,7 +27,6 @@ import { recordModelUse } from '$lib/utils/modelPickerData';
 import { getClientLanguageName } from '$lib/utils/clientLanguage';
 import { selectInitialGreeting } from '$lib/utils/characterGreeting';
 import type { Character } from './characterStore.svelte';
-import { deriveEffectiveTokenBudget } from '$lib/utils/rollingSummaryCore';
 import { measureRequestBudget } from '$lib/utils/requestBudget';
 import { resolvedHardContextLimit } from '$lib/utils/connectionCore';
 import { parseUsage as parseRelayUsage, persistedUsage, withConnection, type TokenUsage } from '$lib/utils/tokenUsage';
@@ -1372,7 +1371,6 @@ async function runGeneration(): Promise<void> {
 
     if (!generation.aborted) {
       const parameters = requestParameterConfig(s);
-      const budget = deriveEffectiveTokenBudget(parameters);
       const messages = await buildLlmMessages(s, parameters);
       if (generation.aborted) return;
       recordModelUse(s.model);
@@ -1386,13 +1384,11 @@ async function runGeneration(): Promise<void> {
           model: s.model,
           messages,
           temperature: s.temperature,
-          max_tokens: budget.payloadMaxTokens,
           presence_penalty: s.presencePenalty,
           top_p: s.topP,
           top_k: s.topK,
           min_p: s.minP,
           frequency_penalty: s.frequencyPenalty,
-          thinking_budget: budget.payloadThinkingBudget,
         },
       }), s);
     }

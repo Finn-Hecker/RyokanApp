@@ -1,5 +1,3 @@
-export type ModelType = 'claude' | 'gpt' | 'ollama' | 'openrouter';
-
 export interface PromptBuilderOptions {
   charName: string;
   prompt?: string | null;
@@ -44,13 +42,12 @@ export function buildWorldInfoBlock(
   wiBefore:  string | null | undefined,
   wiAfter:   string | null | undefined,
   charName:  string,
-  modelType: ModelType = 'ollama',
 ): string {
   const rp = (text: string) => replacePlaceholders(text, charName);
   const parts: string[] = [];
 
-  if (wiBefore?.trim()) parts.push(formatSection('world_info_before', rp(wiBefore.trim()), modelType));
-  if (wiAfter?.trim())  parts.push(formatSection('world_info_after',  rp(wiAfter.trim()),  modelType));
+  if (wiBefore?.trim()) parts.push(formatSection('world_info_before', rp(wiBefore.trim())));
+  if (wiAfter?.trim())  parts.push(formatSection('world_info_after',  rp(wiAfter.trim())));
 
   if (parts.length === 0) return '';
 
@@ -106,19 +103,8 @@ export function buildWiString(
     .join('\n\n');
 }
 
-function formatSection(label: string, content: string, modelType: ModelType): string {
-  switch (modelType) {
-    case 'claude':
-      return `<${label}>\n${content}\n</${label}>`;
-
-    case 'gpt':
-      return `**${capitalize(label)}:**\n${content}`;
-
-    case 'ollama':
-    case 'openrouter':
-    default:
-      return `${capitalize(label)}\n${content}`;
-  }
+function formatSection(label: string, content: string): string {
+  return `${capitalize(label)}\n${content}`;
 }
 
 function capitalize(str: string): string {

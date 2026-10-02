@@ -3,6 +3,7 @@ use std::fs;
 use tauri::{AppHandle, Manager};
 use serde_json::{json, Value};
 
+mod avatar;
 pub mod chats;
 pub mod messages;
 pub mod settings;

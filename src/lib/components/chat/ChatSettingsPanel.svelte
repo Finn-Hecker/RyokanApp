@@ -3,8 +3,6 @@
   import { activateApiConnection, appState } from "$lib/stores/appState.svelte";
   import { fetchModels, getAllSettings, saveSetting, type ModelInfo } from "$lib/utils/settings";
   import * as m from "$lib/paraglide/messages";
-  import Tooltip from '$lib/components/ui/Tooltip.svelte';
-  import { fade } from "svelte/transition";
   import { onMount } from "svelte";
   import {
     createDefaultApiParameterEnabled,
@@ -12,7 +10,7 @@
   } from "$lib/utils/apiParameters";
   import { ensureContextDetection, invalidateDetectedContext, persistApiConnections } from '$lib/utils/apiConnections';
   import { modelGenerationCapabilities } from '$lib/utils/generationCapabilities';
-  import GenerationCapabilityWarning from '$lib/components/settings/GenerationCapabilityWarning.svelte';
+  import ParameterControl from '$lib/components/settings/ParameterControl.svelte';
   import ReasoningControl from '$lib/components/settings/ReasoningControl.svelte';
   import ThinkingBudgetControl from '$lib/components/settings/ThinkingBudgetControl.svelte';
   import ChatModelPicker from './ChatModelPicker.svelte';
@@ -106,71 +104,9 @@
     void persistApiConnections();
   }
 
-  const TEMPERATURES = $derived([
-    { label: m.settings_temp_precise(), value: 0.4, hint: m.settings_temp_hint_precise() },
-    { label: m.settings_temp_balanced(), value: 0.8, hint: m.settings_temp_hint_balanced() },
-    { label: m.settings_temp_creative(), value: 1.0, hint: m.settings_temp_hint_creative() },
-  ]);
-
-  const MAX_TOKENS_PRESETS = $derived([
-    { label: m.settings_tokens_preset_chat(),      value: 150, hint: m.settings_tokens_preset_chat_hint() },
-    { label: m.settings_tokens_preset_paragraph(), value: 300, hint: m.settings_tokens_preset_paragraph_hint() },
-    { label: m.settings_tokens_preset_novel(),     value: 800, hint: m.settings_tokens_preset_novel_hint() },
-  ]);
-
-  const PENALTY_PRESETS = $derived([
-    { label: m.settings_penalty_preset_tolerant(), value: 1.0,  hint: m.settings_penalty_preset_tolerant_hint() },
-    { label: m.settings_penalty_preset_normal(),   value: 1.12, hint: m.settings_penalty_preset_normal_hint() },
-    { label: m.settings_penalty_preset_strict(),   value: 1.25, hint: m.settings_penalty_preset_strict_hint() },
-  ]);
-
-  const TOP_P_PRESETS = $derived([
-    { label: m.settings_topp_preset_focused(),  value: 0.5, hint: m.settings_topp_preset_focused_hint() },
-    { label: m.settings_topp_preset_balanced(), value: 0.9, hint: m.settings_topp_preset_balanced_hint() },
-    { label: m.settings_topp_preset_diverse(),  value: 1.0, hint: m.settings_topp_preset_diverse_hint() },
-  ]);
-
-  const TOP_K_PRESETS = $derived([
-    { label: m.settings_topk_preset_narrow(),   value: 20, hint: m.settings_topk_preset_narrow_hint() },
-    { label: m.settings_topk_preset_balanced(), value: 40, hint: m.settings_topk_preset_balanced_hint() },
-    { label: m.settings_topk_preset_wide(),     value: 80, hint: m.settings_topk_preset_wide_hint() },
-  ]);
-
-  const MIN_P_PRESETS = $derived([
-    { label: m.settings_minp_preset_off(),  value: 0,    hint: m.settings_minp_preset_off_hint() },
-    { label: m.settings_minp_preset_low(),  value: 0.05, hint: m.settings_minp_preset_low_hint() },
-    { label: m.settings_minp_preset_high(), value: 0.1,  hint: m.settings_minp_preset_high_hint() },
-  ]);
-
-  const FREQ_PENALTY_PRESETS = $derived([
-    { label: m.settings_freqpenalty_preset_off(),    value: 0,   hint: m.settings_freqpenalty_preset_off_hint() },
-    { label: m.settings_freqpenalty_preset_light(),  value: 0.3, hint: m.settings_freqpenalty_preset_light_hint() },
-    { label: m.settings_freqpenalty_preset_strong(), value: 0.6, hint: m.settings_freqpenalty_preset_strong_hint() },
-  ]);
-
-  function closestPreset(presets: {value: number}[], current: number): number | null {
-    const match = presets.find(p => Math.abs(p.value - current) < 0.001);
-    return match ? match.value : null;
-  }
-
-  function clampTokens(v: number) { return Math.max(50, Math.min(4000, Math.round(v))); }
-  function clampPenalty(v: number) { return Math.max(0.8, Math.min(2.0, Math.round(v * 100) / 100)); }
-  function clampTopP(v: number) { return Math.max(0, Math.min(1, Math.round(v * 100) / 100)); }
-  function clampTopK(v: number) { return Math.max(0, Math.min(200, Math.round(v))); }
-  function clampMinP(v: number) { return Math.max(0, Math.min(0.5, Math.round(v * 100) / 100)); }
-  function clampFreqPenalty(v: number) { return Math.max(0, Math.min(2, Math.round(v * 100) / 100)); }
-
   // Every setter updates the live appState (so the next message picks it up
   // immediately) and persists it, since this panel has no separate "Save" button.
   function persistActive() { void persistApiConnections(); }
-  function setTemperature(v: number) { appState.apiSettings.temperature = v; persistActive(); }
-  function setMaxTokens(v: number) { appState.apiSettings.maxTokens = v; persistActive(); }
-  function setPresencePenalty(v: number) { appState.apiSettings.presencePenalty = v; persistActive(); }
-  function setTopP(v: number) { appState.apiSettings.topP = v; persistActive(); }
-  function setTopK(v: number) { appState.apiSettings.topK = v; persistActive(); }
-  function setMinP(v: number) { appState.apiSettings.minP = v; persistActive(); }
-  function setFreqPenalty(v: number) { appState.apiSettings.frequencyPenalty = v; persistActive(); }
-
   function handleWindowKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       if (modelPickerOpen) modelPickerOpen = false;
@@ -184,20 +120,6 @@
     if (e.target === e.currentTarget) onClose();
   }
 </script>
-
-{#snippet parameterToggle(key: ApiParameterKey)}
-  <GenerationCapabilityWarning connection={appState.apiSettings} parameter={key} />
-  <button
-    type="button"
-    class="parameter-switch"
-    class:parameter-switch--on={parameterEnabled[key]}
-    aria-pressed={parameterEnabled[key]}
-    aria-label={parameterEnabled[key] ? "Parameter enabled" : "Parameter disabled"}
-    onclick={() => toggleParameter(key)}
-  >
-    <span class="parameter-switch-thumb" class:parameter-switch-thumb--on={parameterEnabled[key]}></span>
-  </button>
-{/snippet}
 
 <svelte:window onkeydown={handleWindowKeydown} />
 
@@ -241,338 +163,72 @@
 
         <ReasoningControl connection={appState.apiSettings} onChange={persistActive} />
         <ThinkingBudgetControl connection={appState.apiSettings} {powerUser} onChange={persistActive} />
-
-        <div>
-          <div class="flex items-center justify-between mb-2">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span class="settings-label" style="margin-bottom:0">{m.settings_creativity_label()}</span>
-              <Tooltip>
-                {m.settings_creativity_tooltip_p1()}<br><br>
-                {m.settings_creativity_tooltip_p2a()}<br>
-                {m.settings_creativity_tooltip_p2b()}<br><br>
-                <span class="tooltip-hint">{m.settings_creativity_tooltip_hint()}</span>
-              </Tooltip>
-            </div>
-            <div class="parameter-actions">
-              {#if powerUser}
-                <span class="power-value" class:power-value--disabled={!parameterEnabled.temperature}>{appState.apiSettings.temperature?.toFixed(2) ?? "0.80"}</span>
-              {/if}
-              {@render parameterToggle("temperature")}
-            </div>
-          </div>
-          {#if powerUser}
-            <div in:fade={{ duration: 250, delay: 30 }}>
-              <input
-                type="range" min="0" max="2" step="0.01"
-                value={appState.apiSettings.temperature ?? 0.8}
-                oninput={(e) => setTemperature(+e.currentTarget.value)}
-                class="power-slider"
-                disabled={!parameterEnabled.temperature}
-                aria-label={m.settings_creativity_label()}
-              />
-              <div class="slider-bounds"><span>{m.settings_slider_precise()}</span><span>{m.settings_slider_creative()}</span></div>
-            </div>
-          {:else}
-            <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 30 }}>
-              {#each TEMPERATURES as temp}
-                <button
-                  onclick={() => setTemperature(temp.value)}
-                  disabled={!parameterEnabled.temperature}
-                  class="preset-btn {appState.apiSettings.temperature === temp.value ? 'preset-btn--active' : ''}"
-                >
-                  <span class="preset-label">{temp.label}</span>
-                  <span class="preset-hint">{temp.hint}</span>
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </div>
+        <ParameterControl connection={appState.apiSettings} parameter="temperature" enabled={parameterEnabled.temperature} {powerUser} chat
+          onToggle={() => toggleParameter("temperature")}
+          onValue={(value) => { appState.apiSettings.temperature = value; persistActive(); }}>
+          {#snippet tooltip()}{m.settings_creativity_tooltip_p1()}<br><br>
+            {m.settings_creativity_tooltip_p2a()}<br>
+            {m.settings_creativity_tooltip_p2b()}<br><br>
+            <span class="tooltip-hint">{m.settings_creativity_tooltip_hint()}</span>{/snippet}
+        </ParameterControl>
 
         <div class="settings-divider"></div>
-
-        <div>
-          <div class="flex items-center justify-between mb-2">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span class="settings-label" style="margin-bottom:0">{m.settings_tokens_label()}</span>
-              <Tooltip>
-                {m.settings_tokens_tooltip_p1()}<br><br>
-                {m.settings_tokens_tooltip_p2()}<br><br>
-                <span class="tooltip-hint">{m.settings_tokens_tooltip_hint()}</span>
-              </Tooltip>
-            </div>
-            <div class="parameter-actions">
-              {#if powerUser}
-                <span class="power-value" class:power-value--disabled={!parameterEnabled.maxTokens}>{appState.apiSettings.maxTokens ?? 300} Tokens</span>
-              {/if}
-              {@render parameterToggle("maxTokens")}
-            </div>
-          </div>
-          {#if powerUser}
-            <div in:fade={{ duration: 250, delay: 30 }}>
-              <input
-                type="range" min="50" max="4000" step="10"
-                value={appState.apiSettings.maxTokens ?? 300}
-                oninput={(e) => setMaxTokens(clampTokens(+e.currentTarget.value))}
-                class="power-slider"
-                disabled={!parameterEnabled.maxTokens}
-                aria-label={m.settings_tokens_label()}
-              />
-              <div class="slider-bounds"><span>{m.settings_slider_short()}</span><span>{m.settings_slider_long()}</span></div>
-            </div>
-          {:else}
-            <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 30 }}>
-              {#each MAX_TOKENS_PRESETS as preset}
-                <button
-                  onclick={() => setMaxTokens(preset.value)}
-                  disabled={!parameterEnabled.maxTokens}
-                  class="preset-btn {closestPreset(MAX_TOKENS_PRESETS, appState.apiSettings.maxTokens ?? 300) === preset.value ? 'preset-btn--active' : ''}"
-                >
-                  <span class="preset-label">{preset.label}</span>
-                  <span class="preset-hint">{preset.hint}</span>
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </div>
+        <ParameterControl connection={appState.apiSettings} parameter="maxTokens" enabled={parameterEnabled.maxTokens} {powerUser} chat
+          onToggle={() => toggleParameter("maxTokens")}
+          onValue={(value) => { appState.apiSettings.maxTokens = value; persistActive(); }}>
+          {#snippet tooltip()}{m.settings_tokens_tooltip_p1()}<br><br>
+            {m.settings_tokens_tooltip_p2()}<br><br>
+            <span class="tooltip-hint">{m.settings_tokens_tooltip_hint()}</span>{/snippet}
+        </ParameterControl>
 
         <div class="settings-divider"></div>
-
-        <div>
-          <div class="flex items-center justify-between mb-2">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span class="settings-label" style="margin-bottom:0">{m.settings_penalty_label()}</span>
-              <Tooltip>
-                {m.settings_penalty_tooltip_p1()}<br><br>
-                <span class="tooltip-warn">{m.settings_penalty_tooltip_warn()}</span><br><br>
-                <span class="tooltip-hint">{m.settings_penalty_tooltip_hint()}</span>
-              </Tooltip>
-            </div>
-            <div class="parameter-actions">
-              {#if powerUser}
-                <span class="power-value" class:power-value--disabled={!parameterEnabled.presencePenalty}>{(appState.apiSettings.presencePenalty ?? 1.12).toFixed(2)}</span>
-              {/if}
-              {@render parameterToggle("presencePenalty")}
-            </div>
-          </div>
-          {#if powerUser}
-            <div in:fade={{ duration: 250, delay: 30 }}>
-              <input
-                type="range" min="0.8" max="2.0" step="0.01"
-                value={appState.apiSettings.presencePenalty ?? 1.12}
-                oninput={(e) => setPresencePenalty(clampPenalty(+e.currentTarget.value))}
-                class="power-slider"
-                disabled={!parameterEnabled.presencePenalty}
-                aria-label={m.settings_penalty_label()}
-              />
-              <div class="slider-bounds"><span>{m.settings_slider_tolerant()}</span><span>{m.settings_slider_strict()}</span></div>
-            </div>
-          {:else}
-            <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 30 }}>
-              {#each PENALTY_PRESETS as preset}
-                <button
-                  onclick={() => setPresencePenalty(preset.value)}
-                  disabled={!parameterEnabled.presencePenalty}
-                  class="preset-btn {closestPreset(PENALTY_PRESETS, appState.apiSettings.presencePenalty ?? 1.12) === preset.value ? 'preset-btn--active' : ''}"
-                >
-                  <span class="preset-label">{preset.label}</span>
-                  <span class="preset-hint">{preset.hint}</span>
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </div>
+        <ParameterControl connection={appState.apiSettings} parameter="presencePenalty" enabled={parameterEnabled.presencePenalty} {powerUser} chat
+          onToggle={() => toggleParameter("presencePenalty")}
+          onValue={(value) => { appState.apiSettings.presencePenalty = value; persistActive(); }}>
+          {#snippet tooltip()}{m.settings_penalty_tooltip_p1()}<br><br>
+            <span class="tooltip-warn">{m.settings_penalty_tooltip_warn()}</span><br><br>
+            <span class="tooltip-hint">{m.settings_penalty_tooltip_hint()}</span>{/snippet}
+        </ParameterControl>
 
         <div class="sampling-divider" role="separator">
           <span class="sampling-divider-line"></span>
           <span class="sampling-subheading">{m.settings_section_sampling_advanced()}</span>
           <span class="sampling-divider-line"></span>
         </div>
-
-        <div>
-          <div class="flex items-center justify-between mb-2">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span class="settings-label" style="margin-bottom:0">{m.settings_topp_label()}</span>
-              <Tooltip>
-                {m.settings_topp_tooltip_p1()}<br><br>
-                {m.settings_topp_tooltip_p2()}<br><br>
-                <span class="tooltip-hint">{m.settings_topp_tooltip_hint()}</span>
-              </Tooltip>
-            </div>
-            <div class="parameter-actions">
-              {#if powerUser}
-                <span class="power-value" class:power-value--disabled={!parameterEnabled.topP}>{(appState.apiSettings.topP ?? 0.9).toFixed(2)}</span>
-              {/if}
-              {@render parameterToggle("topP")}
-            </div>
-          </div>
-          {#if powerUser}
-            <div in:fade={{ duration: 250, delay: 30 }}>
-              <input
-                type="range" min="0" max="1" step="0.01"
-                value={appState.apiSettings.topP ?? 0.9}
-                oninput={(e) => setTopP(clampTopP(+e.currentTarget.value))}
-                class="power-slider"
-                disabled={!parameterEnabled.topP}
-                aria-label={m.settings_topp_label()}
-              />
-              <div class="slider-bounds"><span>{m.settings_slider_focused()}</span><span>{m.settings_slider_diverse()}</span></div>
-            </div>
-          {:else}
-            <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 30 }}>
-              {#each TOP_P_PRESETS as preset}
-                <button
-                  onclick={() => setTopP(preset.value)}
-                  disabled={!parameterEnabled.topP}
-                  class="preset-btn {closestPreset(TOP_P_PRESETS, appState.apiSettings.topP ?? 0.9) === preset.value ? 'preset-btn--active' : ''}"
-                >
-                  <span class="preset-label">{preset.label}</span>
-                  <span class="preset-hint">{preset.hint}</span>
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </div>
+        <ParameterControl connection={appState.apiSettings} parameter="topP" enabled={parameterEnabled.topP} {powerUser} chat
+          onToggle={() => toggleParameter("topP")}
+          onValue={(value) => { appState.apiSettings.topP = value; persistActive(); }}>
+          {#snippet tooltip()}{m.settings_topp_tooltip_p1()}<br><br>
+            {m.settings_topp_tooltip_p2()}<br><br>
+            <span class="tooltip-hint">{m.settings_topp_tooltip_hint()}</span>{/snippet}
+        </ParameterControl>
 
         <div class="settings-divider"></div>
-
-        <div>
-          <div class="flex items-center justify-between mb-2">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span class="settings-label" style="margin-bottom:0">{m.settings_topk_label()}</span>
-              <Tooltip>
-                {m.settings_topk_tooltip_p1()}<br><br>
-                {m.settings_topk_tooltip_p2()}<br><br>
-                <span class="tooltip-hint">{m.settings_topk_tooltip_hint()}</span>
-              </Tooltip>
-            </div>
-            <div class="parameter-actions">
-              {#if powerUser}
-                <span class="power-value" class:power-value--disabled={!parameterEnabled.topK}>{appState.apiSettings.topK ?? 40}</span>
-              {/if}
-              {@render parameterToggle("topK")}
-            </div>
-          </div>
-          {#if powerUser}
-            <div in:fade={{ duration: 250, delay: 30 }}>
-              <input
-                type="range" min="0" max="200" step="1"
-                value={appState.apiSettings.topK ?? 40}
-                oninput={(e) => setTopK(clampTopK(+e.currentTarget.value))}
-                class="power-slider"
-                disabled={!parameterEnabled.topK}
-                aria-label={m.settings_topk_label()}
-              />
-              <div class="slider-bounds"><span>{m.settings_slider_narrow()}</span><span>{m.settings_slider_wide()}</span></div>
-            </div>
-          {:else}
-            <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 30 }}>
-              {#each TOP_K_PRESETS as preset}
-                <button
-                  onclick={() => setTopK(preset.value)}
-                  disabled={!parameterEnabled.topK}
-                  class="preset-btn {closestPreset(TOP_K_PRESETS, appState.apiSettings.topK ?? 40) === preset.value ? 'preset-btn--active' : ''}"
-                >
-                  <span class="preset-label">{preset.label}</span>
-                  <span class="preset-hint">{preset.hint}</span>
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </div>
+        <ParameterControl connection={appState.apiSettings} parameter="topK" enabled={parameterEnabled.topK} {powerUser} chat
+          onToggle={() => toggleParameter("topK")}
+          onValue={(value) => { appState.apiSettings.topK = value; persistActive(); }}>
+          {#snippet tooltip()}{m.settings_topk_tooltip_p1()}<br><br>
+            {m.settings_topk_tooltip_p2()}<br><br>
+            <span class="tooltip-hint">{m.settings_topk_tooltip_hint()}</span>{/snippet}
+        </ParameterControl>
 
         <div class="settings-divider"></div>
-
-        <div>
-          <div class="flex items-center justify-between mb-2">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span class="settings-label" style="margin-bottom:0">{m.settings_minp_label()}</span>
-              <Tooltip>
-                {m.settings_minp_tooltip_p1()}<br><br>
-                {m.settings_minp_tooltip_p2()}<br><br>
-                <span class="tooltip-hint">{m.settings_minp_tooltip_hint()}</span>
-              </Tooltip>
-            </div>
-            <div class="parameter-actions">
-              {#if powerUser}
-                <span class="power-value" class:power-value--disabled={!parameterEnabled.minP}>{(appState.apiSettings.minP ?? 0.05).toFixed(2)}</span>
-              {/if}
-              {@render parameterToggle("minP")}
-            </div>
-          </div>
-          {#if powerUser}
-            <div in:fade={{ duration: 250, delay: 30 }}>
-              <input
-                type="range" min="0" max="0.5" step="0.01"
-                value={appState.apiSettings.minP ?? 0.05}
-                oninput={(e) => setMinP(clampMinP(+e.currentTarget.value))}
-                class="power-slider"
-                disabled={!parameterEnabled.minP}
-                aria-label={m.settings_minp_label()}
-              />
-              <div class="slider-bounds"><span>{m.settings_slider_off()}</span><span>{m.settings_slider_strict()}</span></div>
-            </div>
-          {:else}
-            <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 30 }}>
-              {#each MIN_P_PRESETS as preset}
-                <button
-                  onclick={() => setMinP(preset.value)}
-                  disabled={!parameterEnabled.minP}
-                  class="preset-btn {closestPreset(MIN_P_PRESETS, appState.apiSettings.minP ?? 0.05) === preset.value ? 'preset-btn--active' : ''}"
-                >
-                  <span class="preset-label">{preset.label}</span>
-                  <span class="preset-hint">{preset.hint}</span>
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </div>
+        <ParameterControl connection={appState.apiSettings} parameter="minP" enabled={parameterEnabled.minP} {powerUser} chat
+          onToggle={() => toggleParameter("minP")}
+          onValue={(value) => { appState.apiSettings.minP = value; persistActive(); }}>
+          {#snippet tooltip()}{m.settings_minp_tooltip_p1()}<br><br>
+            {m.settings_minp_tooltip_p2()}<br><br>
+            <span class="tooltip-hint">{m.settings_minp_tooltip_hint()}</span>{/snippet}
+        </ParameterControl>
 
         <div class="settings-divider"></div>
-
-        <div>
-          <div class="flex items-center justify-between mb-2">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span class="settings-label" style="margin-bottom:0">{m.settings_freqpenalty_label()}</span>
-              <Tooltip>
-                {m.settings_freqpenalty_tooltip_p1()}<br><br>
-                {m.settings_freqpenalty_tooltip_p2()}<br><br>
-                <span class="tooltip-hint">{m.settings_freqpenalty_tooltip_hint()}</span>
-              </Tooltip>
-            </div>
-            <div class="parameter-actions">
-              {#if powerUser}
-                <span class="power-value" class:power-value--disabled={!parameterEnabled.frequencyPenalty}>{(appState.apiSettings.frequencyPenalty ?? 0).toFixed(2)}</span>
-              {/if}
-              {@render parameterToggle("frequencyPenalty")}
-            </div>
-          </div>
-          {#if powerUser}
-            <div in:fade={{ duration: 250, delay: 30 }}>
-              <input
-                type="range" min="0" max="2" step="0.01"
-                value={appState.apiSettings.frequencyPenalty ?? 0}
-                oninput={(e) => setFreqPenalty(clampFreqPenalty(+e.currentTarget.value))}
-                class="power-slider"
-                disabled={!parameterEnabled.frequencyPenalty}
-                aria-label={m.settings_freqpenalty_label()}
-              />
-              <div class="slider-bounds"><span>{m.settings_slider_off()}</span><span>{m.settings_slider_strict()}</span></div>
-            </div>
-          {:else}
-            <div class="grid grid-cols-3 gap-2" in:fade={{ duration: 250, delay: 30 }}>
-              {#each FREQ_PENALTY_PRESETS as preset}
-                <button
-                  onclick={() => setFreqPenalty(preset.value)}
-                  disabled={!parameterEnabled.frequencyPenalty}
-                  class="preset-btn {closestPreset(FREQ_PENALTY_PRESETS, appState.apiSettings.frequencyPenalty ?? 0) === preset.value ? 'preset-btn--active' : ''}"
-                >
-                  <span class="preset-label">{preset.label}</span>
-                  <span class="preset-hint">{preset.hint}</span>
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </div>
+        <ParameterControl connection={appState.apiSettings} parameter="frequencyPenalty" enabled={parameterEnabled.frequencyPenalty} {powerUser} chat
+          onToggle={() => toggleParameter("frequencyPenalty")}
+          onValue={(value) => { appState.apiSettings.frequencyPenalty = value; persistActive(); }}>
+          {#snippet tooltip()}{m.settings_freqpenalty_tooltip_p1()}<br><br>
+            {m.settings_freqpenalty_tooltip_p2()}<br><br>
+            <span class="tooltip-hint">{m.settings_freqpenalty_tooltip_hint()}</span>{/snippet}
+        </ParameterControl>
 
       </div>
     </div>
@@ -784,7 +440,6 @@
     .settings-panel-body { padding: 12px 12px 16px; }
     .settings-panel-footer { padding: 5px 10px calc(6px + env(safe-area-inset-bottom)); }
     .settings-divider { margin: 16px 0; }
-    .preset-btn { padding: 8px 3px; }
     .connection-card { gap: 10px; margin-bottom: 16px; padding-bottom: 16px; }
     .sampling-subheading { margin: 7px 0 9px; }
   }
@@ -809,47 +464,6 @@
     margin: 20px 0;
   }
 
-  .preset-btn {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
-    padding: 10px 6px;
-    border-radius: 12px;
-    border: 1px solid rgba(255,255,255,0.06);
-    background: rgba(255,255,255,0.02);
-    color: #6b6b6e;
-    transition: all 0.15s ease;
-    cursor: pointer;
-  }
-  .preset-btn:disabled {
-    opacity: 0.32;
-    cursor: not-allowed;
-  }
-  .preset-btn:disabled:active { transform: none; }
-  .preset-btn:hover:not(:disabled) {
-    border-color: rgba(255,255,255,0.12);
-    color: #d1d1d6;
-    background: rgba(255,255,255,0.04);
-  }
-  .preset-btn:active { transform: scale(0.97); }
-  .preset-btn--active {
-    background: rgba(255,255,255,0.07);
-    border-color: rgba(212,180,131,0.4);
-    color: #d4b483;
-  }
-  .preset-label {
-    font-size: 13px;
-    font-weight: 600;
-  }
-  .preset-hint {
-    font-size: 9px;
-    opacity: 0.5;
-    text-align: center;
-    line-height: 1.3;
-  }
-  .preset-btn--active .preset-hint { opacity: 0.65; }
-
   .sampling-divider {
     display: flex;
     align-items: center;
@@ -870,107 +484,6 @@
     color: #6b6b6e;
     white-space: nowrap;
     margin: 10px 0 15px 0;
-  }
-
-  .parameter-actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 9px;
-    flex-shrink: 0;
-  }
-
-  .parameter-switch {
-    position: relative;
-    width: 30px;
-    height: 18px;
-    flex-shrink: 0;
-    padding: 0;
-    border-radius: 999px;
-    border: 1px solid rgba(255,255,255,0.08);
-    background: rgba(255,255,255,0.055);
-    cursor: pointer;
-    transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
-  }
-  .parameter-switch:hover {
-    border-color: rgba(255,255,255,0.16);
-    background: rgba(255,255,255,0.08);
-  }
-  .parameter-switch--on {
-    background: rgba(212,180,131,0.16);
-    border-color: rgba(212,180,131,0.34);
-  }
-  .parameter-switch-thumb {
-    position: absolute;
-    top: 3px;
-    left: 3px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #5a5a5e;
-    transition: transform 0.16s ease, background 0.16s ease;
-  }
-  .parameter-switch-thumb--on {
-    transform: translateX(12px);
-    background: #d4b483;
-  }
-
-  .power-value {
-    font-size: 11px;
-    font-weight: 700;
-    color: #d4b483;
-    letter-spacing: 0.04em;
-    font-variant-numeric: tabular-nums;
-    transition: opacity 0.16s ease, color 0.16s ease;
-  }
-  .power-value--disabled {
-    color: #55555a;
-    opacity: 0.7;
-  }
-
-  .power-slider {
-    width: 100%;
-    appearance: none;
-    height: 4px;
-    border-radius: 4px;
-    background: rgba(255,255,255,0.1);
-    outline: none;
-    cursor: pointer;
-    display: block;
-    margin-top: 4px;
-  }
-  .power-slider:disabled {
-    opacity: 0.28;
-    cursor: not-allowed;
-  }
-  .power-slider:disabled::-webkit-slider-thumb { cursor: not-allowed; }
-  .power-slider:disabled::-moz-range-thumb { cursor: not-allowed; }
-  .power-slider::-webkit-slider-thumb {
-    appearance: none;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #d4b483;
-    border: 2px solid rgba(0,0,0,0.4);
-    cursor: pointer;
-    transition: transform 0.1s;
-  }
-  .power-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
-  .power-slider::-moz-range-thumb {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #d4b483;
-    border: 2px solid rgba(0,0,0,0.4);
-    cursor: pointer;
-  }
-  .slider-bounds {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 5px;
-    font-size: 9px;
-    color: #3a3a3c;
-    letter-spacing: 0.04em;
   }
 
   /* ---------- Power-user toggle (footer) ---------- */

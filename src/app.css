@@ -7,8 +7,6 @@
   --color-ryokan-sidebar: #1e1f20;
   --color-ryokan-accent: #d4b483;
   --color-ryokan-text: #e5e5ea;
-  --always-black: 0 0% 0%;
-  --border-300: 51 16.5% 84.5%;
 }
 
 :root {
@@ -22,15 +20,12 @@
   --page-header-bottom: 1rem;
   --page-content-top: 1rem;
 
-  --surface-1: rgba(255, 255, 255, 0.03);
   --surface-2: rgba(255, 255, 255, 0.06);
-  --surface-hover: rgba(255, 255, 255, 0.07);
 
   --border-subtle: rgba(255, 255, 255, 0.06);
   --border-accent: rgba(212, 180, 131, 0.28);
   --border-accent-hover: rgba(212, 180, 131, 0.42);
 
-  --radius-card: 14px;
   --radius-xl: 16px;
 }
 
@@ -49,56 +44,6 @@ body {
   margin: 0;
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-}
-
-.ryokan-card {
-  background: var(--surface-1);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
-}
-
-.ryokan-card:hover {
-  background: var(--surface-hover);
-  border-color: rgba(var(--accent-rgb), 0.22);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-}
-
-.ryokan-icon-box {
-  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.14) 0%, rgba(var(--accent-rgb), 0.06) 100%);
-  border: 1px solid rgba(var(--accent-rgb), 0.18);
-  color: var(--accent);
-  border-radius: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.ryokan-action-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.05);
-  color: #6b7280;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
-
-.ryokan-action-btn:hover {
-  background: rgba(255, 255, 255, 0.10);
-  border-color: rgba(255, 255, 255, 0.14);
-  color: #e5e7eb;
-}
-
-.ryokan-action-btn--danger:hover {
-  background: rgba(239, 68, 68, 0.12);
-  border-color: rgba(239, 68, 68, 0.20);
-  color: #f87171;
 }
 
 ::-webkit-scrollbar {

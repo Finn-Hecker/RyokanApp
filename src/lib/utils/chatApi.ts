@@ -153,8 +153,6 @@ export async function runGeneration(
 
         if (options.shouldCancel?.()) throw new GenerationCancelledError();
         const effectiveBudget = deriveEffectiveTokenBudget(parameters);
-        const thinkingBudget = effectiveBudget.payloadThinkingBudget;
-        const effectiveMaxTokens = effectiveBudget.payloadMaxTokens;
 
         recordModelUse(apiSettings.model);
         const usage = await invoke<TokenUsage | null>('call_ai_api', {
@@ -167,13 +165,11 @@ export async function runGeneration(
                 model:              apiSettings.model,
                 messages,
                 temperature:        apiSettings.temperature,
-                max_tokens:         effectiveMaxTokens,
                 presence_penalty:   apiSettings.presencePenalty,
                 top_p:              apiSettings.topP,
                 top_k:              apiSettings.topK,
                 min_p:              apiSettings.minP,
                 frequency_penalty:  apiSettings.frequencyPenalty,
-                thinking_budget:    thinkingBudget,
             },
         });
 
