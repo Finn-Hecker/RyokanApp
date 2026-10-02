@@ -28,6 +28,8 @@ export interface GenerationCallbacks {
 }
 
 export interface GenerationOptions {
+    /** Persisted conversation ID, shared by chat and summary requests. */
+    chatId?: string;
     /** Ephemeral diagnostic correlation/counts only; never part of provider requests. */
     diagnosticOperation?: number;
     diagnosticLocalInput?: number;
@@ -113,6 +115,7 @@ export async function runGeneration(
     const apiSettings = snapshotApiConnection(options.apiSettings);
     const parameters = options.requestParameterConfig ?? requestParameterConfig(apiSettings);
     const generationId = options.generationId ?? crypto.randomUUID();
+    const chatId = options.chatId ?? chatState.activeChatId;
 
     const messages = buildApiMessages(options);
     const promptSnapshot: GenerationPromptSnapshot = {
@@ -158,6 +161,7 @@ export async function runGeneration(
         const usage = await invoke<TokenUsage | null>('call_ai_api', {
             payload: {
                 generation_id:      generationId,
+                chat_id:            chatId,
                 provider_kind:     apiSettings.providerKind,
                 request_parameter_config: parameters,
                 url:                apiSettings.url,

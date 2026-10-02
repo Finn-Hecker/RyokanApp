@@ -478,6 +478,7 @@ async function requestSummary(
         const usage = await invoke<TokenUsage | null>('call_ai_api', {
             payload: {
                 generation_id: generationId,
+                chat_id: operation.chatId,
                 provider_kind: apiSettings.providerKind,
                 request_parameter_config: summaryRequestParameterConfig,
                 url: apiSettings.url,

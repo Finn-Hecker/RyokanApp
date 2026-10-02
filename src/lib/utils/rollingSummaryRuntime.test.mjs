@@ -206,6 +206,52 @@ function fixture({ chatLimit = 524288, summaryLimit = 131072, same = false, manu
   return f;
 }
 
+test('chat identity survives normal generation, reroll, edit retry and chat reload', async () => {
+  const profile = { ...state.createDefaultConnection(), providerKind: 'openrouter' };
+  const calls = [];
+  harness.invoke = async (command, args) => {
+    if (command === 'call_ai_api') { calls.push(args.payload); return null; }
+  };
+  const callbacks = { onStreamUpdate() {}, onThinkingPhaseChange() {} };
+  for (const options of [
+    { userPrompt: 'Hello', recentMessages: [] },
+    { recentMessages: [{ id: 'user', role: 'user', content: 'Hello', swipe_index: 1 }] },
+    { recentMessages: [{ id: 'user', role: 'user', content: 'Edited', swipe_index: 0 }] },
+  ]) {
+    harness.chatState.activeChatId = 'other-active-chat';
+    await chatApi.runGeneration({ ...options, chatId: 'persisted-chat', apiSettings: profile, character: null }, callbacks);
+  }
+  // Reloaded chats reuse their database ID, including the active-chat fallback.
+  harness.chatState.activeChatId = 'persisted-chat';
+  await chatApi.runGeneration({ apiSettings: profile, character: null, recentMessages: [] }, callbacks);
+  harness.chatState.activeChatId = 'different-chat';
+  await chatApi.runGeneration({ apiSettings: profile, character: null, recentMessages: [] }, callbacks);
+  assert.deepEqual(calls.map(p => p.chat_id), ['persisted-chat', 'persisted-chat', 'persisted-chat', 'persisted-chat', 'different-chat']);
+  assert.equal(new Set(calls.map(p => p.generation_id)).size, calls.length);
+});
+
+test('rolling summary uses the same persisted chat identity with shared or separate connections', async () => {
+  for (const same of [true, false]) {
+    const f = fixture({ same, chatLimit: 8192, lengths: [16000, 16000, 20] });
+    f.chat.providerKind = 'openrouter';
+    f.summary.providerKind = 'openrouter';
+    const chatId = harness.chatState.activeChatId;
+    const { options, prepared } = await f.run();
+    assert.ok(f.calls.length > 0);
+    assert.ok(f.calls.every(p => p.chat_id === chatId));
+    const invoke = harness.invoke;
+    let chatPayload;
+    harness.invoke = async (command, args) => {
+      if (command !== 'call_ai_api') return invoke(command, args);
+      chatPayload = args.payload;
+      return null;
+    };
+    await chatApi.runGeneration({ ...options, ...prepared, chatId }, { onStreamUpdate() {}, onThinkingPhaseChange() {} });
+    assert.equal(chatPayload.chat_id, chatId);
+    assert.notEqual(chatPayload.generation_id, f.calls[0].generation_id);
+  }
+});
+
 test('chat and summary requests carry their own tiers, including same-as-chat', async () => {
   for (const same of [false, true]) {
     const f = fixture({ same, chatLimit: 8192, lengths: [16000, 16000, 20] });

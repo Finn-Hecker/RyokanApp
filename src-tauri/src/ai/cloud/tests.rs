@@ -1,4 +1,5 @@
 use super::*;
+use crate::ai::RequestPurpose;
 use std::io::{Read, Write};
 
 fn request(kind: &str) -> AiRequest {
@@ -10,6 +11,41 @@ fn request(kind: &str) -> AiRequest {
         "request_parameter_config":{"temperatureEnabled":true,"maxTokensEnabled":true,"thinkingBudgetEnabled":false,
           "topPEnabled":true,"topKEnabled":true,"minPEnabled":true,"presencePenaltyEnabled":true,"frequencyPenaltyEnabled":true,
           "maxTokens":4096,"thinkingBudget":2048,"additionalParameters":{}}})).unwrap()
+}
+
+#[test]
+fn openrouter_session_uses_persisted_chat_identity_for_chat_and_summary() {
+    for chat_id in ["chat-a", "chat-b"] {
+        for purpose in [None, Some(RequestPurpose::Summary)] {
+            let mut payload = request("openrouter");
+            payload.chat_id = Some(chat_id.into());
+            payload.generation_id = Some(uuid::Uuid::new_v4().to_string());
+            payload.request_parameter_config.purpose = purpose;
+            payload.request_parameter_config.additional_parameters.insert("session_id".into(), json!("custom-override"));
+            assert_eq!(super::super::compatible_body(&payload).unwrap()["session_id"], chat_id);
+        }
+    }
+    // Legacy/non-chat requests remain valid without an identity.
+    assert!(super::super::compatible_body(&request("openrouter")).unwrap().get("session_id").is_none());
+}
+
+#[test]
+fn chat_identity_does_not_change_other_provider_bodies() {
+    for kind in ["openai", "xai", "generic_openai", "llama_cpp", "lm_studio", "ollama", "koboldcpp", "nanogpt", "anthropic", "gemini"] {
+        let mut payload = request(kind);
+        let body = |payload: &AiRequest| match CloudProvider::parse(payload.provider_kind.as_deref()) {
+            Some(CloudProvider::NanoGpt) => nanogpt::body(payload, serde_json::Map::new()).unwrap(),
+            Some(CloudProvider::Anthropic) => anthropic::body(payload, serde_json::Map::new()).unwrap(),
+            Some(CloudProvider::Gemini) => gemini::body(payload, serde_json::Map::new()).unwrap(),
+            None => super::super::compatible_body(payload).unwrap(),
+        };
+        let before = body(&payload);
+        payload.chat_id = Some("chat-a".into());
+        let after = body(&payload);
+        assert_eq!(before, after, "{kind}");
+        assert!(after.get("session_id").is_none(), "{kind}");
+        assert!(after.get("chat_id").is_none(), "{kind}");
+    }
 }
 
 #[test]

@@ -440,6 +440,9 @@ struct Delta {
 /// left untouched to avoid breaking whatever already works.
 #[derive(Deserialize)]
 pub(crate) struct AiRequest {
+    /// Persisted conversation identity; only OpenRouter receives it as session_id.
+    #[serde(alias = "chatId")]
+    chat_id: Option<String>,
     #[serde(alias = "generationId")]
     generation_id: Option<String>,
     #[serde(alias = "providerKind")]
@@ -1295,6 +1298,13 @@ fn compatible_body(payload: &AiRequest) -> Result<serde_json::Value, String> {
     );
 
     merge_additional_api_parameters(&mut body, additional_parameters);
+    // Apply after custom fields so rerolls and summaries cannot override the
+    // persisted chat identity with a per-request session ID.
+    if payload.provider_kind.as_deref() == Some("openrouter") {
+        if let Some(chat_id) = payload.chat_id.as_deref().filter(|id| !id.is_empty()) {
+            body["session_id"] = serde_json::json!(chat_id);
+        }
+    }
     apply_summary_policy(&mut body, payload);
     apply_service_tier(
         &mut body,

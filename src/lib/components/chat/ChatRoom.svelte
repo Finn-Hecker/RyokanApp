@@ -278,6 +278,7 @@
     }
 
     const generationOptions: GenerationOptions = {
+      chatId,
       character:      appState.activeCharacter,
       apiSettings:    snapshotActiveApiConnection(),
       recentMessages: chatState.currentMessages,
@@ -377,6 +378,7 @@
     resetStreamState();
     try {
       const generationOptions: GenerationOptions = {
+        chatId,
         character: appState.activeCharacter,
         apiSettings: snapshotActiveApiConnection(),
         recentMessages: msgs.slice(0, idx),
