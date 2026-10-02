@@ -3,10 +3,14 @@
   import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { fade, fly } from 'svelte/transition';
   import { appState } from '$lib/stores/appState.svelte';
-  import { saveSetting, fetchModels } from '$lib/utils/settings';
+  import { saveSetting, fetchModels, type ModelInfo } from '$lib/utils/settings';
   import { setLocale } from '$lib/paraglide/runtime';
   import { persistApiConnections } from '$lib/utils/apiConnections';
 
+  import { PROVIDERS, type ProviderDefinition } from '$lib/utils/providers';
+  import { modelGenerationCapabilities } from '$lib/utils/generationCapabilities';
+
+  let modelMetadata = $state<Record<string, ModelInfo>>({});
   let selectedLanguage = $state<'English' | 'German'>('English');
 
   function selectLanguage(lang: 'English' | 'German') {
@@ -23,28 +27,8 @@
 
   type ProviderTab = 'local' | 'cloud';
 
-  type Preset = {
-    label: string;
-    url: string;
-    needsKey: boolean;
-    tab: ProviderTab;
-    keyPlaceholder?: string;
-    icon: 'desktop' | 'ollama' | 'terminal' | 'kobold' | 'openrouter' | 'openai' | 'grok' | 'custom' | 'cloud';
-  };
-
-  const presets: Preset[] = [
-    { label: 'NanoGPT', url: 'https://api.nano-gpt.com/api/v1', needsKey: true, tab: 'cloud', icon: 'cloud' },
-    { label: 'Anthropic', url: 'https://api.anthropic.com/v1', needsKey: true, tab: 'cloud', icon: 'cloud', keyPlaceholder: 'sk-ant-...' },
-    { label: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta', needsKey: true, tab: 'cloud', icon: 'cloud' },
-    { label: 'LM Studio',  url: 'http://127.0.0.1:1234/v1',    needsKey: false, tab: 'local', icon: 'desktop'    },
-    { label: 'Ollama',     url: 'http://127.0.0.1:11434/v1',   needsKey: false, tab: 'local', icon: 'ollama'     },
-    { label: 'KoboldCPP',  url: 'http://127.0.0.1:5001/v1',    needsKey: false, tab: 'local', icon: 'kobold'     },
-    { label: 'llama.cpp',  url: 'http://127.0.0.1:8080/v1',    needsKey: false, tab: 'local', icon: 'terminal'   },
-    { label: 'OpenRouter', url: 'https://openrouter.ai/api/v1', needsKey: true,  tab: 'cloud', icon: 'openrouter', keyPlaceholder: 'sk-or-...' },
-    { label: 'OpenAI',     url: 'https://api.openai.com/v1',   needsKey: true,  tab: 'cloud', icon: 'openai',     keyPlaceholder: 'sk-...'    },
-    { label: 'Grok',       url: 'https://api.x.ai/v1',         needsKey: true,  tab: 'cloud', icon: 'grok',       keyPlaceholder: 'xai-...'   },
-    { label: 'Custom',     url: '',                             needsKey: false, tab: 'cloud', icon: 'custom' },
-  ];
+  type Preset = ProviderDefinition;
+  const presets: readonly Preset[] = PROVIDERS;
 
   let activeTab    = $state<ProviderTab>('local');
   let activePreset = $state<string | null>(null);
@@ -101,7 +85,9 @@
         }
       }
 
-      models = (await fetchModels(apiUrl, apiKey, activePreset === 'NanoGPT' ? 'nanogpt' : activePreset === 'Anthropic' ? 'anthropic' : activePreset === 'Google Gemini' ? 'gemini' : undefined)).map(model => model.id);
+      const listed = await fetchModels(apiUrl, apiKey, currentPreset?.kind);
+      modelMetadata = Object.fromEntries(listed.map(model => [model.id, model]));
+      models = listed.map(model => model.id);
       if (models.length > 0) selectedModel = models[0];
 
     } catch (e: any) {
@@ -120,15 +106,11 @@
       appState.apiSettings.apiKey = apiKey;
       appState.apiSettings.model = selectedModel;
       appState.apiSettings.name = activePreset || 'Default';
-      appState.apiSettings.providerKind = activePreset === 'OpenRouter' ? 'openrouter'
-        : activePreset === 'LM Studio' ? 'lm_studio'
-        : activePreset === 'Ollama' ? 'ollama'
-        : activePreset === 'KoboldCPP' ? 'koboldcpp'
-        : activePreset === 'llama.cpp' ? 'llama_cpp'
-        : activePreset === 'NanoGPT' ? 'nanogpt'
-        : activePreset === 'Anthropic' ? 'anthropic'
-        : activePreset === 'Google Gemini' ? 'gemini'
-        : 'generic_openai';
+      appState.apiSettings.providerKind = currentPreset?.kind ?? 'generic_openai';
+      appState.apiSettings.customMode = appState.apiSettings.providerKind === 'generic_openai';
+      const selected = modelMetadata[selectedModel];
+      appState.apiSettings.generationCapabilities = modelGenerationCapabilities(
+        appState.apiSettings, selected?.supportedParameters, selected?.reasoning, selected);
       await persistApiConnections();
       await saveSetting('onboarding_completed', 'true');
 

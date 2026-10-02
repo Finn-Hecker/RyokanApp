@@ -3,8 +3,13 @@ import type { ApiParameterKey } from './apiParameters';
 export type GenerationCapabilitySource = 'model_metadata' | 'api_contract' | 'unknown';
 export interface GenerationCapabilities {
   source: GenerationCapabilitySource;
-  /** API field names, not UI labels. An absent field is never assumed supported. */
+  /** Normalized Ryokan parameter names; native adapters translate them to wire fields. */
   supportedParameters: string[];
+  /** Parameter evidence may be an endpoint contract while effort choices come from metadata. */
+  parameterSource?: GenerationCapabilitySource;
+  thinkingSupported?: boolean | null;
+  inputTokenLimit?: number | null;
+  outputTokenLimit?: number | null;
   /** null means the provider did not disclose support; levels null means unknown. */
   reasoningSupported?: boolean | null;
   reasoningEffortLevels?: ReasoningLevel[] | null;
@@ -116,13 +121,18 @@ function isOpenRouterUrl(url: string): boolean {
 }
 
 export function modelGenerationCapabilities(connection: GenerationConnection, supportedParameters: unknown,
-  reasoning?: { supported?: boolean | null; allowedOptions?: unknown } | null): SavedGenerationCapabilities | null {
+  reasoning?: { supported?: boolean | null; allowedOptions?: unknown } | null,
+  details?: { parameterSource?: GenerationCapabilitySource | null; thinkingSupported?: boolean | null;
+    inputTokenLimit?: number | null; outputTokenLimit?: number | null }): SavedGenerationCapabilities | null {
   if (['nanogpt', 'anthropic', 'gemini'].includes(connection.providerKind) && Array.isArray(supportedParameters)
     && supportedParameters.every(item => typeof item === 'string')) {
     const options = reasoning?.allowedOptions;
     return { providerKind: connection.providerKind, url: connection.url, model: connection.model,
       source: 'model_metadata', supportedParameters: [...new Set(supportedParameters)],
-      reasoningSupported: reasoning?.supported === true,
+      parameterSource: details?.parameterSource ?? 'unknown',
+      thinkingSupported: details?.thinkingSupported ?? (supportedParameters.includes('thinking_budget_tokens') ? true : null),
+      inputTokenLimit: details?.inputTokenLimit ?? null, outputTokenLimit: details?.outputTokenLimit ?? null,
+      reasoningSupported: reasoning?.supported ?? null,
       reasoningEffortLevels: Array.isArray(options)
         ? OPENROUTER_EFFORT_LEVELS.filter(level => options.includes(level)) : null };
   }
@@ -173,5 +183,5 @@ export function generationParameterStatus(connection: GenerationConnection, key:
   if (capabilities.supportedParameters.includes(GENERATION_PARAMETER_FIELDS[key])) return 'supported';
   // Only a model-specific advertised list can justify a warning. Missing
   // metadata and incomplete endpoint contracts say nothing about this model.
-  return capabilities.source === 'model_metadata' && ['openrouter', 'nanogpt', 'anthropic', 'gemini'].includes(connection.providerKind) ? 'unreported' : 'unknown';
+  return (capabilities.parameterSource ?? capabilities.source) === 'model_metadata' && ['openrouter', 'nanogpt', 'anthropic', 'gemini'].includes(connection.providerKind) ? 'unreported' : 'unknown';
 }

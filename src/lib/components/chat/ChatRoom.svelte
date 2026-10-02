@@ -31,6 +31,7 @@
   let failedRetryMsgId = $state<string | null>(null);
   let activeGenerationId = $state<string | null>(null);
   let retryCancelled = false;
+  let sendCancelled = false;
   let isLoadingMore = $state(false);
   let cloneCooldown = $state(false);
   let cloneCooldownTimer: ReturnType<typeof setTimeout> | undefined;
@@ -114,6 +115,7 @@
 
   onDestroy(() => {
     retryCancelled = true;
+    sendCancelled = true;
     if (isGenerating) {
       void cancelActiveSummary();
       if (activeGenerationId) {
@@ -253,6 +255,7 @@
     const chatId = chatState.activeChatId;
     if (!chatId) return;
     isGenerating = true;
+    sendCancelled = false;
     generationError = null;
     failedRetryMsgId = null;
     resetStreamState();
@@ -279,17 +282,19 @@
       apiSettings:    snapshotActiveApiConnection(),
       recentMessages: chatState.currentMessages,
       userPrompt:     undefined as string | undefined,
+      shouldCancel: () => sendCancelled || chatState.activeChatId !== chatId,
     };
 
     try {
       const prepared = await checkAndSummarizeIfNeeded(chatId, generationOptions);
-      if (chatState.activeChatId !== chatId) throw new SummaryCancelledError();
+      if (sendCancelled || chatState.activeChatId !== chatId) throw new SummaryCancelledError();
       generationOptions.recentMessages = prepared.recentMessages;
       generationOptions.summaryMeta = prepared.summaryMeta;
       generationOptions.requestParameterConfig = prepared.requestParameterConfig;
       activeGenerationId = crypto.randomUUID();
       generationOptions.generationId = activeGenerationId;
       await assertPreparedGenerationFits(generationOptions);
+      if (sendCancelled || chatState.activeChatId !== chatId) throw new SummaryCancelledError();
       const result = await runGeneration(
         generationOptions,
         {
@@ -301,7 +306,7 @@
       await addMessage('assistant', result.text, result.usage);
       rememberGenerationAnchor(chatId, result.promptSnapshot, chatState.currentMessages.at(-1));
     } catch (err) {
-      if (err instanceof SummaryCancelledError) return;
+      if (err instanceof SummaryCancelledError || sendCancelled) return;
       reportDiagnostic('chat');
       generationError = describeGenerationError(err);
     } finally {
@@ -531,6 +536,7 @@
   }
 
   async function stopGeneration() {
+    sendCancelled = true;
     if (retryingMsgId) retryCancelled = true;
     if (await cancelActiveSummary(chatState.activeChatId ?? undefined)) return;
     if (activeGenerationId) {

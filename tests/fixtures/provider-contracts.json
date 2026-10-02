@@ -1,0 +1,493 @@
+[
+  {
+    "name": "anthropic default cap",
+    "kind": "anthropic",
+    "url": "https://api.anthropic.com/v1",
+    "config": {
+      "temperatureEnabled": false,
+      "maxTokensEnabled": false,
+      "thinkingBudgetEnabled": false,
+      "maxTokens": 4096,
+      "thinkingBudget": 2048,
+      "additionalParameters": {},
+      "budgetProvider": "anthropic"
+    },
+    "expectedBody": {
+      "model": "fixture-model",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello"
+        }
+      ],
+      "stream": true,
+      "max_tokens": 4096
+    },
+    "reserveTokens": 4096
+  },
+  {
+    "name": "anthropic manual thinking",
+    "kind": "anthropic",
+    "url": "https://api.anthropic.com/v1",
+    "config": {
+      "temperatureEnabled": false,
+      "maxTokensEnabled": true,
+      "thinkingBudgetEnabled": true,
+      "maxTokens": 4096,
+      "thinkingBudget": 2048,
+      "additionalParameters": {},
+      "budgetProvider": "anthropic"
+    },
+    "expectedBody": {
+      "model": "fixture-model",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello"
+        }
+      ],
+      "stream": true,
+      "max_tokens": 4096,
+      "thinking": {
+        "type": "enabled",
+        "budget_tokens": 2048
+      }
+    },
+    "reserveTokens": 4096
+  },
+  {
+    "name": "anthropic adaptive override",
+    "kind": "anthropic",
+    "url": "https://api.anthropic.com/v1",
+    "config": {
+      "temperatureEnabled": false,
+      "maxTokensEnabled": true,
+      "thinkingBudgetEnabled": false,
+      "maxTokens": 4096,
+      "thinkingBudget": 2048,
+      "additionalParameters": {
+        "max_tokens": 6000,
+        "thinking": {
+          "type": "adaptive"
+        },
+        "output_config": {
+          "effort": "high"
+        }
+      },
+      "budgetProvider": "anthropic"
+    },
+    "expectedBody": {
+      "model": "fixture-model",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello"
+        }
+      ],
+      "stream": true,
+      "max_tokens": 6000,
+      "thinking": {
+        "type": "adaptive"
+      },
+      "output_config": {
+        "effort": "high"
+      }
+    },
+    "reserveTokens": 6000
+  },
+  {
+    "name": "anthropic summary intent",
+    "kind": "anthropic",
+    "url": "https://api.anthropic.com/v1",
+    "config": {
+      "temperatureEnabled": false,
+      "maxTokensEnabled": true,
+      "thinkingBudgetEnabled": false,
+      "maxTokens": 512,
+      "thinkingBudget": 0,
+      "additionalParameters": {},
+      "budgetProvider": "anthropic",
+      "purpose": "summary",
+      "reasoningLevel": "auto"
+    },
+    "expectedBody": {
+      "model": "fixture-model",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello"
+        }
+      ],
+      "stream": true,
+      "max_tokens": 512
+    },
+    "reserveTokens": 512
+  },
+  {
+    "name": "gemini default cap",
+    "kind": "gemini",
+    "url": "https://generativelanguage.googleapis.com/v1beta",
+    "config": {
+      "temperatureEnabled": false,
+      "maxTokensEnabled": false,
+      "thinkingBudgetEnabled": false,
+      "maxTokens": 4096,
+      "thinkingBudget": 2048,
+      "additionalParameters": {},
+      "budgetProvider": "gemini"
+    },
+    "expectedBody": {
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "Hello"
+            }
+          ]
+        }
+      ],
+      "generationConfig": {
+        "maxOutputTokens": 8192
+      }
+    },
+    "reserveTokens": 8192
+  },
+  {
+    "name": "gemini manual thinking",
+    "kind": "gemini",
+    "url": "https://generativelanguage.googleapis.com/v1beta",
+    "config": {
+      "temperatureEnabled": false,
+      "maxTokensEnabled": true,
+      "thinkingBudgetEnabled": true,
+      "maxTokens": 4096,
+      "thinkingBudget": 2048,
+      "additionalParameters": {},
+      "budgetProvider": "gemini"
+    },
+    "expectedBody": {
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "Hello"
+            }
+          ]
+        }
+      ],
+      "generationConfig": {
+        "maxOutputTokens": 4096,
+        "thinkingConfig": {
+          "thinkingBudget": 2048,
+          "includeThoughts": true
+        }
+      }
+    },
+    "reserveTokens": 4096
+  },
+  {
+    "name": "gemini shallow dynamic override",
+    "kind": "gemini",
+    "url": "https://generativelanguage.googleapis.com/v1beta",
+    "config": {
+      "temperatureEnabled": false,
+      "maxTokensEnabled": true,
+      "thinkingBudgetEnabled": true,
+      "maxTokens": 4096,
+      "thinkingBudget": 2048,
+      "additionalParameters": {
+        "generationConfig": {
+          "maxOutputTokens": 7000,
+          "thinkingConfig": {
+            "thinkingBudget": -1
+          }
+        }
+      },
+      "budgetProvider": "gemini"
+    },
+    "expectedBody": {
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "Hello"
+            }
+          ]
+        }
+      ],
+      "generationConfig": {
+        "maxOutputTokens": 7000,
+        "thinkingConfig": {
+          "thinkingBudget": -1
+        }
+      }
+    },
+    "reserveTokens": 7000
+  },
+  {
+    "name": "gemini thinking level",
+    "kind": "gemini",
+    "url": "https://generativelanguage.googleapis.com/v1beta",
+    "config": {
+      "temperatureEnabled": false,
+      "maxTokensEnabled": true,
+      "thinkingBudgetEnabled": false,
+      "maxTokens": 4096,
+      "thinkingBudget": 2048,
+      "additionalParameters": {
+        "generationConfig": {
+          "thinkingConfig": {
+            "thinkingLevel": "HIGH",
+            "includeThoughts": true
+          }
+        }
+      },
+      "budgetProvider": "gemini"
+    },
+    "expectedBody": {
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "Hello"
+            }
+          ]
+        }
+      ],
+      "generationConfig": {
+        "maxOutputTokens": 4096,
+        "thinkingConfig": {
+          "thinkingLevel": "HIGH",
+          "includeThoughts": true
+        }
+      }
+    },
+    "reserveTokens": 4096
+  },
+  {
+    "name": "nanogpt common sampling",
+    "kind": "nanogpt",
+    "url": "https://api.nano-gpt.com/api/v1",
+    "config": {
+      "temperatureEnabled": true,
+      "maxTokensEnabled": true,
+      "thinkingBudgetEnabled": false,
+      "maxTokens": 4096,
+      "thinkingBudget": 2048,
+      "additionalParameters": {
+        "temperature": 0.2
+      },
+      "topPEnabled": true
+    },
+    "expectedBody": {
+      "model": "fixture-model",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello"
+        }
+      ],
+      "stream": true,
+      "max_tokens": 4096,
+      "temperature": 0.2,
+      "top_p": 0.5,
+      "stream_options": {
+        "include_usage": true
+      }
+    },
+    "reserveTokens": 4096
+  },
+  {
+    "name": "openai explicit completion override",
+    "kind": "openai",
+    "url": "https://api.openai.com/v1",
+    "config": {
+      "temperatureEnabled": false,
+      "maxTokensEnabled": false,
+      "thinkingBudgetEnabled": false,
+      "maxTokens": 4096,
+      "thinkingBudget": 2048,
+      "additionalParameters": {
+        "max_completion_tokens": 900
+      },
+      "serviceTier": "flex"
+    },
+    "expectedBody": {
+      "model": "fixture-model",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello"
+        }
+      ],
+      "stream": true,
+      "max_completion_tokens": 900,
+      "service_tier": "flex",
+      "stream_options": {
+        "include_usage": true
+      }
+    },
+    "reserveTokens": 900
+  },
+  {
+    "name": "xai standard tier",
+    "kind": "xai",
+    "url": "https://api.x.ai/v1",
+    "config": {
+      "temperatureEnabled": false,
+      "maxTokensEnabled": true,
+      "thinkingBudgetEnabled": false,
+      "maxTokens": 4096,
+      "thinkingBudget": 2048,
+      "additionalParameters": {},
+      "serviceTier": "standard"
+    },
+    "expectedBody": {
+      "model": "fixture-model",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello"
+        }
+      ],
+      "stream": true,
+      "max_tokens": 4096,
+      "service_tier": "default",
+      "stream_options": {
+        "include_usage": true
+      }
+    },
+    "reserveTokens": 4096
+  },
+  {
+    "name": "custom strips unsupported tier",
+    "kind": "generic_openai",
+    "url": "https://custom.invalid/v1",
+    "config": {
+      "temperatureEnabled": false,
+      "maxTokensEnabled": true,
+      "thinkingBudgetEnabled": false,
+      "maxTokens": 4096,
+      "thinkingBudget": 2048,
+      "additionalParameters": {
+        "service_tier": "flex"
+      },
+      "serviceTier": "flex"
+    },
+    "expectedBody": {
+      "model": "fixture-model",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello"
+        }
+      ],
+      "stream": true,
+      "max_tokens": 4096,
+      "stream_options": {
+        "include_usage": true
+      }
+    },
+    "reserveTokens": 4096
+  },
+  {
+    "name": "llama thinking allowance",
+    "kind": "llama_cpp",
+    "url": "http://localhost:8080/v1",
+    "config": {
+      "temperatureEnabled": false,
+      "maxTokensEnabled": true,
+      "thinkingBudgetEnabled": true,
+      "maxTokens": 300,
+      "thinkingBudget": 2500,
+      "additionalParameters": {}
+    },
+    "expectedBody": {
+      "model": "fixture-model",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello"
+        }
+      ],
+      "stream": true,
+      "max_tokens": 2800,
+      "chat_template_kwargs": {
+        "enable_thinking": true
+      },
+      "thinking_budget_tokens": 2500,
+      "stream_options": {
+        "include_usage": true
+      }
+    },
+    "reserveTokens": 2800
+  },
+  {
+    "name": "openrouter summary policy",
+    "kind": "openrouter",
+    "url": "https://openrouter.ai/api/v1",
+    "config": {
+      "purpose": "summary",
+      "temperatureEnabled": false,
+      "maxTokensEnabled": true,
+      "thinkingBudgetEnabled": false,
+      "maxTokens": 512,
+      "thinkingBudget": 0,
+      "additionalParameters": {}
+    },
+    "expectedBody": {
+      "model": "fixture-model",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello"
+        }
+      ],
+      "stream": true,
+      "max_tokens": 512,
+      "reasoning": {
+        "enabled": false
+      },
+      "stream_options": {
+        "include_usage": true
+      }
+    },
+    "reserveTokens": 512
+  },
+  {
+    "name": "llama_cpp summary policy",
+    "kind": "llama_cpp",
+    "url": "http://localhost:8080/v1",
+    "config": {
+      "purpose": "summary",
+      "temperatureEnabled": false,
+      "maxTokensEnabled": true,
+      "thinkingBudgetEnabled": false,
+      "maxTokens": 512,
+      "thinkingBudget": 0,
+      "additionalParameters": {}
+    },
+    "expectedBody": {
+      "model": "fixture-model",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello"
+        }
+      ],
+      "stream": true,
+      "max_tokens": 512,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      },
+      "stream_options": {
+        "include_usage": true
+      }
+    },
+    "reserveTokens": 512
+  }
+]

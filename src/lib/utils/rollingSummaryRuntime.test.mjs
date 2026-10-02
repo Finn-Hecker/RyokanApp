@@ -188,7 +188,7 @@ function fixture({ chatLimit = 524288, summaryLimit = 131072, same = false, manu
     if (command === 'call_ai_api') {
       const p = args.payload;
       const input = count(p.messages.map(m => `${m.role}\n${m.content}`).join('\n')) + p.messages.length * 4 + 3
-        + count(JSON.stringify(p.request_parameter_config.additionalParameters));
+        + (Object.keys(p.request_parameter_config.additionalParameters).length ? count(JSON.stringify(p.request_parameter_config.additionalParameters)) : 0);
       const capacity = resolvedHardContextLimit(summary);
       assert.ok(input + p.max_tokens + summarySafetyMargin(capacity) <= capacity, 'every complete provider-bound request must fit');
       assert.equal(p.model, summary.model);
@@ -550,4 +550,64 @@ test('diagnostic IPC failure never changes summary decisions', async () => {
   };
   await f.run();
   assert.ok(f.meta().summary);
+});
+
+
+test('chat listener setup cleans up when the second registration fails', async () => {
+  const previous = harness.listen;
+  try {
+    harness.listen = async (name, callback) => {
+      if (name === 'ai-thinking-token') throw new Error('listener installation failed');
+      return previous(name, callback);
+    };
+    await assert.rejects(chatApi.runGeneration({ apiSettings: state.createDefaultConnection(), character: null, recentMessages: [] },
+      { onStreamUpdate() {}, onThinkingPhaseChange() {} }), /listener installation failed/);
+    assert.equal(listeners.size, 0);
+  } finally { harness.listen = previous; }
+});
+
+test('stop during chat listener setup prevents the provider request', async () => {
+  const previous = harness.listen;
+  let cancelled = false;
+  let requests = 0;
+  try {
+    harness.listen = async (name, callback) => { cancelled = true; return previous(name, callback); };
+    harness.invoke = async command => { if (command === 'call_ai_api') requests++; };
+    await assert.rejects(chatApi.runGeneration({ apiSettings: state.createDefaultConnection(), character: null,
+      recentMessages: [], shouldCancel: () => cancelled }, { onStreamUpdate() {}, onThinkingPhaseChange() {} }), /cancelled/);
+    assert.equal(requests, 0);
+    assert.equal(listeners.size, 0);
+  } finally { harness.listen = previous; }
+});
+
+test('visible answer ends native thinking and a later thought can restart it', async () => {
+  const phases = [];
+  harness.invoke = async (command, args) => {
+    if (command !== 'call_ai_api') return;
+    const generationId = args.payload.generation_id;
+    listeners.get('ai-thinking-token')({ payload: { generationId, token: 'thought' } });
+    listeners.get('ai-token')({ payload: { generationId, token: 'answer' } });
+    listeners.get('ai-thinking-token')({ payload: { generationId, token: 'more' } });
+    return null;
+  };
+  await chatApi.runGeneration({ apiSettings: state.createDefaultConnection(), character: null, recentMessages: [] },
+    { onStreamUpdate() {}, onThinkingPhaseChange(value) { phases.push(value); } });
+  assert.deepEqual(phases, [true, false, true, false]);
+});
+
+
+test('stop during summary listener setup prevents network and persistence', async () => {
+  const f = fixture({ summaryLimit: 4096, lengths: [100, 18000, 100] });
+  const previous = harness.listen;
+  try {
+    harness.listen = async (name, callback) => {
+      const unlisten = await previous(name, callback);
+      if (name === 'ai-thinking-token') await runtime.cancelActiveSummary(harness.chatState.activeChatId);
+      return unlisten;
+    };
+    await assert.rejects(f.run(), runtime.SummaryCancelledError);
+    assert.equal(f.calls.length, 0);
+    assert.deepEqual(f.meta(), { summary: null, last_id: null });
+    assert.equal(listeners.size, 0);
+  } finally { harness.listen = previous; }
 });

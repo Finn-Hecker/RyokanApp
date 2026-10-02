@@ -4,7 +4,7 @@ import { reportDiagnostic } from '$lib/utils/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { appState, snapshotSummaryApiConnection, type ApiConnection } from '$lib/stores/appState.svelte';
-import { requestParameterConfig } from '$lib/utils/apiParameters';
+import { requestParameterConfig, summaryParameterConfig } from '$lib/utils/apiParameters';
 import { getClientLanguageName } from '$lib/utils/clientLanguage';
 import { chatState } from '$lib/stores/chatStore.svelte';
 import type { Message } from '$lib/stores/chatStore.svelte';
@@ -32,12 +32,11 @@ import {
     type PromptUsageAnchor,
 } from '$lib/utils/rollingSummaryCore';
 import { adaptiveSummaryOutputCap, resolvedHardContextLimit, resolvedWorkingContextTarget, shouldTriggerSummary, summaryCompressionGoal } from '$lib/utils/connectionCore';
+import { countRequestMessages, countRequestAdditional } from '$lib/utils/requestBudget';
 import { ensureContextDetection } from '$lib/utils/apiConnections';
 
 const DEFAULT_CONTEXT_LIMIT = 4096;
 const DEFAULT_SUMMARY_TOKENS = 1024;
-const MESSAGE_FRAMING_TOKENS = 4;
-const REQUEST_PRIMING_TOKENS = 3;
 
 const encoder = new TextEncoder();
 
@@ -112,13 +111,7 @@ async function countTokens(text: string, model = appState.apiSettings?.model ?? 
 }
 
 async function countMessagesTokens(messages: { role: string; content: string }[], model?: string): Promise<number> {
-    if (messages.length === 0) return REQUEST_PRIMING_TOKENS;
-    const serialized = messages
-        .map((message) => `${message.role}\n${message.content}`)
-        .join('\n');
-    return await countTokens(serialized, model)
-        + (messages.length * MESSAGE_FRAMING_TOKENS)
-        + REQUEST_PRIMING_TOKENS;
+    return countRequestMessages(messages, text => countTokens(text, model));
 }
 
 function contextLimit(configured = appState.apiSettings?.contextLimit ?? DEFAULT_CONTEXT_LIMIT): number {
@@ -131,16 +124,8 @@ async function loadRequestParameterConfig(
     return requestParameterConfig(options.apiSettings);
 }
 
-async function countAdditionalParameterTokens(
-    requestParameterConfig: ApiRequestParameterConfig,
-    model?: string,
-): Promise<number> {
-    const additional = requestParameterConfig.additionalParameters;
-    if (!additional || Object.keys(additional).length === 0) return 0;
-    // Tool schemas, response schemas, and provider-specific prompt fields can
-    // consume context even though they are outside `messages`. Counting the
-    // whole custom object is intentionally conservative for unknown providers.
-    return await countTokens(JSON.stringify(additional), model);
+async function countAdditionalParameterTokens(config: ApiRequestParameterConfig, model?: string): Promise<number> {
+    return countRequestAdditional(config, text => countTokens(text, model));
 }
 
 function responseReserve(requestParameterConfig: ApiRequestParameterConfig, hardLimit: number): number {
@@ -254,25 +239,6 @@ async function selectNewestRawHistory(
     return { messages: history.slice(-1), measurement: newestMeasurement };
 }
 
-function summaryRequestPolicy(maximumSummaryTokens: number, connection: ApiConnection): ApiRequestParameterConfig {
-    return {
-        serviceTier: requestParameterConfig(connection).serviceTier,
-        temperatureEnabled: true,
-        maxTokensEnabled: true,
-        presencePenaltyEnabled: false,
-        thinkingBudgetEnabled: false,
-        topPEnabled: false,
-        topKEnabled: false,
-        minPEnabled: false,
-        frequencyPenaltyEnabled: false,
-        maxTokens: maximumSummaryTokens,
-        thinkingBudget: 0,
-        additionalParameters: {
-            chat_template_kwargs: { enable_thinking: false },
-            reasoning: { enabled: false },
-        },
-    };
-}
 
 export const summaryState = $state({ isSummarizing: false });
 
@@ -515,15 +481,18 @@ async function requestSummary(
     const generationId = crypto.randomUUID();
     operation.generationId = generationId;
     let rawBuffer = '';
-    const unlisten = await listen<{ token: string; generationId?: string }>('ai-token', (event) => {
-        if (event.payload.generationId === generationId) rawBuffer += event.payload.token;
-    });
-    const unlistenThinking = await listen<{ token: string; generationId?: string }>(
-        'ai-thinking-token',
-        () => {},
-    );
-
+    let unlisten: (() => void) | undefined;
+    let unlistenThinking: (() => void) | undefined;
     try {
+        unlisten = await listen<{ token: string; generationId?: string }>('ai-token', (event) => {
+            if (event.payload.generationId === generationId) rawBuffer += event.payload.token;
+        });
+        unlistenThinking = await listen<{ token: string; generationId?: string }>(
+            'ai-thinking-token',
+            () => {},
+        );
+
+        assertOperationCurrent(operation);
         const usage = await invoke<TokenUsage | null>('call_ai_api', {
             payload: {
                 generation_id: generationId,
@@ -559,8 +528,8 @@ async function requestSummary(
             reserve_tokens: effectiveBudget.reserveTokens,
         });
     } finally {
-        unlisten();
-        unlistenThinking();
+        unlisten?.();
+        unlistenThinking?.();
         if (operation.generationId === generationId) operation.generationId = null;
     }
 
@@ -1006,7 +975,7 @@ export function checkAndSummarizeIfNeeded(
         chatId,
         generationId: null,
         cancelled: false,
-        requestParameterConfig: summaryRequestPolicy(maximumSummaryTokens, summaryConnection),
+        requestParameterConfig: summaryParameterConfig(summaryConnection, maximumSummaryTokens),
         contextLimit: summaryConnection.contextLimit,
         apiSettings: summaryConnection,
         maximumSummaryTokens,
@@ -1036,7 +1005,7 @@ export function checkAndSummarizeIfNeeded(
                         + await countAdditionalParameterTokens(operation.requestParameterConfig, operation.apiSettings.model);
                     operation.maximumSummaryTokens = boundedSummaryOutputCap(maximumSummaryTokens, operation.contextLimit, overhead);
                     if (operation.maximumSummaryTokens < 1) throw new ContextBudgetError('The summary instructions exceed the summary model context limit.');
-                    operation.requestParameterConfig = summaryRequestPolicy(operation.maximumSummaryTokens, operation.apiSettings);
+                    operation.requestParameterConfig = summaryParameterConfig(operation.apiSettings, operation.maximumSummaryTokens);
                 }
                 const prepared = await performSummaryCheck(operation, options, beforeMessageId);
                 traceSummaryState(operation, 'ready');

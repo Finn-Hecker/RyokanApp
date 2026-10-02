@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    json, merge_additional_api_parameters, model_info, positive_cap, reject_fields, response_text,
+    text_messages, AiRequest, CloudEvent, ModelInfo, TokenUsage, Value, GEMINI_DEFAULT_OUTPUT_CAP,
+};
 // https://ai.google.dev/api/generate-content; https://ai.google.dev/api/models
 // https://ai.google.dev/gemini-api/docs/generate-content/thinking
 fn model_id(id: &str) -> Result<&str, String> {
@@ -35,8 +38,6 @@ pub(super) fn body(
             "cached_content",
         ],
     )?;
-    additional.remove("chat_template_kwargs");
-    additional.remove("reasoning");
     let config = &payload.request_parameter_config;
     let (system, messages) = text_messages(payload)?;
     let contents: Vec<Value> = messages
@@ -162,12 +163,17 @@ pub(super) fn model(value: &Value) -> Option<ModelInfo> {
     }
     // Models metadata advertises thinking, but not the permitted thinkingLevel
     // values. Leave effort UI undisclosed rather than infer levels from IDs.
-    Some(model_info(
+    let mut model = model_info(
         id,
         value.get("inputTokenLimit").and_then(Value::as_u64),
         parameters,
         None,
-    ))
+    );
+    model.input_token_limit = model.context_length;
+    model.output_token_limit = value.get("outputTokenLimit").and_then(Value::as_u64);
+    model.parameter_source = Some("api_contract");
+    model.thinking_supported = value.get("thinking").and_then(Value::as_bool);
+    Some(model)
 }
 
 pub(super) fn event(value: &Value) -> Result<CloudEvent, String> {

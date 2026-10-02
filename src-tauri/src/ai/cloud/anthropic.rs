@@ -1,4 +1,8 @@
-use super::*;
+use super::{
+    count_at, json, merge_additional_api_parameters, model_info, parse_token_usage, positive_cap,
+    reject_fields, response_text, text_messages, AiRequest, CloudEvent, ModelInfo,
+    ModelReasoningInfo, TokenUsage, Value, ANTHROPIC_DEFAULT_OUTPUT_CAP,
+};
 // https://platform.claude.com/docs/en/api/messages/create
 // https://platform.claude.com/docs/en/api/models/list
 // https://platform.claude.com/docs/en/build-with-claude/streaming
@@ -25,13 +29,9 @@ fn legacy_sampling(id: &str) -> bool {
 
 pub(super) fn body(
     payload: &AiRequest,
-    mut additional: serde_json::Map<String, Value>,
+    additional: serde_json::Map<String, Value>,
 ) -> Result<Value, String> {
     reject_fields(&additional, &["system", "tools"])?;
-    // These are emitted by Ryokan's existing summary request policy. They have
-    // no native Messages equivalent and must never escape into this API.
-    additional.remove("chat_template_kwargs");
-    additional.remove("reasoning");
     let config = &payload.request_parameter_config;
     let (system, messages) = text_messages(payload)?;
     let mut body = json!({"model":payload.model,"messages":messages,"stream":true,
@@ -118,12 +118,29 @@ pub(super) fn model(value: &Value) -> Option<ModelInfo> {
                 .collect(),
         ),
     });
-    Some(model_info(
+    let mut model = model_info(
         id,
         value.get("max_input_tokens").and_then(Value::as_u64),
         parameters,
         reasoning,
-    ))
+    );
+    model.input_token_limit = model.context_length;
+    model.output_token_limit = value.get("max_output_tokens").and_then(Value::as_u64);
+    model.parameter_source = Some("api_contract");
+    let manual = value
+        .pointer("/capabilities/thinking/types/enabled/supported")
+        .and_then(Value::as_bool);
+    let adaptive = value
+        .pointer("/capabilities/thinking/types/adaptive/supported")
+        .and_then(Value::as_bool);
+    model.thinking_supported = if manual == Some(true) || adaptive == Some(true) {
+        Some(true)
+    } else if manual == Some(false) && adaptive == Some(false) {
+        Some(false)
+    } else {
+        None
+    };
+    Some(model)
 }
 
 pub(super) fn event(value: &Value) -> Result<CloudEvent, String> {

@@ -31,6 +31,16 @@ fn detect_tokenizer_key(model_name: &str) -> &'static str {
 }
 
 
+/// Family matching is an estimate; a generic fallback is never an exact tokenizer.
+fn quality_event(model_name: &str) -> crate::diagnostics::Event {
+    let name = model_name.to_lowercase();
+    if detect_tokenizer_key(model_name) != "llama3" || name.contains("llama-3") || name.contains("llama3") {
+        crate::diagnostics::Event::TokenizerFamilyEstimate
+    } else {
+        crate::diagnostics::Event::TokenizerFallbackEstimate
+    }
+}
+
 // Used when a tokenizer failed to load or encoding returned an error.
 // 3.35 bytes/token
 
@@ -50,6 +60,7 @@ pub async fn count_tokens(text: String, model_name: String) -> u32 {
         return 0;
     }
 
+    crate::diagnostics::record(quality_event(&model_name));
     let tokenizer_opt = match detect_tokenizer_key(&model_name) {
         "mistral" => MISTRAL_TOKENIZER.as_ref(),
         "qwen2"   => QWEN2_TOKENIZER.as_ref(),
@@ -62,13 +73,30 @@ pub async fn count_tokens(text: String, model_name: String) -> u32 {
                 Ok(encoding) => encoding.len() as u32,
                 Err(_) => {
                     crate::diagnostics::record(crate::diagnostics::Event::TokenizerFailed);
+                    crate::diagnostics::record(crate::diagnostics::Event::TokenizerHeuristicEstimate);
                     fallback_count(&text)
                 }
             }
         }
         None => {
             crate::diagnostics::record(crate::diagnostics::Event::TokenizerFailed);
+            crate::diagnostics::record(crate::diagnostics::Event::TokenizerHeuristicEstimate);
             fallback_count(&text)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn tokenizer_quality_never_claims_exact_cloud_counts() {
+        use crate::diagnostics::Event;
+        for model in ["claude-sonnet", "gemini", "gpt-5", "grok", "unknown", "llama-2"] {
+            assert_eq!(quality_event(model), Event::TokenizerFallbackEstimate);
+        }
+        for model in ["llama-3.1", "qwen", "mistral"] {
+            assert_eq!(quality_event(model), Event::TokenizerFamilyEstimate);
         }
     }
 }

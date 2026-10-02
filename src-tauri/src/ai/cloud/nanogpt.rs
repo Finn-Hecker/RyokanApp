@@ -1,4 +1,8 @@
-use super::*;
+use super::{
+    apply_compatible_sampling, json, merge_additional_api_parameters, model_info,
+    request_stream_usage, stream_token_usage, AiRequest, CloudEvent, ModelInfo, ModelReasoningInfo,
+    TokenUsage, Value,
+};
 // https://docs.nano-gpt.com/api-reference/endpoint/chat-completion
 // https://docs.nano-gpt.com/api-reference/miscellaneous/streaming-protocol
 pub(super) fn body(
@@ -7,45 +11,7 @@ pub(super) fn body(
 ) -> Result<Value, String> {
     let config = &payload.request_parameter_config;
     let mut body = json!({"model":payload.model,"messages":payload.messages,"stream":true});
-    if config.temperature_enabled {
-        body["temperature"] = json!(payload.temperature);
-    }
-    if config.max_tokens_enabled {
-        body["max_tokens"] = json!(config.max_tokens);
-    }
-    for (enabled, name, value) in [
-        (
-            config.top_p_enabled,
-            "top_p",
-            payload.top_p.map(|v| json!(v)),
-        ),
-        (
-            config.top_k_enabled,
-            "top_k",
-            payload.top_k.map(|v| json!(v)),
-        ),
-        (
-            config.min_p_enabled,
-            "min_p",
-            payload.min_p.map(|v| json!(v)),
-        ),
-        (
-            config.presence_penalty_enabled,
-            "repetition_penalty",
-            payload.presence_penalty.map(|v| json!(v)),
-        ),
-        (
-            config.frequency_penalty_enabled,
-            "frequency_penalty",
-            payload.frequency_penalty.map(|v| json!(v)),
-        ),
-    ] {
-        if enabled {
-            if let Some(value) = value {
-                body[name] = value;
-            }
-        }
-    }
+    apply_compatible_sampling(&mut body, payload, config.max_tokens);
     if config.reasoning_dialect.as_deref() == Some("nanogpt") {
         if let Some(level @ ("none" | "minimal" | "low" | "medium" | "high" | "xhigh")) =
             config.reasoning_level.as_deref()
@@ -84,12 +50,17 @@ pub(super) fn model(value: &Value) -> Option<ModelInfo> {
                 ),
             }
         });
-    Some(model_info(
+    let mut model = model_info(
         id,
         value.get("context_length").and_then(Value::as_u64),
         parameters,
         reasoning,
-    ))
+    );
+    model.parameter_source = Some("api_contract");
+    model.thinking_supported = value
+        .pointer("/capabilities/reasoning")
+        .and_then(Value::as_bool);
+    Some(model)
 }
 
 pub(super) fn event(value: &Value) -> Result<CloudEvent, String> {

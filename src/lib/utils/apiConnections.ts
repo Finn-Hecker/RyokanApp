@@ -139,8 +139,4 @@ export async function ensureContextDetection(connection: ApiConnection): Promise
   connection.contextLimit = resolvedHardContextLimit(connection);
 }
 
-export const PROVIDER_LABELS: Record<ProviderKind, string> = {
-  openrouter: 'OpenRouter', lm_studio: 'LM Studio', llama_cpp: 'llama.cpp', koboldcpp: 'KoboldCpp',
-  nanogpt: 'NanoGPT', anthropic: 'Anthropic', gemini: 'Google Gemini',
-  ollama: 'Ollama', openai: 'OpenAI', xai: 'xAI / Grok', generic_openai: 'Generic OpenAI-compatible',
-};
+export { PROVIDER_LABELS } from './providers.ts';

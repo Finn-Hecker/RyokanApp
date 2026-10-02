@@ -68,6 +68,7 @@ export async function reconcilePromptTokens(
 }
 
 export interface ApiRequestParameterConfig {
+  readonly purpose?: 'summary';
   /** Request-only discriminator; absent for every existing provider. */
   readonly budgetProvider?: NativeBudgetProvider;
   readonly serviceTier?: 'auto' | 'standard' | 'flex';

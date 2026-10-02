@@ -36,6 +36,10 @@ export interface ModelInfo {
   supportedParameters?: string[] | null;
   reasoning?: { supported?: boolean | null; allowedOptions?: string[] | null } | null;
   contextLength?: number | null;
+  inputTokenLimit?: number | null;
+  outputTokenLimit?: number | null;
+  parameterSource?: 'model_metadata' | 'api_contract' | 'unknown' | null;
+  thinkingSupported?: boolean | null;
   architecture?: {
     inputModalities: string[];
     outputModalities: string[];

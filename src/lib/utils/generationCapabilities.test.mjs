@@ -93,3 +93,18 @@ test('reasoning levels come from matching provider metadata, never the model nam
   assert.deepEqual(reasoningCapability(studio).levels, ['auto', 'low', 'medium', 'high']);
   assert.equal(reasoningCapability(studio).certainty, 'unknown_levels');
 });
+
+
+test('thinking support does not invent effort levels and contract parameters do not claim model metadata', () => {
+  const connection = { providerKind: 'gemini', url: 'https://generativelanguage.googleapis.com/v1beta', model: 'fixture' };
+  connection.generationCapabilities = modelGenerationCapabilities(connection, ['max_tokens', 'thinking_budget_tokens'], null,
+    { parameterSource: 'api_contract', thinkingSupported: true, inputTokenLimit: 100000, outputTokenLimit: 8000 });
+  assert.equal(connection.generationCapabilities.thinkingSupported, true);
+  assert.equal(connection.generationCapabilities.reasoningSupported, null);
+  assert.equal(reasoningCapability(connection), null);
+  assert.equal(generationParameterStatus(connection, 'topP'), 'unknown');
+  assert.equal(connection.generationCapabilities.outputTokenLimit, 8000);
+  const unknown = modelGenerationCapabilities({ ...connection, providerKind: 'nanogpt' }, ['max_tokens']);
+  assert.equal(unknown.thinkingSupported, null);
+  assert.equal(unknown.reasoningSupported, null);
+});

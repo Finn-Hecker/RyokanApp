@@ -27,6 +27,9 @@ import { recordModelUse } from '$lib/utils/modelPickerData';
 import { getClientLanguageName } from '$lib/utils/clientLanguage';
 import { selectInitialGreeting } from '$lib/utils/characterGreeting';
 import type { Character } from './characterStore.svelte';
+import { deriveEffectiveTokenBudget } from '$lib/utils/rollingSummaryCore';
+import { measureRequestBudget } from '$lib/utils/requestBudget';
+import { resolvedHardContextLimit } from '$lib/utils/connectionCore';
 import { parseUsage as parseRelayUsage, persistedUsage, withConnection, type TokenUsage } from '$lib/utils/tokenUsage';
 
 // Configuration
@@ -1368,24 +1371,28 @@ async function runGeneration(): Promise<void> {
     }
 
     if (!generation.aborted) {
+      const parameters = requestParameterConfig(s);
+      const budget = deriveEffectiveTokenBudget(parameters);
+      const messages = await buildLlmMessages(s, parameters);
+      if (generation.aborted) return;
       recordModelUse(s.model);
       localMsg.usage = withConnection(await invoke<TokenUsage | null>('call_ai_api', {
         payload: {
           generation_id: generation.id,
           provider_kind: s.providerKind,
-          request_parameter_config: requestParameterConfig(s),
+          request_parameter_config: parameters,
           url: s.url,
           api_key: s.apiKey,
           model: s.model,
-          messages: buildLlmMessages(s),
+          messages,
           temperature: s.temperature,
-          max_tokens: s.maxTokens + (s.thinkingBudget ?? 2500),
+          max_tokens: budget.payloadMaxTokens,
           presence_penalty: s.presencePenalty,
           top_p: s.topP,
           top_k: s.topK,
           min_p: s.minP,
           frequency_penalty: s.frequencyPenalty,
-          thinking_budget: s.thinkingBudget,
+          thinking_budget: budget.payloadThinkingBudget,
         },
       }), s);
     }
@@ -1453,7 +1460,7 @@ async function runGeneration(): Promise<void> {
   }
 }
 
-function buildLlmMessages(s = appState.apiSettings): Array<{ role: string; content: string }> {
+async function buildLlmMessages(s = appState.apiSettings, parameters = requestParameterConfig(s)): Promise<Array<{ role: string; content: string }>> {
   const char = mpState.sessionCharacter ?? appState.activeCharacter;
   let system = s.systemPrompt || '';
   if (char?.prompt) {
@@ -1461,17 +1468,13 @@ function buildLlmMessages(s = appState.apiSettings): Array<{ role: string; conte
   }
   system += `${system ? '\n' : ''}Respond in ${getClientLanguageName()}.`;
 
-  // 1) collect history as before, walking backwards within a character budget
-  const budget = Math.max(1000, (s.contextLimit || 4096) * 3);
-  let used = 0;
+  // Collect history, then measure the actual provider-bound message suffix.
   const history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
   for (let i = mpState.messages.length - 1; i >= 0; i--) {
     const m = mpState.messages[i];
     if (m.kind === 'system' || m.streaming) continue;
     if (!m.text.trim() || m.text === '⚠') continue; // skip empty or broken turns
     const content = m.kind === 'llm' ? m.text : `${m.author}: ${m.text}`;
-    if (used + content.length > budget) break;
-    used += content.length;
     history.push({ role: m.kind === 'llm' ? 'assistant' : 'user', content });
   }
   history.reverse();
@@ -1496,9 +1499,17 @@ function buildLlmMessages(s = appState.apiSettings): Array<{ role: string; conte
     merged.push({ role: 'user', content: '[Antworte auf das Gespräch]' });
   }
 
-  const out: Array<{ role: string; content: string }> = [];
-  if (system) out.push({ role: 'system', content: system });
-  return out.concat(merged);
+  const prefix = system ? [{ role: 'system', content: system }] : [];
+  const limit = resolvedHardContextLimit(s);
+  const count = (text: string) => invoke<number>('count_tokens', { text, modelName: s.model });
+  while (true) {
+    const messages = prefix.concat(merged);
+    if ((await measureRequestBudget(messages, parameters, limit, count)).fits) return messages;
+    if (merged.length <= 1) throw new Error('The required prompt and output reserve exceed the configured context token limit.');
+    merged.shift();
+    // Preserve the existing template requirement that the suffix starts with a user turn.
+    if (merged[0]?.role === 'assistant' && merged.length > 1) merged.shift();
+  }
 }
 
 function insertSorted(msg: MpMessage): void {

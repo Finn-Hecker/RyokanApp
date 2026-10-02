@@ -18,6 +18,10 @@ import { withConnection } from '$lib/utils/tokenUsage';
 
 export { processThinkingOutput, stripThinkingContent } from '$lib/utils/thinkingOutput';
 
+export class GenerationCancelledError extends Error {
+    constructor() { super('Generation cancelled'); this.name = 'GenerationCancelledError'; }
+}
+
 export interface GenerationCallbacks {
     onStreamUpdate:        (text: string) => void;
     onThinkingPhaseChange: (isThinking: boolean) => void;
@@ -119,31 +123,35 @@ export async function runGeneration(
     };
 
     let rawBuffer      = '';
-    let thinkingBuffer = '';
+    let nativeThinking = false;
+    let unlistenToken: (() => void) | undefined;
+    let unlistenThinking: (() => void) | undefined;
 
     const { listen } = await import('@tauri-apps/api/event');
 
-    const unlistenToken = await listen<{ token: string; generationId?: string }>('ai-token', (event) => {
-        if (event.payload.generationId !== generationId) return;
-        rawBuffer += event.payload.token;
-
-        const { text, isThinking } = processThinkingOutput(rawBuffer, false);
-        // Tag-based detection is a fallback — once the dedicated reasoning
-        // channel below has fired, it takes precedence.
-        if (!thinkingBuffer) callbacks.onThinkingPhaseChange(isThinking);
-        callbacks.onStreamUpdate(text);
-    });
-
-    // Backend emits reasoning tokens (delta.reasoning_content) on their own
-    // event so the UI can know it's "thinking" without relying on tag-parsing.
-    const unlistenThinking = await listen<{ token: string; generationId?: string }>('ai-thinking-token', (event) => {
-        if (event.payload.generationId !== generationId) return;
-        thinkingBuffer += event.payload.token;
-        callbacks.onThinkingPhaseChange(true);
-    });
-
     try {
-        if (options.shouldCancel?.()) throw new Error('Generation cancelled');
+        unlistenToken = await listen<{ token: string; generationId?: string }>('ai-token', (event) => {
+            if (event.payload.generationId !== generationId) return;
+            rawBuffer += event.payload.token;
+
+            const { text, isThinking } = processThinkingOutput(rawBuffer, false);
+            // Native thinking ends when visible answer text arrives. Tag parsing
+            // remains the fallback for models that encode thinking in content.
+            if (text) nativeThinking = false;
+            callbacks.onThinkingPhaseChange(nativeThinking || isThinking);
+            callbacks.onStreamUpdate(text);
+        });
+
+        // Backend emits reasoning tokens (delta.reasoning_content) on their own
+        // event so the UI can know it's "thinking" without relying on tag-parsing.
+        unlistenThinking = await listen<{ token: string; generationId?: string }>('ai-thinking-token', (event) => {
+            if (event.payload.generationId !== generationId) return;
+            if (!event.payload.token) return;
+            nativeThinking = true;
+            callbacks.onThinkingPhaseChange(true);
+        });
+
+        if (options.shouldCancel?.()) throw new GenerationCancelledError();
         const effectiveBudget = deriveEffectiveTokenBudget(parameters);
         const thinkingBudget = effectiveBudget.payloadThinkingBudget;
         const effectiveMaxTokens = effectiveBudget.payloadMaxTokens;
@@ -182,7 +190,7 @@ export async function runGeneration(
         // Always cleared, even on error — otherwise the UI can get stuck
         // showing a "thinking" state after a failed request.
         callbacks.onThinkingPhaseChange(false);
-        unlistenToken();
-        unlistenThinking();
+        unlistenToken?.();
+        unlistenThinking?.();
     }
 }

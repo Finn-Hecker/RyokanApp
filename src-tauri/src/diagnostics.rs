@@ -38,6 +38,9 @@ pub enum Event {
     GenerationStarted,
     AvatarFailed,
     TokenizerFailed,
+    TokenizerFamilyEstimate,
+    TokenizerFallbackEstimate,
+    TokenizerHeuristicEstimate,
     FrontendError,
     FrontendWarning,
     ContextDecision,
@@ -65,7 +68,10 @@ impl Event {
             Self::AppStarted
             | Self::DatabaseReady
             | Self::GenerationStarted
-            | Self::ContextDecision => "info",
+            | Self::ContextDecision
+            | Self::TokenizerFamilyEstimate
+            | Self::TokenizerFallbackEstimate
+            | Self::TokenizerHeuristicEstimate => "info",
             Self::DatabaseFailed
             | Self::TransportFailed
             | Self::ProviderFailed

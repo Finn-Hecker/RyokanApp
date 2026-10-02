@@ -33,16 +33,16 @@ fn only_new_provider_ids_dispatch_to_cloud_and_keys_stay_on_official_hosts() {
         ("gemini", "https://generativelanguage.googleapis.com/v1beta"),
     ] {
         assert!(is_provider(Some(kind)));
-        assert!(validate_base(&format!("{base}/"), kind, "key").is_ok());
-        assert!(validate_base(base, kind, " ").is_err());
-        assert!(validate_base("https://impostor.invalid/v1", kind, "key").is_err());
+        assert!(validate_base(&format!("{base}/"), CloudProvider::parse(Some(kind)).unwrap(), "key").is_ok());
+        assert!(validate_base(base, CloudProvider::parse(Some(kind)).unwrap(), " ").is_err());
+        assert!(validate_base("https://impostor.invalid/v1", CloudProvider::parse(Some(kind)).unwrap(), "key").is_err());
     }
 }
 
 #[test]
 fn native_authentication_uses_headers_without_query_keys() {
     for kind in ["nanogpt", "anthropic", "gemini"] {
-        let request = authenticate(CLIENT.get("https://fixture.invalid/models"), kind, "key")
+        let request = authenticate(CLIENT.get("https://fixture.invalid/models"), CloudProvider::parse(Some(kind)).unwrap(), "key")
             .build()
             .unwrap();
         assert!(!request.url().as_str().contains("key"));
@@ -77,8 +77,7 @@ fn nanogpt_request_and_usage_match_its_documented_compatible_contract() {
     assert!(body.get("thinking_budget_tokens").is_none());
     assert!(body.get("chat_template_kwargs").is_none());
     assert_eq!(
-        decode(
-            "nanogpt",
+        decode(CloudProvider::NanoGpt,
             r#"{"choices":[{"delta":{"reasoning":"Thinking"}}]}"#
         )
         .unwrap()
@@ -149,9 +148,8 @@ fn anthropic_manual_and_adaptive_thinking_use_native_combined_cap() {
 
 #[test]
 fn anthropic_sparse_cumulative_usage_includes_cache_reads_and_writes_once() {
-    let initial = decode("anthropic",r#"{"type":"message_start","message":{"model":"actual","usage":{"input_tokens":10,"cache_read_input_tokens":80,"cache_creation_input_tokens":20,"output_tokens":0}}}"#).unwrap().usage;
-    let final_usage = decode(
-        "anthropic",
+    let initial = decode(CloudProvider::Anthropic,r#"{"type":"message_start","message":{"model":"actual","usage":{"input_tokens":10,"cache_read_input_tokens":80,"cache_creation_input_tokens":20,"output_tokens":0}}}"#).unwrap().usage;
+    let final_usage = decode(CloudProvider::Anthropic,
         r#"{"type":"message_delta","usage":{"output_tokens":32}}"#,
     )
     .unwrap()
@@ -163,15 +161,14 @@ fn anthropic_sparse_cumulative_usage_includes_cache_reads_and_writes_once() {
     assert_eq!(usage.output_tokens, Some(32));
     assert_eq!(usage.actual_model.as_deref(), Some("actual"));
     assert_eq!(
-        decode(
-            "anthropic",
+        decode(CloudProvider::Anthropic,
             r#"{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"think"}}"#
         )
         .unwrap()
         .thinking,
         "think"
     );
-    assert!(decode("anthropic", r#"{"type":"future_event"}"#).is_ok());
+    assert!(decode(CloudProvider::Anthropic, r#"{"type":"future_event"}"#).is_ok());
 }
 
 #[test]
@@ -233,7 +230,7 @@ fn gemini_manual_dynamic_and_level_thinking_do_not_increase_output_cap() {
 
 #[test]
 fn gemini_usage_reports_full_output_and_keeps_thoughts_separate() {
-    let event = decode("gemini",r#"{"candidates":[{"content":{"parts":[{"text":"thought","thought":true},{"text":"answer"}]},"finishReason":"STOP"}],"modelVersion":"actual","usageMetadata":{"promptTokenCount":100,"cachedContentTokenCount":80,"candidatesTokenCount":20,"thoughtsTokenCount":12}}"#).unwrap();
+    let event = decode(CloudProvider::Gemini,r#"{"candidates":[{"content":{"parts":[{"text":"thought","thought":true},{"text":"answer"}]},"finishReason":"STOP"}],"modelVersion":"actual","usageMetadata":{"promptTokenCount":100,"cachedContentTokenCount":80,"candidatesTokenCount":20,"thoughtsTokenCount":12}}"#).unwrap();
     assert_eq!(event.text, "answer");
     assert_eq!(event.thinking, "thought");
     assert!(event.finished);
@@ -243,8 +240,8 @@ fn gemini_usage_reports_full_output_and_keeps_thoughts_separate() {
     assert_eq!(usage.reasoning_tokens, Some(12));
     assert_eq!(usage.cached_input_tokens, Some(80));
     assert_eq!(usage.actual_model.as_deref(), Some("actual"));
-    assert!(decode("gemini", r#"{"promptFeedback":{"blockReason":"SAFETY"}}"#).is_err());
-    assert!(decode("gemini", r#"{"candidates":[{"finishReason":"SAFETY"}]}"#).is_err());
+    assert!(decode(CloudProvider::Gemini, r#"{"promptFeedback":{"blockReason":"SAFETY"}}"#).is_err());
+    assert!(decode(CloudProvider::Gemini, r#"{"candidates":[{"finishReason":"SAFETY"}]}"#).is_err());
 }
 
 #[test]
@@ -296,11 +293,8 @@ fn native_defaults_and_summary_policy_stay_consistent_with_frontend_reserves() {
         8192
     );
     payload.request_parameter_config.max_tokens_enabled = true;
-    let policy =
-        json!({"chat_template_kwargs":{"enable_thinking":false},"reasoning":{"enabled":false}})
-            .as_object()
-            .unwrap()
-            .clone();
+    payload.request_parameter_config.purpose = Some(super::super::RequestPurpose::Summary);
+    let policy = serde_json::Map::new();
     for body in [
         anthropic::body(&payload, policy.clone()).unwrap(),
         gemini::body(&payload, policy).unwrap(),
@@ -382,7 +376,7 @@ async fn all_new_providers_parse_fragmented_utf8_sse_and_terminal_usage() {
         let (url,thread) = server(body.into(),200);
         let response = CLIENT.get(url).send().await.unwrap();
         let mut received = String::new();
-        let usage = consume(response,kind,&CancellationToken::new(),|text,thinking| {
+        let usage = consume(response,CloudProvider::parse(Some(kind)).unwrap(),&CancellationToken::new(),|text,thinking| {
             received.push_str(&std::mem::take(text)); thinking.clear(); Ok(())
         }).await.unwrap().unwrap();
         assert_eq!(received,"日本"); assert_eq!(usage.output_tokens,Some(20));
@@ -400,7 +394,7 @@ async fn interrupted_and_malformed_streams_fail_instead_of_succeeding_silently()
         let (url, thread) = server(body.into(), 200);
         let response = CLIENT.get(url).send().await.unwrap();
         assert!(
-            consume(response, "gemini", &CancellationToken::new(), |_, _| Ok(()))
+            consume(response, CloudProvider::Gemini, &CancellationToken::new(), |_, _| Ok(()))
                 .await
                 .is_err()
         );
@@ -414,7 +408,7 @@ async fn cancellation_ends_a_native_stream_and_does_not_require_a_terminal_event
     let response = CLIENT.get(url).send().await.unwrap();
     let token = CancellationToken::new();
     token.cancel();
-    assert!(consume(response, "anthropic", &token, |_, _| Ok(()))
+    assert!(consume(response, CloudProvider::Anthropic, &token, |_, _| Ok(()))
         .await
         .is_ok());
     thread.join().unwrap();
@@ -468,7 +462,7 @@ async fn stop_interrupts_both_connection_and_idle_native_stream() {
             .unwrap();
         if headers_first {
             assert!(
-                consume(response.unwrap(), "anthropic", &token, |_, _| Ok(()))
+                consume(response.unwrap(), CloudProvider::Anthropic, &token, |_, _| Ok(()))
                     .await
                     .is_ok()
             );
@@ -478,4 +472,109 @@ async fn stop_interrupts_both_connection_and_idle_native_stream() {
         assert!(started.elapsed() < Duration::from_millis(200));
         thread.join().unwrap();
     }
+}
+
+
+#[tokio::test]
+async fn compatible_stream_requires_completion_and_preserves_usage_after_finish() {
+    for (body, valid) in [
+        ("data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n", false),
+        ("data: broken\n\n", false),
+        ("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: {\"usage\":{\"completion_tokens\":7}}\n\n", true),
+        ("data: [DONE]\n\n", true),
+    ] {
+        let (url, thread) = server(body.into(), 200);
+        let response = CLIENT.get(url).send().await.unwrap();
+        let result = super::super::consume_compatible(response, &request("openai"), &CancellationToken::new(), |_, _| Ok(())).await;
+        assert_eq!(result.is_ok(), valid);
+        if body.contains("completion_tokens") { assert_eq!(result.unwrap().unwrap().output_tokens, Some(7)); }
+        thread.join().unwrap();
+    }
+}
+
+#[tokio::test]
+async fn compatible_cancel_accepts_partial_without_completion() {
+    let (url, thread) = server("data: {}\n\n".into(), 200);
+    let response = CLIENT.get(url).send().await.unwrap();
+    let token = CancellationToken::new();
+    token.cancel();
+    assert!(super::super::consume_compatible(response, &request("openai"), &token, |_, _| Ok(())).await.is_ok());
+    thread.join().unwrap();
+}
+
+#[test]
+fn streaming_errors_keep_protocol_network_and_provider_categories() {
+    assert!(matches!(decode(CloudProvider::Anthropic, "{}"), Err(StreamFailure::Protocol(_))));
+    let payload = request("gemini");
+    for (error, expected) in [
+        (StreamFailure::Protocol("bad event".into()), "protocol"),
+        (StreamFailure::Transport("connection lost".into()), "network"),
+        (StreamFailure::Provider(json!({"error":{"message":"test-key Hello","code":429}}).to_string()), "api"),
+    ] {
+        let value: Value = serde_json::from_str(&error.into_ipc(&payload)).unwrap();
+        assert_eq!(value["kind"], expected);
+        assert!(!value["message"].as_str().unwrap().contains("test-key"));
+        assert!(!value["message"].as_str().unwrap().contains("Hello"));
+    }
+}
+
+
+#[test]
+fn shared_frontend_contracts_match_final_provider_bodies() {
+    let fixtures: Value = serde_json::from_str(include_str!("../../../../tests/fixtures/provider-contracts.json")).unwrap();
+    for fixture in fixtures.as_array().unwrap() {
+        let kind = fixture["kind"].as_str().unwrap();
+        let mut payload = request(kind);
+        payload.model = "fixture-model".into();
+        payload.top_p = Some(0.5);
+        payload.messages = vec![json!({"role":"user","content":"Hello"})];
+        payload.url = fixture["url"].as_str().unwrap().into();
+        payload.request_parameter_config = serde_json::from_value(fixture["config"].clone()).unwrap();
+        let additional = payload.request_parameter_config.additional_parameters.clone();
+        let body = match CloudProvider::parse(Some(kind)) {
+            Some(CloudProvider::NanoGpt) => nanogpt::body(&payload, additional).unwrap(),
+            Some(CloudProvider::Anthropic) => anthropic::body(&payload, additional).unwrap(),
+            Some(CloudProvider::Gemini) => gemini::body(&payload, additional).unwrap(),
+            None => super::super::compatible_body(&payload).unwrap(),
+        };
+        assert_eq!(body, fixture["expectedBody"], "{}", fixture["name"]);
+        if let Some(kind) = CloudProvider::parse(Some(kind)) { assert!(validate_base(&payload.url, kind, "fixture-key").is_ok()); }
+    }
+}
+
+#[test]
+fn metadata_keeps_native_limits_thinking_and_parameter_evidence_distinct() {
+    let model = gemini::model(&json!({"name":"models/fixture","supportedGenerationMethods":["generateContent"],
+        "thinking":true,"inputTokenLimit":100000,"outputTokenLimit":8000})).unwrap();
+    assert_eq!(model.thinking_supported, Some(true));
+    assert_eq!(model.reasoning, None);
+    assert_eq!(model.parameter_source, Some("api_contract"));
+    assert_eq!(model.input_token_limit, Some(100000));
+    assert_eq!(model.output_token_limit, Some(8000));
+    let unknown = nanogpt::model(&json!({"id":"fixture"})).unwrap();
+    assert_eq!(unknown.thinking_supported, None);
+    assert_eq!(unknown.reasoning, None);
+}
+
+
+#[tokio::test]
+async fn stop_interrupts_an_idle_http_error_body() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let (release, wait) = std::sync::mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        let (mut socket, _) = listener.accept().unwrap();
+        let mut request = [0; 2048];
+        socket.read(&mut request).unwrap();
+        socket.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 1000\r\n\r\n").unwrap();
+        socket.flush().unwrap();
+        wait.recv_timeout(Duration::from_secs(2)).unwrap();
+    });
+    let response = CLIENT.get(url).send().await.unwrap();
+    let token = CancellationToken::new();
+    let cancel = token.clone();
+    tokio::spawn(async move { tokio::time::sleep(Duration::from_millis(10)).await; cancel.cancel(); });
+    assert!(tokio::time::timeout(Duration::from_secs(1), read_error_body(response, &token)).await.unwrap().is_none());
+    release.send(()).unwrap();
+    thread.join().unwrap();
 }

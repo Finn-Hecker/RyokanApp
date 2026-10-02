@@ -11,3 +11,4 @@ vite.config.ts.timestamp-*
 /src-tauri/tokenizers/
 /src-tauri/updater.generated.json
 /updater-test-output/
+/docs

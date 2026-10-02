@@ -38,30 +38,16 @@
     onConnectionChange?: (previousConnectionId: string) => void;
   } = $props();
 
+  import { PROVIDERS as providerCatalog, type ProviderDefinition } from '$lib/utils/providers';
+
   type ProviderTab = 'local' | 'cloud';
 
-  type Provider = {
-    label: string;
-    url: string;
-    badge: () => string;
-    icon: 'desktop' | 'cloud' | 'terminal' | 'ollama' | 'kobold' | 'openai' | 'grok';
-    tab: ProviderTab;
-    kind: ProviderKind;
-  };
-
-  const PROVIDERS: Provider[] = [
-    { label: "OpenRouter", kind: 'openrouter', url: "https://openrouter.ai/api/v1", badge: () => m.settings_provider_badge_cloud(), icon: 'cloud', tab: 'cloud' },
-    { label: 'NanoGPT', kind: 'nanogpt', url: 'https://api.nano-gpt.com/api/v1', badge: () => m.settings_provider_badge_cloud(), icon: 'cloud', tab: 'cloud' },
-    { label: 'Anthropic', kind: 'anthropic', url: 'https://api.anthropic.com/v1', badge: () => m.settings_provider_badge_cloud(), icon: 'cloud', tab: 'cloud' },
-    { label: 'Google Gemini', kind: 'gemini', url: 'https://generativelanguage.googleapis.com/v1beta', badge: () => m.settings_provider_badge_cloud(), icon: 'cloud', tab: 'cloud' },
-    { label: "OpenAI", kind: 'openai', url: "https://api.openai.com/v1", badge: () => m.settings_provider_badge_cloud(), icon: 'openai', tab: 'cloud' },
-    { label: "Grok", kind: 'xai', url: "https://api.x.ai/v1", badge: () => m.settings_provider_badge_cloud(), icon: 'grok', tab: 'cloud' },
-
-    { label: "LM Studio", kind: 'lm_studio', url: "http://127.0.0.1:1234/v1", badge: () => m.settings_provider_badge_local(), icon: 'desktop', tab: 'local' },
-    { label: "Ollama", kind: 'ollama', url: "http://127.0.0.1:11434/v1", badge: () => m.settings_provider_badge_local(), icon: 'ollama', tab: 'local' },
-    { label: "llama.cpp", kind: 'llama_cpp', url: "http://127.0.0.1:8080/v1", badge: () => m.settings_provider_badge_local(), icon: 'terminal', tab: 'local' },
-    { label: "KoboldCPP", kind: 'koboldcpp', url: "http://127.0.0.1:5001/v1", badge: () => m.settings_provider_badge_local(), icon: 'kobold', tab: 'local' },
-  ];
+  type Provider = ProviderDefinition & { badge: () => string };
+  const PROVIDERS: Provider[] = providerCatalog.filter(provider => provider.kind !== 'generic_openai').map(provider => ({
+    ...provider,
+    icon: provider.icon === 'openrouter' ? 'cloud' : provider.icon,
+    badge: () => provider.tab === 'cloud' ? m.settings_provider_badge_cloud() : m.settings_provider_badge_local(),
+  }));
 
   let availableModels = $state<string[]>([]);
   let modelMetadata = $state<Record<string, ModelInfo>>({});
@@ -350,7 +336,7 @@
         }
         appState.apiSettings.generationCapabilities = modelGenerationCapabilities(
           appState.apiSettings, modelMetadata[appState.apiSettings.model]?.supportedParameters,
-          modelMetadata[appState.apiSettings.model]?.reasoning);
+          modelMetadata[appState.apiSettings.model]?.reasoning, modelMetadata[appState.apiSettings.model]);
       }
     } catch (e: any) {
       if (request !== modelLoadRequest || config !== modelConfigKey()) return;
@@ -376,7 +362,7 @@
   function selectModel(modelId: string) {
     if (appState.apiSettings.model !== modelId) invalidateDetectedContext(appState.apiSettings);
     appState.apiSettings.model = modelId;
-    appState.apiSettings.generationCapabilities = modelGenerationCapabilities(appState.apiSettings, modelMetadata[modelId]?.supportedParameters, modelMetadata[modelId]?.reasoning);
+    appState.apiSettings.generationCapabilities = modelGenerationCapabilities(appState.apiSettings, modelMetadata[modelId]?.supportedParameters, modelMetadata[modelId]?.reasoning, modelMetadata[modelId]);
     modelMenuOpen = false;
     modelSearch = "";
   }

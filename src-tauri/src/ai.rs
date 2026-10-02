@@ -54,33 +54,6 @@ fn cancellation_matches(active_id: &Option<String>, requested_id: &Option<String
     requested_id.is_none() || active_id == requested_id
 }
 
-#[derive(Debug, Clone, Copy)]
-struct ApiParameterFlags {
-    temperature: bool,
-    max_tokens: bool,
-    presence_penalty: bool,
-    thinking_budget: bool,
-    top_p: bool,
-    top_k: bool,
-    min_p: bool,
-    frequency_penalty: bool,
-}
-
-impl Default for ApiParameterFlags {
-    fn default() -> Self {
-        Self {
-            temperature: false,
-            max_tokens: false,
-            presence_penalty: false,
-            thinking_budget: false,
-            top_p: false,
-            top_k: false,
-            min_p: false,
-            frequency_penalty: false,
-        }
-    }
-}
-
 /// Parses a configured object without coercing any JSON values. Ryokan's core
 /// protocol fields are rejected as a group so a conflict can never partially
 /// apply or depend on merge order.
@@ -112,9 +85,15 @@ fn parse_additional_api_parameters(
     Ok(object.clone())
 }
 
+#[derive(Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum RequestPurpose { Summary }
+
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct RequestApiParameterConfig {
+    #[serde(default)]
+    purpose: Option<RequestPurpose>,
     #[serde(default)]
     service_tier: Option<String>,
     #[serde(default)]
@@ -168,30 +147,6 @@ fn apply_service_tier(
     if !support.0 || (!support.1 && body.get("service_tier").and_then(|v| v.as_str()) == Some("flex")) {
         body.as_object_mut().unwrap().remove("service_tier");
     }
-}
-
-fn bind_request_parameter_config(
-    parameter_flags: &mut ApiParameterFlags,
-    forwarded_max_tokens: &mut Option<u32>,
-    forwarded_thinking_budget: &mut Option<u32>,
-    config: &RequestApiParameterConfig,
-) {
-    parameter_flags.temperature = config.temperature_enabled;
-    parameter_flags.max_tokens = config.max_tokens_enabled;
-    parameter_flags.presence_penalty = config.presence_penalty_enabled;
-    parameter_flags.thinking_budget = config.thinking_budget_enabled;
-    parameter_flags.top_p = config.top_p_enabled;
-    parameter_flags.top_k = config.top_k_enabled;
-    parameter_flags.min_p = config.min_p_enabled;
-    parameter_flags.frequency_penalty = config.frequency_penalty_enabled;
-    *forwarded_thinking_budget = Some(config.thinking_budget);
-    *forwarded_max_tokens = Some(config.max_tokens.saturating_add(
-        if config.thinking_budget_enabled {
-            config.thinking_budget
-        } else {
-            0
-        },
-    ));
 }
 
 fn merge_additional_api_parameters(
@@ -265,6 +220,113 @@ fn request_stream_usage(body: &mut serde_json::Value) {
     let options = object.entry("stream_options").or_insert_with(|| serde_json::json!({}));
     if !options.is_object() { *options = serde_json::json!({}); }
     options["include_usage"] = serde_json::json!(true);
+}
+
+/// Application intent translated only for endpoints with matching controls.
+fn apply_summary_policy(body: &mut serde_json::Value, payload: &AiRequest) {
+    if payload.request_parameter_config.purpose != Some(RequestPurpose::Summary) {
+        return;
+    }
+    match payload.provider_kind.as_deref() {
+        Some("openrouter") => body["reasoning"] = serde_json::json!({"enabled": false}),
+        Some("llama_cpp" | "lm_studio" | "koboldcpp" | "ollama") => {
+            body["chat_template_kwargs"] = serde_json::json!({"enable_thinking": false});
+        }
+        // Preserve Custom's previous explicit compatibility policy.
+        Some("generic_openai") | None => {
+            body["chat_template_kwargs"] = serde_json::json!({"enable_thinking": false});
+            body["reasoning"] = serde_json::json!({"enabled": false});
+        }
+        _ => {} // Native/default thinking is allowed to consume the combined output cap.
+    }
+}
+
+/// Only sampler fields whose semantics are identical for compatible providers.
+fn apply_compatible_sampling(body: &mut serde_json::Value, payload: &AiRequest, max_tokens: u32) {
+    let config = &payload.request_parameter_config;
+    if config.temperature_enabled {
+        body["temperature"] = serde_json::json!(payload.temperature);
+    }
+    if config.max_tokens_enabled {
+        body["max_tokens"] = serde_json::json!(max_tokens);
+    }
+    for (enabled, name, value) in [
+        (
+            config.presence_penalty_enabled,
+            "repetition_penalty",
+            payload.presence_penalty.map(|v| serde_json::json!(v)),
+        ),
+        (
+            config.top_p_enabled,
+            "top_p",
+            payload.top_p.map(|v| serde_json::json!(v)),
+        ),
+        (
+            config.top_k_enabled,
+            "top_k",
+            payload.top_k.map(|v| serde_json::json!(v)),
+        ),
+        (
+            config.min_p_enabled,
+            "min_p",
+            payload.min_p.map(|v| serde_json::json!(v)),
+        ),
+        (
+            config.frequency_penalty_enabled,
+            "frequency_penalty",
+            payload.frequency_penalty.map(|v| serde_json::json!(v)),
+        ),
+    ] {
+        if enabled {
+            if let Some(value) = value {
+                body[name] = value;
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+enum StreamFailure {
+    Transport(String),
+    Protocol(String),
+    Provider(String),
+    Delivery(String),
+}
+
+impl StreamFailure {
+    fn into_ipc(self, payload: &AiRequest) -> String {
+        use crate::diagnostics::{record, Event};
+        let (kind, message) = match self {
+            Self::Provider(body) => {
+                record(Event::ProviderFailed);
+                return api_error_from_body(
+                    0,
+                    &body,
+                    &payload.api_key,
+                    &payload.model,
+                    &payload.messages,
+                );
+            }
+            Self::Transport(message) => {
+                record(Event::StreamFailed);
+                ("network", message)
+            }
+            Self::Protocol(message) => {
+                record(Event::StreamInvalid);
+                ("protocol", message)
+            }
+            Self::Delivery(message) => ("ipc", message),
+        };
+        serde_json::to_string(&AiApiError {
+            kind,
+            message: sanitize_api_error_message(&message, &payload.api_key, &payload.messages),
+            status: None,
+            code: None,
+            provider: None,
+            model: Some(payload.model.clone()),
+        })
+        .unwrap()
+    }
 }
 
 /// Counts reported by the backend for this request, independent of model capacity.
@@ -361,10 +423,12 @@ fn merge_token_usage(previous: Option<TokenUsage>, incoming: TokenUsage) -> Toke
 
 #[derive(Deserialize)]
 struct Choice {
+    #[serde(default)]
     delta: Delta,
+    finish_reason: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 struct Delta {
     content: Option<String>,
     reasoning_content: Option<String>,
@@ -387,7 +451,9 @@ pub(crate) struct AiRequest {
     model: String,
     messages: Vec<serde_json::Value>,
     temperature: f32,
-    max_tokens: Option<u32>,
+    // Legacy duplicate values remain accepted; the request config is authoritative.
+    #[serde(rename = "max_tokens")]
+    _max_tokens: Option<u32>,
     // NOTE: historically named `presence_penalty` but intentionally mapped below to the
     // JSON key "repetition_penalty" — that's the llama.cpp/koboldcpp sampler local models
     // (LM Studio included) actually understand and it's the more effective anti-repeat
@@ -405,11 +471,8 @@ pub(crate) struct AiRequest {
     #[serde(alias = "frequencyPenalty")]
     frequency_penalty: Option<f32>,
 
-    // Token budget for the reasoning phase. Forwarded to llama.cpp's
-    // `thinking_budget_tokens` request field. 0 = end reasoning immediately,
-    // omitted/None = let the server default (usually unrestricted) apply.
-    #[serde(alias = "thinkingBudget")]
-    thinking_budget: Option<u32>,
+    #[serde(rename = "thinking_budget", alias = "thinkingBudget")]
+    _thinking_budget: Option<u32>,
 }
 
 /// Payload emitted back to the frontend containing the generated text.
@@ -575,6 +638,15 @@ pub struct ModelArchitecture {
 #[serde(rename_all = "camelCase")]
 pub struct ModelInfo {
     id: String,
+    /// Native input/output limits are distinct; context_length remains the planning window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input_token_limit: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_token_limit: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parameter_source: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking_supported: Option<bool>,
     supported_parameters: Option<Vec<String>>,
     reasoning: Option<ModelReasoningInfo>,
     context_length: Option<u64>,
@@ -652,6 +724,10 @@ fn normalize_models(entries: Vec<ModelEntry>, text_output_only: bool) -> Vec<Mod
 
             Some(ModelInfo {
                 id: model.id,
+                input_token_limit: None,
+                output_token_limit: None,
+                parameter_source: None,
+                thinking_supported: None,
                 supported_parameters: model.supported_parameters
                     .and_then(|value| serde_json::from_value::<Vec<String>>(value).ok()),
                 // OpenRouter's /models metadata uses supported_efforts; expose it
@@ -1139,84 +1215,7 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<Option<To
         return cloud::generate(&window, &payload, &token).await;
     }
 
-    let mut parameter_flags = ApiParameterFlags::default();
-    let mut forwarded_max_tokens = payload.max_tokens;
-    let mut forwarded_thinking_budget = payload.thinking_budget;
-    let additional_parameters = {
-        let config = &payload.request_parameter_config;
-        let validated = parse_additional_api_parameters(&serde_json::Value::Object(config.additional_parameters.clone()).to_string())?;
-        bind_request_parameter_config(
-            &mut parameter_flags,
-            &mut forwarded_max_tokens,
-            &mut forwarded_thinking_budget,
-            config,
-        );
-        validated
-    };
-
-    let mut body = serde_json::json!({
-        "model": payload.model,
-        "messages": payload.messages,
-        "stream": true
-    });
-
-    if parameter_flags.temperature {
-        body["temperature"] = serde_json::json!(payload.temperature);
-    }
-
-    if parameter_flags.max_tokens {
-        if let Some(max_tokens) = forwarded_max_tokens {
-            body["max_tokens"] = serde_json::json!(max_tokens);
-        }
-    }
-    // Mapped to "repetition_penalty" (llama.cpp/koboldcpp sampler), not the OpenAI
-    // "presence_penalty" semantics — see the doc comment on AiRequest::presence_penalty.
-    if parameter_flags.presence_penalty {
-        if let Some(penalty) = payload.presence_penalty {
-            body["repetition_penalty"] = serde_json::json!(penalty);
-        }
-    }
-    if parameter_flags.top_p {
-        if let Some(top_p) = payload.top_p {
-            body["top_p"] = serde_json::json!(top_p);
-        }
-    }
-    if parameter_flags.top_k {
-        if let Some(top_k) = payload.top_k {
-            body["top_k"] = serde_json::json!(top_k);
-        }
-    }
-    if parameter_flags.min_p {
-        if let Some(min_p) = payload.min_p {
-            body["min_p"] = serde_json::json!(min_p);
-        }
-    }
-    if parameter_flags.frequency_penalty {
-        if let Some(freq_penalty) = payload.frequency_penalty {
-            body["frequency_penalty"] = serde_json::json!(freq_penalty);
-        }
-    }
-
-    // This is a local chat-template extension, not an OpenAI/xAI field.
-    if matches!(payload.provider_kind.as_deref(), Some("llama_cpp" | "lm_studio" | "koboldcpp" | "ollama")) {
-        body["chat_template_kwargs"] = serde_json::json!({ "enable_thinking": true });
-    }
-    if parameter_flags.thinking_budget {
-        if payload.provider_kind.as_deref() == Some("llama_cpp") {
-          if let Some(budget) = forwarded_thinking_budget {
-            // 0 = end reasoning immediately, N>0 = token budget, omit for server default (usually unrestricted).
-            body["thinking_budget_tokens"] = serde_json::json!(budget);
-          }
-        }
-    }
-
-    apply_reasoning_level(&mut body, payload.provider_kind.as_deref(), &payload.request_parameter_config);
-
-    merge_additional_api_parameters(&mut body, additional_parameters);
-    apply_service_tier(&mut body, payload.provider_kind.as_deref(), &payload.url, &payload.request_parameter_config);
-    if matches!(payload.provider_kind.as_deref(), Some("openrouter" | "llama_cpp" | "lm_studio" | "koboldcpp" | "ollama" | "openai" | "xai" | "generic_openai")) {
-        request_stream_usage(&mut body);
-    }
+    let body = compatible_body(&payload)?;
 
     let mut req = CLIENT
         .post(format!("{}/chat/completions", payload.url))
@@ -1240,7 +1239,7 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<Option<To
     if !res.status().is_success() {
         crate::diagnostics::record(crate::diagnostics::Event::ProviderFailed);
         let status = res.status().as_u16();
-        let response_body = res.text().await.unwrap_or_default();
+        let Some(response_body) = read_error_body(res, &token).await else { return Ok(None); };
         return Err(api_error_from_body(
             status,
             &response_body,
@@ -1250,8 +1249,95 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<Option<To
         ));
     }
 
-    let mut stream = res.bytes_stream().eventsource();
+    consume_compatible(res, &payload, &token, |text, thinking| {
+        flush_batches(&window, text, thinking, &payload.generation_id)
+    }).await.map_err(|error| error.into_ipc(&payload))
+}
+
+async fn read_error_body(response: reqwest::Response, token: &CancellationToken) -> Option<String> {
+    tokio::select! {
+        biased;
+        _ = token.cancelled() => None,
+        body = response.text() => Some(body.unwrap_or_default()),
+    }
+}
+
+fn compatible_body(payload: &AiRequest) -> Result<serde_json::Value, String> {
+    let config = &payload.request_parameter_config;
+    let additional_parameters = parse_additional_api_parameters(
+        &serde_json::Value::Object(config.additional_parameters.clone()).to_string(),
+    )?;
+    let total_cap = config
+        .max_tokens
+        .saturating_add(if config.thinking_budget_enabled {
+            config.thinking_budget
+        } else {
+            0
+        });
+    let mut body = serde_json::json!({
+        "model": payload.model,
+        "messages": payload.messages,
+        "stream": true
+    });
+
+    apply_compatible_sampling(&mut body, payload, total_cap);
+
+    // This is a local chat-template extension, not an OpenAI/xAI field.
+    if matches!(
+        payload.provider_kind.as_deref(),
+        Some("llama_cpp" | "lm_studio" | "koboldcpp" | "ollama")
+    ) {
+        body["chat_template_kwargs"] = serde_json::json!({ "enable_thinking": true });
+    }
+    if config.thinking_budget_enabled && payload.provider_kind.as_deref() == Some("llama_cpp") {
+        body["thinking_budget_tokens"] = serde_json::json!(config.thinking_budget);
+    }
+
+    apply_reasoning_level(
+        &mut body,
+        payload.provider_kind.as_deref(),
+        &payload.request_parameter_config,
+    );
+
+    merge_additional_api_parameters(&mut body, additional_parameters);
+    apply_summary_policy(&mut body, payload);
+    apply_service_tier(
+        &mut body,
+        payload.provider_kind.as_deref(),
+        &payload.url,
+        &payload.request_parameter_config,
+    );
+    if matches!(
+        payload.provider_kind.as_deref(),
+        Some(
+            "openrouter"
+                | "llama_cpp"
+                | "lm_studio"
+                | "koboldcpp"
+                | "ollama"
+                | "openai"
+                | "xai"
+                | "generic_openai"
+        )
+    ) {
+        request_stream_usage(&mut body);
+    }
+
+    Ok(body)
+}
+
+// Kept separate from native streaming: compatible servers use finish_reason or DONE.
+async fn consume_compatible<F>(
+    response: reqwest::Response,
+    payload: &AiRequest,
+    token: &CancellationToken,
+    mut flush: F,
+) -> Result<Option<TokenUsage>, StreamFailure>
+where F: FnMut(&mut String, &mut String) -> Result<(), String>,
+{
+    let mut stream = response.bytes_stream().eventsource();
     let mut reported_usage = None;
+    let mut finished = false;
 
     let mut token_batch = String::new();
     let mut thinking_batch = String::new();
@@ -1278,20 +1364,21 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<Option<To
 
                 match event_result {
                     Ok(event) => {
-                        if event.data == "[DONE]" {
+                        if event.data.trim() == "[DONE]" {
+                            finished = true;
                             break;
                         }
-                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&event.data) {
-                            if value.get("error").is_some() {
-                                crate::diagnostics::record(crate::diagnostics::Event::ProviderFailed);
-                                return Err(api_error_from_body(0, &event.data, &payload.api_key, &payload.model, &payload.messages));
-                            }
-                            if let Some(usage) = stream_token_usage(&value, payload.provider_kind.as_deref()) {
-                                reported_usage = Some(merge_token_usage(reported_usage, usage));
-                            }
+                        let value: serde_json::Value = serde_json::from_str(&event.data)
+                            .map_err(|_| StreamFailure::Protocol("The provider sent malformed streaming JSON.".into()))?;
+                        if value.get("error").is_some() {
+                            return Err(StreamFailure::Provider(event.data));
                         }
-                        match serde_json::from_str::<StreamChunk>(&event.data) {
+                        if let Some(usage) = stream_token_usage(&value, payload.provider_kind.as_deref()) {
+                            reported_usage = Some(merge_token_usage(reported_usage, usage));
+                        }
+                        match serde_json::from_value::<StreamChunk>(value) {
                             Ok(chunk) => {
+                                finished |= chunk.choices.iter().any(|choice| choice.finish_reason.is_some());
                                 if let Some(delta) = chunk.choices.first().map(|c| &c.delta) {
                                     if let Some(content) = delta.content.as_ref() {
                                         token_batch.push_str(content);
@@ -1302,43 +1389,36 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<Option<To
                                 }
                             }
                             Err(_) => {
-                                crate::diagnostics::record(crate::diagnostics::Event::StreamInvalid);
+                                return Err(StreamFailure::Protocol("The provider sent an invalid completion event.".into()));
                             }
                         }
                     }
                     Err(_) => {
-                        crate::diagnostics::record(crate::diagnostics::Event::StreamFailed);
+                        return Err(StreamFailure::Transport("The provider stream was interrupted.".into()));
                     }
                 }
             }
 
             _ = flush_tick.tick() => {
-                flush_batches(
-                    &window,
-                    &mut token_batch,
-                    &mut thinking_batch,
-                    &payload.generation_id,
-                )?;
+                flush(&mut token_batch, &mut thinking_batch).map_err(StreamFailure::Delivery)?;
             }
         }
     }
 
     // Flush whatever was buffered when the stream stopped (DONE, cancel, or close).
-    flush_batches(
-        &window,
-        &mut token_batch,
-        &mut thinking_batch,
-        &payload.generation_id,
-    )?;
+    flush(&mut token_batch, &mut thinking_batch).map_err(StreamFailure::Delivery)?;
 
+    if !finished && !token.is_cancelled() {
+        return Err(StreamFailure::Protocol("The provider stream ended before completion.".into()));
+    }
     Ok(reported_usage)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        api_error_from_body, apply_reasoning_level, apply_service_tier, bind_request_parameter_config, cancellation_matches,
-        merge_additional_api_parameters, parse_additional_api_parameters, ApiParameterFlags,
+        api_error_from_body, apply_reasoning_level, apply_service_tier, cancellation_matches,
+        merge_additional_api_parameters, parse_additional_api_parameters,
         merge_token_usage, parse_token_usage, request_stream_usage, stream_token_usage, AiRequest, RequestApiParameterConfig, StreamChunk,
     };
 
@@ -1638,57 +1718,19 @@ mod tests {
     }
 
     #[test]
-    fn bound_request_uses_snapshotted_token_values_instead_of_live_payload_values() {
-        let config = RequestApiParameterConfig {
-            max_tokens_enabled: true,
-            thinking_budget_enabled: true,
-            max_tokens: 300,
-            thinking_budget: 2500,
-            additional_parameters: serde_json::Map::new(),
-            ..Default::default()
-        };
-        let mut flags = ApiParameterFlags::default();
-        let mut max_tokens = Some(999);
-        let mut thinking_budget = Some(999);
-
-        bind_request_parameter_config(
-            &mut flags,
-            &mut max_tokens,
-            &mut thinking_budget,
-            &config,
-        );
-
-        assert!(flags.max_tokens);
-        assert!(flags.thinking_budget);
-        assert_eq!(max_tokens, Some(2800));
-        assert_eq!(thinking_budget, Some(2500));
-    }
-
-    #[test]
-    fn bound_request_does_not_add_a_disabled_thinking_budget_to_max_tokens() {
-        let config = RequestApiParameterConfig {
-            max_tokens_enabled: true,
-            thinking_budget_enabled: false,
-            max_tokens: 300,
-            thinking_budget: 2500,
-            additional_parameters: serde_json::Map::new(),
-            ..Default::default()
-        };
-        let mut flags = ApiParameterFlags::default();
-        let mut max_tokens = None;
-        let mut thinking_budget = None;
-
-        bind_request_parameter_config(
-            &mut flags,
-            &mut max_tokens,
-            &mut thinking_budget,
-            &config,
-        );
-
-        assert!(flags.max_tokens);
-        assert!(!flags.thinking_budget);
-        assert_eq!(max_tokens, Some(300));
-        assert_eq!(thinking_budget, Some(2500));
+    fn bound_request_uses_config_and_ignores_legacy_duplicate_token_values() {
+        for (enabled, expected) in [(false, 300), (true, 2800)] {
+            let payload: super::AiRequest = serde_json::from_value(serde_json::json!({
+                "provider_kind":"llama_cpp", "url":"http://localhost/v1", "api_key":"", "model":"fixture",
+                "messages":[{"role":"user","content":"Hello"}], "temperature":0.7,
+                "max_tokens":999, "thinking_budget":999,
+                "request_parameter_config":{"maxTokensEnabled":true,"thinkingBudgetEnabled":enabled,
+                    "maxTokens":300,"thinkingBudget":2500,"additionalParameters":{}}
+            })).unwrap();
+            let body = super::compatible_body(&payload).unwrap();
+            assert_eq!(body["max_tokens"], expected);
+            assert_eq!(body.get("thinking_budget_tokens").and_then(|v| v.as_u64()), if enabled { Some(2500) } else { None });
+        }
     }
 
     #[test]

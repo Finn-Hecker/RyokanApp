@@ -1,4 +1,5 @@
-const providers = new Set(['openrouter', 'lm_studio', 'llama_cpp', 'koboldcpp', 'ollama', 'openai', 'xai', 'generic_openai', 'nanogpt', 'anthropic', 'gemini']);
+import { PROVIDERS } from './providers.ts';
+const providers = new Set<string>(PROVIDERS.map(provider => provider.kind));
 
 /** Explicit projection: do not spread settings or serialize arbitrary model IDs/URLs. */
 export function diagnosticsMetadata(connection: { providerKind?: unknown; model?: unknown }, summaryEnabled: boolean) {

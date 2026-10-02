@@ -48,3 +48,15 @@ export function requestParameterConfig(connection: ApiConnection): ApiRequestPar
     additionalParameters,
   };
 }
+
+/** Summary intent is explicit; provider wire fields are added at the Rust boundary. */
+export function summaryParameterConfig(connection: ApiConnection, maximumSummaryTokens: number): ApiRequestParameterConfig {
+  const profile = requestParameterConfig(connection);
+  return {
+    purpose: 'summary', budgetProvider: profile.budgetProvider, serviceTier: profile.serviceTier,
+    reasoningDialect: connection.providerKind === 'nanogpt' ? profile.reasoningDialect : null,
+    reasoningLevel: connection.providerKind === 'nanogpt' && reasoningCapability(connection)?.levels.includes('none') ? 'none' : 'auto',
+    temperatureEnabled: true, maxTokensEnabled: true, thinkingBudgetEnabled: false,
+    maxTokens: maximumSummaryTokens, thinkingBudget: 0, additionalParameters: {},
+  };
+}

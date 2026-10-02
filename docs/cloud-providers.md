@@ -1,7 +1,8 @@
 # Native cloud providers
 
 NanoGPT, Anthropic and Google Gemini use separate adapters. Existing OpenRouter,
-OpenAI, Grok, Custom and local providers retain the original request and stream path.
+OpenAI, Grok, Custom and local providers retain their OpenAI-compatible protocol
+and separate streaming path, with explicit completion/error checks.
 Profiles use the existing fields and JSON storage; no migration is required.
 
 | Provider | Official base URL | Authentication | Chat / stream |
@@ -47,9 +48,11 @@ Example Gemini additional parameters:
 {"generationConfig":{"maxOutputTokens":8192,"thinkingConfig":{"thinkingLevel":"HIGH","includeThoughts":true}}}
 ```
 
-Existing provider budget calculations and Rolling Summary orchestration are
-unchanged. The existing summary policy's foreign reasoning/template fields are
-removed by the native adapters. Models with default or always-on thinking may
+Existing provider budget calculations and Rolling Summary consistency mechanisms
+are unchanged. Summary requests carry an explicit application intent; the Rust
+boundary adds only the matching provider controls. Native adapters no longer need
+to know the summary policy. The shared cloud boundary continues to discard foreign
+reasoning/template fields from legacy native JSON settings. Models with default or always-on thinking may
 spend part of a summary's total output allowance on thinking.
 
 ## Accounting and scope
@@ -140,3 +143,66 @@ Validation on the final code:
 No changes to database migrations, persisted profile structure, chat message
 construction, existing provider streaming, or Rolling Summary orchestration.
 No dependencies were added. Live authenticated provider calls remain untested.
+
+## Architecture review implementation
+
+Implemented on 2026-10-02 without new dependencies or a data migration.
+
+### Review items
+
+| Item | Result |
+| --- | --- |
+| 1.1 | Shared TypeScript provider catalog for onboarding, settings, labels, provider types and diagnostic metadata. Onboarding retains model metadata and correctly persists OpenAI/xAI/Custom identities. |
+| 1.2 | Compatible streaming distinguishes completion, cancellation, malformed events and transport errors. Both `finish_reason` and `[DONE]` are accepted; usage after a finish event is still read. Native streaming remains separate. |
+| 1.3 | Listener installation is inside cleanup guards. Chat has a local stop flag and summaries recheck cancellation immediately before invoking Rust. Reading HTTP error bodies is cancellation-aware. |
+| 1.4 | Multiplayer measures provider-bound messages, custom fields, output and safety reserves. It retains a recent user-led suffix and rejects irreducible prompts before calling the provider. |
+| 1.5 | Summary requests carry explicit `purpose: summary` and the native budget discriminator. Rust translates the intent to supported endpoint controls. Native mappers no longer know summary orchestration details. |
+| 1.6 | Internal stream failures distinguish network, protocol, provider and IPC errors. Native connect/stream failures record the corresponding content-free diagnostics; provider messages retain redaction. |
+| 1.7 | A boolean thinking state replaces the unused full thinking buffer. Visible answer text ends thinking; subsequent thought events can restart it. |
+| 2.1 | Only identical compatible sampler emission was extracted for NanoGPT and the existing compatible request builder. The redundant parameter-flag copy was removed. |
+| 2.2 | Production adapters use explicit imports. Request construction and compatible stream consumption are small testable functions within the existing modules; `ai.rs` was not split into additional files. |
+| 2.3 | A small internal `CloudProvider` enum replaces repeated string dispatch, with exhaustive provider matches. Public string-based IPC remains compatible. |
+| 2.4 | Rust and TypeScript read the same synthetic JSON contracts. Rust checks complete final request bodies and official native URLs; TypeScript checks corresponding reserves and service-tier availability. |
+| 2.5 | Additive metadata distinguishes parameter evidence, thinking support, effort choices, and native input/output limits. Undisclosed support remains unknown. Existing planning windows, saved profiles and field names remain compatible. |
+| 2.6 | Content-free diagnostic events distinguish family tokenizer estimates, generic fallback tokenizer estimates and byte heuristics. Existing token counts and the count_tokens IPC result remain unchanged. |
+
+### Deliberate scope limits
+
+- No trait, plugin, provider registry framework or cross-language code generation.
+- No merger of compatible and native streaming pipelines, nor a universal native request mapper.
+- No split of `ai.rs` into numerous modules. The small shared sampler helper remains in the parent module.
+- No automatic clamping to newly exposed model output limits; the provider remains authoritative. Historical profiles are not rewritten.
+- No exact-tokenizer claim, additional provider token-count requests, or redesign of token-count UI. Diagnostic quality describes the backend estimates used for request planning.
+- No changes to the common usage model, cache accounting, summary snapshots/revisions/CAS/rollback, cancellation identities/RAII guard or shared HTTP client.
+- The pre-existing `.gitignore` edit was left untouched and is excluded from implementation statistics.
+
+### Removed duplication
+
+- Provider IDs, endpoints and display definitions now have one TypeScript catalog instead of separate onboarding/settings lists and a label table.
+- Compatible temperature, output cap and optional sampler emission is shared with NanoGPT.
+- `ApiParameterFlags` and its copy/bind function are gone; the immutable request configuration directly controls emission. Legacy duplicate token fields are still accepted but do not override that configuration.
+- Message framing and additional-JSON token estimates are shared between solo/summary planning and multiplayer.
+- Reading a cancellation-aware HTTP error body is shared by both transport paths.
+- Summary policy no longer emits foreign fields for native adapters to strip individually; legacy native JSON filtering remains at the common cloud boundary for compatibility.
+
+### Observable behavior changes
+
+- New OpenAI/Grok onboarding profiles now have the correct provider kind. Previously saved incorrectly classified profiles are not silently migrated.
+- A prematurely closed or malformed compatible stream now reports failure instead of silently succeeding. Complete streams ending with either a finish reason or `[DONE]`, and explicit Stop, remain accepted.
+- Stop during listener installation prevents a later paid request; HTTP-error-body reads can also be stopped.
+- Multiplayer may keep a shorter history because output, system prompt and safety reserves are now counted. An oversized required prompt produces a context error before network generation.
+- Summary controls are endpoint-specific. OpenRouter/local controls are translated; Custom retains its previous compatibility policy. OpenAI/xAI no longer receive foreign summary fields. NanoGPT uses `reasoning_effort: none` only when advertised; native default/always-on thinking can still consume the total cap.
+- Thinking indicators can finish before the answer stream finishes. Capability warnings no longer present endpoint contract omissions as model-specific negative evidence.
+- Normal provider authentication, text/role mapping, sampler semantics, native thinking caps, usage/cache/cost accounting and batching remain intact.
+
+### Validation
+
+- Full Rust suite: 102 passed, plus main/doc targets with zero tests.
+- Full frontend suite under `src` and `scripts`: 147 passed.
+- Typecheck: zero errors and zero warnings.
+- Production build: successful; existing warnings about mixed static/dynamic event imports and large bundles remain.
+- `git diff --check`: passed.
+- Seven new Rust regression tests; two old binding-only tests consolidated into one final-body test (net six more Rust tests).
+- Ten new frontend regression tests.
+- Shared contracts cover native defaults/manual/adaptive/dynamic thinking, custom overrides, summary intent, compatible sampler emission, tiers, and the llama.cpp thinking allowance.
+- No live authenticated provider calls were made. Typecheck/build ran outside the filesystem sandbox because esbuild could not traverse the required project configuration paths inside it.

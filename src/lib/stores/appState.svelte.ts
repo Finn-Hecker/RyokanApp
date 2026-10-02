@@ -2,7 +2,8 @@ import { createDefaultApiParameterEnabled, type ApiParameterKey } from '$lib/uti
 import type { ReasoningLevel, SavedGenerationCapabilities, ServiceTier } from '$lib/utils/generationCapabilities';
 import { CONSERVATIVE_CONTEXT_FALLBACK, resolvedHardContextLimit, resolveSummaryConnection, SAME_AS_CHAT_CONNECTION } from '$lib/utils/connectionCore';
 
-export type ProviderKind = 'openrouter' | 'lm_studio' | 'llama_cpp' | 'koboldcpp' | 'ollama' | 'openai' | 'xai' | 'generic_openai' | 'nanogpt' | 'anthropic' | 'gemini';
+import type { ProviderKind } from '$lib/utils/providers';
+export type { ProviderKind } from '$lib/utils/providers';
 export type ContextStrategy = 'economy' | 'balanced' | 'maximum';
 export type ContextProvenance = 'runtime' | 'provider_advertised' | 'theoretical' | 'kobold_true_max' | 'kobold_config_fallback';
 

@@ -1,6 +1,16 @@
-//! Isolated native adapters. The legacy OpenAI-compatible request/stream path is untouched.
-use super::*;
+//! Native adapters share transport and batching, while retaining their own protocol mappers.
+use super::{
+    api_error_from_body, apply_compatible_sampling, count_at, flush_batches,
+    merge_additional_api_parameters, merge_token_usage, parse_additional_api_parameters,
+    parse_token_usage, read_error_body, request_stream_usage, response_text, stream_token_usage,
+    transport_error, AiRequest, ModelInfo, ModelReasoningInfo, StreamFailure, TokenUsage, CLIENT,
+};
+use eventsource_stream::Eventsource;
+use futures::StreamExt;
 use serde_json::{json, Value};
+use std::time::Duration;
+use tauri::Window;
+use tokio_util::sync::CancellationToken;
 mod anthropic;
 mod gemini;
 mod nanogpt;
@@ -11,19 +21,36 @@ mod tests;
 const ANTHROPIC_DEFAULT_OUTPUT_CAP: u32 = 4096;
 const GEMINI_DEFAULT_OUTPUT_CAP: u32 = 8192;
 
-pub(super) fn is_provider(kind: Option<&str>) -> bool {
-    matches!(kind, Some("nanogpt" | "anthropic" | "gemini"))
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum CloudProvider {
+    NanoGpt,
+    Anthropic,
+    Gemini,
 }
 
-fn validate_base(base: &str, kind: &str, key: &str) -> Result<String, String> {
+impl CloudProvider {
+    pub(super) fn parse(kind: Option<&str>) -> Option<Self> {
+        match kind {
+            Some("nanogpt") => Some(Self::NanoGpt),
+            Some("anthropic") => Some(Self::Anthropic),
+            Some("gemini") => Some(Self::Gemini),
+            _ => None,
+        }
+    }
+}
+
+pub(super) fn is_provider(kind: Option<&str>) -> bool {
+    CloudProvider::parse(kind).is_some()
+}
+
+fn validate_base(base: &str, kind: CloudProvider, key: &str) -> Result<String, String> {
     if key.trim().is_empty() {
         return Err("Enter an API key for this provider.".into());
     }
     let expected = match kind {
-        "nanogpt" => "https://api.nano-gpt.com/api/v1",
-        "anthropic" => "https://api.anthropic.com/v1",
-        "gemini" => "https://generativelanguage.googleapis.com/v1beta",
-        _ => return Err("Unsupported cloud provider".into()),
+        CloudProvider::NanoGpt => "https://api.nano-gpt.com/api/v1",
+        CloudProvider::Anthropic => "https://api.anthropic.com/v1",
+        CloudProvider::Gemini => "https://generativelanguage.googleapis.com/v1beta",
     };
     if base.trim_end_matches('/') != expected {
         return Err("This provider requires its official API base URL. Use Custom for compatible endpoints.".into());
@@ -33,15 +60,15 @@ fn validate_base(base: &str, kind: &str, key: &str) -> Result<String, String> {
 
 fn authenticate(
     request: reqwest::RequestBuilder,
-    kind: &str,
+    kind: CloudProvider,
     key: &str,
 ) -> reqwest::RequestBuilder {
     match kind {
-        "anthropic" => request
+        CloudProvider::Anthropic => request
             .header("x-api-key", key)
             .header("anthropic-version", "2023-06-01"),
-        "gemini" => request.header("x-goog-api-key", key),
-        _ => request.bearer_auth(key),
+        CloudProvider::Gemini => request.header("x-goog-api-key", key),
+        CloudProvider::NanoGpt => request.bearer_auth(key),
     }
 }
 
@@ -74,7 +101,10 @@ async fn send_cancellable(
     tokio::select! {
         biased;
         _ = token.cancelled() => Ok(None),
-        result = request.send() => result.map(Some).map_err(|e| transport_error(&e, model)),
+        result = request.send() => result.map(Some).map_err(|e| {
+            crate::diagnostics::record(crate::diagnostics::Event::TransportFailed);
+            transport_error(&e, model)
+        }),
     }
 }
 
@@ -86,6 +116,10 @@ fn model_info(
 ) -> ModelInfo {
     ModelInfo {
         id,
+        input_token_limit: None,
+        output_token_limit: None,
+        parameter_source: Some("model_metadata"),
+        thinking_supported: None,
         context_length: context,
         supported_parameters: Some(parameters),
         reasoning,
@@ -99,6 +133,7 @@ pub(super) async fn fetch_models(
     key: &str,
     kind: &str,
 ) -> Result<Vec<ModelInfo>, String> {
+    let kind = CloudProvider::parse(Some(kind)).ok_or("Unsupported cloud provider")?;
     let base = validate_base(base, kind, key)?;
     let mut models = Vec::new();
     let mut cursor: Option<String> = None;
@@ -112,13 +147,13 @@ pub(super) async fn fetch_models(
             key,
         );
         request = match kind {
-            "nanogpt" => request.query(&[("detailed", "true")]),
-            "anthropic" => request.query(&[("limit", "1000")]),
-            _ => request.query(&[("pageSize", "1000")]),
+            CloudProvider::NanoGpt => request.query(&[("detailed", "true")]),
+            CloudProvider::Anthropic => request.query(&[("limit", "1000")]),
+            CloudProvider::Gemini => request.query(&[("pageSize", "1000")]),
         };
         if let Some(value) = &cursor {
             request = request.query(&[(
-                if kind == "anthropic" {
+                if kind == CloudProvider::Anthropic {
                     "after_id"
                 } else {
                     "pageToken"
@@ -128,21 +163,25 @@ pub(super) async fn fetch_models(
         }
         let value = json_response(request, key, "", &[]).await?;
         let entries = value
-            .get(if kind == "gemini" { "models" } else { "data" })
+            .get(if kind == CloudProvider::Gemini {
+                "models"
+            } else {
+                "data"
+            })
             .and_then(Value::as_array)
             .ok_or("The model list has an invalid format.")?;
         for entry in entries {
             let model = match kind {
-                "nanogpt" => nanogpt::model(entry),
-                "anthropic" => anthropic::model(entry),
-                _ => gemini::model(entry),
+                CloudProvider::NanoGpt => nanogpt::model(entry),
+                CloudProvider::Anthropic => anthropic::model(entry),
+                CloudProvider::Gemini => gemini::model(entry),
             };
             if let Some(model) = model {
                 models.push(model);
             }
         }
         cursor = match kind {
-            "anthropic" if value.get("has_more") == Some(&Value::Bool(true)) => Some(
+            CloudProvider::Anthropic if value.get("has_more") == Some(&Value::Bool(true)) => Some(
                 value
                     .get("last_id")
                     .and_then(Value::as_str)
@@ -150,12 +189,12 @@ pub(super) async fn fetch_models(
                     .ok_or("The model list is missing its pagination cursor.")?
                     .into(),
             ),
-            "gemini" => value
+            CloudProvider::Gemini => value
                 .get("nextPageToken")
                 .and_then(Value::as_str)
                 .filter(|s| !s.is_empty())
                 .map(str::to_owned),
-            _ => None,
+            CloudProvider::Anthropic | CloudProvider::NanoGpt => None,
         };
         if let Some(cursor) = &cursor {
             if !seen.insert(cursor.clone()) || seen.len() > 100 {
@@ -177,34 +216,37 @@ struct CloudEvent {
     finished: bool,
 }
 
-fn decode(kind: &str, data: &str) -> Result<CloudEvent, String> {
-    if kind == "nanogpt" && data.trim() == "[DONE]" {
+fn decode(kind: CloudProvider, data: &str) -> Result<CloudEvent, StreamFailure> {
+    if kind == CloudProvider::NanoGpt && data.trim() == "[DONE]" {
         return Ok(CloudEvent {
             terminal: true,
             finished: true,
             ..Default::default()
         });
     }
-    let value: Value = serde_json::from_str(data)
-        .map_err(|_| "The provider sent malformed streaming JSON.".to_string())?;
+    let value: Value = serde_json::from_str(data).map_err(|_| {
+        StreamFailure::Protocol("The provider sent malformed streaming JSON.".into())
+    })?;
     if value.get("error").is_some() {
-        return Err(data.into());
+        return Err(StreamFailure::Provider(data.into()));
+    }
+    if kind == CloudProvider::Anthropic && value.get("type").and_then(Value::as_str).is_none() {
+        return Err(StreamFailure::Protocol("Anthropic stream event is missing its type.".into()));
     }
     match kind {
-        "nanogpt" => nanogpt::event(&value),
-        "anthropic" => anthropic::event(&value),
-        "gemini" => gemini::event(&value),
-        _ => Err("Unsupported provider".into()),
+        CloudProvider::NanoGpt => nanogpt::event(&value).map_err(StreamFailure::Provider),
+        CloudProvider::Anthropic => anthropic::event(&value).map_err(StreamFailure::Provider),
+        CloudProvider::Gemini => gemini::event(&value).map_err(StreamFailure::Provider),
     }
 }
 
 // New providers share batching and cancellation primitives, not the legacy parser.
 async fn consume<F>(
     response: reqwest::Response,
-    kind: &str,
+    kind: CloudProvider,
     token: &CancellationToken,
     mut flush: F,
-) -> Result<Option<TokenUsage>, String>
+) -> Result<Option<TokenUsage>, StreamFailure>
 where
     F: FnMut(&mut String, &mut String) -> Result<(), String>,
 {
@@ -218,10 +260,10 @@ where
     loop {
         tokio::select! {
             biased;
-            _ = token.cancelled() => { flush(&mut text, &mut thinking)?; return Ok(usage); }
+            _ = token.cancelled() => { flush(&mut text, &mut thinking).map_err(StreamFailure::Delivery)?; return Ok(usage); }
             event = stream.next() => {
                 let Some(event) = event else { break; };
-                let event = event.map_err(|_| "The provider stream was interrupted.".to_string())?;
+                let event = event.map_err(|_| StreamFailure::Transport("The provider stream was interrupted.".into()))?;
                 let event = decode(kind, &event.data)?;
                 text.push_str(&event.text);
                 thinking.push_str(&event.thinking);
@@ -229,12 +271,14 @@ where
                 finished |= event.finished;
                 if event.terminal { break; }
             }
-            _ = tick.tick() => flush(&mut text, &mut thinking)?,
+            _ = tick.tick() => flush(&mut text, &mut thinking).map_err(StreamFailure::Delivery)?,
         }
     }
-    flush(&mut text, &mut thinking)?;
+    flush(&mut text, &mut thinking).map_err(StreamFailure::Delivery)?;
     if !finished {
-        return Err("The provider stream ended before completion.".into());
+        return Err(StreamFailure::Protocol(
+            "The provider stream ended before completion.".into(),
+        ));
     }
     Ok(usage)
 }
@@ -244,9 +288,10 @@ pub(super) async fn generate(
     payload: &AiRequest,
     token: &CancellationToken,
 ) -> Result<Option<TokenUsage>, String> {
-    let kind = payload.provider_kind.as_deref().unwrap();
+    let kind = CloudProvider::parse(payload.provider_kind.as_deref())
+        .ok_or("Unsupported cloud provider")?;
     let base = validate_base(&payload.url, kind, &payload.api_key)?;
-    let additional = parse_additional_api_parameters(
+    let mut additional = parse_additional_api_parameters(
         &Value::Object(
             payload
                 .request_parameter_config
@@ -255,16 +300,25 @@ pub(super) async fn generate(
         )
         .to_string(),
     )?;
+    // Preserve the native endpoints' existing rejection of foreign compatibility controls.
+    // Summary intent no longer generates these fields; explicit legacy JSON stays compatible.
+    match kind {
+        CloudProvider::NanoGpt => {}
+        CloudProvider::Anthropic | CloudProvider::Gemini => {
+            additional.remove("chat_template_kwargs");
+            additional.remove("reasoning");
+        }
+    }
     let (url, body) = match kind {
-        "nanogpt" => (
+        CloudProvider::NanoGpt => (
             format!("{base}/chat/completions"),
             nanogpt::body(payload, additional)?,
         ),
-        "anthropic" => (
+        CloudProvider::Anthropic => (
             format!("{base}/messages"),
             anthropic::body(payload, additional)?,
         ),
-        _ => (
+        CloudProvider::Gemini => (
             gemini::endpoint(&base, &payload.model)?,
             gemini::body(payload, additional)?,
         ),
@@ -283,9 +337,8 @@ pub(super) async fn generate(
     if !response.status().is_success() {
         crate::diagnostics::record(crate::diagnostics::Event::ProviderFailed);
         let status = response.status().as_u16();
-        let body = tokio::select! {
-            _ = token.cancelled() => return Ok(None),
-            body = response.text() => body.unwrap_or_default(),
+        let Some(body) = read_error_body(response, token).await else {
+            return Ok(None);
         };
         return Err(api_error_from_body(
             status,
@@ -299,15 +352,7 @@ pub(super) async fn generate(
         flush_batches(window, text, thinking, &payload.generation_id)
     })
     .await
-    .map_err(|error| {
-        api_error_from_body(
-            0,
-            &error,
-            &payload.api_key,
-            &payload.model,
-            &payload.messages,
-        )
-    })
+    .map_err(|error| error.into_ipc(payload))
 }
 
 fn text_messages(payload: &AiRequest) -> Result<(Vec<String>, Vec<Value>), String> {
