@@ -101,6 +101,9 @@ pub enum Provider {
     Openai,
     Xai,
     GenericOpenai,
+    Nanogpt,
+    Anthropic,
+    Gemini,
     Unknown,
 }
 

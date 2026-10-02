@@ -13,6 +13,7 @@
   import GenerationCapabilityWarning from './GenerationCapabilityWarning.svelte';
   import ReasoningControl from './ReasoningControl.svelte';
   import ThinkingBudgetControl from './ThinkingBudgetControl.svelte';
+  import { ANTHROPIC_DEFAULT_OUTPUT_CAP, GEMINI_DEFAULT_OUTPUT_CAP } from '$lib/utils/providerTokenBudget';
 
   export let powerUser: boolean = false;
   export let category: "parameters" | "advanced" | "appearance" | "language" = "parameters";
@@ -227,6 +228,12 @@
           {@render parameterToggle("maxTokens")}
         </div>
       </div>
+      {#if appState.apiSettings.providerKind === 'anthropic' || appState.apiSettings.providerKind === 'gemini'}
+        <p class="power-value">{getLocale() === 'de'
+          ? 'Gemeinsames Limit für Thinking und Antwort. Bei deaktiviertem Schalter: '
+          : 'Combined limit for thinking and answer. With the switch off: '}{appState.apiSettings.providerKind === 'anthropic'
+            ? ANTHROPIC_DEFAULT_OUTPUT_CAP : GEMINI_DEFAULT_OUTPUT_CAP} Tokens.</p>
+      {/if}
       {#if powerUser}
         <div in:fade={{ duration: 250, delay: 30 }}>
           <input

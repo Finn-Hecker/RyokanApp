@@ -1,3 +1,5 @@
+import { nativeTokenBudget, type NativeBudgetProvider } from './providerTokenBudget.ts';
+
 export interface SummaryMarkerState {
   currentSummary: string | null;
   lastSummarizedMessageId: string | null;
@@ -66,8 +68,10 @@ export async function reconcilePromptTokens(
 }
 
 export interface ApiRequestParameterConfig {
+  /** Request-only discriminator; absent for every existing provider. */
+  readonly budgetProvider?: NativeBudgetProvider;
   readonly serviceTier?: 'auto' | 'standard' | 'flex';
-  readonly reasoningDialect?: 'openrouter' | 'openai' | 'xai' | 'llama_cpp' | 'llama_cpp_effort' | 'lm_studio' | null;
+  readonly reasoningDialect?: 'openrouter' | 'openai' | 'xai' | 'llama_cpp' | 'llama_cpp_effort' | 'lm_studio' | 'nanogpt' | 'anthropic' | 'gemini' | null;
   readonly reasoningLevel?: 'auto' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   readonly temperatureEnabled?: boolean;
   readonly maxTokensEnabled: boolean;
@@ -142,6 +146,8 @@ function objectValue(value: unknown): Record<string, unknown> | null {
 export function deriveEffectiveTokenBudget(
   config: ApiRequestParameterConfig,
 ): EffectiveTokenBudget {
+  const native = nativeTokenBudget(config);
+  if (native) return native;
   const payloadThinkingBudget = config.thinkingBudgetEnabled ? config.thinkingBudget : 0;
   const payloadMaxTokens = config.maxTokens + payloadThinkingBudget;
   const additional = config.additionalParameters ?? {};

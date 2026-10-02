@@ -29,10 +29,13 @@
     needsKey: boolean;
     tab: ProviderTab;
     keyPlaceholder?: string;
-    icon: 'desktop' | 'ollama' | 'terminal' | 'kobold' | 'openrouter' | 'openai' | 'grok' | 'custom';
+    icon: 'desktop' | 'ollama' | 'terminal' | 'kobold' | 'openrouter' | 'openai' | 'grok' | 'custom' | 'cloud';
   };
 
   const presets: Preset[] = [
+    { label: 'NanoGPT', url: 'https://api.nano-gpt.com/api/v1', needsKey: true, tab: 'cloud', icon: 'cloud' },
+    { label: 'Anthropic', url: 'https://api.anthropic.com/v1', needsKey: true, tab: 'cloud', icon: 'cloud', keyPlaceholder: 'sk-ant-...' },
+    { label: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta', needsKey: true, tab: 'cloud', icon: 'cloud' },
     { label: 'LM Studio',  url: 'http://127.0.0.1:1234/v1',    needsKey: false, tab: 'local', icon: 'desktop'    },
     { label: 'Ollama',     url: 'http://127.0.0.1:11434/v1',   needsKey: false, tab: 'local', icon: 'ollama'     },
     { label: 'KoboldCPP',  url: 'http://127.0.0.1:5001/v1',    needsKey: false, tab: 'local', icon: 'kobold'     },
@@ -98,7 +101,7 @@
         }
       }
 
-      models = (await fetchModels(apiUrl, apiKey)).map(model => model.id);
+      models = (await fetchModels(apiUrl, apiKey, activePreset === 'NanoGPT' ? 'nanogpt' : activePreset === 'Anthropic' ? 'anthropic' : activePreset === 'Google Gemini' ? 'gemini' : undefined)).map(model => model.id);
       if (models.length > 0) selectedModel = models[0];
 
     } catch (e: any) {
@@ -122,6 +125,9 @@
         : activePreset === 'Ollama' ? 'ollama'
         : activePreset === 'KoboldCPP' ? 'koboldcpp'
         : activePreset === 'llama.cpp' ? 'llama_cpp'
+        : activePreset === 'NanoGPT' ? 'nanogpt'
+        : activePreset === 'Anthropic' ? 'anthropic'
+        : activePreset === 'Google Gemini' ? 'gemini'
         : 'generic_openai';
       await persistApiConnections();
       await saveSetting('onboarding_completed', 'true');
@@ -262,6 +268,8 @@
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
                     <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
                   </svg>
+                {:else if preset.icon === 'cloud'}
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M7 18a5 5 0 1 1 1-9 6 6 0 0 1 11 3 3 3 0 0 1-1 6H7Z"/></svg>
                 {:else if preset.icon === 'custom'}
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <circle cx="12" cy="12" r="3"/>

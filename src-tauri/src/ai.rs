@@ -9,6 +9,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Emitter, Window};
 use tokio_util::sync::CancellationToken;
 
+mod cloud;
+
 const PROTECTED_API_PARAMETER_KEYS: [&str; 3] = ["messages", "model", "stream"];
 
 // Reusing a single HTTP client across the entire app lifecycle prevents connection
@@ -678,6 +680,9 @@ fn normalize_models(entries: Vec<ModelEntry>, text_output_only: bool) -> Vec<Mod
 /// Running the HTTP call on the Rust side avoids CORS issues in the Tauri WebView.
 #[tauri::command]
 pub async fn fetch_models(url: String, api_key: String, provider_kind: Option<String>) -> Result<Vec<ModelInfo>, String> {
+    if cloud::is_provider(provider_kind.as_deref()) {
+        return cloud::fetch_models(&url, &api_key, provider_kind.as_deref().unwrap()).await;
+    }
     let text_output_only = is_openrouter_url(&url);
     let mut req = CLIENT.get(format!("{}/models", url));
 
@@ -861,6 +866,13 @@ pub async fn detect_context(provider_kind: String, base_url: String, model: Stri
     if model.trim().is_empty() { return Err("Select a model before detecting context".into()); }
     let root = server_root(&base_url)?;
     let (tokens, provenance, theoretical_tokens) = match provider_kind.as_str() {
+        "nanogpt" | "anthropic" | "gemini" => {
+            let models = cloud::fetch_models(&base_url, &api_key, &provider_kind).await?;
+            let tokens = models.iter().find(|entry| entry.id == model)
+                .and_then(|entry| valid_context(entry.context_length))
+                .ok_or_else(|| "The provider did not advertise a context size; set a manual cap".to_string())?;
+            (tokens, "provider_advertised", None)
+        }
         "openrouter" | "xai" | "generic_openai" => {
             let body = get_context_json(format!("{}/models", base_url.trim_end_matches('/')), &api_key).await?;
             (parse_openai_advertised(&body, &model)?, "provider_advertised", None)
@@ -1122,6 +1134,10 @@ pub async fn call_ai_api(window: Window, payload: AiRequest) -> Result<Option<To
     // Every return path (success, error, or cancellation) clears this request's
     // handle, but never a newer request that replaced it in the meantime.
     let _active_guard = ActiveCancellationGuard { request_id };
+
+    if cloud::is_provider(payload.provider_kind.as_deref()) {
+        return cloud::generate(&window, &payload, &token).await;
+    }
 
     let mut parameter_flags = ApiParameterFlags::default();
     let mut forwarded_max_tokens = payload.max_tokens;

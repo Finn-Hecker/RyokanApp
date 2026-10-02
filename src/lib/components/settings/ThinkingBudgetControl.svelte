@@ -2,10 +2,12 @@
   import type { ApiConnection } from '$lib/stores/appState.svelte';
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
   import * as m from '$lib/paraglide/messages';
+  import { resolveGenerationCapabilities } from '$lib/utils/generationCapabilities';
+  import { getLocale } from '$lib/paraglide/runtime';
 
   let { connection, powerUser = false, onChange = () => {} }: { connection: ApiConnection; powerUser?: boolean; onChange?: () => void } = $props();
   const presets = $derived([
-    { value: 1000, label: m.settings_thinking_budget_fast(), hint: m.settings_thinking_budget_fast_hint() },
+    { value: connection.providerKind === 'anthropic' ? 1024 : 1000, label: m.settings_thinking_budget_fast(), hint: m.settings_thinking_budget_fast_hint() },
     { value: 2500, label: m.settings_thinking_budget_balanced(), hint: m.settings_thinking_budget_balanced_hint() },
     { value: 5000, label: m.settings_thinking_budget_deep(), hint: m.settings_thinking_budget_deep_hint() },
   ]);
@@ -18,14 +20,20 @@
     onChange();
   }
   function selectCustom(value: number) {
-    select(Math.max(500, Math.min(10000, Math.round(value / 100) * 100)));
+    select(Math.max(connection.providerKind === 'anthropic' ? 1024 : 500, Math.min(10000, Math.round(value / 100) * 100)));
   }
 </script>
 
-{#if connection.providerKind === 'llama_cpp'}
+{#if connection.providerKind === 'llama_cpp' || (['anthropic', 'gemini'].includes(connection.providerKind)
+  && resolveGenerationCapabilities(connection).supportedParameters.includes('thinking_budget_tokens'))}
   <div>
+    {#if connection.providerKind === 'anthropic' || connection.providerKind === 'gemini'}
+      <p class="budget-value">{getLocale() === 'de'
+        ? 'Das Ausgabe-Limit umfasst Thinking und Antwort zusammen. Der Thinking-Wert erhöht dieses Limit nicht.'
+        : 'The output limit includes thinking and the answer together. The thinking budget does not increase this limit.'}</p>
+    {/if}
     <div class="budget-header">
-      <div class="budget-label"><span class="settings-label">{m.settings_thinking_budget_label()}</span><Tooltip>{m.settings_thinking_budget_tooltip_p1()}<br><br>{m.settings_thinking_budget_tooltip_p2()}<br><br>{m.settings_thinking_budget_tooltip_hint()}</Tooltip></div>
+      <div class="budget-label"><span class="settings-label">{m.settings_thinking_budget_label()}</span><Tooltip>{#if connection.providerKind === 'llama_cpp'}{m.settings_thinking_budget_tooltip_p1()}<br><br>{m.settings_thinking_budget_tooltip_p2()}<br><br>{m.settings_thinking_budget_tooltip_hint()}{:else}{getLocale() === 'de' ? 'Thinking wird innerhalb des gemeinsamen Ausgabe-Limits gezählt. Unterstützung und erlaubte Werte hängen vom Modell ab.' : 'Thinking counts within the combined output limit. Support and allowed values depend on the model.'}{/if}</Tooltip></div>
       <button type="button" class="parameter-switch" class:parameter-switch--on={connection.parameterEnabled.thinkingBudget}
         aria-pressed={connection.parameterEnabled.thinkingBudget} aria-label={m.settings_thinking_budget_label()} onclick={toggle}>
         <span class="parameter-switch-thumb" class:parameter-switch-thumb--on={connection.parameterEnabled.thinkingBudget}></span>
@@ -33,10 +41,10 @@
     </div>
     {#if powerUser}
       <div class="budget-value">{connection.thinkingBudget} Tokens</div>
-      <input type="range" min="500" max="10000" step="100" class="power-slider"
+      <input type="range" min={connection.providerKind === 'anthropic' ? 1024 : 500} max="10000" step={connection.providerKind === 'anthropic' ? 1 : 100} class="power-slider"
         aria-label={m.settings_thinking_budget_label()} value={connection.thinkingBudget}
         disabled={!connection.parameterEnabled.thinkingBudget} oninput={(event) => selectCustom(+event.currentTarget.value)} />
-      <div class="slider-bounds"><span>500</span><span>10 000</span></div>
+      <div class="slider-bounds"><span>{connection.providerKind === 'anthropic' ? 1024 : 500}</span><span>10 000</span></div>
     {:else}
     <div class="budget-options" role="group" aria-label={m.settings_thinking_budget_label()}>
       {#each presets as preset}

@@ -46,7 +46,69 @@ const state = await import(await loadProduction('$lib/stores/appState.svelte'));
 const runtime = await import(await loadProduction('$lib/utils/rollingSummary.svelte'));
 const connections = await import(await loadProduction('$lib/utils/apiConnections'));
 const chatApi = await import(await loadProduction('$lib/utils/chatApi'));
+const parameters = await import(await loadProduction('$lib/utils/apiParameters'));
 let serial = 0;
+
+test('native and NanoGPT profiles round-trip without migration or a persisted budget discriminator', async () => {
+  const profiles = ['nanogpt', 'anthropic', 'gemini'].map((providerKind, index) => ({
+    ...state.createDefaultConnection(`cloud-${index}`), providerKind, apiKey: 'fixture-key', model: 'fixture-model',
+    parameterEnabled: { ...state.createDefaultConnection().parameterEnabled, maxTokens: true, thinkingBudget: true },
+    maxTokens: 4096, thinkingBudget: 2048,
+  }));
+  let saved;
+  harness.invoke = async (command, args) => { assert.equal(command, 'save_api_connections'); saved = args; };
+  state.replaceApiConnections(profiles, 'cloud-1');
+  await connections.persistApiConnections();
+  assert.ok(JSON.parse(saved.connectionsJson).every(profile => !Object.hasOwn(profile, 'budgetProvider')));
+  connections.hydrateApiConnections([{ key: connections.API_CONNECTIONS_KEY, value: saved.connectionsJson },
+    { key: connections.ACTIVE_API_CONNECTION_KEY, value: saved.activeConnectionId }]);
+  assert.deepEqual(state.appState.apiConnections.map(profile => profile.providerKind), ['nanogpt', 'anthropic', 'gemini']);
+  assert.equal(state.appState.activeApiConnectionId, 'cloud-1');
+  assert.equal(state.appState.apiSettings.thinkingBudget, 2048);
+});
+
+test('native normal and manual-thinking generations use the same total cap in planning and IPC', async () => {
+  for (const providerKind of ['anthropic', 'gemini']) {
+    for (const thinkingBudgetEnabled of [false, true]) {
+      const profile = { ...state.createDefaultConnection(), providerKind, model: 'fixture-model', maxTokens: 4096, thinkingBudget: 2048,
+        parameterEnabled: { ...state.createDefaultConnection().parameterEnabled, maxTokens: true, thinkingBudget: thinkingBudgetEnabled } };
+      let payload;
+      harness.chatState.summaryMeta = { currentSummary: null, lastSummarizedMessageId: null };
+      harness.invoke = async (command, args) => {
+        if (command !== 'call_ai_api') return;
+        payload = args.payload;
+        listeners.get('ai-thinking-token')?.({ payload: { generationId: payload.generation_id, token: 'Thought summary' } });
+        listeners.get('ai-token')?.({ payload: { generationId: payload.generation_id, token: 'Answer' } });
+        return { inputTokens: 100, outputTokens: 200, reasoningTokens: 150 };
+      };
+      const result = await chatApi.runGeneration({ apiSettings: profile, character: null, recentMessages: [], userPrompt: 'Hello' },
+        { onStreamUpdate() {}, onThinkingPhaseChange() {} });
+      assert.equal(payload.request_parameter_config.budgetProvider, providerKind);
+      assert.equal(payload.max_tokens, 4096);
+      assert.equal(payload.thinking_budget, thinkingBudgetEnabled ? 2048 : 0);
+      assert.equal(deriveEffectiveTokenBudget(payload.request_parameter_config).reserveTokens, 4096);
+      assert.equal(result.text, 'Answer'); assert.equal(result.usage.reasoningTokens, 150);
+    }
+  }
+});
+
+test('native limits trigger the existing final context guard before any provider call', async () => {
+  for (const providerKind of ['anthropic', 'gemini']) {
+    const f = fixture({ chatLimit: 8192, same: true, lengths: [18000] });
+    f.chat.providerKind = providerKind;
+    f.chat.manualContextCap = 8192;
+    f.chat.parameterEnabled.maxTokens = true;
+    f.chat.maxTokens = 4096;
+    f.chat.additionalApiParameters = JSON.stringify(providerKind === 'anthropic'
+      ? { max_tokens: 6000, thinking: { type: 'adaptive' } }
+      : { generationConfig: { maxOutputTokens: 6000, thinkingConfig: { thinkingBudget: -1 } } });
+    const requestParameterConfig = parameters.requestParameterConfig(f.chat);
+    assert.equal(deriveEffectiveTokenBudget(requestParameterConfig).reserveTokens, 6000);
+    const options = { apiSettings: f.chat, character: null, recentMessages: f.messages, requestParameterConfig };
+    await assert.rejects(runtime.assertPreparedGenerationFits(options), runtime.ContextBudgetError);
+    assert.equal(f.calls.length, 0);
+  }
+});
 
 test('service tiers survive persistence, profile switching and immutable snapshots; old records use Auto', async () => {
   const profiles = ['auto', 'standard', 'flex', undefined, null, 'invalid'].map((serviceTier, index) => ({

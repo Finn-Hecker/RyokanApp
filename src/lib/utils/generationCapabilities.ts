@@ -66,7 +66,7 @@ export const GENERATION_PARAMETER_FIELDS: Record<ApiParameterKey, string> = {
 };
 export type GenerationParameterStatus = 'supported' | 'unreported' | 'unknown';
 export type ReasoningLevel = 'auto' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-export type ReasoningDialect = 'openrouter' | 'lm_studio' | 'llama_cpp_effort';
+export type ReasoningDialect = 'openrouter' | 'lm_studio' | 'llama_cpp_effort' | 'nanogpt' | 'anthropic' | 'gemini';
 export interface ReasoningCapability {
   dialect: ReasoningDialect;
   levels: ReasoningLevel[];
@@ -82,6 +82,10 @@ const OPENROUTER_EFFORT_LEVELS: readonly ReasoningLevel[] = ['none', 'minimal', 
 export function reasoningCapability(connection: GenerationConnection): ReasoningCapability | null {
   if (!connection.model) return null;
   const metadata = resolveGenerationCapabilities(connection);
+  if ((connection.providerKind === 'nanogpt' || connection.providerKind === 'anthropic')
+    && metadata.reasoningSupported === true && metadata.reasoningEffortLevels) {
+    return { dialect: connection.providerKind, levels: ['auto', ...metadata.reasoningEffortLevels], certainty: 'model_metadata' };
+  }
   if (connection.providerKind === 'openrouter' && isOpenRouterUrl(connection.url)
     && (metadata.reasoningSupported === true || metadata.supportedParameters.includes('reasoning'))) {
     return { dialect: 'openrouter', levels: ['auto', ...(metadata.reasoningEffortLevels == null
@@ -113,6 +117,15 @@ function isOpenRouterUrl(url: string): boolean {
 
 export function modelGenerationCapabilities(connection: GenerationConnection, supportedParameters: unknown,
   reasoning?: { supported?: boolean | null; allowedOptions?: unknown } | null): SavedGenerationCapabilities | null {
+  if (['nanogpt', 'anthropic', 'gemini'].includes(connection.providerKind) && Array.isArray(supportedParameters)
+    && supportedParameters.every(item => typeof item === 'string')) {
+    const options = reasoning?.allowedOptions;
+    return { providerKind: connection.providerKind, url: connection.url, model: connection.model,
+      source: 'model_metadata', supportedParameters: [...new Set(supportedParameters)],
+      reasoningSupported: reasoning?.supported === true,
+      reasoningEffortLevels: Array.isArray(options)
+        ? OPENROUTER_EFFORT_LEVELS.filter(level => options.includes(level)) : null };
+  }
   if (connection.providerKind === 'openrouter' && isOpenRouterUrl(connection.url)
     && (Array.isArray(supportedParameters) && supportedParameters.every(item => typeof item === 'string')
       || reasoning?.supported === true)) {
@@ -138,6 +151,9 @@ export function modelGenerationCapabilities(connection: GenerationConnection, su
 
 export function resolveGenerationCapabilities(connection: GenerationConnection): GenerationCapabilities {
   const saved = connection.generationCapabilities;
+  if (['nanogpt', 'anthropic', 'gemini'].includes(connection.providerKind) && saved?.source === 'model_metadata'
+    && saved.providerKind === connection.providerKind && saved.url === connection.url && saved.model === connection.model
+    && Array.isArray(saved.supportedParameters)) return saved;
   if ((connection.providerKind === 'openrouter' && isOpenRouterUrl(connection.url)
     || connection.providerKind === 'lm_studio' || connection.providerKind === 'llama_cpp') && saved?.source === 'model_metadata'
     && saved.providerKind === connection.providerKind && saved.url === connection.url && saved.model === connection.model
@@ -157,5 +173,5 @@ export function generationParameterStatus(connection: GenerationConnection, key:
   if (capabilities.supportedParameters.includes(GENERATION_PARAMETER_FIELDS[key])) return 'supported';
   // Only a model-specific advertised list can justify a warning. Missing
   // metadata and incomplete endpoint contracts say nothing about this model.
-  return capabilities.source === 'model_metadata' && connection.providerKind === 'openrouter' ? 'unreported' : 'unknown';
+  return capabilities.source === 'model_metadata' && ['openrouter', 'nanogpt', 'anthropic', 'gemini'].includes(connection.providerKind) ? 'unreported' : 'unknown';
 }

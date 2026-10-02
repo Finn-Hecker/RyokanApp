@@ -35,9 +35,12 @@ export function requestParameterConfig(connection: ApiConnection): ApiRequestPar
   const selected: ReasoningLevel = capability?.levels.includes(connection.reasoningLevel) ? connection.reasoningLevel : 'auto';
   const tier = normalizeServiceTier(connection.serviceTier);
   return {
+    ...(['anthropic', 'gemini'].includes(connection.providerKind)
+      ? { budgetProvider: connection.providerKind as 'anthropic' | 'gemini' } : {}),
     serviceTier: supportedServiceTiers(connection).includes(tier) ? tier : 'auto',
     temperatureEnabled: enabled.temperature, maxTokensEnabled: enabled.maxTokens,
-    presencePenaltyEnabled: enabled.presencePenalty, thinkingBudgetEnabled: connection.providerKind === 'llama_cpp' && enabled.thinkingBudget,
+    presencePenaltyEnabled: enabled.presencePenalty, thinkingBudgetEnabled: (connection.providerKind === 'llama_cpp'
+      || connection.providerKind === 'anthropic' || connection.providerKind === 'gemini') && enabled.thinkingBudget,
     topPEnabled: enabled.topP, topKEnabled: enabled.topK, minPEnabled: enabled.minP,
     frequencyPenaltyEnabled: enabled.frequencyPenalty,
     maxTokens: connection.maxTokens, thinkingBudget: connection.thinkingBudget,
