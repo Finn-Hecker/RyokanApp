@@ -24,6 +24,8 @@
   const NEW_CONNECTION_ACTION = '__new_connection__';
 
   let {
+    setup = false,
+    ready = $bindable(false),
     powerUser = false,
     active = false,
     section = 'provider',
@@ -31,6 +33,8 @@
     parameterEnabled = $bindable(createDefaultApiParameterEnabled()),
     onConnectionChange = (_previousConnectionId: string) => {},
   }: {
+    setup?: boolean;
+    ready?: boolean;
     powerUser?: boolean;
     active?: boolean;
     section?: 'provider' | 'memory';
@@ -354,6 +358,13 @@
     }
   }
 
+  $effect(() => {
+    const config = modelConfigKey();
+    ready = canFetchModels() && !modelsLoading && !modelsError
+      && config === lastAttemptedModelConfig
+      && availableModels.includes(appState.apiSettings.model);
+  });
+
   function retryModels() {
     lastAttemptedModelConfig = "";
     void loadModels();
@@ -581,6 +592,7 @@
   <span class="settings-section-title">{m.settings_section_api()}</span>
   <div class="settings-card provider-settings">
 
+    {#if !setup}
     <div class="connection-management">
       <label class="settings-label" for="active-connection">{m.settings_connection_label()}</label>
       <div class="connection-toolbar">
@@ -618,6 +630,8 @@
     </div>
 
     <div class="settings-divider"></div>
+
+    {/if}
 
     <div class="api-model-section">
     <h2 class="api-model-section-title">{m.settings_provider_label()}</h2>
@@ -860,6 +874,7 @@
     </div>
 
   </div>
+  {#if !setup}
   <div class="generation-section">
     {#if powerUser}
       <div class="generation-group">
@@ -875,6 +890,7 @@
       <GeneralSection {powerUser} bind:parameterEnabled category="advanced" />
     </div>
   </div>
+  {/if}
   {:else}
   <span class="settings-section-title">{m.settings_category_memory()}</span>
   <div class="settings-card memory-settings">

@@ -123,3 +123,13 @@ body {
 .editor-page textarea::-webkit-scrollbar {
   display: none;
 }
+
+/* Shared Settings controls, also used during first-launch setup. */
+  .settings-card { padding:0; background:transparent; border:0; border-radius:0; }
+  .settings-section-title { display:none; }
+  .settings-label { display:block; margin-bottom:8px; color:#68686d; font-size:11px; font-weight:650; letter-spacing:.055em; text-transform:uppercase; }
+  .settings-input { width:100%; box-sizing:border-box; padding:11px 14px; border:1px solid rgba(255,255,255,.07); border-radius:11px; outline:none; background:rgba(0,0,0,.2); color:#e5e5ea; color-scheme:dark; font:inherit; font-size:13px; transition:border-color .15s,background .15s,box-shadow .15s; }
+  select.settings-input option { background:#1c1c1e; color:#e5e5ea; }
+  .settings-input:focus { border-color:rgba(212,180,131,.4); background:rgba(212,180,131,.03); box-shadow:0 0 0 3px rgba(212,180,131,.06); }
+  .settings-input::placeholder { color:#3a3a3c; }
+  .settings-divider { height:1px; margin:20px 0; background:rgba(255,255,255,.05); }

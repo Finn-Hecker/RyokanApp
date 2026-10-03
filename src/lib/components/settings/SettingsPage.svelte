@@ -271,14 +271,6 @@
   :global(.settings-switch-input:focus-visible + .settings-switch-track) { outline:2px solid #d4b483; outline-offset:3px; }
   .save-spinner { width:12px; height:12px; border:2px solid rgba(255,255,255,.12); border-top-color:rgba(255,255,255,.6); border-radius:50%; animation:spin .6s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
-  :global(.settings-card) { padding:0; background:transparent; border:0; border-radius:0; }
-  :global(.settings-section-title) { display:none; }
-  :global(.settings-label) { display:block; margin-bottom:8px; color:#68686d; font-size:11px; font-weight:650; letter-spacing:.055em; text-transform:uppercase; }
-  :global(.settings-input) { width:100%; box-sizing:border-box; padding:11px 14px; border:1px solid rgba(255,255,255,.07); border-radius:11px; outline:none; background:rgba(0,0,0,.2); color:#e5e5ea; color-scheme:dark; font:inherit; font-size:13px; transition:border-color .15s,background .15s,box-shadow .15s; }
-  :global(select.settings-input option) { background:#1c1c1e; color:#e5e5ea; }
-  :global(.settings-input:focus) { border-color:rgba(212,180,131,.4); background:rgba(212,180,131,.03); box-shadow:0 0 0 3px rgba(212,180,131,.06); }
-  :global(.settings-input::placeholder) { color:#3a3a3c; }
-  :global(.settings-divider) { height:1px; margin:20px 0; background:rgba(255,255,255,.05); }
   @media (min-width:768px) {
     .desktop-sidebar { width:256px; flex:0 0 auto; display:flex; flex-direction:column; border-right:1px solid rgba(255,255,255,.055); background:var(--color-ryokan-sidebar,#151515); }
     .sidebar-title { height:var(--page-header-height); display:flex; align-items:center; padding:0 24px; color:#d4b483; font-size:18px; font-weight:650; border-bottom:1px solid rgba(255,255,255,.045); }
