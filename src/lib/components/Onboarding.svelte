@@ -64,7 +64,7 @@
       <header class="brand"><img src="/app-icon.png" alt="" width="36" height="36" /><span>Ryokan</span></header>
       <div class="welcome-layout">
         <aside class="welcome-art" aria-hidden="true">
-          <div class="enso"></div>
+          <img class="brand-symbol" src="/app-icon.png" alt="" width="512" height="512" />
           <span class="art-caption">Ryokan</span>
           <p>{m.onboarding_footer({}, locale)}</p>
         </aside>
@@ -143,13 +143,23 @@
   dd { margin:0; font-size:14px; overflow-wrap:anywhere; }
   .save-error { color:var(--sheet-danger); font-size:13px; margin-top:20px; }
   @media (min-width:960px) {
-    .onboarding-shell { padding:40px 56px; }
-    .welcome-layout { gap:80px; padding:64px 0; }
-    .welcome-art { display:flex; flex:1; min-width:0; align-self:stretch; flex-direction:column; align-items:center; justify-content:center; border-right:1px solid var(--sheet-divider); padding-right:64px; }
-    .enso { width:clamp(160px,20vw,240px); aspect-ratio:1; border:2px solid rgba(212,180,131,.38); border-left-width:8px; border-bottom-width:5px; border-radius:49% 51% 46% 54%; transform:rotate(-25deg); }
-    .art-caption { margin-top:40px; font-size:36px; letter-spacing:-.06em; font-weight:400; color:#d8c5a8; }
-    .welcome-art p { margin-top:12px; color:var(--sheet-text-subtle); font-size:12px; }
-    .setup { flex:1.25; margin:0; }
+    .brand { visibility:hidden; }
+    .onboarding-shell { max-width:1680px; padding:40px clamp(40px,4.2vw,80px); }
+    .welcome-layout { display:grid; grid-template-columns:minmax(0,.95fr) minmax(0,1.05fr); gap:clamp(48px,6vw,112px); padding:clamp(40px,7vh,88px) 0; }
+    .welcome-art { display:flex; min-width:0; align-self:stretch; flex-direction:column; align-items:center; justify-content:center; border-right:1px solid var(--sheet-divider); padding-right:clamp(32px,4vw,72px); }
+    .brand-symbol { display:block; width:clamp(220px,22vw,360px); max-width:100%; height:auto; aspect-ratio:1; object-fit:contain; opacity:.65; }
+    .art-caption { margin-top:48px; font-size:clamp(42px,3.5vw,64px); letter-spacing:-.06em; font-weight:400; color:#d8c5a8; }
+    .welcome-art p { margin-top:16px; color:var(--sheet-text-subtle); font-size:14px; text-align:center; line-height:1.7; }
+    .setup { max-width:720px; margin:0; display:flex; flex-direction:column; }
+    .progress ol { gap:28px; margin-bottom:40px; }
+    h1 { max-width:100%; font-size:clamp(40px,3.4vw,60px); }
+    .introduction { max-width:560px; margin-top:24px; font-size:16px; }
+    .step-content { margin-top:48px; }
+    .actions { margin-top:48px; }
+  }
+  @media (min-width:960px) and (min-height:800px) {
+    .setup { min-height:clamp(480px,64dvh,680px); }
+    .actions { margin-top:auto; padding-top:48px; }
   }
   @media (max-height:650px) { .welcome-layout { padding-top:28px; } .step-content { margin-top:24px; } .actions { margin-top:24px; } }
 </style>
