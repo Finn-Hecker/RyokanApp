@@ -1352,9 +1352,9 @@
 
 {#if interactionMode === 'mobile' && (contextMenuChat || contextMenuFolder)}
   <BottomSheet onClose={closeContextMenu} label={m.sidebar_aria_options()} breakpoint={768} forceMobile>
+    {#snippet header()}<h2>{contextMenuChat?.title ?? contextMenuFolder?.name}</h2>{/snippet}
     {#snippet children(dismiss)}
-    <div class="p-2">
-      <div class="context-sheet-title">{contextMenuChat?.title ?? contextMenuFolder?.name}</div>
+    <div>
       <div class="context-sheet-actions">
         {#if contextMenuChat}{@render chatActions(contextMenuChat, dismiss)}
         {:else if contextMenuFolder}{@render folderActions(contextMenuFolder, dismiss)}{/if}
@@ -1441,8 +1441,12 @@
   :global(.context-action--danger) { color:#dd8585; }
   :global(.context-action--danger:hover) { color:#f09a9a; background:rgba(239,68,68,.09); }
   :global(.context-separator) { height:1px; margin:4px 7px; background:rgba(255,255,255,.055); }
-  :global(.context-sheet-title) { padding:5px 12px 10px; overflow:hidden; color:#747479; font-size:11px; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
-  :global(.context-sheet-actions .context-action) { min-height:48px; padding:11px 13px; border-radius:11px; font-size:14px; }
+  :global(.context-sheet-actions) { display:grid; gap:4px; }
+  :global(.context-sheet-actions .context-action) { min-height:54px; padding:14px 12px; gap:14px; border-radius:14px; color:var(--sheet-text); font-size:14px; font-weight:500; }
+  :global(.context-sheet-actions .context-action svg) { width:18px; height:18px; }
+  :global(.context-sheet-actions .context-action:hover) { background:var(--sheet-surface-hover); }
+  :global(.context-sheet-actions .context-action--danger) { color:var(--sheet-danger); }
+  :global(.context-sheet-actions .context-action--danger:hover) { background:var(--sheet-danger-surface); }
   @media (hover:hover) and (pointer:fine) {
     .sidebar-item:hover { background:rgba(255,255,255,.05); }
     .sidebar-item--active:hover { background:rgba(212,180,131,.095); }

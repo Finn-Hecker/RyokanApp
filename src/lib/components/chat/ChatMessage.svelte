@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Button from '$lib/components/ui/Button.svelte';
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { onMount } from 'svelte';
   import UsageDetails from './UsageDetails.svelte';
@@ -458,8 +459,11 @@
 
 {#if mobileActionsOpen}
   <BottomSheet onClose={closeMobileActions} label="Message actions" mobileOnly>
+    {#snippet footer(close)}
+      <div class="sheet-footer-actions"><Button size="lg" variant="secondary" onclick={close}>{m.chat_cancel()}</Button></div>
+    {/snippet}
     {#snippet children(close)}
-    <div class="p-2">
+    <div>
       <div class="mobile-action-sheet-actions">
         {#if canShowUsage}
           <button class="mobile-action" onclick={() => close(() => usageOpen = true)}>{m.usage_title()}</button>
@@ -489,7 +493,6 @@
           </button>
         {/if}
       </div>
-      <button class="mobile-action mobile-action--cancel" onclick={close}>{m.chat_cancel()}</button>
     </div>
     {/snippet}
   </BottomSheet>
@@ -611,12 +614,11 @@
 
   @media (max-width: 639px) {
     .mobile-action-sheet-actions { display: grid; gap: 3px; }
-    .mobile-action { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 50px; padding: 0 14px; border: 0; border-radius: 12px; background: transparent; color: #e5e5ea; font: 500 15px/1.2 inherit; text-align: left; }
-    .mobile-action:active:not(:disabled) { background: rgba(255,255,255,.08); }
+    .mobile-action { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 54px; padding: 14px 12px; border: 0; border-radius: 14px; background: transparent; color: var(--sheet-text); font:inherit; font-weight:500; line-height:1.4; text-align: left; }
+    .mobile-action:active:not(:disabled) { background: var(--sheet-surface-hover); }
     .mobile-action:disabled { color: rgba(255,255,255,.28); }
     .mobile-action small { color: rgba(255,255,255,.38); font-size: 12px; }
     .mobile-action--accent { color: #d4b483; }
-    .mobile-action--cancel { justify-content: center; margin-top: 5px; background: rgba(255,255,255,.055); color: rgba(255,255,255,.66); }
   }
 
   .ctrl-btn {

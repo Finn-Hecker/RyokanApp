@@ -5,7 +5,66 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { compile } from 'svelte/compiler';
 import postcss from 'postcss';
+import { createRawSnippet } from 'svelte';
+import { render } from 'svelte/server';
 import { SheetVelocity, shouldDismissSheet } from '../../utils/bottomSheetGesture.ts';
+
+// Render the real component so structural regressions are checked independently
+// of gesture mocks. onMount is intentionally inert in the server render.
+async function renderSheet(props = {}) {
+  const source = readFileSync(new URL('./BottomSheet.svelte', import.meta.url), 'utf8')
+    .replace(/^\s*import .*;$/gm, '')
+    .replace('<script lang="ts">', '<script lang="ts">\nconst onMount = () => {};');
+  const { js } = compile(source, { generate: 'server' });
+  const code = js.code.replace("'svelte/internal/server'", JSON.stringify(import.meta.resolve('svelte/internal/server')));
+  const { default: Component } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+  const snippet = html => createRawSnippet(() => ({ render: () => html }));
+  return render(Component, { props: {
+    label: 'Sheet title', closeLabel: 'Close', onClose() {},
+    children: snippet('<p data-part="body">Body</p>'),
+    header: snippet('<h2 data-part="heading">Custom title</h2>'),
+    toolbar: snippet('<p data-part="toolbar">Search</p>'),
+    footer: snippet('<button data-part="footer">Continue</button>'),
+    ...props,
+  } }).body;
+}
+
+test('required sheets have neither a misleading drag handle nor a close control', async () => {
+  const html = await renderSheet({ dismissible: false });
+  assert.doesNotMatch(html, /class="handle[" ]/);
+  assert.doesNotMatch(html, /class="sheet-close[" ]/);
+  assert.match(html, /data-part="heading"/);
+  assert.match(html, /data-part="footer"/);
+});
+
+test('custom header, toolbar and footer are siblings of the single scroll body', async () => {
+  const html = await renderSheet();
+  assert.match(html, /class="sheet-close[" ]/);
+  const body = html.match(/<div[^>]*data-sheet-body[^>]*>([\s\S]*?)<\/div>/)[1];
+  assert.match(body, /data-part="body"/);
+  assert.doesNotMatch(body, /data-part="(?:heading|toolbar|footer)"/);
+  assert.ok(html.indexOf('data-part="toolbar"') < html.indexOf('data-sheet-body'));
+  assert.ok(html.indexOf('data-part="footer"') > html.indexOf('data-sheet-body'));
+});
+
+test('scrollbar and selection rules stay inside sheets without disabling scrolling or editing', () => {
+  const source = readFileSync(new URL('./BottomSheet.svelte', import.meta.url), 'utf8');
+  const { css } = compile(source, { generate: 'client' });
+  const tree = postcss.parse(css.code);
+  const scrolling = [], hiddenBars = [], unselectable = [], editable = [];
+  tree.walkDecls(declaration => {
+    const selector = declaration.parent.selector;
+    if (declaration.prop === 'overflow-y' && declaration.value === 'auto') scrolling.push(selector);
+    if (declaration.prop === 'scrollbar-width' && declaration.value === 'none') hiddenBars.push(selector);
+    if (declaration.prop === 'user-select' && declaration.value === 'none') unselectable.push(selector);
+    if (declaration.prop === 'user-select' && declaration.value === 'text') editable.push(selector);
+  });
+  assert.equal(scrolling.length, 1);
+  assert.match(scrolling[0], /^\.content\./);
+  assert.ok(hiddenBars.length && hiddenBars.every(selector => selector.startsWith('.panel.')));
+  assert.ok(unselectable.some(selector => selector.startsWith('.panel.')));
+  assert.ok(editable.some(selector => selector.includes('input') && selector.includes('textarea')));
+});
 
 test('initial modal focus outline is suppressed only on the full-screen backdrop', () => {
   const source = readFileSync(new URL('./BottomSheet.svelte', import.meta.url), 'utf8');

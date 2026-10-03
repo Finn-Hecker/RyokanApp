@@ -328,15 +328,16 @@
 
 {#if startTarget}
   <BottomSheet onClose={() => startTarget = null} label={m.role_start_title({ character: startTarget.name })} width="448px" maxHeight="calc(var(--app-visible-height, 100dvh) * .85)">
+    {#snippet header()}
+          <h2 id="role-start-title">{m.role_start_title({ character: startTarget.name })}</h2>
+          <p>{startTarget.role_policy === 'restricted' ? m.role_start_restricted_desc() : m.role_start_open_desc()}</p>
+        {/snippet}
+    {#snippet footer(close)}<div class="sheet-footer-actions">
+        <Button size="lg" variant="secondary" onclick={close}>{m.delete_confirm_cancel()}</Button>
+        <Button size="lg" variant="primary" disabled={isStarting || (startTarget.role_policy === 'restricted' && !selectedRole.startsWith('bundled:'))} onclick={() => beginChat()}>{isStarting ? m.role_start_starting() : m.role_start_button()}</Button>
+      </div>{/snippet}
     {#snippet children(close)}
-    <div class="p-5 sm:p-6">
-      <div class="mb-5 flex items-start justify-between gap-4">
-        <div>
-          <h2 id="role-start-title" class="font-medium text-gray-100">{m.role_start_title({ character: startTarget.name })}</h2>
-          <p class="mt-1 text-sm text-gray-500">{startTarget.role_policy === 'restricted' ? m.role_start_restricted_desc() : m.role_start_open_desc()}</p>
-        </div>
-        <button class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-white/[.06] hover:text-gray-200" aria-label={m.create_char_close_aria()} onclick={close}>×</button>
-      </div>
+    <div>
 
       <div class="space-y-2">
         {#if startTarget.role_policy === 'open'}
@@ -373,22 +374,19 @@
       {/if}
       {#if startError}<p class="mt-3 text-sm text-red-400">{startError}</p>{/if}
 
-      <div class="mt-5 flex justify-end gap-2">
-        <Button variant="secondary" onclick={close}>{m.delete_confirm_cancel()}</Button>
-        <Button disabled={isStarting || (startTarget.role_policy === 'restricted' && !selectedRole.startsWith('bundled:'))} onclick={() => beginChat()}>{isStarting ? m.role_start_starting() : m.role_start_button()}</Button>
-      </div>
     </div>
     {/snippet}
   </BottomSheet>
 {/if}
 
 <style>
-  .group-label { padding:10px 2px 2px; color:#6b7280; font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
-  .role-option { display:flex; align-items:center; gap:10px; padding:11px 12px; border:1px solid rgba(255,255,255,.07); border-radius:11px; background:rgba(255,255,255,.025); cursor:pointer; }
-  .role-option.active { border-color:rgba(212,180,131,.32); background:rgba(212,180,131,.07); }
+  .group-label { padding:10px 2px 2px; color:var(--sheet-text-muted); font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
+  .role-option { display:flex; align-items:center; gap:12px; min-height:60px; padding:14px; border:1px solid var(--sheet-divider); border-radius:14px; background:transparent; cursor:pointer; transition:background .14s,border-color .14s; }
+  .role-option:hover { background:var(--sheet-surface); }
+  .role-option.active { border-color:var(--sheet-selected-border); background:var(--sheet-selected); }
   .role-option input { accent-color:#d4b483; }
   .role-option span { min-width:0; flex:1; display:flex; flex-direction:column; }
-  .role-option strong { color:#d1d5db; font-size:13px; }
-  .role-option small { overflow:hidden; color:#4b5563; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+  .role-option strong { color:var(--sheet-text); font-size:14px; font-weight:600; }
+  .role-option small { overflow:hidden; color:var(--sheet-text-muted); font-size:12px; margin-top:3px; text-overflow:ellipsis; white-space:nowrap; }
   .role-option em { flex:none; border:1px solid rgba(212,180,131,.18); border-radius:6px; padding:2px 6px; color:rgba(212,180,131,.75); background:rgba(212,180,131,.08); font-size:9px; font-style:normal; font-weight:700; text-transform:uppercase; }
 </style>

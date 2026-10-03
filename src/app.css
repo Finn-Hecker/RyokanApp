@@ -27,6 +27,20 @@
   --border-accent-hover: rgba(212, 180, 131, 0.42);
 
   --radius-xl: 16px;
+
+  /* Shared bottom-sheet surfaces and text, including desktop presentations. */
+  --sheet-bg: #18181a;
+  --sheet-surface: rgba(255, 255, 255, 0.035);
+  --sheet-surface-hover: rgba(255, 255, 255, 0.065);
+  --sheet-border: rgba(255, 255, 255, 0.09);
+  --sheet-divider: rgba(255, 255, 255, 0.055);
+  --sheet-text: #eeeae4;
+  --sheet-text-muted: #96949a;
+  --sheet-text-subtle: #77777c;
+  --sheet-selected: rgba(var(--accent-rgb), 0.095);
+  --sheet-selected-border: var(--border-accent);
+  --sheet-danger: #e79a9a;
+  --sheet-danger-surface: rgba(239, 68, 68, 0.08);
 }
 
 @media (min-width: 768px) {

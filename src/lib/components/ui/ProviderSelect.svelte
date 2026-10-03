@@ -101,7 +101,6 @@
     <BottomSheet onClose={() => close()} label={m.settings_provider_label()} breakpoint={768}>
       {#snippet children(dismiss)}
         <div bind:this={panel} class="provider-sheet-content">
-          <div class="provider-heading"><strong>{m.settings_provider_label()}</strong><button type="button" aria-label={m.settings_connection_cancel()} onclick={dismiss}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke-linecap="round"/></svg></button></div>
           {@render options(id => dismiss(() => choose(id)))}
         </div>
       {/snippet}
@@ -120,18 +119,17 @@
   .provider-trigger > svg { flex:0 0 auto; color:#8d8b87; transition:transform .15s; }
   .rotated { transform:rotate(180deg); }
   .provider-panel { position:fixed; z-index:81; display:flex; flex-direction:column; padding:5px; overflow:hidden; border:1px solid rgba(255,255,255,.1); border-radius:14px; background:#1c1c1e; box-shadow:0 12px 32px rgba(0,0,0,.4); }
-  .provider-list { min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:#494540 transparent; }
-  .provider-option { width:100%; min-height:46px; display:flex; align-items:center; gap:12px; padding:7px 10px; border-radius:9px; text-align:left; color:#c9c7ca; cursor:pointer; transition:background .14s,color .14s; }
-  .provider-option:hover { background:rgba(255,255,255,.055); color:#eeeae4; }
-  .provider-option.selected { background:rgba(212,180,131,.1); color:#dfc69f; }
+  .provider-panel .provider-list { min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:#494540 transparent; }
+  .provider-option { width:100%; min-height:46px; display:flex; align-items:center; gap:12px; padding:7px 10px; border-radius:9px; text-align:left; color:var(--sheet-text); cursor:pointer; transition:background .14s,color .14s; }
+  .provider-option:hover { background:var(--sheet-surface-hover); color:#eeeae4; }
+  .provider-option.selected { background:var(--sheet-selected); color:#dfc69f; }
   .provider-check { width:16px; flex:0 0 auto; color:#d4b483; }
-  .provider-trigger:focus-visible,.provider-option:focus-visible,.provider-heading button:focus-visible { outline:2px solid #d4b483; outline-offset:-2px; }
-  .provider-sheet-content { padding:8px 10px 12px; min-height:0; display:flex; flex-direction:column; }
+  .provider-trigger:focus-visible,.provider-option:focus-visible { outline:2px solid #d4b483; outline-offset:-2px; }
   @media (max-width:767px) {
     .provider-trigger { min-height:54px; }
-    .provider-heading { display:flex; align-items:center; justify-content:space-between; flex:0 0 auto; padding:4px 6px 10px 10px; color:#eeeae4; font-size:18px; }
-    .provider-heading button { width:44px; height:44px; border-radius:12px; background:rgba(255,255,255,.045); color:#a4a1a0; display:grid; place-items:center; cursor:pointer; }
-    .provider-option { min-height:58px; padding:10px 12px; }
+    .provider-option { min-height:62px; padding:12px; border-radius:14px; }
+    .provider-option .provider-icon { width:36px; height:36px; border-radius:11px; }
+    .provider-list { display:grid; gap:4px; }
     .provider-option:active { background:rgba(212,180,131,.15); }
     .provider-option .provider-name { font-size:14px; }
   }

@@ -97,8 +97,7 @@
 </script>
 
 <BottomSheet {onClose} label="Info" height="min(640px, calc(var(--app-visible-height, 100dvh) * .85))" mobileHeight="min(640px, calc(var(--app-visible-height, 100dvh) * .88))">
-  {#snippet children(close)}
-    <div class="info-panel-header">
+  {#snippet toolbar()}
       <div class="info-tabs">
         <button
           class="info-tab"
@@ -115,13 +114,8 @@
           Chat
         </button>
       </div>
-      <button class="info-close-btn" onclick={close} aria-label="Schließen">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18"/>
-          <line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </button>
-    </div>
+      {/snippet}
+  {#snippet children(close)}
 
     <div class="info-body">
       {#if activeTab === 'character'}
@@ -252,14 +246,6 @@
 </BottomSheet>
 
 <style>
-  .info-panel-header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 10px 10px 0 14px;
-    flex-shrink: 0;
-  }
-
   .info-tabs {
     display: flex;
     gap: 4px;
@@ -269,12 +255,12 @@
 
   .info-tab {
     flex: 1;
-    padding: 10px 8px;
-    border-radius: 10px 10px 0 0;
+    min-height:44px; padding:10px 12px;
+    border-radius: 12px;
     background: transparent;
     border: none;
-    color: rgba(255,255,255,0.42);
-    font-size: 12.5px;
+    color: var(--sheet-text-muted);
+    font-size: 13px;
     font-weight: 600;
     letter-spacing: 0.02em;
     cursor: pointer;
@@ -291,43 +277,13 @@
     background: rgba(212, 180, 131, 0.10);
   }
 
-  .info-close-btn {
-    flex-shrink: 0;
-    width: 30px;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 9px;
-    background: transparent;
-    border: none;
-    color: rgba(255,255,255,0.4);
-    cursor: pointer;
-    transition: background 140ms ease, color 140ms ease;
-    margin-bottom: 6px;
-  }
-
-  .info-close-btn:hover {
-    background: rgba(255,255,255,0.08);
-    color: rgba(255,255,255,0.9);
-  }
-
-  .info-body {
-    flex: 1;
-    min-height: 0;
-    padding: 18px 22px 22px;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
-  }
-
   .info-head {
     display: flex;
     align-items: center;
     gap: 13px;
     padding-bottom: 16px;
     margin-bottom: 16px;
-    border-bottom: 1px solid rgba(255,255,255,0.07);
+    border-bottom: 1px solid var(--sheet-divider);
   }
 
   .info-avatar {
@@ -381,8 +337,8 @@
 
   .info-subtitle {
     margin: 3px 0 0;
-    font-size: 12.5px;
-    color: rgba(255,255,255,0.45);
+    font-size: 13px;
+    color: var(--sheet-text-muted);
     line-height: 1.4;
   }
 
@@ -399,7 +355,7 @@
   }
 
   .info-label {
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -409,16 +365,16 @@
 
   .info-value {
     margin: 0;
-    font-size: 13.5px;
+    font-size: 14px;
     line-height: 1.65;
-    color: rgba(255,255,255,0.76);
+    color: var(--sheet-text);
     white-space: pre-wrap;
   }
 
   .info-empty {
     margin: 0;
-    font-size: 12.5px;
-    color: rgba(255,255,255,0.35);
+    font-size: 13px;
+    color: var(--sheet-text-muted);
     font-style: italic;
     padding: 4px 0;
   }
@@ -446,10 +402,10 @@
     display: flex;
     flex-direction: column;
     gap: 5px;
-    padding: 12px 11px;
-    background: #1e1e22;
-    border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 12px;
+    padding: 16px 14px;
+    background: var(--sheet-surface);
+    border: 1px solid transparent;
+    border-radius: 14px;
   }
 
   .stat-value {
@@ -469,12 +425,11 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: rgba(255,255,255,0.42);
+    color: var(--sheet-text-muted);
   }
 
   @media (max-width: 639px) {
     .info-tab { padding:12px 8px; font-size:13px; }
-    .info-close-btn { width:36px; height:36px; }
     .stat-grid {
       grid-template-columns: repeat(2, 1fr);
       gap: 8px;
@@ -486,10 +441,6 @@
 
     .stat-value {
       font-size: 19px;
-    }
-
-    .info-body {
-      padding: 16px 16px 18px;
     }
   }
 </style>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
+  import Button from '$lib/components/ui/Button.svelte';
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { appState } from '$lib/stores/appState.svelte';
@@ -128,36 +129,38 @@
 </script>
 
 <BottomSheet onClose={() => {}} label="Welcome" width="360px" dismissible={false}>
-  {#snippet children(close)}
-    <div class="px-6 pt-6 pb-7 space-y-6">
+  {#snippet header()}
+    <div class="onboarding-heading">
 
-      <div class="flex flex-col items-center text-center pt-1 pb-1">
-        <div class="w-[56px] h-[56px] rounded-[16px] bg-ryokan-accent/15 border border-ryokan-accent/20 flex items-center justify-center mb-4 shadow-lg shadow-ryokan-accent/10">
+        <div class="onboarding-brand">
           <svg width="26" height="26" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M13 3C7.477 3 3 7.477 3 13s4.477 10 10 10 10-4.477 10-10S18.523 3 13 3z" class="fill-ryokan-accent/20"/>
             <path d="M9 13c0-2.21 1.79-4 4-4s4 1.79 4 4-1.79 4-4 4-4-1.79-4-4z" class="fill-ryokan-accent"/>
             <path d="M13 7v2M13 17v2M7 13H5M21 13h-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" class="stroke-ryokan-accent/60"/>
           </svg>
         </div>
-        <h1 class="text-[17px] font-semibold text-white tracking-[-0.3px]">Welcome</h1>
-        <p class="text-[13px] text-white/35 mt-1 leading-snug">Choose your language and connect<br>an AI provider to get started.</p>
-      </div>
-
-      <div class="h-px bg-white/[0.06] -mx-6"></div>
+      <div><h2>Welcome</h2><p>Choose your language and connect an AI provider to get started.</p></div>
+    </div>
+  {/snippet}
+  {#snippet footer()}
+    <div class="sheet-footer-actions"><Button size="lg" variant="primary" onclick={finish} disabled={!canFinish}>{saving ? 'Saving…' : 'Get Started'}</Button></div>
+  {/snippet}
+  {#snippet children(close)}
+    <div class="space-y-6">
 
       <div class="space-y-2.5">
-        <p class="text-[11px] font-medium text-white/30 uppercase tracking-[0.08em]">Language</p>
+        <p class="onboarding-label">Language</p>
         <div class="flex gap-2">
           {#each [{ val: 'English', display: 'English' }, { val: 'German', display: 'Deutsch' }] as lang}
             <button
               type="button"
               onclick={() => selectLanguage(lang.val as 'English' | 'German')}
               class="
-                flex-1 py-2.5 rounded-xl border text-[13px] font-medium
+                onboarding-choice flex-1 min-h-12 rounded-xl border text-[14px] font-medium
                 transition-all duration-150 active:scale-[0.97]
                 {selectedLanguage === lang.val
                   ? 'border-ryokan-accent/50 bg-ryokan-accent/12 text-white'
-                  : 'border-white/[0.08] bg-white/[0.04] text-white/40 hover:text-white/70 hover:border-white/15'}
+                  : 'border-[var(--sheet-divider)] bg-[var(--sheet-surface)] text-[var(--sheet-text-muted)] hover:text-[var(--sheet-text)] hover:border-white/15'}
               "
             >
               {lang.display}
@@ -167,7 +170,7 @@
       </div>
 
       <div class="space-y-2.5">
-        <p class="text-[11px] font-medium text-white/30 uppercase tracking-[0.08em]">AI Provider</p>
+        <p class="onboarding-label">AI Provider</p>
 
         <div class="flex gap-1 p-1 rounded-xl bg-black/20 border border-white/[0.06]">
           {#each (['local', 'cloud'] as ProviderTab[]) as tab}
@@ -175,11 +178,11 @@
               type="button"
               onclick={() => switchTab(tab)}
               class="
-                flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-[10px] border
+                flex-1 min-h-11 flex items-center justify-center gap-2 py-2 rounded-[10px] border
                 text-[12px] font-semibold tracking-wide transition-all duration-150
                 {activeTab === tab
                   ? 'border-ryokan-accent/25 bg-white/[0.07] text-ryokan-accent'
-                  : 'border-transparent bg-transparent text-white/30 hover:text-white/55'}
+                  : 'border-transparent bg-transparent text-[var(--sheet-text-muted)] hover:text-[var(--sheet-text)]'}
               "
             >
               {#if tab === 'local'}
@@ -198,18 +201,18 @@
           {/each}
         </div>
 
-        <div class="grid grid-cols-4 gap-2">
+        <div class="grid grid-cols-2 gap-2">
           {#each filteredPresets as preset (preset.url)}
             <button
               type="button"
               onclick={() => selectPreset(preset)}
               disabled={loadingModels}
               class="
-                flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl border
-                text-[11px] font-semibold transition-all duration-150 active:scale-[0.97] disabled:opacity-50
+                onboarding-choice flex items-center gap-3 min-h-15 py-3 px-3 rounded-xl border
+                text-[13px] font-medium transition-all duration-150 active:scale-[0.97] disabled:opacity-50
                 {activePreset === preset.label
                   ? 'border-ryokan-accent/50 bg-ryokan-accent/12 text-white'
-                  : 'border-white/[0.08] bg-white/[0.04] text-white/40 hover:text-white/70 hover:border-white/15'}
+                  : 'border-[var(--sheet-divider)] bg-[var(--sheet-surface)] text-[var(--sheet-text-muted)] hover:text-[var(--sheet-text)] hover:border-white/15'}
               "
             >
               <span class="opacity-80">
@@ -259,21 +262,21 @@
 
       {#if isCustom}
         <div class="space-y-2" in:fly={{ y: 8, duration: 200 }}>
-          <div class="rounded-xl bg-white/[0.04] border border-white/[0.08] overflow-hidden">
+          <div class="rounded-xl bg-[var(--sheet-surface)] border border-[var(--sheet-border)] overflow-hidden">
             <input
               type="url"
               bind:value={apiUrl}
               placeholder="https://your-api.example.com/v1"
-              class="w-full px-3.5 py-2.5 bg-transparent text-white text-[13px] placeholder-white/20 focus:outline-none"
+              class="w-full min-h-12 px-3.5 py-3 bg-transparent text-white text-[16px] placeholder-white/20 focus:outline-none"
             />
           </div>
           <div class="flex gap-2">
-            <div class="flex-1 rounded-xl bg-white/[0.04] border border-white/[0.08] overflow-hidden">
+            <div class="flex-1 rounded-xl bg-[var(--sheet-surface)] border border-[var(--sheet-border)] overflow-hidden">
               <input
                 type="password"
                 bind:value={apiKey}
                 placeholder="API Key (optional)"
-                class="w-full px-3.5 py-2.5 bg-transparent text-white text-[13px] placeholder-white/20 focus:outline-none"
+                class="w-full min-h-12 px-3.5 py-3 bg-transparent text-white text-[16px] placeholder-white/20 focus:outline-none"
               />
             </div>
             <button
@@ -293,12 +296,12 @@
       {:else if activePreset && needsKey}
         <div class="space-y-2.5" in:fly={{ y: 8, duration: 200 }}>
           <div class="flex gap-2">
-            <div class="flex-1 rounded-xl bg-white/[0.04] border border-white/[0.08] overflow-hidden">
+            <div class="flex-1 rounded-xl bg-[var(--sheet-surface)] border border-[var(--sheet-border)] overflow-hidden">
               <input
                 type="password"
                 bind:value={apiKey}
                 placeholder={keyPlaceholder}
-                class="w-full px-3.5 py-2.5 bg-transparent text-white text-[13px] placeholder-white/20 focus:outline-none"
+                class="w-full min-h-12 px-3.5 py-3 bg-transparent text-white text-[16px] placeholder-white/20 focus:outline-none"
               />
             </div>
             <button
@@ -320,10 +323,10 @@
       {#if activePreset}
         <div class="space-y-2" in:fly={{ y: 6, duration: 180 }}>
           {#if models.length > 0}
-            <div class="rounded-xl bg-white/[0.04] border border-white/[0.08] overflow-hidden">
+            <div class="rounded-xl bg-[var(--sheet-surface)] border border-[var(--sheet-border)] overflow-hidden">
               <select
                 bind:value={selectedModel}
-                class="w-full px-3.5 py-2.5 bg-transparent text-white text-[13px] focus:outline-none appearance-none cursor-pointer"
+                class="w-full min-h-12 px-3.5 py-3 bg-transparent text-white text-[16px] focus:outline-none appearance-none cursor-pointer"
               >
                 {#each models as m}
                   <option value={m} class="bg-[#1c1c1e]">{m}</option>
@@ -335,24 +338,18 @@
           {#if modelError}
             <p class="text-[12px] text-red-400/80">{modelError}</p>
           {:else if !loadingModels && models.length === 0 && !needsKey}
-            <p class="text-[12px] text-white/25">No models found — is your local API server running?</p>
+            <p class="text-[12px] text-[var(--sheet-text-muted)]">No models found — is your local API server running?</p>
           {/if}
         </div>
       {/if}
 
-      <button
-        type="button"
-        onclick={finish}
-        disabled={!canFinish}
-        class="
-          w-full py-3 rounded-2xl bg-ryokan-accent text-white font-semibold text-[15px]
-          tracking-[-0.2px] hover:opacity-90 active:scale-[0.98] disabled:opacity-20
-          transition-all duration-150 shadow-lg shadow-ryokan-accent/25
-        "
-      >
-        {saving ? 'Saving…' : 'Get Started'}
-      </button>
-
     </div>
   {/snippet}
 </BottomSheet>
+
+<style>
+  .onboarding-heading { display:flex; align-items:center; gap:14px; }
+  .onboarding-brand { display:grid; place-items:center; width:44px; height:44px; flex:none; border-radius:14px; color:var(--color-ryokan-accent); background:var(--sheet-selected); }
+  .onboarding-label { margin-bottom:10px; color:var(--sheet-text-muted); font-size:12px; font-weight:600; }
+  .onboarding-choice { cursor:pointer; }
+</style>

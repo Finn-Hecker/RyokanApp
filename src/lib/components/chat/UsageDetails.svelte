@@ -28,9 +28,8 @@
 </script>
 
 <BottomSheet {onClose} label={m.usage_title()} width="520px" maxHeight="720px" describedBy="usage-note">
-  {#snippet children(close)}
-  <header>
-    <div class="title-group">
+  {#snippet header()}
+<div class="title-group">
       <span class="title-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19H2"/>
@@ -43,12 +42,8 @@
         {/if}
       </div>
     </div>
-    <button class="close-button" type="button" onclick={close} aria-label={m.chat_cancel()}>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <path d="M6 6l12 12M18 6 6 18"/>
-      </svg>
-    </button>
-  </header>
+  {/snippet}
+  {#snippet children(close)}
 
   <div class="content">
     {#if !usage}
@@ -102,16 +97,6 @@
 </BottomSheet>
 
 <style>
-  header {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 20px 20px 17px;
-    border-bottom: 1px solid rgba(255, 255, 255, .06);
-  }
-
   .title-group { display: flex; min-width: 0; align-items: center; gap: 12px; }
   .title-icon {
     display: grid;
@@ -125,34 +110,6 @@
     color: #d4b483;
   }
   .title-icon svg { width: 19px; height: 19px; }
-  h2 { margin: 0; color: #eeeae4; font-size: 18px; font-weight: 650; letter-spacing: -.01em; }
-  .variant-label { margin: 3px 0 0; color: #77777d; font-size: 11px; line-height: 1.35; }
-
-  .close-button {
-    display: grid;
-    width: 38px;
-    height: 38px;
-    flex: 0 0 auto;
-    place-items: center;
-    border: 0;
-    border-radius: 11px;
-    background: rgba(255, 255, 255, .045);
-    color: #929298;
-    cursor: pointer;
-    transition: background 140ms, color 140ms, transform 100ms;
-  }
-  .close-button svg { width: 18px; height: 18px; }
-  .close-button:hover { background: rgba(255, 255, 255, .08); color: #e5e5ea; }
-  .close-button:active { transform: scale(.94); }
-  .close-button:focus-visible { outline: 2px solid rgba(212, 180, 131, .55); outline-offset: 2px; }
-
-  .content {
-    min-height: 0;
-    flex: 1;
-    padding: 18px 20px 20px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
 
   .legacy-message {
     display: flex;
@@ -170,30 +127,30 @@
   .legacy-message svg { width: 16px; height: 16px; flex: 0 0 auto; margin-top: 1px; color: #d4b483; }
 
   dl { margin: 0; }
-  .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .metric-card {
     min-width: 0;
-    padding: 12px 13px 13px;
-    border: 1px solid rgba(255, 255, 255, .055);
-    border-radius: 12px;
-    background: rgba(255, 255, 255, .025);
+    padding: 16px;
+    border: 1px solid transparent;
+    border-radius: 14px;
+    background: var(--sheet-surface);
   }
-  .metric-card dt { display: flex; min-width: 0; align-items: center; gap: 7px; color: #85858c; font-size: 11px; line-height: 1.3; }
+  .metric-card dt { display: flex; min-width: 0; align-items: center; gap: 7px; color:var(--sheet-text-muted); font-size: 12px; line-height: 1.4; }
   .metric-card dt > span:last-child { min-width: 0; overflow-wrap: anywhere; }
   .metric-icon { display: grid; width: 17px; height: 17px; flex: 0 0 auto; place-items: center; color: rgba(212, 180, 131, .8); }
   .metric-icon svg { width: 15px; height: 15px; }
-  .metric-card dd { margin: 8px 0 0; color: #f0eee9; font-size: 19px; font-weight: 620; line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .metric-card dd { margin: 8px 0 0; color: #f0eee9; font-size: 24px; font-weight: 620; line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 
   .detail-list {
-    margin-top: 14px;
+    margin-top: 20px;
     overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, .055);
-    border-radius: 12px;
-    background: rgba(255, 255, 255, .018);
+    border: 1px solid transparent;
+    border-radius: 14px;
+    background: transparent;
   }
-  .detail-list > div { display: grid; grid-template-columns: minmax(130px, .8fr) minmax(0, 1.2fr); align-items: baseline; gap: 16px; padding: 11px 13px; }
-  .detail-list > div + div { border-top: 1px solid rgba(255, 255, 255, .05); }
-  .detail-list dt { color: #85858c; font-size: 11px; line-height: 1.4; }
+  .detail-list > div { display: grid; grid-template-columns: minmax(130px, .8fr) minmax(0, 1.2fr); align-items: baseline; gap: 16px; padding: 13px 0; }
+  .detail-list > div + div { border-top: 1px solid var(--sheet-divider); }
+  .detail-list dt { color:var(--sheet-text-muted); font-size: 11px; line-height: 1.4; }
   .detail-list dd { margin: 0; color: #dedee2; font-size: 12px; font-weight: 500; line-height: 1.45; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
   dd.unavailable { color: #64646a; font-weight: 450; }
   .metric-card dd.unavailable { font-size: 12px; line-height: 22px; }
@@ -203,35 +160,26 @@
     align-items: flex-start;
     gap: 8px;
     margin: 14px 2px 0;
-    color: #68686e;
-    font-size: 10.5px;
+    color:var(--sheet-text-muted);
+    font-size: 12px;
     line-height: 1.55;
   }
   .usage-note svg { width: 14px; height: 14px; flex: 0 0 auto; margin-top: 1px; }
 
-
   @media (max-width: 639px) {
-    header { padding: 9px 14px 12px 16px; }
     .title-group { gap: 10px; }
     .title-icon { width: 34px; height: 34px; border-radius: 10px; }
     .title-icon svg { width: 17px; height: 17px; }
-    h2 { font-size: 17px; }
-    .close-button { width: 40px; height: 40px; }
-    .content {
-      padding: 14px 14px 14px;
-    }
-    .metric-card { padding: 11px 11px 12px; }
-    .metric-card dt { gap: 5px; font-size: 10px; }
-    .metric-card dd { margin-top: 7px; font-size: 17px; }
+    .metric-card { padding: 14px; }
+    .metric-card dt { gap: 5px; font-size: 11px; }
+    .metric-card dd { margin-top: 7px; font-size: 22px; }
     .detail-list { margin-top: 11px; }
-    .detail-list > div { grid-template-columns: minmax(100px, .85fr) minmax(0, 1.15fr); gap: 10px; padding: 10px 11px; }
+    .detail-list > div { grid-template-columns: minmax(100px, .85fr) minmax(0, 1.15fr); gap: 10px; padding: 12px 0; }
     .usage-note { margin-top: 11px; }
   }
 
   @media (max-width: 359px) {
     .metric-grid { grid-template-columns: 1fr; }
   }
-
-
 
 </style>

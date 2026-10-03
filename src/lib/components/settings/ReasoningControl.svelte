@@ -95,8 +95,7 @@
       {#if mobile}
         <BottomSheet onClose={() => listbox.close(true)} label={m.settings_reasoning_label()} breakpoint={768}>
           {#snippet children(dismiss)}
-            <div bind:this={optionList} class="sheet-options" role="listbox" aria-label={m.settings_reasoning_label()} tabindex="-1">
-              <div class="sheet-title">{m.settings_reasoning_label()}</div>
+            <div bind:this={optionList}  role="listbox" aria-label={m.settings_reasoning_label()} tabindex="-1">
               {@render options(value => dismiss(() => select(value)))}
             </div>
           {/snippet}
@@ -115,8 +114,6 @@
 {/if}
 
 <style>
-  .sheet-options { padding:7px 7px 12px; }
-  .sheet-title { padding:5px 12px 11px; color:#79797e; font-size:11px; font-weight:650; text-transform:uppercase; }
   .settings-divider { height:1px; margin:20px 0; background:rgba(255,255,255,.06); }
   .reasoning-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
   .reasoning-header .settings-label { display:block; margin:0; color:#68686d; font-size:11px; font-weight:650; letter-spacing:.055em; text-transform:uppercase; }
@@ -132,9 +129,9 @@
   :global(.reasoning-layer) { position:fixed; z-index:1100; inset:0; pointer-events:none; }
   :global(.reasoning-popup) { position:fixed; pointer-events:auto; overflow:hidden; padding:6px; border:1px solid rgba(255,255,255,.09); border-radius:13px; background:#242426; box-shadow:0 16px 40px rgba(0,0,0,.42),0 0 0 1px rgba(0,0,0,.2); animation:reasoning-pop-in .14s cubic-bezier(.22,.8,.3,1); transform-origin:top center; }
   :global(.reasoning-options) { display:grid; gap:2px; }
-  :global(.reasoning-option) { width:100%; min-height:42px; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:9px 11px; border:0; border-radius:9px; background:transparent; color:#a0a0a5; font:inherit; font-size:13px; font-weight:570; text-align:left; cursor:pointer; transition:background .12s ease,color .12s ease; }
-  :global(.reasoning-option:hover), :global(.reasoning-option:focus-visible) { outline:0; background:rgba(255,255,255,.055); color:#e7e7ea; }
-  :global(.reasoning-option--selected) { background:rgba(212,180,131,.095); color:#dfc69f; }
+  :global(.reasoning-option) { width:100%; min-height:42px; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:9px 11px; border:0; border-radius:9px; background:transparent; color:var(--sheet-text-muted); font:inherit; font-size:13px; font-weight:570; text-align:left; cursor:pointer; transition:background .12s ease,color .12s ease; }
+  :global(.reasoning-option:hover), :global(.reasoning-option:focus-visible) { outline:0; background:var(--sheet-surface-hover); color:#e7e7ea; }
+  :global(.reasoning-option--selected) { background:var(--sheet-selected); color:#dfc69f; }
   :global(.reasoning-option--selected:hover), :global(.reasoning-option--selected:focus-visible) { background:rgba(212,180,131,.14); color:#ead3b0; }
   :global(.selected-mark) { display:grid; place-items:center; color:#d4b483; }
   @keyframes reasoning-pop-in { from { opacity:.65; transform:translateY(-4px) scale(.98); } }
@@ -143,8 +140,8 @@
     .reasoning-trigger { min-height:56px; padding:10px 10px 10px 14px; border-radius:13px; }
     .trigger-value { font-size:14px; }
     .trigger-icon { width:34px; height:34px; border-radius:10px; }
-    :global(.reasoning-options) { gap:3px; }
-    :global(.reasoning-option) { min-height:50px; padding:12px 13px; border-radius:12px; font-size:14px; }
+    :global(.reasoning-options) { gap:4px; }
+    :global(.reasoning-option) { min-height:56px; padding:14px; border-radius:14px; font-size:14px; }
   }
 
   @media (prefers-reduced-motion:reduce) {

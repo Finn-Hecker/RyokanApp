@@ -220,7 +220,7 @@
         renderedModelCount + MODEL_RENDER_BATCH_SIZE,
         visibleModels.length,
       );
-    }, { root: node.parentElement, rootMargin: "200px 0px" });
+    }, { root: node.closest('[data-sheet-body]') ?? node.parentElement, rootMargin: "200px 0px" });
 
     observer.observe(node);
     return { destroy: () => observer.disconnect() };
@@ -761,14 +761,8 @@
 
             {:else}
             <BottomSheet onClose={closeModelPicker} label={m.settings_model_select_title()} breakpoint={768} height="min(760px, calc(var(--app-visible-height, 100dvh) * .86))">
-              {#snippet children(dismiss)}
-              <div class="model-sheet-toolbar">
-                <div class="model-sheet-heading">
-                  <h3 id="mobile-model-sheet-title">{m.settings_model_select_title()}</h3>
-                  <button type="button" class="model-sheet-close" aria-label={m.settings_model_close()} onclick={dismiss}>
-                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" stroke-linecap="round"/></svg>
-                  </button>
-                </div>
+              {#snippet header()}<h3 id="mobile-model-sheet-title">{m.settings_model_select_title()}</h3>{/snippet}
+              {#snippet toolbar()}
 
                 <div class="model-search-wrap model-sheet-search">
                   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -798,8 +792,8 @@
                     {/each}
                   {/if}
                 </div>
-              </div>
-
+              {/snippet}
+              {#snippet children(dismiss)}
               <div class="mobile-model-list" role="listbox" aria-label={m.settings_model_label()}>
                 {#if !modelResultsReady || modelsLoading || availableModels.length === 0}
                   <div class="model-list-loading" role="status" aria-live="polite" aria-label={m.settings_model_loading()}>
@@ -1117,46 +1111,10 @@
   @keyframes browser-pop-in { from { transform:translate(-50%,-48%) scale(.985); opacity:.65; } }
 
   @media (max-width: 767px) {
-    .model-sheet-toolbar {
-      position:sticky;
-      z-index:1;
-      top:0;
-      flex:0 0 auto;
-      padding:4px 0 10px;
-      border-bottom:1px solid rgba(255,255,255,.055);
-      background:#18181a;
-    }
-    .model-sheet-heading {
-      min-height:47px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:16px;
-      padding:0 16px 0 20px;
-    }
-    .model-sheet-heading h3 {
-      margin:0;
-      color:#eeeae4;
-      font-size:20px;
-      font-weight:680;
-      letter-spacing:-.025em;
-    }
-    .model-sheet-close {
-      width:40px;
-      height:40px;
-      display:grid;
-      place-items:center;
-      flex:0 0 auto;
-      border:0;
-      border-radius:12px;
-      background:rgba(255,255,255,.045);
-      color:#8b8b90;
-      cursor:pointer;
-    }
-    .model-sheet-close:active { background:rgba(255,255,255,.09); color:#e5e5e9; }
+
     .model-sheet-search {
       height:46px;
-      margin:3px 16px 11px;
+      margin:0 0 11px;
       padding:0 13px;
       border-radius:13px;
       background:rgba(0,0,0,.28);
@@ -1166,7 +1124,7 @@
       display:flex;
       gap:7px;
       overflow-x:auto;
-      padding:0 16px 2px;
+      padding:0 0 2px;
       scrollbar-width:none;
       overscroll-behavior-x:contain;
       -webkit-overflow-scrolling:touch;
@@ -1176,10 +1134,10 @@
       min-height:38px;
       flex:0 0 auto;
       padding:8px 14px;
-      border:1px solid rgba(255,255,255,.065);
+      border:1px solid var(--sheet-divider);
       border-radius:999px;
-      background:rgba(255,255,255,.025);
-      color:#77777c;
+      background:var(--sheet-surface);
+      color:var(--sheet-text-muted);
       font:inherit;
       font-size:12.5px;
       font-weight:650;
@@ -1191,14 +1149,6 @@
       background:rgba(212,180,131,.12);
       color:#dfc69f;
     }
-    .mobile-model-list {
-      min-height:0;
-      flex:1;
-      overflow-y:auto;
-      padding:8px 10px 14px;
-      overscroll-behavior:contain;
-      -webkit-overflow-scrolling:touch;
-    }
     .mobile-model-list .model-list-loading { gap:2px; }
     .mobile-model-list .model-row-skeleton { height:58px; border-color:transparent; border-radius:13px; }
     .mobile-model-row {
@@ -1208,12 +1158,12 @@
       gap:2px;
       border:1px solid transparent;
       border-radius:13px;
-      color:#bdbdc2;
+      color:var(--sheet-text);
     }
     .mobile-model-row + .mobile-model-row { margin-top:2px; }
     .mobile-model-row--selected {
-      border-color:rgba(212,180,131,.23);
-      background:rgba(212,180,131,.085);
+      border-color:var(--sheet-selected-border);
+      background:var(--sheet-selected);
       color:#e1c59a;
     }
     .mobile-model-select {
@@ -1246,24 +1196,24 @@
       min-width:0;
       flex-wrap:wrap;
       gap:3px 8px;
-      color:#66666b;
+      color:var(--sheet-text-muted);
       font-size:10.5px;
       line-height:1.35;
     }
-    .mobile-model-price, .mobile-model-context { color:#727277; }
+    .mobile-model-price, .mobile-model-context { color:var(--sheet-text-muted); }
     .mobile-model-details .free-badge { min-height:16px; padding:0 5px; }
     .mobile-model-row--selected .mobile-model-price,
     .mobile-model-row--selected .mobile-model-context { color:#9b8667; }
     .model-favorite-btn {
-      width:36px;
-      height:40px;
+      width:44px;
+      height:44px;
       display:grid;
       place-items:center;
       flex:0 0 auto;
       border:0;
       border-radius:11px;
       background:transparent;
-      color:#4e4e53;
+      color:var(--sheet-text-subtle);
       cursor:pointer;
     }
     .model-favorite-btn:active { background:rgba(255,255,255,.055); }

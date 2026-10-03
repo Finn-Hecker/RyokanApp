@@ -102,7 +102,7 @@
     onclick={stopProp}
     onkeydown={stopProp}
     class={sheet
-      ? 'sheet-action-list w-full rounded-2xl border border-white/[0.06] bg-white/[0.025] p-1.5'
+      ? 'sheet-action-list w-full'
       : 'absolute right-0 top-full mt-1.5 w-44 max-w-[calc(100vw-2rem)] bg-[#16161f] border border-ryokan-accent/[0.22] rounded-xl z-30 py-1 overflow-hidden'}
     style={sheet ? '' : 'box-shadow: 0 20px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(212,180,131,0.04) inset;'}
   >
@@ -214,13 +214,14 @@
 
 <style>
   .sheet-action {
-    min-height: 52px;
-    padding: 12px 14px;
+    min-height: 54px;
+    padding: 14px 12px;
     gap: 14px;
     border: 1px solid transparent;
-    border-radius: 12px;
+    border-radius: 14px;
     font-size: 14px;
     font-weight: 550;
+    color: var(--sheet-text);
     line-height: 1.25;
     transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
   }
@@ -233,8 +234,8 @@
 
   .sheet-action:hover,
   .sheet-action:focus-visible {
-    background: rgba(212, 180, 131, 0.09);
-    border-color: rgba(212, 180, 131, 0.2);
+    background: var(--sheet-surface-hover);
+    border-color: transparent;
     color: #f3e6d2;
     outline: none;
   }
@@ -242,12 +243,14 @@
   .sheet-action:active {
     background: rgba(212, 180, 131, 0.16);
     border-color: rgba(212, 180, 131, 0.3);
-    transform: scale(0.985);
+    transform: scale(0.99);
   }
+
+  .sheet-danger { color:var(--sheet-danger); }
 
   .sheet-danger:hover,
   .sheet-danger:focus-visible {
-    background: rgba(239, 68, 68, 0.1);
+    background: var(--sheet-danger-surface);
     border-color: rgba(239, 68, 68, 0.2);
     color: #fca5a5;
   }

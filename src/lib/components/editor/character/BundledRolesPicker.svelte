@@ -70,13 +70,8 @@
 
 {#if pickerOpen}
   <BottomSheet onClose={() => pickerOpen = false} label={m.character_roles_add()} width="420px" maxHeight="560px" breakpoint={521}>
+    {#snippet header()}<h3 id="role-picker-title">{m.character_roles_add()}</h3><p>{m.character_roles_choose()}</p>{/snippet}
     {#snippet children(dismiss)}
-      <div class="picker-heading">
-        <div><h3 id="role-picker-title">{m.character_roles_add()}</h3><p>{m.character_roles_choose()}</p></div>
-        <button type="button" class="picker-close" aria-label={m.create_char_close_aria()} onclick={dismiss}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" stroke-linecap="round" /></svg>
-        </button>
-      </div>
       {#if roleState.roles.length > 0}
         <div class="picker-list">
           {#each roleState.roles as role (role.id)}
@@ -107,29 +102,24 @@
   .role-row p { min-width:0; flex:1; overflow:hidden; color:#d1d5db; font-size:13px; font-weight:500; text-overflow:ellipsis; white-space:nowrap; }
   .role-avatar { width:32px; height:32px; flex:none; display:flex; align-items:center; justify-content:center; overflow:hidden; border-radius:9px; color:#d4b483; background:rgba(212,180,131,.09); font-size:12px; font-weight:700; }
   .role-avatar img { width:100%; height:100%; object-fit:cover; }
-  .role-avatar--large { width:38px; height:38px; }
-  .role-row button, .picker-close { display:flex; align-items:center; justify-content:center; width:36px; height:36px; flex:none; border:0; border-radius:9px; color:#6b7280; background:transparent; cursor:pointer; }
-  .role-row button:hover, .picker-close:hover { color:#f3f4f6; background:rgba(255,255,255,.06); }
+  .role-avatar--large { width:40px; height:40px; border-radius:12px; }
+  .role-row button { display:flex; align-items:center; justify-content:center; width:36px; height:36px; flex:none; border:0; border-radius:9px; color:#6b7280; background:transparent; cursor:pointer; }
+  .role-row button:hover { color:#f3f4f6; background:rgba(255,255,255,.06); }
   .add-role { display:inline-flex; align-items:center; gap:7px; min-height:38px; margin-top:13px; border:1px solid rgba(212,180,131,.22); border-radius:9px; padding:8px 13px; color:#d4b483; background:rgba(212,180,131,.065); font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
   .add-role:hover { border-color:rgba(212,180,131,.38); background:rgba(212,180,131,.1); }
   .add-role span { font-size:17px; font-weight:400; line-height:1; }
   .validation-message { margin-top:10px; color:#fbbf24; font-size:12px; font-weight:500; }
-  .picker-heading { flex-shrink:0; display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:18px 18px 14px; border-bottom:1px solid rgba(255,255,255,.06); }
-  .picker-heading h3 { color:#e5e7eb; font-size:15px; font-weight:600; }
-  .picker-heading p { margin-top:3px; color:#626873; font-size:12px; line-height:1.45; }
-  .picker-close { margin:-6px -6px 0 0; }
-  .picker-list { min-height:0; overflow-y:auto; padding:7px; }
-  .picker-role { width:100%; min-height:52px; display:flex; align-items:center; gap:11px; border:0; border-radius:10px; padding:7px 9px; color:#d1d5db; background:transparent; font:inherit; font-size:13px; font-weight:500; text-align:left; cursor:pointer; }
-  .picker-role:hover { color:#f3f4f6; background:rgba(255,255,255,.055); }
+  .picker-role { width:100%; min-height:60px; display:flex; align-items:center; gap:12px; border:0; border-radius:14px; padding:10px 12px; color:var(--sheet-text); background:transparent; font:inherit; font-size:13px; font-weight:500; text-align:left; cursor:pointer; }
+  .picker-role:hover { color:var(--sheet-text); background:var(--sheet-surface-hover); }
   .picker-role span { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .picker-role > svg { flex:none; color:#555b65; }
-  .picker-empty { padding:28px 20px; color:#6b7280; font-size:13px; line-height:1.5; text-align:center; }
+  .picker-empty { padding:28px 0; color:var(--sheet-text-muted); font-size:13px; line-height:1.5; text-align:center; }
   button:disabled { opacity:.45; cursor:default; }
   @media(max-width:520px) {
     .roles-section { padding:16px; }
     .section-heading { flex-direction:column; gap:12px; }
     .policy-select, .policy-select select { width:100%; }
     .add-role { width:100%; justify-content:center; min-height:44px; }
-    .picker-role { min-height:56px; }
+    .picker-role { min-height:60px; }
   }
 </style>

@@ -23,9 +23,11 @@
   import { androidViewport } from '$lib/utils/androidViewport';
   import { canDragSheet, SheetVelocity, shouldDismissSheet } from '$lib/utils/bottomSheetGesture';
 
-  let { onClose, label, children, desktop = 'center', width = '560px', height = 'auto', dismissible = true,
+  let { onClose, label, children, header, toolbar, footer, onScroll, desktop = 'center', width = '560px', height = 'auto', dismissible = true,
     beforeClose, breakpoint = 640, mobileOnly = false, forceMobile = false, describedBy, mobileHeight, compactMobileHeight, maxHeight = '100%', closeLabel = m.create_char_close_aria() }: {
     onClose: () => void; label: string; children: Snippet<[(after?: (() => void) | Event) => void]>;
+    header?: Snippet; toolbar?: Snippet; footer?: Snippet<[(after?: (() => void) | Event) => void]>;
+    onScroll?: (event: Event & { currentTarget: EventTarget & HTMLDivElement }) => void;
     desktop?: 'center' | 'side'; width?: string; height?: string; dismissible?: boolean;
     beforeClose?: () => boolean; breakpoint?: number; mobileOnly?: boolean; forceMobile?: boolean; describedBy?: string;
     mobileHeight?: string; compactMobileHeight?: string; maxHeight?: string; closeLabel?: string;
@@ -203,11 +205,23 @@
     oncancel={(event) => { event.preventDefault(); close(); }} style={`--sheet-width:${width};--sheet-height:${height};--sheet-max-height:${maxHeight};--sheet-mobile-height:${mobileHeight ?? height};--sheet-compact-height:${compactMobileHeight ?? mobileHeight ?? height}`}>
     <button bind:this={backdrop} class="backdrop" aria-label={closeLabel} tabindex="-1" onclick={close} transition:backdropMotion|global></button>
     <div bind:this={panel} class="panel" transition:motion|global onoutrostart={releaseForOutro}>
+      {#if dismissible}
       <div class="handle" aria-hidden="true"
         onpointerdown={(event) => { if (event.pointerType !== 'touch') { start(event.pointerId, event.clientX, event.clientY, event.currentTarget); event.currentTarget.setPointerCapture(event.pointerId); } }}
         onpointermove={(event) => { if (event.pointerType !== 'touch' && gesture?.id === event.pointerId) move(event.clientX, event.clientY, event); }}
         onpointerup={(event) => { if (event.pointerType !== 'touch') end(); }} onpointercancel={(event) => { if (event.pointerType !== 'touch') end(true); }}><span></span></div>
-      <div class="content">{@render children(close)}</div>
+      {/if}
+      <header class="sheet-header">
+        <div class="sheet-heading">{#if header}{@render header()}{:else}<h2>{label}</h2>{/if}</div>
+        {#if dismissible}
+          <button type="button" class="sheet-close" aria-label={closeLabel} onclick={close}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
+        {/if}
+      </header>
+      {#if toolbar}<div class="sheet-toolbar">{@render toolbar()}</div>{/if}
+      <div class="content" data-sheet-body onscroll={onScroll}>{@render children(close)}</div>
+      {#if footer}<footer class="sheet-footer">{@render footer(close)}</footer>{/if}
     </div>
 </dialog>
 
@@ -218,16 +232,42 @@
   dialog::backdrop { background:transparent; }
   /* showModal() can initially focus this full-screen button even with tabindex=-1.
      It is outside the Tab order; keep focus indicators on the sheet's controls. */
-  .backdrop { position:absolute; inset:0; width:100%; height:100%; border:0; outline:none; background:rgba(8,8,12,.6); backdrop-filter:blur(3px); will-change:opacity; }
-  .panel { position:relative; display:flex; flex-direction:column; width:min(var(--sheet-width),100%); height:var(--sheet-height); max-height:min(var(--sheet-max-height),100%); min-height:0; border:1px solid rgba(255,255,255,.09); border-radius:20px; background:var(--color-ryokan-bg,#18181b); box-shadow:0 24px 70px rgba(0,0,0,.5); overflow:hidden; will-change:transform; }
-  .content { flex:1 1 auto; display:flex; flex-direction:column; min-height:0; overflow-y:auto; overscroll-behavior-y:contain; }
+  .backdrop { position:absolute; inset:0; width:100%; height:100%; border:0; outline:none; background:rgba(8,8,12,.65); backdrop-filter:blur(4px); will-change:opacity; }
+  .panel { --sheet-gutter:20px; position:relative; display:flex; flex-direction:column; width:min(var(--sheet-width),100%); height:var(--sheet-height); max-height:min(var(--sheet-max-height),100%); min-height:0; border:1px solid var(--sheet-border); border-radius:22px; background:var(--sheet-bg); color:var(--sheet-text); font-size:14px; line-height:1.5; box-shadow:0 24px 80px rgba(0,0,0,.48),0 1px 0 rgba(255,255,255,.025) inset; overflow:hidden; will-change:transform; -webkit-user-select:none; user-select:none; }
+  .panel, .panel :global(*) { scrollbar-width:none; -ms-overflow-style:none; }
+  .panel::-webkit-scrollbar, .panel :global(*::-webkit-scrollbar) { display:none; width:0; height:0; }
+  .panel :global(input), .panel :global(textarea), .panel :global([contenteditable="true"]) { -webkit-user-select:text; user-select:text; }
+  .panel :global(button:focus-visible) { outline:2px solid var(--color-ryokan-accent); outline-offset:2px; }
+  .sheet-header { display:flex; align-items:center; gap:12px; flex:0 0 auto; padding:16px var(--sheet-gutter) 12px; border-bottom:1px solid var(--sheet-divider); }
+  .sheet-heading { flex:1; min-width:0; }
+  .sheet-heading :global(h1), .sheet-heading :global(h2), .sheet-heading :global(h3) { margin:0; color:var(--sheet-text); font-size:18px; font-weight:650; line-height:1.35; letter-spacing:-.01em; }
+  .sheet-heading :global(p) { margin:4px 0 0; color:var(--sheet-text-muted); font-size:12px; line-height:1.4; }
+  .sheet-close { display:grid; place-items:center; flex:0 0 44px; width:44px; height:44px; border:0; border-radius:14px; background:var(--sheet-surface); color:var(--sheet-text-muted); cursor:pointer; transition:background 140ms,color 140ms,transform 140ms; }
+  .sheet-close:hover { background:var(--sheet-surface-hover); color:var(--sheet-text); }
+  .sheet-close:active { transform:scale(.94); }
+  .sheet-close:focus-visible { outline:2px solid var(--color-ryokan-accent); outline-offset:2px; }
+  .sheet-toolbar { flex:0 0 auto; padding:12px var(--sheet-gutter); border-bottom:1px solid var(--sheet-divider); }
+  .content { flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden; padding:16px var(--sheet-gutter); overscroll-behavior-y:contain; }
+  .sheet-footer { flex:0 0 auto; padding:16px var(--sheet-gutter); border-top:1px solid var(--sheet-divider); }
+  .sheet-footer :global(.sheet-footer-actions) { display:flex; justify-content:flex-end; gap:8px; }
+  .sheet-footer :global(.sheet-footer-actions > button) { min-height:48px; border-radius:14px; font-size:14px; font-weight:600; letter-spacing:0; }
+  .sheet-footer :global(button[data-variant="primary"]) { background:var(--color-ryokan-accent); color:#211c16; box-shadow:0 3px 12px rgba(212,180,131,.1); }
+  .sheet-footer :global(button[data-variant="primary"]:hover:not(:disabled)) { background:#dfc39c; }
+  .sheet-footer :global(button[data-variant="secondary"]) { background:var(--sheet-surface); border-color:var(--sheet-border); color:var(--sheet-text); }
+  .sheet-footer :global(button[data-variant="secondary"]:hover:not(:disabled)) { background:var(--sheet-surface-hover); }
+  .sheet-footer :global(button[data-variant="danger"]) { background:var(--sheet-danger-surface); border-color:rgba(239,68,68,.18); color:var(--sheet-danger); }
   .handle { display:none; }
   dialog.side:not(.mobile) { padding:0; justify-content:flex-end; }
   .side:not(.mobile) .panel { height:100%; border-radius:0; padding-top:env(safe-area-inset-top); padding-right:env(safe-area-inset-right); padding-bottom:env(safe-area-inset-bottom); }
   dialog.mobile { padding:calc(env(safe-area-inset-top) + 12px) 0 0; align-items:flex-end; }
   .mobile .panel { height:var(--sheet-mobile-height); width:100%; max-height:min(calc(var(--app-visible-height,100dvh) * .9),calc(var(--app-visible-height,100dvh) - env(safe-area-inset-top) - 12px)); border-radius:22px 22px 0 0; border-width:1px 0 0; padding-bottom:env(safe-area-inset-bottom); }
-  .mobile .content { padding-left:env(safe-area-inset-left); padding-right:env(safe-area-inset-right); }
+  .mobile .panel { --sheet-gutter:16px; }
+  .mobile .sheet-header { padding-top:6px; padding-bottom:12px; }
+  .mobile .panel:not(:has(.handle)) .sheet-header { padding-top:20px; }
+  .mobile .content, .mobile .sheet-header, .mobile .sheet-toolbar, .mobile .sheet-footer { padding-left:calc(var(--sheet-gutter) + env(safe-area-inset-left)); padding-right:calc(var(--sheet-gutter) + env(safe-area-inset-right)); }
+  .mobile .sheet-footer :global(.sheet-footer-actions > button) { flex:1; }
   .mobile .handle { display:flex; flex:0 0 26px; align-items:center; justify-content:center; touch-action:none; user-select:none; }
   @media (max-height:500px) { .mobile .panel { height:var(--sheet-compact-height); max-height:calc(var(--app-visible-height,100dvh) - env(safe-area-inset-top) - 12px); } }
-  .handle span { width:38px; height:4px; border-radius:999px; background:rgba(255,255,255,.2); }
+  .handle span { width:38px; height:4px; border-radius:999px; background:rgba(255,255,255,.16); }
+  @media (prefers-reduced-motion:reduce) { .sheet-close { transition:none; } }
 </style>

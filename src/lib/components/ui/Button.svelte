@@ -60,6 +60,7 @@
   {type}
   {disabled}
   aria-label={ariaLabel}
+  data-variant={variant}
   class={classes}
   {...rest}
 >

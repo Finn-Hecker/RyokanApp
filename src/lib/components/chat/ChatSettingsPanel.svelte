@@ -111,18 +111,27 @@
 </script>
 
 <BottomSheet {onClose} label={m.settings_section_ai_behavior()} mobileHeight="min(720px, calc(var(--app-visible-height, 100dvh) * .82))" compactMobileHeight="calc(var(--app-visible-height, 100dvh) * .92)" desktop="side" width="440px" beforeClose={() => { if (modelPickerOpen) { modelPickerOpen = false; return true; } return false; }}>
-  {#snippet children(close)}
-    <div class="settings-panel-header">
-      <span class="settings-panel-title">{m.settings_section_ai_behavior()}</span>
-      <button class="settings-close-btn" onclick={close} aria-label="Schließen">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18"/>
-          <line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </button>
-    </div>
+  {#snippet footer(close)}
 
-    <div class="settings-panel-body">
+      <label class="power-user-toggle" title={m.settings_power_user_title()}>
+        <div class="power-icon" class:active={powerUser}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          </svg>
+        </div>
+        <span class="power-label">{m.settings_power_user_label()}</span>
+        <input type="checkbox" checked={powerUser} onchange={togglePowerUser} class="sr-only peer" />
+        <div class="power-track
+                    peer-checked:bg-ryokan-accent/20 peer-checked:border-ryokan-accent/40
+                    after:content-[''] after:absolute after:top-[3px] after:start-[3px]
+                    after:bg-[#5a5a5e] after:rounded-full
+                    after:h-[14px] after:w-[14px] after:transition-all
+                    peer-checked:after:translate-x-[18px] peer-checked:after:bg-ryokan-accent">
+        </div>
+      </label>
+  {/snippet}
+  {#snippet children(close)}
+<div class="settings-panel-body">
       <div class="connection-card">
         <div class="connection-field">
           <label class="settings-label" for="chat-active-connection">{m.settings_connection_label()}</label>
@@ -215,24 +224,6 @@
       </div>
     </div>
 
-    <div class="settings-panel-footer">
-      <label class="power-user-toggle" title={m.settings_power_user_title()}>
-        <div class="power-icon" class:active={powerUser}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-          </svg>
-        </div>
-        <span class="power-label">{m.settings_power_user_label()}</span>
-        <input type="checkbox" checked={powerUser} onchange={togglePowerUser} class="sr-only peer" />
-        <div class="power-track
-                    peer-checked:bg-ryokan-accent/20 peer-checked:border-ryokan-accent/40
-                    after:content-[''] after:absolute after:top-[3px] after:start-[3px]
-                    after:bg-[#5a5a5e] after:rounded-full
-                    after:h-[14px] after:w-[14px] after:transition-all
-                    peer-checked:after:translate-x-[18px] peer-checked:after:bg-ryokan-accent">
-        </div>
-      </label>
-    </div>
   {#if modelPickerOpen}
     <ChatModelPicker models={availableModels} metadata={modelMetadata} selectedModel={appState.apiSettings.model} providerKind={appState.apiSettings.providerKind} loading={modelsLoading} error={modelsError} onSelect={selectModel} onRetry={loadModels} onClose={() => modelPickerOpen = false} />
   {/if}
@@ -240,60 +231,9 @@
 </BottomSheet>
 
 <style>
-  .settings-panel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 18px 20px;
-    flex-shrink: 0;
-    border-bottom: 1px solid rgba(255,255,255,0.055);
-  }
-
-  .settings-panel-title {
-    font-size: 17px;
-    font-weight: 650;
-    color: #e7e2da;
-    letter-spacing: -0.01em;
-  }
-
-  .settings-close-btn {
-    flex-shrink: 0;
-    width: 30px;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 9px;
-    background: transparent;
-    border: none;
-    color: rgba(255,255,255,0.4);
-    cursor: pointer;
-    transition: background 140ms ease, color 140ms ease;
-  }
-
-  .settings-close-btn:hover {
-    background: rgba(255,255,255,0.08);
-    color: rgba(255,255,255,0.9);
-  }
-
-  .settings-panel-body {
-    flex: 1;
-    min-height: 0;
-    padding: 24px 24px 36px;
-    overflow-y: auto;
-    overflow-x: hidden;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-
-  .settings-panel-body::-webkit-scrollbar { display: none; }
-
   .connection-card {
     display: grid;
-    gap: 12px;
+    gap: 16px;
     margin-bottom: 20px;
     padding-bottom: 20px;
     border-bottom: 1px solid rgba(255,255,255,0.055);
@@ -304,17 +244,17 @@
     display: block;
     width: 100%;
     min-width: 0;
-    height: 38px;
-    padding: 0 10px;
-    border: 1px solid rgba(255,255,255,0.07);
+    min-height: 48px;
+    padding: 0 14px;
+    border: 1px solid var(--sheet-divider);
     border-radius: 11px;
-    background: rgba(0,0,0,0.2);
-    color: #e5e5ea;
+    background: var(--sheet-surface);
+    color:var(--sheet-text);
     font: inherit;
-    font-size: 13px;
+    font-size: 14px;
   }
   select.connection-input { color-scheme: dark; }
-  select.connection-input option { background: #1c1c1e; color: #e5e5ea; }
+  select.connection-input option { background: #1c1c1e; color:var(--sheet-text); }
   .connection-input:focus-visible { outline: none; border-color: rgba(212,180,131,0.4); box-shadow: 0 0 0 3px rgba(212,180,131,0.06); }
   .model-trigger { display:flex; align-items:center; justify-content:space-between; gap:10px; text-align:left; cursor:pointer; }
   .model-trigger span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -328,12 +268,6 @@
   }
   .model-status--error { color: #e7a3a3; }
 
-  .settings-panel-footer {
-    flex-shrink: 0;
-    padding: 8px 12px 10px;
-    border-top: 1px solid rgba(255,255,255,0.055);
-  }
-
   /* ---------- Settings primitives (mirrors the main Settings page) ---------- */
 
   .settings-card {
@@ -344,14 +278,10 @@
   }
 
   @media (max-width: 639px) {
-    .settings-panel-header { padding: 10px 14px 9px 16px; }
-    .settings-panel-body { padding: 12px 12px 16px; }
-    .settings-panel-footer { padding: 5px 10px 6px; }
     .settings-divider { margin: 16px 0; }
-    .connection-card { gap: 10px; margin-bottom: 16px; padding-bottom: 16px; }
+    .connection-card { gap: 14px; margin-bottom: 16px; padding-bottom: 16px; }
     .sampling-subheading { margin: 7px 0 9px; }
   }
-
 
   .settings-label {
     display: block;
@@ -359,13 +289,13 @@
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #68686d;
+    color: var(--sheet-text-muted);
     margin-bottom: 8px;
   }
 
   .settings-divider {
     height: 1px;
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--sheet-divider);
     margin: 20px 0;
   }
 
@@ -378,7 +308,7 @@
   .sampling-divider-line {
     flex: 1;
     height: 1px;
-    background: rgba(255,255,255,0.07);
+    background: var(--sheet-divider);
   }
   .sampling-subheading {
     flex-shrink: 0;
@@ -386,7 +316,7 @@
     font-weight: 700;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: #6b6b6e;
+    color: var(--sheet-text-muted);
     white-space: nowrap;
     margin: 10px 0 15px 0;
   }
@@ -398,7 +328,8 @@
     align-items: center;
     gap: 8px;
     cursor: pointer;
-    padding: 8px 10px;
+    min-height:48px;
+    padding: 6px 0;
     border-radius: 10px;
     transition: background 0.15s;
     user-select: none;
@@ -410,7 +341,7 @@
     height: 30px;
     justify-content: center;
     border-radius: 9px;
-    color: #57575c;
+    color: var(--sheet-text-muted);
     background: rgba(255,255,255,0.035);
     transition: color 0.2s;
     display: flex;
@@ -418,7 +349,7 @@
   }
   .power-icon.active { color: #d4b483; background: rgba(212,180,131,0.09); }
   .power-label {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     color: #d1cfd2;
     flex: 1;
@@ -431,7 +362,7 @@
     height: 20px;
     border-radius: 9999px;
     transition: background 0.2s, border-color 0.2s;
-    background: rgba(255,255,255,0.07);
+    background: var(--sheet-divider);
     border: 1px solid rgba(255,255,255,0.08);
   }
 </style>

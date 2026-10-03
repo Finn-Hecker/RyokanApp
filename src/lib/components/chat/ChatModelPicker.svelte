@@ -91,15 +91,12 @@
   }
 </script>
 
-<BottomSheet {onClose} label={m.settings_model_select_title()} breakpoint={768} width="920px" height="min(720px, calc(var(--app-visible-height, 100dvh) * .86))">
-  {#snippet children(close)}
-  <header class="picker-header">
-    <div>
+<BottomSheet {onClose} label={m.settings_model_select_title()} onScroll={scrollList} breakpoint={768} width="920px" height="min(720px, calc(var(--app-visible-height, 100dvh) * .86))">
+  {#snippet header()}
       <h2 id="chat-model-picker-title">{m.settings_model_select_title()}</h2>
       <p>{m.settings_model_available_count({ count: String(models.length) })}</p>
-    </div>
-    <button type="button" class="close-button" aria-label={m.settings_model_close()} onclick={close}>×</button>
-  </header>
+    {/snippet}
+  {#snippet toolbar()}
   <div class="picker-controls">
     <input class="search-input" type="search" bind:value={search} oninput={() => shown = 50} placeholder={m.settings_model_search_placeholder()} aria-label={m.settings_model_search_placeholder()} />
     <div class="category-list" role="tablist" aria-label={m.settings_model_categories()}>
@@ -108,7 +105,9 @@
       {/each}
     </div>
   </div>
-  <div class="model-list" role="listbox" aria-label={m.settings_model_label()} onscroll={scrollList}>
+  {/snippet}
+  {#snippet children(close)}
+  <div class="model-list" role="listbox" aria-label={m.settings_model_label()}>
     {#if loading}
       <div class="empty-state">{m.settings_model_loading()}</div>
     {:else if error}
@@ -136,18 +135,12 @@
 </BottomSheet>
 
 <style>
-  .picker-header { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:20px 22px 14px; border-bottom:1px solid rgba(255,255,255,.06); }
-  .picker-header h2 { margin:0; color:#eeeae4; font-size:21px; font-weight:680; }
-  .picker-header p { margin:4px 0 0; color:#77777c; font-size:11px; }
-  .close-button { width:38px; height:38px; flex:0 0 auto; border:0; border-radius:11px; background:rgba(255,255,255,.045); color:#aaa; font-size:25px; line-height:1; cursor:pointer; }
-  .picker-controls { flex-shrink:0; padding:12px 18px; border-bottom:1px solid rgba(255,255,255,.06); }
   .search-input { width:100%; height:42px; padding:0 12px; border:1px solid rgba(255,255,255,.08); border-radius:11px; outline:none; background:rgba(0,0,0,.22); color:#eee; font:inherit; font-size:14px; }
   .search-input:focus { border-color:rgba(212,180,131,.45); }
   .category-list { display:flex; gap:7px; margin-top:11px; overflow-x:auto; scrollbar-width:none; }
   .category-list::-webkit-scrollbar { display:none; }
   .category-list button { min-height:36px; flex:0 0 auto; padding:7px 13px; border:1px solid rgba(255,255,255,.07); border-radius:999px; background:rgba(255,255,255,.025); color:#88888d; font:inherit; font-size:12px; font-weight:650; cursor:pointer; }
   .category-list button.active { border-color:rgba(212,180,131,.42); background:rgba(212,180,131,.12); color:#dfc69f; }
-  .model-list { min-height:0; flex:1; overflow-y:auto; padding:10px 14px 16px; overscroll-behavior:contain; }
   .model-row { min-height:70px; display:flex; align-items:center; gap:6px; margin-bottom:6px; border:1px solid rgba(255,255,255,.045); border-radius:13px; background:rgba(255,255,255,.015); }
   .model-row.selected { border-color:rgba(212,180,131,.3); background:rgba(212,180,131,.08); }
   .model-choice { min-width:0; flex:1; display:flex; flex-direction:column; justify-content:center; align-items:flex-start; gap:8px; padding:13px 14px; border:0; background:none; color:#ddd; text-align:left; cursor:pointer; }
@@ -161,12 +154,8 @@
   .empty-state { display:flex; flex-direction:column; align-items:center; gap:12px; padding:55px 12px; color:#999; font-size:13px; text-align:center; overflow-wrap:anywhere; }
   .empty-state button { padding:8px 14px; border:1px solid rgba(212,180,131,.35); border-radius:8px; color:#d4b483; }
   @media (max-width:767px) {
-    .picker-header { padding:8px 16px 11px 20px; }
-    .picker-header h2 { font-size:20px; }
-    .picker-controls { flex-shrink:0; padding:8px 16px 10px; }
     .search-input { height:46px; font-size:16px; }
     .category-list button { min-height:38px; }
-    .model-list { padding:8px 10px 14px; }
     .model-row { min-height:62px; margin-bottom:2px; border-color:transparent; }
     .model-choice { align-items:stretch; gap:4px; padding:8px 6px 8px 12px; }
     .model-choice strong { min-width:0; max-width:none; overflow:visible; white-space:normal; overflow-wrap:anywhere; font-size:13px; line-height:1.25; }
