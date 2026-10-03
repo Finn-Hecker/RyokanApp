@@ -1,5 +1,6 @@
 <script lang="ts">
   import * as m from '$lib/paraglide/messages';
+  import { AVATAR_IMAGE_ACCEPT } from '$lib/utils/imageFormats';
 
   let {
     avatarPreview = null,
@@ -25,7 +26,7 @@
   type="file"
   bind:this={avatarInput}
   onchange={onFileChange}
-  accept="image/*"
+  accept={AVATAR_IMAGE_ACCEPT}
   hidden
 />
 

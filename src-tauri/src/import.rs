@@ -254,7 +254,10 @@ fn normalize_role_avatar(avatar: String) -> Option<String> {
         .map(|(_, encoded)| encoded)
         .unwrap_or(&avatar);
     general_purpose::STANDARD.decode(encoded).ok()
-        .filter(|bytes| !bytes.is_empty() && image::guess_format(bytes).is_ok())
+        .filter(|bytes| matches!(image::guess_format(bytes), Ok(
+            image::ImageFormat::Png | image::ImageFormat::Jpeg
+            | image::ImageFormat::WebP | image::ImageFormat::Gif
+        )))
         .map(|_| encoded.to_string())
 }
 

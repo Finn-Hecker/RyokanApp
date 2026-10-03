@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { appState } from '$lib/stores/appState.svelte';
+import { supportedImageFormat } from '$lib/utils/imageFormats';
 import {
   createCharacter,
   updateCharacter,
@@ -85,12 +86,12 @@ export async function exportCharacterCard(id: string, name: string): Promise<boo
   return true;
 }
 
-export function readImageAsDataUrl(file: File): Promise<string> {
+export async function readImageAsDataUrl(file: File): Promise<string> {
+  const header = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+  if (!supportedImageFormat(header)) {
+    throw new Error('Supported avatar formats: PNG, JPEG, WebP and GIF');
+  }
   return new Promise((resolve, reject) => {
-    if (!file.type.includes('image')) {
-      reject(new Error('Not an image file'));
-      return;
-    }
     const reader = new FileReader();
     reader.onload = (e) => resolve(e.target?.result as string);
     reader.onerror = () => reject(new Error('Failed to read file'));
@@ -101,6 +102,10 @@ export function readImageAsDataUrl(file: File): Promise<string> {
 export async function importCharacterFromFile(
   file: File
 ): Promise<ImportResult> {
+  const header = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+  if (supportedImageFormat(header) !== 'png') {
+    throw new Error('Character cards must be PNG files');
+  }
   const result: ImportResult = {};
   result.play_mode = 'solo';
 

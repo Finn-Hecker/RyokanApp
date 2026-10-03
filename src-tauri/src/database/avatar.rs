@@ -58,6 +58,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn enabled_avatar_formats_decode_and_removed_codecs_are_rejected() {
+        for format in [ImageFormat::Png, ImageFormat::Jpeg, ImageFormat::WebP, ImageFormat::Gif] {
+            let image = image::DynamicImage::new_rgb8(8, 8);
+            let mut encoded = Cursor::new(Vec::new());
+            image.write_to(&mut encoded, format).unwrap();
+            let result = process_avatar(&general_purpose::STANDARD.encode(encoded.into_inner())).unwrap();
+            let decoded = image::load_from_memory(&result).unwrap();
+            assert_eq!((decoded.width(), decoded.height()), (8, 8));
+        }
+        assert!(matches!(image::load_from_memory(b"BM"), Err(image::ImageError::Unsupported(_))));
+    }
+
+    #[test]
     fn png_data_urls_are_encoded_and_large_images_keep_the_size_limit() {
         for (width, height) in [(32, 24), (2400, 1200)] {
             let image = image::DynamicImage::new_rgba8(width, height);

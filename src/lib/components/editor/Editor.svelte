@@ -1,5 +1,6 @@
 <script lang="ts">
   import { reportDiagnostic } from '$lib/utils/diagnostics';
+  import { CHARACTER_CARD_ACCEPT } from '$lib/utils/imageFormats';
   import { onMount } from 'svelte';
   import { appState } from '$lib/stores/appState.svelte';
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
@@ -406,7 +407,7 @@
     type="file"
     bind:this={importInput}
     onchange={(e: any) => e.target.files?.[0] && handleImportFile(e.target.files[0])}
-    accept="image/png,image/webp"
+    accept={CHARACTER_CARD_ACCEPT}
     hidden
   />
 
