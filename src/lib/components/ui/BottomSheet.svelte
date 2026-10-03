@@ -216,7 +216,9 @@
   dialog[open], dialog[data-exiting] { display:flex; align-items:center; justify-content:center; }
   dialog[data-exiting] { z-index:1200; pointer-events:none; }
   dialog::backdrop { background:transparent; }
-  .backdrop { position:absolute; inset:0; width:100%; height:100%; border:0; background:rgba(8,8,12,.6); backdrop-filter:blur(3px); will-change:opacity; }
+  /* showModal() can initially focus this full-screen button even with tabindex=-1.
+     It is outside the Tab order; keep focus indicators on the sheet's controls. */
+  .backdrop { position:absolute; inset:0; width:100%; height:100%; border:0; outline:none; background:rgba(8,8,12,.6); backdrop-filter:blur(3px); will-change:opacity; }
   .panel { position:relative; display:flex; flex-direction:column; width:min(var(--sheet-width),100%); height:var(--sheet-height); max-height:min(var(--sheet-max-height),100%); min-height:0; border:1px solid rgba(255,255,255,.09); border-radius:20px; background:var(--color-ryokan-bg,#18181b); box-shadow:0 24px 70px rgba(0,0,0,.5); overflow:hidden; will-change:transform; }
   .content { flex:1 1 auto; display:flex; flex-direction:column; min-height:0; overflow-y:auto; overscroll-behavior-y:contain; }
   .handle { display:none; }

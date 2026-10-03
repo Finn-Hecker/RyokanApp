@@ -3,7 +3,22 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { compile } from 'svelte/compiler';
+import postcss from 'postcss';
 import { SheetVelocity, shouldDismissSheet } from '../../utils/bottomSheetGesture.ts';
+
+test('initial modal focus outline is suppressed only on the full-screen backdrop', () => {
+  const source = readFileSync(new URL('./BottomSheet.svelte', import.meta.url), 'utf8');
+  const { css } = compile(source, { filename: 'BottomSheet.svelte', generate: 'client' });
+  const suppressed = [];
+  postcss.parse(css.code).walkDecls('outline', declaration => {
+    if (declaration.value === 'none' || declaration.value === '0') suppressed.push(declaration.parent.selector);
+  });
+  // Check the emitted selector, so a global or descendant reset cannot silently
+  // remove keyboard indicators from actual controls inside (or outside) the sheet.
+  assert.equal(suppressed.length, 1);
+  assert.match(suppressed[0], /^\.backdrop\.svelte-[\w-]+$/);
+});
 
 // Exercise the actual component's event handlers, following the existing Svelte
 // script harness used by ChatRoom/ChatInput, without a WebView or Tauri backend.
