@@ -35,11 +35,11 @@ import {
 import { adaptiveSummaryOutputCap, resolvedHardContextLimit, resolvedWorkingContextTarget, shouldTriggerSummary, summaryCompressionGoal } from '$lib/utils/connectionCore';
 import { countRequestMessages, countRequestAdditional } from '$lib/utils/requestBudget';
 import { ensureContextDetection } from '$lib/utils/apiConnections';
+import { estimateBudgetTokens } from '$lib/utils/tokenEstimate';
+export { estimateTokens } from '$lib/utils/tokenEstimate';
 
 const DEFAULT_CONTEXT_LIMIT = 4096;
 const DEFAULT_SUMMARY_TOKENS = 1024;
-
-const encoder = new TextEncoder();
 
 export interface PreparedGenerationContext {
     recentMessages: Message[];
@@ -81,29 +81,8 @@ export class ContextBudgetError extends Error {
     }
 }
 
-export function estimateTokens(text: string): number {
-    if (!text) return 0;
-    return Math.ceil(encoder.encode(text).byteLength / 3.35);
-}
-
-async function countTokens(text: string, model = appState.apiSettings?.model ?? ''): Promise<number> {
-    if (!text) return 0;
-    const cacheKey = `${model}\u0000${text}`;
-    const cached = tokenCountCache.get(cacheKey);
-    if (cached !== undefined) return cached;
-    try {
-        const count = await invoke<number>('count_tokens', {
-            text,
-            modelName: model,
-        });
-        if (tokenCountCache.size >= TOKEN_COUNT_CACHE_SIZE) {
-            tokenCountCache.delete(tokenCountCache.keys().next().value!);
-        }
-        tokenCountCache.set(cacheKey, count);
-        return count;
-    } catch {
-        return estimateTokens(text);
-    }
+async function countTokens(text: string, _model?: string): Promise<number> {
+    return estimateBudgetTokens(text);
 }
 
 async function countMessagesTokens(messages: { role: string; content: string }[], model?: string): Promise<number> {
@@ -154,7 +133,7 @@ async function measureNormalRequest(
         }
     }
     // Retain the full local estimate for comparison even when provider usage is reused.
-    // Existing tokenizer caching bounds the additional work; no content enters diagnostics.
+    // The dependency-free estimate stays local; no content enters diagnostics.
     const [messageTokens, additionalParameterTokens] = await Promise.all([
         countMessagesTokens(apiMessages, options.apiSettings.model),
         countAdditionalParameterTokens(requestParameterConfig, options.apiSettings.model),
@@ -236,8 +215,6 @@ let activeSummaryOperation: SummaryOperation | null = null;
 const summaryWorkByBoundary = new Map<string, Promise<PreparedGenerationContext> & { diagnosticId?: number }>();
 const pendingSummaryOperations = new Set<SummaryOperation>();
 let summarySerial: Promise<void> = Promise.resolve();
-const TOKEN_COUNT_CACHE_SIZE = 256;
-const tokenCountCache = new Map<string, number>();
 const promptAnchors = new Map<string, PromptUsageAnchor>();
 
 /** Associates an exact pre-response request snapshot with its persisted variant. */

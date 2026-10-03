@@ -14,7 +14,7 @@
 </script>
 
 <span class="token-badge">
-  {count} {count === 1 ? 'Token' : 'Tokens'}
+  ≈ {count} {count === 1 ? 'Token' : 'Tokens'}
 </span>
 
 <style>

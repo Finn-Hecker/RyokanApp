@@ -5,14 +5,15 @@ import ts from 'typescript';
 import { measureRequestBudget } from './requestBudget.ts';
 import { requestParameterConfig, createDefaultApiParameterEnabled } from './apiParameters.ts';
 import { resolvedHardContextLimit } from './connectionCore.ts';
+import { estimateBudgetTokens } from './tokenEstimate.ts';
 
 const source = await readFile(new URL('../stores/multiplayer.svelte.ts', import.meta.url), 'utf8');
 const body = source.slice(source.indexOf('async function buildLlmMessages('), source.indexOf('\nfunction insertSorted('));
 const compiled = ts.transpileModule(body, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 function builder(messages, count) {
-  return new Function('mpState', 'appState', 'getClientLanguageName', 'invoke', 'requestParameterConfig',
+  return new Function('mpState', 'appState', 'getClientLanguageName', 'estimateBudgetTokens', 'requestParameterConfig',
     'measureRequestBudget', 'resolvedHardContextLimit', `${compiled}; return buildLlmMessages;`)(
-    { messages }, { activeCharacter: null }, () => 'English', async (_command, args) => count(args.text),
+    { messages }, { activeCharacter: null }, () => 'English', count,
     requestParameterConfig, measureRequestBudget, resolvedHardContextLimit);
 }
 function connection(kind) {
@@ -37,6 +38,19 @@ test('multiplayer reserves native output and trims a measured history suffix', a
     assert.ok(messages.every(message => !message.content.includes('x'.repeat(3000))));
     assert.equal((await measureRequestBudget(messages, requestParameterConfig(settings), 4096, async text => count(text))).fits, true);
   }
+});
+
+test('multiplayer plans Unicode history with the production estimator without tokenizer IPC', async () => {
+  const settings = connection('generic_openai');
+  const messages = await builder([
+    { kind: 'user', author: 'player', text: '日本語🙂'.repeat(2000) },
+    { kind: 'llm', author: 'AI', text: 'older response' },
+    { kind: 'user', author: 'player', text: 'latest message' },
+  ], estimateBudgetTokens)(settings);
+  assert.ok(messages.at(-1).content.includes('latest message'));
+  assert.ok(messages.every(message => !message.content.includes('日本語')));
+  assert.ok((await measureRequestBudget(messages, requestParameterConfig(settings), 4096,
+    async text => estimateBudgetTokens(text))).fits);
 });
 
 test('multiplayer rejects an irreducible system prompt before a provider request', async () => {

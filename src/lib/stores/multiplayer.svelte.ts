@@ -28,6 +28,7 @@ import { getClientLanguageName } from '$lib/utils/clientLanguage';
 import { selectInitialGreeting } from '$lib/utils/characterGreeting';
 import type { Character } from './characterStore.svelte';
 import { measureRequestBudget } from '$lib/utils/requestBudget';
+import { estimateBudgetTokens } from '$lib/utils/tokenEstimate';
 import { resolvedHardContextLimit } from '$lib/utils/connectionCore';
 import { parseUsage as parseRelayUsage, persistedUsage, withConnection, type TokenUsage } from '$lib/utils/tokenUsage';
 
@@ -1497,7 +1498,7 @@ async function buildLlmMessages(s = appState.apiSettings, parameters = requestPa
 
   const prefix = system ? [{ role: 'system', content: system }] : [];
   const limit = resolvedHardContextLimit(s);
-  const count = (text: string) => invoke<number>('count_tokens', { text, modelName: s.model });
+  const count = async (text: string) => estimateBudgetTokens(text);
   while (true) {
     const messages = prefix.concat(merged);
     if ((await measureRequestBudget(messages, parameters, limit, count)).fits) return messages;

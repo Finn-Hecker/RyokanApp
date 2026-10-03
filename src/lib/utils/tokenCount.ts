@@ -1,17 +1,10 @@
-import { encode } from 'gpt-tokenizer';
+import { estimateTokens } from './tokenEstimate.ts';
 
 /**
- * Returns the token count for a given text.
+ * Returns an approximate token count for editor displays, never provider usage.
  */
 export function countTokens(text: string | null | undefined): number {
-  if (!text) return 0;
-
-  try {
-    return encode(text).length;
-  } catch {
-    // Conservative fallback if tokenization fails.
-    return Math.ceil(text.length / 4);
-  }
+  return estimateTokens(text);
 }
 
 export interface CharacterTokenFields {

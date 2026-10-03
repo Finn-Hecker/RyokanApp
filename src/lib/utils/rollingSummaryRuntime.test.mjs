@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 import { resolvedWorkingContextTarget, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION } from './connectionCore.ts';
 import { contextSafetyMargin, deriveEffectiveTokenBudget, summarySafetyMargin } from './rollingSummaryCore.ts';
+import { estimateBudgetTokens } from './tokenEstimate.ts';
 
 // Execute the production orchestrator and connection resolver with only the
 // desktop boundary and Svelte state creation replaced. No real provider calls.
@@ -160,7 +161,7 @@ function fixture({ chatLimit = 524288, summaryLimit = 131072, same = false, manu
   const calls = [];
   const detections = [];
   const decisions = [];
-  const count = text => Math.ceil(text.length / 4);
+  const count = estimateBudgetTokens;
   const f = { chat, summary, messages, calls, detections, decisions, reportedUsage: null, beforeResponse: null, count,
     meta: () => meta,
     setMeta: value => { meta = value; },
@@ -174,7 +175,6 @@ function fixture({ chatLimit = 524288, summaryLimit = 131072, same = false, manu
   harness.invoke = async (command, args) => {
     if (command === 'record_diagnostic_decision') { decisions.push(args.decision); return; }
     if (command === 'record_frontend_event') return;
-    if (command === 'count_tokens') return count(args.text);
     if (command === 'detect_context') {
       detections.push(args.model);
       const capacity = args.model === chat.model ? chatLimit : summaryLimit;
@@ -382,11 +382,11 @@ test('normal chat below both working budgets does not invoke summary generation'
 
 test('Maximum retains near-capacity history across small and large same-model windows', async () => {
   for (const capacity of [8192, 16384, 32768, 524288, 1048576]) {
-    // Reserve both generation and measured summary instructions; unlike the old
-    // 80% pressure threshold, no extra fraction of the window is withheld.
+    // Fill the planning budget, including the estimator's uncertainty allowance,
+    // while leaving room for generation, framing and summary instructions.
     const historyTokens = capacity - 2048 - contextSafetyMargin(capacity) - 1000;
     const f = fixture({ chatLimit: capacity, same: true,
-      lengths: [historyTokens * 2, historyTokens * 2, 20] });
+      lengths: [Math.floor(historyTokens * 3.35 / 1.25 / 2), Math.floor(historyTokens * 3.35 / 1.25 / 2), 20] });
     f.chat.parameterEnabled.maxTokens = true;
     f.chat.maxTokens = 2048;
     await f.run();

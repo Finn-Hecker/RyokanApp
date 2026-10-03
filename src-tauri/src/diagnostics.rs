@@ -37,6 +37,7 @@ pub enum Event {
     ProviderFailed,
     GenerationStarted,
     AvatarFailed,
+    // Retained for reading/exporting diagnostic records from older releases.
     TokenizerFailed,
     TokenizerFamilyEstimate,
     TokenizerFallbackEstimate,
