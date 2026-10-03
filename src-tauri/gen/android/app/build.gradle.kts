@@ -16,7 +16,7 @@ val tauriProperties = Properties().apply {
 
 android {
     compileSdk = 36
-    namespace = "ryokan.desktop"
+    namespace = "io.ryokan.app"
     // Use Tauri's NDK for native stripping instead of AGP's default NDK version.
     System.getenv("NDK_HOME")?.takeIf { it.isNotBlank() }?.let { tauriNdkPath ->
         ndkPath = tauriNdkPath
@@ -27,7 +27,7 @@ android {
     }
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        applicationId = "ryokan.desktop"
+        applicationId = "io.ryokan.app"
         minSdk = 24
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
@@ -52,6 +52,7 @@ android {
     }
     buildTypes {
         getByName("debug") {
+            applicationIdSuffix = ".debug"
             manifestPlaceholders["usesCleartextTraffic"] = "true"
             isDebuggable = true
             isJniDebuggable = true

@@ -1,4 +1,4 @@
-package ryokan.desktop
+package io.ryokan.app
 
 import android.net.Uri
 import android.os.Bundle
