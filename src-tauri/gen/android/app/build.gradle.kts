@@ -17,6 +17,14 @@ val tauriProperties = Properties().apply {
 android {
     compileSdk = 36
     namespace = "ryokan.desktop"
+    // Use Tauri's NDK for native stripping instead of AGP's default NDK version.
+    System.getenv("NDK_HOME")?.takeIf { it.isNotBlank() }?.let { tauriNdkPath ->
+        ndkPath = tauriNdkPath
+        val ndkProperties = Properties().apply {
+            file("$tauriNdkPath/source.properties").inputStream().use { load(it) }
+        }
+        ndkVersion = ndkProperties.getProperty("Pkg.Revision")
+    }
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         applicationId = "ryokan.desktop"
@@ -48,11 +56,6 @@ android {
             isDebuggable = true
             isJniDebuggable = true
             isMinifyEnabled = false
-            packaging {                jniLibs.keepDebugSymbols.add("*/arm64-v8a/*.so")
-                jniLibs.keepDebugSymbols.add("*/armeabi-v7a/*.so")
-                jniLibs.keepDebugSymbols.add("*/x86/*.so")
-                jniLibs.keepDebugSymbols.add("*/x86_64/*.so")
-            }
         }
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
@@ -69,6 +72,14 @@ android {
     }
     buildFeatures {
         buildConfig = true
+    }
+}
+
+// Packaging in android.buildTypes would configure the global Android DSL.
+// Preserve native symbols only on debug variants; release uses normal stripping.
+androidComponents {
+    onVariants(selector().withBuildType("debug")) { variant ->
+        variant.packaging.jniLibs.keepDebugSymbols.add("**/*.so")
     }
 }
 
