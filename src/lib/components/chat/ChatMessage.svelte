@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { onMount } from 'svelte';
   import UsageDetails from './UsageDetails.svelte';
   import * as m from '$lib/paraglide/messages';
@@ -210,7 +211,9 @@
     if (!editMode && window.matchMedia('(max-width: 639px)').matches) event.preventDefault();
   }
 
-  async function copyMessage() {
+  async function copyMessage(event?: MouseEvent) {
+    const copyRoot = event?.currentTarget instanceof HTMLElement
+      ? event.currentTarget.closest('dialog') ?? document.body : document.body;
     try {
       await navigator.clipboard.writeText(msg.text);
     } catch {
@@ -218,7 +221,7 @@
       textarea.value = msg.text;
       textarea.style.position = 'fixed';
       textarea.style.opacity = '0';
-      document.body.appendChild(textarea);
+      copyRoot.appendChild(textarea);
       textarea.select();
       const copied = document.execCommand('copy');
       textarea.remove();
@@ -454,42 +457,42 @@
 </div>
 
 {#if mobileActionsOpen}
-  <div class="mobile-action-sheet-layer">
-    <button class="mobile-action-sheet-backdrop" aria-label={m.chat_cancel()} onclick={closeMobileActions}></button>
-    <div class="mobile-action-sheet" role="dialog" aria-modal="true" aria-label="Message actions">
-      <div class="mobile-action-sheet-handle" aria-hidden="true"></div>
+  <BottomSheet onClose={closeMobileActions} label="Message actions" mobileOnly>
+    {#snippet children(close)}
+    <div class="p-2">
       <div class="mobile-action-sheet-actions">
         {#if canShowUsage}
-          <button class="mobile-action" onclick={() => { closeMobileActions(); usageOpen = true; }}>{m.usage_title()}</button>
+          <button class="mobile-action" onclick={() => close(() => usageOpen = true)}>{m.usage_title()}</button>
         {/if}
         {#if msg.text}
           <button class="mobile-action" onclick={copyMessage}><span>{m.chat_copy()}</span></button>
         {/if}
         {#if canSwipe && canGoLeft}
-          <button class="mobile-action" onclick={() => openMobileSwipe('left')}>
+          <button class="mobile-action" onclick={() => close(() => openMobileSwipe('left'))}>
             <span>{m.chat_previous_variant()}</span>
             {#if totalVariants > 1}<small>{currentIndex + 1} / {totalVariants}</small>{/if}
           </button>
         {/if}
         {#if canSwipe}
           {#if canGoRight}
-            <button class="mobile-action" onclick={() => openMobileSwipe('right')}><span>{m.chat_next_variant()}</span></button>
+            <button class="mobile-action" onclick={() => close(() => openMobileSwipe('right'))}><span>{m.chat_next_variant()}</span></button>
           {:else if canRetry}
-            <button class="mobile-action mobile-action--accent" onclick={openMobileRetry}><span>{m.chat_retry()}</span></button>
+            <button class="mobile-action mobile-action--accent" onclick={() => close(openMobileRetry)}><span>{m.chat_retry()}</span></button>
           {/if}
         {/if}
         {#if canEdit && !isGenerating}
-          <button class="mobile-action" onclick={openMobileEdit}><span>{m.chat_edit()}</span></button>
+          <button class="mobile-action" onclick={() => close(openMobileEdit)}><span>{m.chat_edit()}</span></button>
         {/if}
         {#if canCloneFrom && !isGenerating && !cloneDisabled && !isCloning}
-          <button class="mobile-action" onclick={openMobileClone}>
+          <button class="mobile-action" onclick={() => close(openMobileClone)}>
             <span>{isCloning ? m.chat_clone_from_here_loading() : m.chat_clone_from_here_label()}</span>
           </button>
         {/if}
       </div>
-      <button class="mobile-action mobile-action--cancel" onclick={closeMobileActions}>{m.chat_cancel()}</button>
+      <button class="mobile-action mobile-action--cancel" onclick={close}>{m.chat_cancel()}</button>
     </div>
-  </div>
+    {/snippet}
+  </BottomSheet>
 {/if}
 
 {#if usageOpen && canShowUsage}
@@ -606,13 +609,7 @@
     }
   }
 
-  .mobile-action-sheet-layer { display: none; }
-
   @media (max-width: 639px) {
-    .mobile-action-sheet-layer { display: block; position: fixed; z-index: 80; inset: 0; }
-    .mobile-action-sheet-backdrop { position: absolute; inset: 0; width: 100%; border: 0; background: rgba(0,0,0,.52); backdrop-filter: blur(2px); animation: mobile-sheet-fade .16s ease-out; }
-    .mobile-action-sheet { position: absolute; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); left: 10px; max-width: 480px; margin: auto; padding: 8px; border: 1px solid rgba(255,255,255,.09); border-radius: 18px; background: rgba(25,25,29,.98); box-shadow: 0 -8px 32px rgba(0,0,0,.32); animation: mobile-sheet-enter .2s cubic-bezier(.22,.8,.3,1); will-change: transform, opacity; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
-    .mobile-action-sheet-handle { width: 34px; height: 4px; margin: 2px auto 8px; border-radius: 999px; background: rgba(255,255,255,.16); }
     .mobile-action-sheet-actions { display: grid; gap: 3px; }
     .mobile-action { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 50px; padding: 0 14px; border: 0; border-radius: 12px; background: transparent; color: #e5e5ea; font: 500 15px/1.2 inherit; text-align: left; }
     .mobile-action:active:not(:disabled) { background: rgba(255,255,255,.08); }
@@ -620,9 +617,6 @@
     .mobile-action small { color: rgba(255,255,255,.38); font-size: 12px; }
     .mobile-action--accent { color: #d4b483; }
     .mobile-action--cancel { justify-content: center; margin-top: 5px; background: rgba(255,255,255,.055); color: rgba(255,255,255,.66); }
-    @keyframes mobile-sheet-fade { from { opacity: 0; } }
-    @keyframes mobile-sheet-enter { from { opacity: .72; transform: translateY(20px); } }
-    @media (prefers-reduced-motion: reduce) { .mobile-action-sheet-backdrop, .mobile-action-sheet { animation-duration: .01ms; } }
   }
 
   .ctrl-btn {

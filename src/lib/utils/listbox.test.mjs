@@ -9,7 +9,7 @@ const source = ts.transpileModule(await readFile(new URL('./listbox.svelte.ts', 
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
 }).outputText.replace(/import .* from 'svelte';/, '').replace('export function', 'function');
 
-function setup() {
+function setup(modal = null) {
   const events = () => ({
     listeners: new Map(),
     addEventListener(type, callback) { this.listeners.set(type, callback); },
@@ -24,7 +24,7 @@ function setup() {
     $state: value => value, tick: async () => {}, onMount: callback => { mount = callback; },
   });
   vm.runInContext(`${source}\nglobalThis.createListbox = createListbox;`, context);
-  const trigger = { focus: () => { focused = 'trigger'; }, getBoundingClientRect: () => ({ left: 750, top: 500, bottom: 540, width: 180 }) };
+  const trigger = { closest: () => modal, focus: () => { focused = 'trigger'; }, getBoundingClientRect: () => ({ left: 750, top: 500, bottom: 540, width: 180 }) };
   const buttons = [0, 1, 2].map(index => ({ focus: () => { focused = index; } }));
   const listbox = context.createListbox({
     trigger: () => trigger, optionCount: () => buttons.length,
@@ -84,4 +84,17 @@ test('listbox places desktop popups within the visual viewport and releases port
   assert.equal(removed, true);
   h.cleanup();
   for (const target of [h.query, h.viewport, h.window]) assert.equal(target.listeners.size, 0);
+});
+
+
+test('desktop listboxes inside a sheet stay in the native dialog layer', () => {
+  let attached;
+  const modal = { appendChild(node) { attached = node; } };
+  const h = setup(modal);
+  let removed = false;
+  const node = { remove() { removed = true; } };
+  const portal = h.listbox.portal(node);
+  assert.equal(attached, node);
+  assert.equal(h.attached, undefined, 'it must not be placed behind the modal at document.body');
+  portal.destroy(); assert.equal(removed, true);
 });

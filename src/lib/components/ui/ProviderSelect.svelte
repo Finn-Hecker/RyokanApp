@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { tick, type Snippet } from 'svelte';
+  import BottomSheet from './BottomSheet.svelte';
+  import { onMount, tick, type Snippet } from 'svelte';
   import { registerBackHandler } from '$lib/stores/navigation';
   import * as m from '$lib/paraglide/messages';
 
@@ -9,6 +10,13 @@
   } = $props();
   const uid = $props.id();
   let open = $state(false);
+  let mobile = $state(false);
+  onMount(() => {
+    const query = window.matchMedia('(max-width: 767px)');
+    const sync = () => mobile = query.matches;
+    sync(); query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  });
   let trigger: HTMLButtonElement;
   let panel = $state<HTMLDivElement>();
   let list = $state<HTMLDivElement>();
@@ -37,16 +45,8 @@
   function choose(id: string) { onSelect(id); close(); }
   function keydown(event: KeyboardEvent) {
     if (!open) return;
-    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); return; }
-    if (event.key === 'Tab') {
-      if (window.matchMedia('(max-width: 767px)').matches) {
-        event.preventDefault();
-        const targets = [...(panel?.querySelectorAll<HTMLButtonElement>('button') ?? [])];
-        const index = targets.indexOf(document.activeElement as HTMLButtonElement);
-        targets[(index + (event.shiftKey ? -1 : 1) + targets.length) % targets.length]?.focus();
-      } else close(false);
-      return;
-    }
+    if (!mobile && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); return; }
+    if (event.key === 'Tab') { if (!mobile) close(false); return; }
     if (!list?.contains(event.target as Node)) return;
     let next = focused;
     if (event.key === 'ArrowDown') next = (focused + 1) % items.length;
@@ -61,10 +61,10 @@
     event.preventDefault(); focused = next; focusOption();
   }
   function outside(event: PointerEvent) {
-    if (open && !panel?.contains(event.target as Node) && !trigger?.contains(event.target as Node)) close(false);
+    if (open && !mobile && !panel?.contains(event.target as Node) && !trigger?.contains(event.target as Node)) close(false);
   }
   $effect(() => {
-    if (!open) return;
+    if (!open || mobile) return;
     const unregister = registerBackHandler(() => { close(); return true; });
     const scroll = (event: Event) => {
       if (!window.matchMedia('(max-width: 767px)').matches && event.target instanceof Node && !panel?.contains(event.target)) close(false);
@@ -74,7 +74,7 @@
   });
 </script>
 
-<svelte:window onpointerdown={outside} onkeydown={keydown} onresize={() => open && close()} />
+<svelte:window onpointerdown={outside} onkeydown={keydown} onresize={() => !mobile && open && close()} />
 
 <button bind:this={trigger} type="button" class="settings-input provider-trigger" class:expanded={open}
   aria-label={`${m.settings_provider_label()}: ${selected.label}`} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? `${uid}-list` : undefined}
@@ -85,20 +85,30 @@
   <span class="provider-name">{selected.label}</span><span class="provider-badge">{selected.badge}</span>
   <svg class:rotated={open} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
 </button>
-{#if open}
-  <div class="provider-backdrop" aria-hidden="true"></div>
-  <div bind:this={panel} class="provider-panel" style={position}>
-    <div class="provider-heading"><strong>{m.settings_provider_label()}</strong><button type="button" aria-label={m.settings_connection_cancel()} onclick={() => close()}>×</button></div>
+{#snippet options(chooseItem: (id: string) => void = choose)}
     <div bind:this={list} id={`${uid}-list`} class="provider-list" role="listbox" aria-label={m.settings_provider_label()}>
       {#each items as item, index (item.id)}
         <button type="button" role="option" aria-selected={item.id === selectedId} tabindex={index === focused ? 0 : -1}
-          class="provider-option" class:selected={item.id === selectedId} onfocus={() => focused = index} onclick={() => choose(item.id)}>
+          class="provider-option" class:selected={item.id === selectedId} onfocus={() => focused = index} onclick={() => chooseItem(item.id)}>
           <span class="provider-icon">{@render icon(item.id)}</span><span class="provider-name">{item.label}</span><span class="provider-badge">{item.badge}</span>
           <span class="provider-check">{#if item.id === selectedId}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>{/if}</span>
         </button>
       {/each}
     </div>
-  </div>
+{/snippet}
+{#if open}
+  {#if mobile}
+    <BottomSheet onClose={() => close()} label={m.settings_provider_label()} breakpoint={768}>
+      {#snippet children(dismiss)}
+        <div bind:this={panel} class="provider-sheet-content">
+          <div class="provider-heading"><strong>{m.settings_provider_label()}</strong><button type="button" aria-label={m.settings_connection_cancel()} onclick={dismiss}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke-linecap="round"/></svg></button></div>
+          {@render options(id => dismiss(() => choose(id)))}
+        </div>
+      {/snippet}
+    </BottomSheet>
+  {:else}
+    <div bind:this={panel} class="provider-panel" style={position}>{@render options()}</div>
+  {/if}
 {/if}
 
 <style>
@@ -116,13 +126,11 @@
   .provider-option.selected { background:rgba(212,180,131,.1); color:#dfc69f; }
   .provider-check { width:16px; flex:0 0 auto; color:#d4b483; }
   .provider-trigger:focus-visible,.provider-option:focus-visible,.provider-heading button:focus-visible { outline:2px solid #d4b483; outline-offset:-2px; }
-  .provider-heading,.provider-backdrop { display:none; }
+  .provider-sheet-content { padding:8px 10px 12px; min-height:0; display:flex; flex-direction:column; }
   @media (max-width:767px) {
     .provider-trigger { min-height:54px; }
-    .provider-backdrop { display:block; position:fixed; z-index:80; inset:0; background:rgba(0,0,0,.62); backdrop-filter:blur(2px); }
-    .provider-panel { left:0 !important; right:0; top:auto !important; bottom:0; width:auto !important; max-height:calc(var(--app-visible-height,100dvh) * .8) !important; padding:8px 10px calc(12px + env(safe-area-inset-bottom)); border-radius:24px 24px 0 0; }
     .provider-heading { display:flex; align-items:center; justify-content:space-between; flex:0 0 auto; padding:4px 6px 10px 10px; color:#eeeae4; font-size:18px; }
-    .provider-heading button { width:44px; height:44px; border-radius:12px; background:rgba(255,255,255,.045); color:#a4a1a0; font-size:25px; cursor:pointer; }
+    .provider-heading button { width:44px; height:44px; border-radius:12px; background:rgba(255,255,255,.045); color:#a4a1a0; display:grid; place-items:center; cursor:pointer; }
     .provider-option { min-height:58px; padding:10px 12px; }
     .provider-option:active { background:rgba(212,180,131,.15); }
     .provider-option .provider-name { font-size:14px; }

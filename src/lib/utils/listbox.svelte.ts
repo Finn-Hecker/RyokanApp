@@ -11,7 +11,7 @@ export function createListbox(options: {
   let popupStyle = $state('');
 
   function portal(node: HTMLElement) {
-    document.body.appendChild(node);
+    (options.trigger()?.closest?.('dialog') ?? document.body).appendChild(node);
     return { destroy: () => node.remove() };
   }
 
@@ -70,7 +70,7 @@ export function createListbox(options: {
     } else if (event.key === 'Home' || event.key === 'End') {
       event.preventDefault();
       buttons[event.key === 'Home' ? 0 : buttons.length - 1]?.focus();
-    } else if (event.key === 'Escape') {
+    } else if (!mobile && event.key === 'Escape') {
       event.preventDefault();
       open = false;
       void tick().then(() => options.trigger()?.focus());
@@ -78,7 +78,7 @@ export function createListbox(options: {
   }
 
   function handleWindowKeydown(event: KeyboardEvent) {
-    if (open && event.key === 'Escape') {
+    if (!mobile && open && event.key === 'Escape') {
       open = false;
       void tick().then(() => options.trigger()?.focus());
     }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { activateApiConnection, appState } from "$lib/stores/appState.svelte";
   import { fetchModels, getAllSettings, saveSetting, type ModelInfo } from "$lib/utils/settings";
@@ -107,32 +108,13 @@
   // Every setter updates the live appState (so the next message picks it up
   // immediately) and persists it, since this panel has no separate "Save" button.
   function persistActive() { void persistApiConnections(); }
-  function handleWindowKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      if (modelPickerOpen) modelPickerOpen = false;
-      else onClose();
-    }
-  }
-
-  // Closes only when the backdrop itself is clicked, so no
-  // stopPropagation handler on the panel is needed (a11y warnings).
-  function handleOverlayClick(e: MouseEvent) {
-    if (e.target === e.currentTarget) onClose();
-  }
 </script>
 
-<svelte:window onkeydown={handleWindowKeydown} />
-
-<div
-  class="settings-overlay"
-  role="presentation"
-  onclick={handleOverlayClick}
-  onkeydown={handleWindowKeydown}
->
-  <div class="settings-panel" role="dialog" aria-modal="true" aria-label={m.settings_section_ai_behavior()}>
+<BottomSheet {onClose} label={m.settings_section_ai_behavior()} mobileHeight="min(720px, calc(var(--app-visible-height, 100dvh) * .82))" compactMobileHeight="calc(var(--app-visible-height, 100dvh) * .92)" desktop="side" width="440px" beforeClose={() => { if (modelPickerOpen) { modelPickerOpen = false; return true; } return false; }}>
+  {#snippet children(close)}
     <div class="settings-panel-header">
       <span class="settings-panel-title">{m.settings_section_ai_behavior()}</span>
-      <button class="settings-close-btn" onclick={onClose} aria-label="Schließen">
+      <button class="settings-close-btn" onclick={close} aria-label="Schließen">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
           <line x1="18" y1="6" x2="6" y2="18"/>
           <line x1="6" y1="6" x2="18" y2="18"/>
@@ -251,80 +233,13 @@
         </div>
       </label>
     </div>
-  </div>
   {#if modelPickerOpen}
     <ChatModelPicker models={availableModels} metadata={modelMetadata} selectedModel={appState.apiSettings.model} providerKind={appState.apiSettings.providerKind} loading={modelsLoading} error={modelsError} onSelect={selectModel} onRetry={loadModels} onClose={() => modelPickerOpen = false} />
   {/if}
-</div>
+  {/snippet}
+</BottomSheet>
 
 <style>
-  /* ---------- Panel shell ---------- */
-
-  .settings-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 200;
-    background: rgba(8, 8, 12, 0.45);
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
-    display: flex;
-    justify-content: flex-end;
-    animation: settings-overlay-in 160ms ease;
-  }
-
-  @keyframes settings-overlay-in {
-    from { opacity: 0; }
-    to   { opacity: 1; }
-  }
-
-  .settings-panel {
-    position: relative;
-    width: min(440px, 100%);
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    background: var(--color-ryokan-bg, #131314);
-    border-left: 1px solid rgba(255,255,255,0.055);
-    box-shadow: -24px 0 70px rgba(0,0,0,0.5), -4px 0 16px rgba(0,0,0,0.35);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    animation: settings-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  @keyframes settings-panel-in {
-    from { opacity: 0; transform: translateX(24px); }
-    to   { opacity: 1; transform: translateX(0); }
-  }
-
-  /* Mobile: take over the entire screen instead of docking to the side */
-  @media (max-width: 639px) {
-    .settings-overlay {
-      justify-content: stretch;
-    }
-
-    .settings-panel {
-      width: 100%;
-      border-left: none;
-      animation: settings-panel-in-mobile 220ms cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .settings-panel-body {
-      padding: 16px 16px calc(18px + env(safe-area-inset-bottom));
-    }
-  }
-
-  @keyframes settings-panel-in-mobile {
-    from { opacity: 0.6; transform: translateY(24px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .settings-panel,
-    .settings-overlay {
-      animation: none;
-    }
-  }
-
   .settings-panel-header {
     display: flex;
     align-items: center;
@@ -415,7 +330,7 @@
 
   .settings-panel-footer {
     flex-shrink: 0;
-    padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
+    padding: 8px 12px 10px;
     border-top: 1px solid rgba(255,255,255,0.055);
   }
 
@@ -429,24 +344,14 @@
   }
 
   @media (max-width: 639px) {
-    .settings-overlay { align-items: flex-end; }
-    .settings-panel {
-      height: min(calc(var(--app-visible-height, 100dvh) * 0.82), 720px);
-      max-height: calc(var(--app-visible-height, 100dvh) - env(safe-area-inset-top) - 12px);
-      border-top: 1px solid rgba(255,255,255,0.12);
-      border-radius: 18px 18px 0 0;
-    }
     .settings-panel-header { padding: 10px 14px 9px 16px; }
     .settings-panel-body { padding: 12px 12px 16px; }
-    .settings-panel-footer { padding: 5px 10px calc(6px + env(safe-area-inset-bottom)); }
+    .settings-panel-footer { padding: 5px 10px 6px; }
     .settings-divider { margin: 16px 0; }
     .connection-card { gap: 10px; margin-bottom: 16px; padding-bottom: 16px; }
     .sampling-subheading { margin: 7px 0 9px; }
   }
 
-  @media (max-width: 639px) and (max-height: 500px) {
-    .settings-panel { height: calc(var(--app-visible-height, 100dvh) * 0.92); }
-  }
 
   .settings-label {
     display: block;

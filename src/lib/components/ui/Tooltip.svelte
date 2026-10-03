@@ -76,9 +76,9 @@
   });
 
   // A transformed dialog changes the containing block of fixed descendants.
-  // Keep the popup at document level so viewport coordinates stay accurate.
+  // A modal popup belongs in the native top layer, outside its animated panel.
   function portal(node: HTMLDivElement) {
-    document.body.appendChild(node);
+    (wrapper?.closest('dialog') ?? document.body).appendChild(node);
     return { destroy: () => node.remove() };
   }
 

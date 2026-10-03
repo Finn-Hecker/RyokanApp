@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { flip } from 'svelte/animate';
   import type { AnimationConfig } from 'svelte/animate';
@@ -37,7 +38,7 @@
   let isConfirmingRename = false;
 
   $effect(() => {
-    if (!chatToDelete && !chatToRename && !folderToRename && !contextTarget) return;
+    if (!chatToDelete && !chatToRename && !folderToRename && !(interactionMode === 'desktop' && contextTarget)) return;
     return registerBackHandler(() => {
       if (chatToDelete) chatToDelete = null;
       else if (chatToRename) cancelRename();
@@ -229,7 +230,7 @@
   }
 
   function closeMenuOnEscape(event: KeyboardEvent) {
-    if (event.key === 'Escape') closeContextMenu();
+    if (interactionMode === 'desktop' && event.key === 'Escape') closeContextMenu();
   }
 
   function closeContextMenu() {
@@ -302,9 +303,6 @@
     contextMenuPosition = null;
   }
 
-  function handleContextBackdropClick(event: MouseEvent) {
-    if (event.target === event.currentTarget) closeContextMenu();
-  }
 
   function handleChatClick(id: string) {
     const key = itemKey('chat', id);
@@ -1022,9 +1020,9 @@
   </div>
 {/snippet}
 
-{#snippet chatActions(chat: Conversation)}
+{#snippet chatActions(chat: Conversation, dismiss: (after: () => void) => void = after => after())}
   <button
-    onclick={(e) => handlePin(chat.id, e)}
+    onclick={(e) => { const id = chat.id; dismiss(() => handlePin(id, e)); }}
     class="context-action"
   >
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="shrink-0 text-ryokan-accent/80">
@@ -1033,7 +1031,7 @@
     {chat.is_pinned ? m.sidebar_action_unpin() : m.sidebar_action_pin()}
   </button>
   <button
-    onclick={(e) => startRename(chat.id, chat.title, e)}
+    onclick={(e) => { const { id, title } = chat; dismiss(() => startRename(id, title, e)); }}
     class="context-action"
   >
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
@@ -1044,7 +1042,7 @@
   </button>
   <div class="context-separator"></div>
   <button
-    onclick={(e) => promptDelete(chat.id, e)}
+    onclick={(e) => { const id = chat.id; dismiss(() => promptDelete(id, e)); }}
     class="context-action context-action--danger"
   >
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
@@ -1055,15 +1053,15 @@
   </button>
 {/snippet}
 
-{#snippet folderActions(folder: { id: string; name: string })}
-  <button onclick={(event) => startFolderRename(folder.id, folder.name, event)} class="context-action">
+{#snippet folderActions(folder: { id: string; name: string }, dismiss: (after: () => void) => void = after => after())}
+  <button onclick={(event) => { const { id, name } = folder; dismiss(() => startFolderRename(id, name, event)); }} class="context-action">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
       <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
     </svg>
     {m.sidebar_action_rename()}
   </button>
   <div class="context-separator"></div>
-  <button onclick={(event) => handleFolderDelete(folder.id, event)} class="context-action context-action--danger">
+  <button onclick={(event) => { const id = folder.id; dismiss(() => handleFolderDelete(id, event)); }} class="context-action context-action--danger">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
       <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
     </svg>
@@ -1353,16 +1351,17 @@
 {/if}
 
 {#if interactionMode === 'mobile' && (contextMenuChat || contextMenuFolder)}
-  <div use:portal class="context-sheet-backdrop" role="presentation" onclick={handleContextBackdropClick}>
-    <div class="context-sheet" role="dialog" tabindex="-1" aria-modal="true" aria-label={m.sidebar_aria_options()} transition:scale={{ duration: 120, start: 0.97 }}>
-      <div class="context-sheet-handle" aria-hidden="true"></div>
+  <BottomSheet onClose={closeContextMenu} label={m.sidebar_aria_options()} breakpoint={768} forceMobile>
+    {#snippet children(dismiss)}
+    <div class="p-2">
       <div class="context-sheet-title">{contextMenuChat?.title ?? contextMenuFolder?.name}</div>
       <div class="context-sheet-actions">
-        {#if contextMenuChat}{@render chatActions(contextMenuChat)}
-        {:else if contextMenuFolder}{@render folderActions(contextMenuFolder)}{/if}
+        {#if contextMenuChat}{@render chatActions(contextMenuChat, dismiss)}
+        {:else if contextMenuFolder}{@render folderActions(contextMenuFolder, dismiss)}{/if}
       </div>
     </div>
-  </div>
+    {/snippet}
+  </BottomSheet>
 {/if}
 
 {#if chatToDelete}
@@ -1442,9 +1441,6 @@
   :global(.context-action--danger) { color:#dd8585; }
   :global(.context-action--danger:hover) { color:#f09a9a; background:rgba(239,68,68,.09); }
   :global(.context-separator) { height:1px; margin:4px 7px; background:rgba(255,255,255,.055); }
-  :global(.context-sheet-backdrop) { position:fixed; inset:0; z-index:1000; display:flex; align-items:flex-end; padding:12px; padding-bottom:calc(12px + env(safe-area-inset-bottom)); background:rgba(0,0,0,.56); backdrop-filter:blur(2px); }
-  :global(.context-sheet) { width:100%; overflow:hidden; padding:7px 7px 8px; border:1px solid rgba(255,255,255,.075); border-radius:17px; background:#262628; box-shadow:0 -12px 38px rgba(0,0,0,.36); transform-origin:bottom center; }
-  :global(.context-sheet-handle) { width:34px; height:4px; margin:1px auto 8px; border-radius:99px; background:rgba(255,255,255,.14); }
   :global(.context-sheet-title) { padding:5px 12px 10px; overflow:hidden; color:#747479; font-size:11px; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
   :global(.context-sheet-actions .context-action) { min-height:48px; padding:11px 13px; border-radius:11px; font-size:14px; }
   @media (hover:hover) and (pointer:fine) {

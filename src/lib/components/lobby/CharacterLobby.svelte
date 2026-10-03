@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { appState } from '$lib/stores/appState.svelte';
   import { navigateTo, registerBackHandler } from '$lib/stores/navigation';
@@ -52,11 +53,9 @@
   let startError = $state('');
 
   $effect(() => {
-    if (!deleteTarget && !startTarget && !menuTarget) return;
+    if (!deleteTarget) return;
     return registerBackHandler(() => {
-      if (deleteTarget) deleteTarget = null;
-      else if (startTarget) startTarget = null;
-      else menuTarget = null;
+      deleteTarget = null;
       return true;
     });
   });
@@ -328,14 +327,15 @@
 {/if}
 
 {#if startTarget}
-  <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center sm:p-4" role="presentation" onclick={(event) => event.target === event.currentTarget && (startTarget = null)}>
-    <div role="dialog" aria-modal="true" aria-labelledby="role-start-title" class="max-h-[calc(var(--app-visible-height,100vh)*0.85)] w-full max-w-md overflow-y-auto rounded-2xl border border-white/10 bg-[#12121a] p-5 shadow-2xl sm:p-6">
+  <BottomSheet onClose={() => startTarget = null} label={m.role_start_title({ character: startTarget.name })} width="448px" maxHeight="calc(var(--app-visible-height, 100dvh) * .85)">
+    {#snippet children(close)}
+    <div class="p-5 sm:p-6">
       <div class="mb-5 flex items-start justify-between gap-4">
         <div>
           <h2 id="role-start-title" class="font-medium text-gray-100">{m.role_start_title({ character: startTarget.name })}</h2>
           <p class="mt-1 text-sm text-gray-500">{startTarget.role_policy === 'restricted' ? m.role_start_restricted_desc() : m.role_start_open_desc()}</p>
         </div>
-        <button class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-white/[.06] hover:text-gray-200" aria-label={m.create_char_close_aria()} onclick={() => (startTarget = null)}>×</button>
+        <button class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-white/[.06] hover:text-gray-200" aria-label={m.create_char_close_aria()} onclick={close}>×</button>
       </div>
 
       <div class="space-y-2">
@@ -374,11 +374,12 @@
       {#if startError}<p class="mt-3 text-sm text-red-400">{startError}</p>{/if}
 
       <div class="mt-5 flex justify-end gap-2">
-        <Button variant="secondary" onclick={() => (startTarget = null)}>{m.delete_confirm_cancel()}</Button>
+        <Button variant="secondary" onclick={close}>{m.delete_confirm_cancel()}</Button>
         <Button disabled={isStarting || (startTarget.role_policy === 'restricted' && !selectedRole.startsWith('bundled:'))} onclick={() => beginChat()}>{isStarting ? m.role_start_starting() : m.role_start_button()}</Button>
       </div>
     </div>
-  </div>
+    {/snippet}
+  </BottomSheet>
 {/if}
 
 <style>

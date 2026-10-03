@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { onMount } from 'svelte';
   import * as m from '$lib/paraglide/messages';
   import { loadRoles, roleState } from '$lib/stores/roleStore.svelte';
@@ -27,7 +28,6 @@
   }
 </script>
 
-<svelte:window onkeydown={(event) => event.key === 'Escape' && (pickerOpen = false)} />
 
 <section class="roles-section">
   <div class="section-heading">
@@ -69,12 +69,11 @@
 </section>
 
 {#if pickerOpen}
-  <div class="picker-backdrop">
-    <button class="backdrop-dismiss" type="button" aria-label={m.create_char_close_aria()} onclick={() => (pickerOpen = false)}></button>
-    <div class="role-picker" role="dialog" aria-modal="true" aria-labelledby="role-picker-title" tabindex="-1">
+  <BottomSheet onClose={() => pickerOpen = false} label={m.character_roles_add()} width="420px" maxHeight="560px" breakpoint={521}>
+    {#snippet children(dismiss)}
       <div class="picker-heading">
         <div><h3 id="role-picker-title">{m.character_roles_add()}</h3><p>{m.character_roles_choose()}</p></div>
-        <button type="button" class="picker-close" aria-label={m.create_char_close_aria()} onclick={() => (pickerOpen = false)}>
+        <button type="button" class="picker-close" aria-label={m.create_char_close_aria()} onclick={dismiss}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" stroke-linecap="round" /></svg>
         </button>
       </div>
@@ -91,8 +90,8 @@
       {:else}
         <p class="picker-empty">{m.character_roles_no_global()}</p>
       {/if}
-    </div>
-  </div>
+    {/snippet}
+  </BottomSheet>
 {/if}
 
 <style>
@@ -115,10 +114,7 @@
   .add-role:hover { border-color:rgba(212,180,131,.38); background:rgba(212,180,131,.1); }
   .add-role span { font-size:17px; font-weight:400; line-height:1; }
   .validation-message { margin-top:10px; color:#fbbf24; font-size:12px; font-weight:500; }
-  .picker-backdrop { position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(0,0,0,.58); backdrop-filter:blur(3px); }
-  .backdrop-dismiss { position:absolute; inset:0; width:100%; height:100%; border:0; background:transparent; cursor:default; }
-  .role-picker { position:relative; width:min(420px,100%); max-height:min(560px,calc(var(--app-visible-height, 100dvh) - 40px)); display:flex; flex-direction:column; overflow:hidden; border:1px solid rgba(255,255,255,.09); border-radius:16px; background:#19191c; box-shadow:0 20px 60px rgba(0,0,0,.55); }
-  .picker-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:18px 18px 14px; border-bottom:1px solid rgba(255,255,255,.06); }
+  .picker-heading { flex-shrink:0; display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:18px 18px 14px; border-bottom:1px solid rgba(255,255,255,.06); }
   .picker-heading h3 { color:#e5e7eb; font-size:15px; font-weight:600; }
   .picker-heading p { margin-top:3px; color:#626873; font-size:12px; line-height:1.45; }
   .picker-close { margin:-6px -6px 0 0; }
@@ -134,8 +130,6 @@
     .section-heading { flex-direction:column; gap:12px; }
     .policy-select, .policy-select select { width:100%; }
     .add-role { width:100%; justify-content:center; min-height:44px; }
-    .picker-backdrop { align-items:flex-end; padding:12px; }
-    .role-picker { max-height:calc(var(--app-visible-height, 100dvh) - 24px); border-radius:18px; }
     .picker-role { min-height:56px; }
   }
 </style>

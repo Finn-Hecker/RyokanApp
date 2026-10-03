@@ -34,10 +34,9 @@
   let joinCodeInput = $state<HTMLInputElement>();
 
   $effect(() => {
-    if (!selectedScenario && !joinModalOpen && !menuTarget) return;
+    if (!selectedScenario && !joinModalOpen) return;
     return registerBackHandler(() => {
-      if (menuTarget) menuTarget = null;
-      else closeModal();
+      closeModal();
       return true;
     });
   });
@@ -128,7 +127,7 @@
   }
 </script>
 
-<svelte:window onkeydown={(event) => event.key === 'Escape' && closeModal()} />
+<svelte:window onkeydown={(event) => { if (event.key === 'Escape' && !(event.target instanceof Element && event.target.closest('dialog'))) closeModal(); }} />
 
 {#snippet sidebar({ layout, interactionMode, isOpen, close }: { layout: 'inline' | 'drawer', interactionMode: 'desktop' | 'mobile', isOpen: boolean, close: () => void })}
   <div class="flex h-full flex-col overflow-hidden">

@@ -98,13 +98,6 @@
     });
   });
 
-  $effect(() => {
-    if (!mobileActionMessageId) return;
-    return registerBackHandler(() => {
-      mobileActionMessageId = null;
-      return true;
-    });
-  });
 
   onMount(async () => {
     if (chatState.activeChatId) await loadMessages(chatState.activeChatId);

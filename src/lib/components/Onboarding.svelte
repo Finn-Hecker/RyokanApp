@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { androidViewport } from '$lib/utils/androidViewport';
+  import { fly } from 'svelte/transition';
+  import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { reportDiagnostic } from '$lib/utils/diagnostics';
-  import { fade, fly } from 'svelte/transition';
   import { appState } from '$lib/stores/appState.svelte';
   import { saveSetting, fetchModels, type ModelInfo } from '$lib/utils/settings';
   import { setLocale } from '$lib/paraglide/runtime';
@@ -127,21 +127,8 @@
   }
 </script>
 
-<div
-  use:androidViewport
-  class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm overflow-hidden"
-  in:fade={{ duration: 250 }}
->
-  <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-ryokan-accent/10 rounded-full blur-[140px] pointer-events-none"></div>
-
-  <div
-    class="w-full sm:max-w-[360px] mx-0 sm:mx-4 bg-[#1c1c1e]/95 backdrop-blur-xl sm:rounded-3xl rounded-t-3xl shadow-2xl overflow-hidden border border-white/[0.06]"
-    in:fly={{ y: 24, duration: 350, delay: 80 }}
-  >
-    <div class="flex justify-center pt-3 pb-1 sm:hidden">
-      <div class="w-9 h-1 rounded-full bg-white/15"></div>
-    </div>
-
+<BottomSheet onClose={() => {}} label="Welcome" width="360px" dismissible={false}>
+  {#snippet children(close)}
     <div class="px-6 pt-6 pb-7 space-y-6">
 
       <div class="flex flex-col items-center text-center pt-1 pb-1">
@@ -367,5 +354,5 @@
       </button>
 
     </div>
-  </div>
-</div>
+  {/snippet}
+</BottomSheet>

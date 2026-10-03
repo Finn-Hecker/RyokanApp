@@ -1,7 +1,7 @@
 <script lang="ts">
+  import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import * as m from '$lib/paraglide/messages';
   import { getLocale } from '$lib/paraglide/runtime';
-  import { registerBackHandler } from '$lib/stores/navigation';
   import { formatCachedUsage, formatUsageCount, formatUsageCost, type TokenUsage } from '$lib/utils/tokenUsage';
 
   let { usage, swipeIndex, totalVariants, onClose }: {
@@ -10,16 +10,6 @@
     totalVariants: number;
     onClose: () => void;
   } = $props();
-
-  let dialog: HTMLDialogElement;
-
-  $effect(() => {
-    dialog.showModal();
-    return registerBackHandler(() => {
-      dialog.close();
-      return true;
-    });
-  });
 
   const metricRows = $derived([
     { label: m.usage_input(), value: formatUsageCount(usage?.inputTokens, getLocale()), icon: 'enter' },
@@ -35,20 +25,10 @@
     { label: m.usage_tier(), value: usage?.serviceTier },
   ]);
 
-  function closeOnBackdrop(event: MouseEvent) {
-    if (event.target === event.currentTarget) dialog.close();
-  }
 </script>
 
-<dialog
-  bind:this={dialog}
-  onclose={onClose}
-  onclick={closeOnBackdrop}
-  aria-labelledby="usage-title"
-  aria-describedby="usage-note"
->
-  <div class="sheet-handle" aria-hidden="true"></div>
-
+<BottomSheet {onClose} label={m.usage_title()} width="520px" maxHeight="720px" describedBy="usage-note">
+  {#snippet children(close)}
   <header>
     <div class="title-group">
       <span class="title-icon" aria-hidden="true">
@@ -63,7 +43,7 @@
         {/if}
       </div>
     </div>
-    <button class="close-button" type="button" onclick={() => dialog.close()} aria-label={m.chat_cancel()}>
+    <button class="close-button" type="button" onclick={close} aria-label={m.chat_cancel()}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <path d="M6 6l12 12M18 6 6 18"/>
       </svg>
@@ -118,32 +98,12 @@
       <span>{m.usage_note()}</span>
     </p>
   </div>
-</dialog>
+  {/snippet}
+</BottomSheet>
 
 <style>
-  dialog {
-    width: min(520px, calc(100vw - 32px));
-    max-height: min(720px, calc(var(--app-visible-height, 100dvh) - 32px));
-    margin: auto;
-    padding: 0;
-    overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, .09);
-    border-radius: 20px;
-    background: #18181b;
-    color: #e5e5ea;
-    box-shadow: 0 24px 80px rgba(0, 0, 0, .58), inset 0 1px 0 rgba(255, 255, 255, .025);
-    animation: dialog-in .18s cubic-bezier(.22, .8, .3, 1);
-  }
-
-  dialog::backdrop {
-    background: rgba(0, 0, 0, .64);
-    backdrop-filter: blur(4px);
-    animation: backdrop-in .16s ease-out;
-  }
-
-  .sheet-handle { display: none; }
-
   header {
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -187,7 +147,8 @@
   .close-button:focus-visible { outline: 2px solid rgba(212, 180, 131, .55); outline-offset: 2px; }
 
   .content {
-    max-height: calc(min(720px, var(--app-visible-height, 100dvh) - 32px) - 76px);
+    min-height: 0;
+    flex: 1;
     padding: 18px 20px 20px;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -248,20 +209,8 @@
   }
   .usage-note svg { width: 14px; height: 14px; flex: 0 0 auto; margin-top: 1px; }
 
-  @keyframes backdrop-in { from { opacity: 0; } }
-  @keyframes dialog-in { from { opacity: 0; transform: translateY(6px) scale(.98); } }
 
   @media (max-width: 639px) {
-    dialog {
-      width: 100%;
-      max-width: none;
-      max-height: min(82dvh, calc(var(--app-visible-height, 100dvh) - env(safe-area-inset-top) - 8px));
-      margin: auto 0 0;
-      border-width: 1px 0 0;
-      border-radius: 22px 22px 0 0;
-      animation-name: sheet-in;
-    }
-    .sheet-handle { display: block; width: 36px; height: 4px; margin: 9px auto 1px; border-radius: 999px; background: rgba(255, 255, 255, .15); }
     header { padding: 9px 14px 12px 16px; }
     .title-group { gap: 10px; }
     .title-icon { width: 34px; height: 34px; border-radius: 10px; }
@@ -269,8 +218,7 @@
     h2 { font-size: 17px; }
     .close-button { width: 40px; height: 40px; }
     .content {
-      max-height: calc(min(82dvh, var(--app-visible-height, 100dvh) - env(safe-area-inset-top) - 8px) - 66px);
-      padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
+      padding: 14px 14px 14px;
     }
     .metric-card { padding: 11px 11px 12px; }
     .metric-card dt { gap: 5px; font-size: 10px; }
@@ -284,9 +232,6 @@
     .metric-grid { grid-template-columns: 1fr; }
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    dialog, dialog::backdrop { animation-duration: .01ms; }
-  }
 
-  @keyframes sheet-in { from { opacity: .78; transform: translateY(24px); } }
+
 </style>

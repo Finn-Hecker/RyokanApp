@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { activateApiConnection, appState, createDefaultConnection } from "$lib/stores/appState.svelte";
   import { fetchModels, type ModelInfo } from "$lib/utils/settings";
   import * as m from "$lib/paraglide/messages";
@@ -54,6 +55,13 @@
   let modelsLoading   = $state(false);
   let modelsError     = $state("");
   let modelMenuOpen   = $state(false);
+  let mobile = $state(false);
+  onMount(() => {
+    const query = window.matchMedia('(max-width: 767px)');
+    const sync = () => mobile = query.matches;
+    sync(); query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  });
   let modelSearch     = $state("");
   let activeModelCategory = $state("all");
   let favoriteModels = $state<string[]>([]);
@@ -93,7 +101,7 @@
   });
 
   $effect(() => {
-    if (!modelMenuOpen) return;
+    if (!modelMenuOpen || mobile) return;
     return registerBackHandler(() => {
       closeModelPicker();
       return true;
@@ -528,7 +536,7 @@
   }
 
   function handleModelMenuKeydown(event: KeyboardEvent) {
-    if (event.key === "Escape" && modelMenuOpen) closeModelPicker();
+    if (!mobile && event.key === "Escape" && modelMenuOpen) closeModelPicker();
   }
 
 </script>
@@ -695,6 +703,7 @@
           </button>
 
           {#if modelMenuOpen}
+            {#if !mobile}
             <div class="desktop-model-backdrop" role="presentation" onclick={handleModelBackdropClick}></div>
             <div class="desktop-model-browser" role="dialog" aria-modal="true" aria-labelledby="desktop-model-browser-title">
               <header class="desktop-model-header">
@@ -750,13 +759,13 @@
               </div>
             </div>
 
-            <div class="model-sheet-backdrop" role="presentation" onclick={handleModelBackdropClick}></div>
-            <div class="mobile-model-sheet" role="dialog" aria-modal="true" aria-labelledby="mobile-model-sheet-title">
-              <div class="model-sheet-handle" aria-hidden="true"></div>
+            {:else}
+            <BottomSheet onClose={closeModelPicker} label={m.settings_model_select_title()} breakpoint={768} height="min(760px, calc(var(--app-visible-height, 100dvh) * .86))">
+              {#snippet children(dismiss)}
               <div class="model-sheet-toolbar">
                 <div class="model-sheet-heading">
                   <h3 id="mobile-model-sheet-title">{m.settings_model_select_title()}</h3>
-                  <button type="button" class="model-sheet-close" aria-label={m.settings_model_close()} onclick={closeModelPicker}>
+                  <button type="button" class="model-sheet-close" aria-label={m.settings_model_close()} onclick={dismiss}>
                     <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" stroke-linecap="round"/></svg>
                   </button>
                 </div>
@@ -804,7 +813,7 @@
                         role="option"
                         aria-selected={appState.apiSettings.model === modelId}
                         class="mobile-model-select"
-                        onclick={() => selectModel(modelId)}
+                        onclick={() => dismiss(() => selectModel(modelId))}
                       >
                         <span class="mobile-model-name" title={modelId}>{modelId}</span>
                         <span class="mobile-model-details">
@@ -835,7 +844,9 @@
                   {/if}
                 {/if}
               </div>
-            </div>
+              {/snippet}
+            </BottomSheet>
+            {/if}
           {/if}
         </div>
       {:else}
@@ -1069,9 +1080,9 @@
   .model-list-loading { display:flex; flex-direction:column; gap:7px; }
   .model-row-skeleton { height:78px; border:1px solid rgba(255,255,255,.025); border-radius:14px; background:rgba(255,255,255,.018); animation:model-skeleton-pulse 1.2s ease-in-out infinite alternate; }
   @keyframes model-skeleton-pulse { to { background:rgba(255,255,255,.035); } }
-  .model-sheet-backdrop, .mobile-model-sheet { display:none; }
 
-  .desktop-model-backdrop { position:fixed; z-index:70; inset:0; background:rgba(0,0,0,.7); backdrop-filter:blur(4px); animation:sheet-fade-in .16s ease-out; }
+
+  .desktop-model-backdrop { position:fixed; z-index:70; inset:0; background:rgba(0,0,0,.7); backdrop-filter:blur(4px); animation:browser-fade-in .16s ease-out; }
   .desktop-model-browser { position:fixed; z-index:71; top:50%; left:50%; width:min(1080px,calc(100vw - 72px)); height:min(760px,calc(var(--app-visible-height, 100dvh) - 72px)); display:flex; flex-direction:column; overflow:hidden; transform:translate(-50%,-50%); border:1px solid rgba(255,255,255,.1); border-radius:22px; background:#18181a; box-shadow:0 12px 32px rgba(0,0,0,.22); animation:browser-pop-in .18s cubic-bezier(.22,.8,.3,1); }
   .desktop-model-header { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:22px 24px 16px; border-bottom:1px solid rgba(255,255,255,.055); }
   .desktop-model-header h3 { margin:0; color:#eeeae4; font-size:22px; font-weight:680; letter-spacing:-.025em; }
@@ -1102,44 +1113,10 @@
   .desktop-favorite-btn:hover { background:rgba(255,255,255,.055); color:#8d8d92; }
   .desktop-favorite-btn--active { color:#d4b483; }
   .desktop-model-no-results { padding-top:70px; font-size:13px; }
+  @keyframes browser-fade-in { from { opacity:0; } }
   @keyframes browser-pop-in { from { transform:translate(-50%,-48%) scale(.985); opacity:.65; } }
 
   @media (max-width: 767px) {
-    .desktop-model-backdrop, .desktop-model-browser { display:none; }
-    .model-sheet-backdrop {
-      position:fixed;
-      z-index:70;
-      inset:0;
-      display:block;
-      background:rgba(0,0,0,.62);
-      backdrop-filter:blur(2px);
-      animation:sheet-fade-in .16s ease-out;
-    }
-    .mobile-model-sheet {
-      position:fixed;
-      z-index:71;
-      right:0;
-      bottom:0;
-      left:0;
-      height:min(calc(var(--app-visible-height, 100dvh) * 0.86), 760px);
-      display:flex;
-      flex-direction:column;
-      overflow:hidden;
-      border:1px solid rgba(255,255,255,.09);
-      border-bottom:0;
-      border-radius:24px 24px 0 0;
-      background:#18181a;
-      box-shadow:0 -8px 24px rgba(0,0,0,.2);
-      animation:sheet-slide-in .2s cubic-bezier(.22,.8,.3,1);
-    }
-    .model-sheet-handle {
-      width:38px;
-      height:4px;
-      flex:0 0 auto;
-      margin:9px auto 2px;
-      border-radius:999px;
-      background:rgba(255,255,255,.14);
-    }
     .model-sheet-toolbar {
       position:sticky;
       z-index:1;
@@ -1218,7 +1195,7 @@
       min-height:0;
       flex:1;
       overflow-y:auto;
-      padding:8px 10px calc(14px + env(safe-area-inset-bottom));
+      padding:8px 10px 14px;
       overscroll-behavior:contain;
       -webkit-overflow-scrolling:touch;
     }
@@ -1293,8 +1270,6 @@
     .model-favorite-btn--active { color:#d4b483; }
     .mobile-selected-check { flex:0 0 auto; margin:0 8px 0 2px; color:#d4b483; }
     .mobile-model-no-results { padding-top:48px; font-size:13px; }
-    @keyframes sheet-fade-in { from { opacity:0; } }
-    @keyframes sheet-slide-in { from { transform:translateY(28px); opacity:.7; } }
   }
 
   .empty-state { color: #3a3a3c; }

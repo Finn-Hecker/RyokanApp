@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import * as m from '$lib/paraglide/messages';
   import { getLocale } from '$lib/paraglide/runtime';
   import { chatState } from '$lib/stores/chatStore.svelte';
@@ -17,16 +18,6 @@
   let activeConversation = $derived(
     chatState.conversations.find(c => c.id === chatState.activeChatId) ?? null
   );
-
-  function handleWindowKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') onClose();
-  }
-
-  // Closes only when the backdrop itself is clicked, so no
-  // stopPropagation handler on the panel is needed (a11y warnings).
-  function handleOverlayClick(e: MouseEvent) {
-    if (e.target === e.currentTarget) onClose();
-  }
 
   const dateFormatter = new Intl.DateTimeFormat(getLocale(), {
     dateStyle: 'medium',
@@ -105,15 +96,8 @@
   })());
 </script>
 
-<svelte:window onkeydown={handleWindowKeydown} />
-
-<div
-  class="info-overlay"
-  role="presentation"
-  onclick={handleOverlayClick}
-  onkeydown={handleWindowKeydown}
->
-  <div class="info-panel" role="dialog" aria-modal="true" aria-label="Info">
+<BottomSheet {onClose} label="Info" height="min(640px, calc(var(--app-visible-height, 100dvh) * .85))" mobileHeight="min(640px, calc(var(--app-visible-height, 100dvh) * .88))">
+  {#snippet children(close)}
     <div class="info-panel-header">
       <div class="info-tabs">
         <button
@@ -131,7 +115,7 @@
           Chat
         </button>
       </div>
-      <button class="info-close-btn" onclick={onClose} aria-label="Schließen">
+      <button class="info-close-btn" onclick={close} aria-label="Schließen">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
           <line x1="18" y1="6" x2="6" y2="18"/>
           <line x1="6" y1="6" x2="18" y2="18"/>
@@ -264,95 +248,10 @@
         {/if}
       {/if}
     </div>
-  </div>
-</div>
+  {/snippet}
+</BottomSheet>
 
 <style>
-  .info-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 200;
-    background: rgba(8, 8, 12, 0.6);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-    animation: overlay-in 160ms ease;
-  }
-
-  @keyframes overlay-in {
-    from { opacity: 0; }
-    to   { opacity: 1; }
-  }
-
-  /* Mobile: full-width bottom sheet with a fixed height */
-  @media (max-width: 639px) {
-    .info-overlay {
-      padding: 0;
-      align-items: flex-end;
-    }
-
-    .info-panel {
-      width: 100%;
-      height: min(640px, calc(var(--app-visible-height, 100dvh) * 0.88));
-      border-radius: 20px 20px 0 0;
-      border-left: none;
-      border-right: none;
-      border-bottom: none;
-      animation: sheet-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .info-body {
-      padding: 16px 16px calc(18px + env(safe-area-inset-bottom));
-    }
-
-    .info-tab {
-      padding: 12px 8px;
-      font-size: 13px;
-    }
-
-    .info-close-btn {
-      width: 36px;
-      height: 36px;
-    }
-  }
-
-  @keyframes sheet-in {
-    from { opacity: 0.6; transform: translateY(40px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .info-panel,
-    .info-overlay {
-      animation: none;
-    }
-  }
-
-  .info-panel {
-    position: relative;
-    width: min(560px, 100%);
-    /* Fixed height: the panel keeps its size regardless of tab content */
-    height: min(640px, calc(var(--app-visible-height, 100dvh) * 0.85));
-    display: flex;
-    flex-direction: column;
-    background: rgba(20, 20, 26, 0.98);
-    border: 1px solid rgba(255,255,255,0.09);
-    border-radius: 18px;
-    overflow: hidden;
-    box-shadow: 0 24px 70px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.4);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    animation: panel-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  @keyframes panel-in {
-    from { opacity: 0; transform: scale(0.95) translateY(6px); }
-    to   { opacity: 1; transform: scale(1) translateY(0); }
-  }
-
   .info-panel-header {
     display: flex;
     align-items: center;
@@ -574,6 +473,8 @@
   }
 
   @media (max-width: 639px) {
+    .info-tab { padding:12px 8px; font-size:13px; }
+    .info-close-btn { width:36px; height:36px; }
     .stat-grid {
       grid-template-columns: repeat(2, 1fr);
       gap: 8px;

@@ -25,7 +25,7 @@
     size?: 'sm' | 'md' | 'lg';
     menuMode?: 'full' | 'manage';
     sheet?: boolean;
-    onClose?: () => void;
+    onClose?: (after?: () => void) => void;
     onEdit: (e: MouseEvent, char: any) => void;
     onTogglePin: (e: MouseEvent, char: any) => void;
     onToggleHide: (e: MouseEvent, char: any) => void;
@@ -51,8 +51,8 @@
 
   function runAction(event: MouseEvent, action: (event: MouseEvent, character: any) => void) {
     const character = char;
-    close();
-    action(event, character);
+    if (sheet) onClose(() => action(event, character));
+    else { close(); action(event, character); }
   }
 
   function stopProp(e: MouseEvent | KeyboardEvent) {
@@ -74,7 +74,7 @@
 
 <svelte:window
   onclick={() => { if (!sheet) close(); }}
-  onkeydown={(event) => { if (event.key === 'Escape') close(); }}
+  onkeydown={(event) => { if (!sheet && event.key === 'Escape') close(); }}
 />
 
 {#if !sheet}
@@ -102,7 +102,7 @@
     onclick={stopProp}
     onkeydown={stopProp}
     class={sheet
-      ? 'sheet-action-list w-full max-h-[calc(var(--app-visible-height,100vh)*0.7)] overflow-y-auto rounded-2xl border border-white/[0.06] bg-white/[0.025] p-1.5'
+      ? 'sheet-action-list w-full rounded-2xl border border-white/[0.06] bg-white/[0.025] p-1.5'
       : 'absolute right-0 top-full mt-1.5 w-44 max-w-[calc(100vw-2rem)] bg-[#16161f] border border-ryokan-accent/[0.22] rounded-xl z-30 py-1 overflow-hidden'}
     style={sheet ? '' : 'box-shadow: 0 20px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(212,180,131,0.04) inset;'}
   >

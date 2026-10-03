@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { onMount } from 'svelte';
   import * as m from '$lib/paraglide/messages';
   import type { ProviderKind } from '$lib/stores/appState.svelte';
@@ -90,15 +91,14 @@
   }
 </script>
 
-<div class="picker-backdrop" role="presentation" onclick={(event) => { if (event.target === event.currentTarget) onClose(); }}></div>
-<div class="picker-dialog" role="dialog" aria-modal="true" aria-labelledby="chat-model-picker-title">
-  <div class="picker-handle" aria-hidden="true"></div>
+<BottomSheet {onClose} label={m.settings_model_select_title()} breakpoint={768} width="920px" height="min(720px, calc(var(--app-visible-height, 100dvh) * .86))">
+  {#snippet children(close)}
   <header class="picker-header">
     <div>
       <h2 id="chat-model-picker-title">{m.settings_model_select_title()}</h2>
       <p>{m.settings_model_available_count({ count: String(models.length) })}</p>
     </div>
-    <button type="button" class="close-button" aria-label={m.settings_model_close()} onclick={onClose}>×</button>
+    <button type="button" class="close-button" aria-label={m.settings_model_close()} onclick={close}>×</button>
   </header>
   <div class="picker-controls">
     <input class="search-input" type="search" bind:value={search} oninput={() => shown = 50} placeholder={m.settings_model_search_placeholder()} aria-label={m.settings_model_search_placeholder()} />
@@ -118,7 +118,7 @@
     {:else}
       {#each filtered.slice(0, shown) as model (model)}
         <div class="model-row" class:selected={selectedModel === model}>
-          <button type="button" class="model-choice" role="option" aria-selected={selectedModel === model} onclick={() => onSelect(model)}>
+          <button type="button" class="model-choice" role="option" aria-selected={selectedModel === model} onclick={() => close(() => onSelect(model))}>
             <strong title={model}>{model}</strong>
             <span class="model-meta">
               {#if isFree(model)}<span class="free-badge">{m.settings_model_category_free()}</span>{/if}
@@ -132,24 +132,22 @@
       {/each}
     {/if}
   </div>
-</div>
+  {/snippet}
+</BottomSheet>
 
 <style>
-  .picker-backdrop { position:fixed; inset:0; z-index:1; background:rgba(0,0,0,.65); backdrop-filter:blur(4px); }
-  .picker-dialog { position:fixed; z-index:2; top:50%; left:50%; transform:translate(-50%,-50%); width:min(920px,calc(100vw - 64px)); height:min(720px,calc(var(--app-visible-height, 100dvh) - 64px)); display:flex; flex-direction:column; overflow:hidden; border:1px solid rgba(255,255,255,.1); border-radius:22px; background:#18181a; box-shadow:0 20px 60px rgba(0,0,0,.5); }
-  .picker-handle { display:none; }
-  .picker-header { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:20px 22px 14px; border-bottom:1px solid rgba(255,255,255,.06); }
+  .picker-header { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:20px 22px 14px; border-bottom:1px solid rgba(255,255,255,.06); }
   .picker-header h2 { margin:0; color:#eeeae4; font-size:21px; font-weight:680; }
   .picker-header p { margin:4px 0 0; color:#77777c; font-size:11px; }
   .close-button { width:38px; height:38px; flex:0 0 auto; border:0; border-radius:11px; background:rgba(255,255,255,.045); color:#aaa; font-size:25px; line-height:1; cursor:pointer; }
-  .picker-controls { padding:12px 18px; border-bottom:1px solid rgba(255,255,255,.06); }
+  .picker-controls { flex-shrink:0; padding:12px 18px; border-bottom:1px solid rgba(255,255,255,.06); }
   .search-input { width:100%; height:42px; padding:0 12px; border:1px solid rgba(255,255,255,.08); border-radius:11px; outline:none; background:rgba(0,0,0,.22); color:#eee; font:inherit; font-size:14px; }
   .search-input:focus { border-color:rgba(212,180,131,.45); }
   .category-list { display:flex; gap:7px; margin-top:11px; overflow-x:auto; scrollbar-width:none; }
   .category-list::-webkit-scrollbar { display:none; }
   .category-list button { min-height:36px; flex:0 0 auto; padding:7px 13px; border:1px solid rgba(255,255,255,.07); border-radius:999px; background:rgba(255,255,255,.025); color:#88888d; font:inherit; font-size:12px; font-weight:650; cursor:pointer; }
   .category-list button.active { border-color:rgba(212,180,131,.42); background:rgba(212,180,131,.12); color:#dfc69f; }
-  .model-list { min-height:0; flex:1; overflow-y:auto; padding:10px 14px calc(16px + env(safe-area-inset-bottom)); overscroll-behavior:contain; }
+  .model-list { min-height:0; flex:1; overflow-y:auto; padding:10px 14px 16px; overscroll-behavior:contain; }
   .model-row { min-height:70px; display:flex; align-items:center; gap:6px; margin-bottom:6px; border:1px solid rgba(255,255,255,.045); border-radius:13px; background:rgba(255,255,255,.015); }
   .model-row.selected { border-color:rgba(212,180,131,.3); background:rgba(212,180,131,.08); }
   .model-choice { min-width:0; flex:1; display:flex; flex-direction:column; justify-content:center; align-items:flex-start; gap:8px; padding:13px 14px; border:0; background:none; color:#ddd; text-align:left; cursor:pointer; }
@@ -163,14 +161,12 @@
   .empty-state { display:flex; flex-direction:column; align-items:center; gap:12px; padding:55px 12px; color:#999; font-size:13px; text-align:center; overflow-wrap:anywhere; }
   .empty-state button { padding:8px 14px; border:1px solid rgba(212,180,131,.35); border-radius:8px; color:#d4b483; }
   @media (max-width:767px) {
-    .picker-dialog { top:auto; bottom:0; left:0; transform:none; width:100%; height:min(calc(var(--app-visible-height, 100dvh) * 0.86),760px); max-height:calc(var(--app-visible-height, 100dvh) - env(safe-area-inset-top) - 8px); border-radius:22px 22px 0 0; }
-    .picker-handle { display:block; width:38px; height:4px; flex:0 0 auto; margin:9px auto 2px; border-radius:999px; background:rgba(255,255,255,.14); }
     .picker-header { padding:8px 16px 11px 20px; }
     .picker-header h2 { font-size:20px; }
-    .picker-controls { padding:8px 16px 10px; }
+    .picker-controls { flex-shrink:0; padding:8px 16px 10px; }
     .search-input { height:46px; font-size:16px; }
     .category-list button { min-height:38px; }
-    .model-list { padding:8px 10px calc(14px + env(safe-area-inset-bottom)); }
+    .model-list { padding:8px 10px 14px; }
     .model-row { min-height:62px; margin-bottom:2px; border-color:transparent; }
     .model-choice { align-items:stretch; gap:4px; padding:8px 6px 8px 12px; }
     .model-choice strong { min-width:0; max-width:none; overflow:visible; white-space:normal; overflow-wrap:anywhere; font-size:13px; line-height:1.25; }

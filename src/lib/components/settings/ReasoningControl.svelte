@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { createListbox } from '$lib/utils/listbox.svelte';
   import type { ApiConnection } from '$lib/stores/appState.svelte';
   import { reasoningCapability, type ReasoningLevel } from '$lib/utils/generationCapabilities';
@@ -33,7 +34,31 @@
 
 </script>
 
-<svelte:window onclick={() => listbox.close()} onkeydown={handleWindowKeydown} />
+{#snippet options(choose: (value: ReasoningLevel) => void = select)}
+          <div class="reasoning-options">
+            {#each capability?.levels ?? [] as level, index}
+              <button
+                type="button"
+                class="reasoning-option"
+                class:reasoning-option--selected={selectedLevel === level}
+                role="option"
+                aria-selected={selectedLevel === level}
+                tabindex={selectedLevel === level ? 0 : -1}
+                onclick={() => choose(level)}
+                onkeydown={(event) => handleOptionKeydown(event, index)}
+              >
+                <span>{labels[level]}</span>
+                {#if selectedLevel === level}
+                  <span class="selected-mark" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round" /></svg></span>
+                {/if}
+              </button>
+            {/each}
+          </div>
+
+{/snippet}
+
+
+<svelte:window onclick={() => { if (!mobile) listbox.close(); }} onkeydown={handleWindowKeydown} />
 
 {#if capability}
   <div class="reasoning-control">
@@ -67,52 +92,34 @@
     </button>
 
     {#if open}
-      <div use:portal class="reasoning-layer" class:reasoning-layer--mobile={mobile}>
-        {#if mobile}<button type="button" class="reasoning-backdrop" aria-label={m.settings_reasoning_label()} onclick={() => listbox.close()}></button>{/if}
-        <div
-          bind:this={optionList}
-          class="reasoning-popup"
-          class:reasoning-popup--mobile={mobile}
-          style={mobile ? '' : popupStyle}
-          role="listbox"
-          aria-label={m.settings_reasoning_label()}
-          tabindex="-1"
-        >
-          {#if mobile}
-            <div class="sheet-handle" aria-hidden="true"></div>
-            <div class="sheet-title">{m.settings_reasoning_label()}</div>
-          {/if}
-          <div class="reasoning-options">
-            {#each capability.levels as level, index}
-              <button
-                type="button"
-                class="reasoning-option"
-                class:reasoning-option--selected={selectedLevel === level}
-                role="option"
-                aria-selected={selectedLevel === level}
-                tabindex={selectedLevel === level ? 0 : -1}
-                onclick={() => select(level)}
-                onkeydown={(event) => handleOptionKeydown(event, index)}
-              >
-                <span>{labels[level]}</span>
-                {#if selectedLevel === level}
-                  <span class="selected-mark" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round" /></svg></span>
-                {/if}
-              </button>
-            {/each}
+      {#if mobile}
+        <BottomSheet onClose={() => listbox.close(true)} label={m.settings_reasoning_label()} breakpoint={768}>
+          {#snippet children(dismiss)}
+            <div bind:this={optionList} class="sheet-options" role="listbox" aria-label={m.settings_reasoning_label()} tabindex="-1">
+              <div class="sheet-title">{m.settings_reasoning_label()}</div>
+              {@render options(value => dismiss(() => select(value)))}
+            </div>
+          {/snippet}
+        </BottomSheet>
+      {:else}
+        <div use:portal class="reasoning-layer">
+          <div bind:this={optionList} class="reasoning-popup" style={popupStyle} role="listbox" aria-label={m.settings_reasoning_label()} tabindex="-1">
+            {@render options()}
           </div>
         </div>
-      </div>
+      {/if}
+
     {/if}
   </div>
   <div class="settings-divider"></div>
 {/if}
 
 <style>
+  .sheet-options { padding:7px 7px 12px; }
+  .sheet-title { padding:5px 12px 11px; color:#79797e; font-size:11px; font-weight:650; text-transform:uppercase; }
   .settings-divider { height:1px; margin:20px 0; background:rgba(255,255,255,.06); }
   .reasoning-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
   .reasoning-header .settings-label { display:block; margin:0; color:#68686d; font-size:11px; font-weight:650; letter-spacing:.055em; text-transform:uppercase; }
-  :global(.settings-panel) .reasoning-header .settings-label { font-weight:600; letter-spacing:.06em; }
   .reasoning-trigger { width:100%; min-height:52px; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:9px 11px 9px 14px; border:1px solid rgba(255,255,255,.07); border-radius:12px; background:rgba(255,255,255,.025); color:#d1d1d6; font:inherit; text-align:left; cursor:pointer; transition:border-color .15s ease,background .15s ease,box-shadow .15s ease; }
   .reasoning-trigger:hover { border-color:rgba(255,255,255,.13); background:rgba(255,255,255,.04); }
   .reasoning-trigger:focus-visible { outline:2px solid rgba(212,180,131,.5); outline-offset:2px; }
@@ -130,27 +137,18 @@
   :global(.reasoning-option--selected) { background:rgba(212,180,131,.095); color:#dfc69f; }
   :global(.reasoning-option--selected:hover), :global(.reasoning-option--selected:focus-visible) { background:rgba(212,180,131,.14); color:#ead3b0; }
   :global(.selected-mark) { display:grid; place-items:center; color:#d4b483; }
-  :global(.reasoning-backdrop) { display:none; }
-  :global(.sheet-handle), :global(.sheet-title) { display:none; }
   @keyframes reasoning-pop-in { from { opacity:.65; transform:translateY(-4px) scale(.98); } }
 
   @media (max-width:767px) {
     .reasoning-trigger { min-height:56px; padding:10px 10px 10px 14px; border-radius:13px; }
     .trigger-value { font-size:14px; }
     .trigger-icon { width:34px; height:34px; border-radius:10px; }
-    :global(.reasoning-layer--mobile) { pointer-events:auto; }
-    :global(.reasoning-backdrop) { position:absolute; inset:0; display:block; width:100%; border:0; background:rgba(0,0,0,.58); backdrop-filter:blur(2px); animation:reasoning-fade-in .16s ease-out; }
-    :global(.reasoning-popup--mobile) { position:absolute; right:10px; bottom:max(10px,env(safe-area-inset-bottom)); left:10px; max-height:min(72dvh,560px); overflow-y:auto; padding:7px 7px 8px; border-radius:19px; background:#202022; box-shadow:0 -10px 36px rgba(0,0,0,.38); animation:reasoning-sheet-in .2s cubic-bezier(.22,.8,.3,1); transform-origin:bottom center; }
-    :global(.sheet-handle) { width:36px; height:4px; display:block; margin:2px auto 8px; border-radius:999px; background:rgba(255,255,255,.15); }
-    :global(.sheet-title) { display:block; padding:5px 12px 11px; color:#79797e; font-size:11px; font-weight:650; letter-spacing:.055em; text-transform:uppercase; }
     :global(.reasoning-options) { gap:3px; }
     :global(.reasoning-option) { min-height:50px; padding:12px 13px; border-radius:12px; font-size:14px; }
-    @keyframes reasoning-fade-in { from { opacity:0; } }
-    @keyframes reasoning-sheet-in { from { opacity:.72; transform:translateY(24px); } }
   }
 
   @media (prefers-reduced-motion:reduce) {
-    :global(.reasoning-popup), :global(.reasoning-backdrop) { animation-duration:.01ms; }
+    :global(.reasoning-popup) { animation-duration:.01ms; }
     .trigger-icon { transition-duration:.01ms; }
   }
 </style>
