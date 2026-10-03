@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 
 // Run the component controller with deterministic layout and lifecycle boundaries.
-function composer({ interactionMode = 'desktop', coarse = false, ...props } = {}) {
+function composer({ interactionMode = 'desktop', coarse = false, visibleHeight = 700, ...props } = {}) {
   const source = readFileSync(new URL('./ChatInput.svelte', import.meta.url), 'utf8')
     .match(/<script lang="ts">([\s\S]*?)<\/script>/)[1];
   const ast = ts.createSourceFile('ChatInput.ts', source, ts.ScriptTarget.Latest, true);
@@ -20,13 +20,22 @@ function composer({ interactionMode = 'desktop', coarse = false, ...props } = {}
     contentHeight: 65,
     get offsetHeight() { throw new Error('Unexpected extra forced layout'); },
   };
+  const listeners = new Map();
+  const events = {
+    addEventListener: (name, callback) => listeners.set(name, callback),
+    removeEventListener: name => listeners.delete(name),
+  };
+  const viewport = { height: visibleHeight, ...events };
+  const document = { activeElement: field };
   const context = vm.createContext({
     $props: () => ({ value: 'draft', interactionMode, onSend: () => sent++, ...props }),
     $bindable: value => value, $state: value => value,
     $effect: effect => effects.push(effect), onMount: callback => { mount = callback; },
     requestAnimationFrame: callback => { frames.set(++frameId, callback); return frameId; },
     cancelAnimationFrame: id => frames.delete(id),
-    window: { matchMedia: () => ({ matches: coarse }) },
+    window: { innerHeight: 700, visualViewport: viewport,
+      matchMedia: () => ({ matches: coarse, ...events }), ...events },
+    document,
     ResizeObserver: class {
       constructor(callback) { observer = this; this.callback = callback; }
       observe() {}
@@ -38,7 +47,7 @@ function composer({ interactionMode = 'desktop', coarse = false, ...props } = {}
   vm.runInContext('textarea = field; inputLayer = {};', context);
   cleanup = mount();
   return {
-    context, field, frames,
+    context, field, frames, viewport, document, listeners,
     get sent() { return sent; }, get measured() { return measured; },
     effect: () => effects.forEach(effect => effect()),
     destroy: () => cleanup(),
@@ -117,4 +126,32 @@ test('programmatic clear, draft restore and width changes resize; teardown cance
   c.context.scheduleResize(); c.destroy();
   assert.equal(c.frames.size, 0);
   assert.equal(c.observer.disconnected, true);
+});
+
+test('mobile height follows keyboard space, landscape and keyboard dismissal', () => {
+  const c = composer({ interactionMode: 'mobile', visibleHeight: 300 });
+  c.field.contentHeight = 600;
+  c.frame();
+  assert.equal(c.field.style.height, '120px');
+  assert.equal(c.field.style.maxHeight, '120px');
+  c.viewport.height = 180;
+  c.listeners.get('resize')(); c.frame();
+  assert.equal(c.field.style.height, '72px');
+  c.viewport.height = 700;
+  c.listeners.get('resize')(); c.frame();
+  assert.equal(c.field.style.height, '240px');
+});
+
+test('mobile action pointerdown keeps an open keyboard without capturing textarea gestures', () => {
+  for (const options of [{ interactionMode: 'mobile' }, { coarse: true }, {}]) {
+    const c = composer(options);
+    const event = { isPrimary: true, button: 0, prevented: false,
+      preventDefault() { this.prevented = true; } };
+    c.context.keepInputFocus(event);
+    assert.equal(event.prevented, Boolean(options.interactionMode || options.coarse));
+    c.document.activeElement = null;
+    event.prevented = false;
+    c.context.keepInputFocus(event);
+    assert.equal(event.prevented, false);
+  }
 });

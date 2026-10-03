@@ -32,11 +32,18 @@
   let inputLayer: HTMLDivElement;
   let textarea = $state<HTMLTextAreaElement>();
   let resizeFrame = 0;
+  let isTouchDevice = $state(false);
+
+  function usesMobileInput() {
+    return interactionMode === 'mobile' || isTouchDevice;
+  }
 
   // Also resize when sending, opening/cancelling an edit or restoring a draft
   // changes the bound value without a native input event.
   $effect(() => {
     void value;
+    void interactionMode;
+    void isTouchDevice;
     if (textarea) scheduleResize();
   });
 
@@ -45,15 +52,33 @@
     resizeFrame = requestAnimationFrame(() => {
       resizeFrame = 0;
       if (!textarea) return;
+      const visibleHeight = Math.min(
+        window.visualViewport?.height ?? window.innerHeight,
+        inputLayer.parentElement?.clientHeight ?? window.innerHeight,
+      );
+      // Reserve a full mobile line, including padding and font rounding, even
+      // while empty so the first character cannot change the composer height.
+      const minHeight = usesMobileInput() ? 48 : 44;
+      const maxHeight = usesMobileInput()
+        ? Math.max(minHeight, Math.min(240, Math.floor(visibleHeight * 0.4)))
+        : 400;
+      textarea.style.maxHeight = `${maxHeight}px`;
       // One measurement per frame; no animation or forced offsetHeight read.
-      textarea.style.height = '44px';
+      textarea.style.height = `${minHeight}px`;
       if (textarea.value) {
-        textarea.style.height = `${Math.min(textarea.scrollHeight, 400)}px`;
+        textarea.style.height = `${Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight))}px`;
       }
     });
   }
 
   onMount(() => {
+    const touchQuery = window.matchMedia('(pointer: coarse)');
+    const syncTouch = () => { isTouchDevice = touchQuery.matches; scheduleResize(); };
+    syncTouch();
+    touchQuery.addEventListener('change', syncTouch);
+    const viewport = window.visualViewport;
+    viewport?.addEventListener('resize', scheduleResize);
+    window.addEventListener('resize', scheduleResize);
     let previousWidth = 0;
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -69,12 +94,15 @@
     if (textarea) resizeObserver.observe(textarea);
     return () => {
       resizeObserver.disconnect();
+      touchQuery.removeEventListener('change', syncTouch);
+      viewport?.removeEventListener('resize', scheduleResize);
+      window.removeEventListener('resize', scheduleResize);
       if (resizeFrame) cancelAnimationFrame(resizeFrame);
     };
   });
 
   function handleSend() {
-    if (value.trim().length > 0) {
+    if (!isGenerating && !isSavingEdit && value.trim().length > 0) {
       onSend?.();
     }
   }
@@ -83,23 +111,30 @@
     if (e.key !== 'Enter' || e.shiftKey || e.isComposing || e.keyCode === 229) return;
     // Native mobile mode is independent of viewport width (e.g. landscape).
     // A coarse primary pointer also covers touch devices using a virtual keyboard.
-    if (interactionMode === 'mobile' || window.matchMedia('(pointer: coarse)').matches) return;
+    if (usesMobileInput()) return;
     e.preventDefault();
     if (!isGenerating && !isSavingEdit) {
       handleSend();
+    }
+  }
+  function keepInputFocus(e: PointerEvent) {
+    // Keep an already-open keyboard connected while tapping composer actions.
+    if (usesMobileInput() && document.activeElement === textarea && e.isPrimary && e.button === 0) {
+      e.preventDefault();
     }
   }
 </script>
 
 <div
   bind:this={inputLayer}
+  class:mobile-input={interactionMode === 'mobile' || isTouchDevice}
   class="composer-shell absolute inset-x-0 bottom-0 z-20 w-full px-4 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))] pointer-events-none sm:px-6 sm:pt-3 sm:pb-4"
 >
   <div class="max-w-3xl mx-auto">
 
     <div class="composer-frame pointer-events-auto rounded-2xl p-px {isSummarizing ? 'bg-white/[0.04]' : 'bg-white/10'}"
     >
-      <div class="flex flex-col rounded-[15px] overflow-hidden bg-ryokan-sidebar">
+      <div class="composer-surface flex flex-col rounded-[15px] overflow-hidden bg-ryokan-sidebar">
 
         <textarea
           id="chat-input-textarea"
@@ -118,24 +153,25 @@
               ? 'text-ryokan-text placeholder-ryokan-accent/35 italic'
               : 'text-ryokan-text placeholder-[#44444c]'}"
           style="
-            min-height: 44px;
+            min-height: var(--composer-min-height, 44px);
             max-height: 400px;
             overflow-y: auto;
             scrollbar-width: none;
           "
         ></textarea>
 
-        <div class="flex items-center justify-end gap-2 px-2.5 pb-2 pt-0.5">
+        <div class="composer-actions flex items-center justify-end gap-2 px-2.5 pb-2 pt-0.5">
           {#if isEditing}
             <span class="mr-auto pl-1 text-xs text-ryokan-accent">{m.chat_edit()}</span>
-            <button type="button" onclick={onCancelEdit} disabled={isSavingEdit}
-              class="text-xs text-gray-400 hover:text-gray-200 disabled:opacity-40">
+            <button type="button" onclick={onCancelEdit} onpointerdown={keepInputFocus} disabled={isSavingEdit}
+              class="cancel-edit text-xs text-gray-400 hover:text-gray-200 disabled:opacity-40">
               {m.chat_cancel()}
             </button>
           {/if}
           <button
             type="button"
             onclick={() => isGenerating ? onStop?.() : handleSend()}
+            onpointerdown={keepInputFocus}
             disabled={!isGenerating && (value.trim().length === 0 || isSavingEdit)}
             aria-label={isGenerating ? m.chat_stop_generating() : isEditing ? m.chat_save() : m.chat_send_message()}
             class="send-btn"
@@ -144,9 +180,10 @@
             class:send-btn--disabled={!isGenerating && (value.trim().length === 0 || isSavingEdit)}
           >
             {#if isGenerating}
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <svg class="stop-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <rect x="5" y="6" width="5" height="12" rx="1.5"/>
                 <rect x="14" y="6" width="4" height="12" rx="1.5"/>
+                <rect class="mobile-stop" x="5" y="5" width="14" height="14" rx="2"/>
               </svg>
             {:else}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -163,29 +200,75 @@
 </div>
 
 <style>
-  @media (max-width: 639px) {
-    .composer-frame {
-      padding: 0;
-      background: transparent;
-    }
+  .mobile-input {
+    --composer-min-height: 48px;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  }
 
-    .composer-shell::before {
+  .mobile-input .composer-frame {
+    padding: 0;
+    border-radius: 28px;
+    background: transparent;
+  }
+
+  .mobile-input .composer-surface {
+    border: 1px solid rgb(255 255 255 / 8%);
+    border-radius: 28px;
+    background: #262628;
+    box-shadow: 0 2px 10px rgb(0 0 0 / 12%);
+  }
+
+  .mobile-input #chat-input-textarea {
+    padding: 14px 18px 6px;
+    font-size: 16px;
+    line-height: 24px;
+    overscroll-behavior-y: contain;
+  }
+
+  .mobile-input #chat-input-textarea::placeholder { color: #a1a1a8; }
+
+  .mobile-input .composer-actions {
+    gap: 8px;
+    padding: 0 8px 8px 18px;
+  }
+
+  .mobile-input .send-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    /* A 36px visible circle keeps the touch target comfortably sized. */
+    border: 4px solid #262628;
+    box-shadow: none;
+    touch-action: manipulation;
+  }
+
+  .mobile-input .send-btn svg { width: 20px; height: 20px; }
+  .mobile-input .send-btn--disabled { background: #414144; color: #929298; }
+  .mobile-input .send-btn--active,
+  .mobile-input .send-btn--stop { background: #f4f4f4; color: #171717; }
+  .mobile-input .send-btn--active:hover,
+  .mobile-input .send-btn--stop:hover { background: #fff; box-shadow: none; }
+  .send-btn:focus-visible { outline: 2px solid var(--color-ryokan-accent); outline-offset: 2px; }
+  .mobile-stop { display: none; }
+  .mobile-input .stop-icon rect { display: none; }
+  .mobile-input .stop-icon .mobile-stop { display: block; }
+  .mobile-input .cancel-edit { min-width: 48px; min-height: 48px; touch-action: manipulation; }
+
+  .mobile-input::before {
       content: '';
       position: absolute;
       left: 50%;
       bottom: 0;
       z-index: -1;
-      width: 100vw;
-      height: calc(100% + 1.25rem);
+      width: 100%;
+      height: calc(100% + 20px);
       transform: translateX(-50%);
       pointer-events: none;
       background: linear-gradient(
         to bottom,
-        transparent 0,
-        rgb(0 0 0 / 10%) 1.25rem,
-        rgb(0 0 0 / 82%) 100%
+        transparent,
+        var(--color-ryokan-bg) 20px
       );
-    }
   }
 
   #chat-input-textarea::-webkit-scrollbar {

@@ -283,13 +283,16 @@ export async function loadMessages(chatId: string) {
     } catch (e) { reportDiagnostic('chat'); }
 }
 
+// Rows shown locally while SQLite is still saving must not count as page offsets.
+const pendingUserSends = new Set<string>();
+
 // Triggered when the user scrolls up
 export async function loadMoreMessages() {
     const chatId = chatState.activeChatId;
     if (!chatId || !chatState.hasMoreMessages) return;
 
     try {
-        const currentLength = chatState.currentMessages.length;
+        const currentLength = chatState.currentMessages.filter(message => !pendingUserSends.has(message.id ?? '')).length;
         const result = await invoke<PersistedMessageRow[]>('get_messages_page', {
             chatId,
             limit: 25,
@@ -312,19 +315,39 @@ export async function loadMoreMessages() {
 export async function addMessage(role: 'user' | 'assistant', content: string, usage: TokenUsage | null = null) {
     const chatId = chatState.activeChatId;
     if (!chatId) return;
+    // Use the same ID locally and in SQLite so the row keeps its DOM identity.
+    // Assistant replies already have a streaming preview; only user sends need one.
+    const messageId = role === 'user' ? crypto.randomUUID() : null;
+    if (messageId) {
+        pendingUserSends.add(messageId);
+        chatState.currentMessages.push({
+            id: messageId, conversation_id: chatId, role, content,
+            author: null, swipe_variants: [content], swipe_index: 0,
+            usage_variants: [usage],
+        });
+    }
     try {
         await invoke('add_message', {
             chatId,
             role,
             content,
             author: null,
-            messageId: null,
+            messageId,
             createdAt: null,
             usage,
         });
+        if (messageId) pendingUserSends.delete(messageId);
         await loadAllConversations();
-        await loadMessages(chatId);
-    } catch (e) { reportDiagnostic('chat'); }
+        if (chatState.activeChatId === chatId) await loadMessages(chatId);
+    } catch (e) {
+        if (messageId && chatState.activeChatId === chatId) {
+            chatState.currentMessages = chatState.currentMessages.filter(message => message.id !== messageId);
+        }
+        reportDiagnostic('chat');
+        throw e;
+    } finally {
+        if (messageId) pendingUserSends.delete(messageId);
+    }
 }
 
 async function invalidateSummaryIfCovered(chatId: string, messageId: string): Promise<void> {

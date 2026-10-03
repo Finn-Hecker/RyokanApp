@@ -77,6 +77,19 @@
     measureBottomGap();
   }
 
+  function handleComposerResize(height: number) {
+    if (height === composerHeight) return;
+    measureBottomGap();
+    const wasAtEnd = bottomGap <= 48;
+    // Apply the new padding before restoring the end position. This only runs
+    // for composer geometry changes, never for incoming text or streaming.
+    flushSync(() => { composerHeight = height; });
+    if (chatContainer && wasAtEnd) {
+      chatContainer.scrollTop = chatContainer.scrollHeight - chatContainer.clientHeight;
+    }
+    measureBottomGap();
+  }
+
   $effect(() => {
     if (!showErrorModal) return;
     return registerBackHandler(() => {
@@ -264,17 +277,34 @@
       const existingMessageIds = new Set(
         chatState.currentMessages.map((message) => message.id?.toString()),
       );
-      await addMessage('user', prompt);
-
-      const sentMessage = chatState.currentMessages.find(
-        (message) => message.role === 'user'
-          && message.id != null
-          && !existingMessageIds.has(message.id.toString()),
-      );
-      if (sentMessage?.id != null) {
+      try {
+        // addMessage inserts the local user row synchronously, then persists it.
+        const saving = addMessage('user', prompt);
+        const sentMessage = chatState.currentMessages.find(
+          (message) => message.role === 'user'
+            && message.id != null
+            && !existingMessageIds.has(message.id.toString()),
+        );
         await tick();
-        positionSentChatMessage(chatContainer, sentMessage.id.toString());
+        if (sentMessage?.id != null && chatState.activeChatId === chatId && !sendCancelled) {
+          positionSentChatMessage(chatContainer, sentMessage.id.toString());
+        }
+        await saving;
+      } catch (err) {
+        isGenerating = false;
+        if (chatState.activeChatId !== chatId || sendCancelled) return;
+        // Keep a newer draft intact; otherwise restore the failed send verbatim.
+        if (!inputText) inputText = prompt;
+        pendingUserMessage = '';
+        errorMessage = describeGenerationError(err).message;
+        showErrorModal = true;
+        return;
       }
+    }
+
+    if (sendCancelled || chatState.activeChatId !== chatId) {
+      isGenerating = false;
+      return;
     }
 
     const generationOptions: GenerationOptions = {
@@ -632,7 +662,7 @@
     onSend={sendMessage}
     onCancelEdit={handleEditCancel}
     onStop={stopGeneration}
-    onResize={(height) => { composerHeight = height; }}
+    onResize={handleComposerResize}
   />
 
 </div>

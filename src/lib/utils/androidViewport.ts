@@ -20,6 +20,9 @@ export function androidViewport(node: HTMLElement) {
     const focused = document.activeElement;
     if (!(focused instanceof HTMLElement) || !node.contains(focused)) return;
     if (!focused.matches('input:not([type="hidden"]), textarea, [contenteditable="true"]')) return;
+    // The bottom-anchored chat composer limits itself to the visible viewport.
+    // Avoid competing constraints and ancestor layout reads during IME animation.
+    if (focused.id === 'chat-input-textarea') return;
 
     const viewport = node.getBoundingClientRect();
     for (let parent = focused.parentElement; parent && node.contains(parent); parent = parent.parentElement) {
@@ -46,9 +49,12 @@ export function androidViewport(node: HTMLElement) {
     frame = 0;
     const viewport = window.visualViewport;
     const height = `${viewport?.height ?? window.innerHeight}px`;
-    node.style.height = height;
-    node.style.top = `${viewport?.offsetTop ?? 0}px`;
-    node.style.setProperty('--app-visible-height', height);
+    if (node.style.height !== height) {
+      node.style.height = height;
+      node.style.setProperty('--app-visible-height', height);
+    }
+    const top = `${viewport?.offsetTop ?? 0}px`;
+    if (node.style.top !== top) node.style.top = top;
     keepFocusedFieldVisible();
   }
 
