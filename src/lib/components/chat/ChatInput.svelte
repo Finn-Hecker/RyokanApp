@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import type { InteractionMode } from '$lib/stores/appState.svelte';
   import * as m from '$lib/paraglide/messages';
 
   let {
@@ -7,6 +8,7 @@
     isSummarizing = false,
     isEditing = false,
     isSavingEdit = false,
+    interactionMode = 'desktop',
     value = $bindable(''),
     placeholder = undefined,
     onSend,
@@ -18,6 +20,7 @@
     isSummarizing?: boolean;
     isEditing?: boolean;
     isSavingEdit?: boolean;
+    interactionMode?: InteractionMode;
     value?: string;
     placeholder?: string;
     onSend?: () => void;
@@ -27,42 +30,64 @@
   } = $props();
 
   let inputLayer: HTMLDivElement;
+  let textarea = $state<HTMLTextAreaElement>();
+  let resizeFrame = 0;
+
+  // Also resize when sending, opening/cancelling an edit or restoring a draft
+  // changes the bound value without a native input event.
+  $effect(() => {
+    void value;
+    if (textarea) scheduleResize();
+  });
+
+  function scheduleResize() {
+    if (resizeFrame) return;
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = 0;
+      if (!textarea) return;
+      // One measurement per frame; no animation or forced offsetHeight read.
+      textarea.style.height = '44px';
+      if (textarea.value) {
+        textarea.style.height = `${Math.min(textarea.scrollHeight, 400)}px`;
+      }
+    });
+  }
 
   onMount(() => {
-    const resizeObserver = new ResizeObserver(([entry]) => {
-      onResize?.(entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height);
+    let previousWidth = 0;
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.target === inputLayer) {
+          onResize?.(entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height);
+        } else if (entry.contentRect.width !== previousWidth) {
+          previousWidth = entry.contentRect.width;
+          scheduleResize();
+        }
+      }
     });
     resizeObserver.observe(inputLayer);
-    return () => resizeObserver.disconnect();
+    if (textarea) resizeObserver.observe(textarea);
+    return () => {
+      resizeObserver.disconnect();
+      if (resizeFrame) cancelAnimationFrame(resizeFrame);
+    };
   });
 
   function handleSend() {
     if (value.trim().length > 0) {
       onSend?.();
-      setTimeout(() => {
-        const ta = document.getElementById('chat-input-textarea');
-        if (ta) ta.style.height = '44px';
-      }, 10);
     }
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
+    if (e.key !== 'Enter' || e.shiftKey || e.isComposing || e.keyCode === 229) return;
+    // Native mobile mode is independent of viewport width (e.g. landscape).
+    // A coarse primary pointer also covers touch devices using a virtual keyboard.
+    if (interactionMode === 'mobile' || window.matchMedia('(pointer: coarse)').matches) return;
+    e.preventDefault();
+    if (!isGenerating && !isSavingEdit) {
       handleSend();
     }
-  }
-
-  function handleInput(e: Event) {
-    const target = e.target as HTMLTextAreaElement;
-    const currentHeight = target.style.height;
-    target.style.transition = 'none';
-    target.style.height = '44px';
-    const newHeight = Math.min(target.scrollHeight, 400);
-    target.style.height = currentHeight || '44px';
-    void target.offsetHeight;
-    target.style.transition = 'height 0.2s cubic-bezier(0.2, 0, 0, 1)';
-    target.style.height = newHeight + 'px';
   }
 </script>
 
@@ -78,9 +103,11 @@
 
         <textarea
           id="chat-input-textarea"
+          bind:this={textarea}
           bind:value
           onkeydown={handleKeydown}
-          oninput={handleInput}
+          oninput={scheduleResize}
+          enterkeyhint="enter"
           maxlength="4000"
           placeholder={isSummarizing
             ? m.chat_summarizing_memories()
@@ -95,7 +122,6 @@
             max-height: 400px;
             overflow-y: auto;
             scrollbar-width: none;
-            transition: height 0.2s cubic-bezier(0.2, 0, 0, 1);
           "
         ></textarea>
 

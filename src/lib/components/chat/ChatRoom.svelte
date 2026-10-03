@@ -624,6 +624,7 @@
 
   <ChatInput
     bind:value={inputText}
+    interactionMode={appState.interactionMode}
     isGenerating={isBlocked}
     isSummarizing={summaryState.isSummarizing}
     isEditing={editingUserMessage}
