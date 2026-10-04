@@ -8,7 +8,6 @@
   import { chatState, openHistoryChat, loadAllConversations, loadMoreConversations, loadMoreFolderConversations, deleteConversation, renameConversation, togglePinConversation, createChatFolder, renameChatFolder, setChatFolderCollapsed, deleteChatFolder, persistSidebarOrganization, type Conversation, type ConversationMode } from '$lib/stores/chatStore.svelte';
   import { appState } from '$lib/stores/appState.svelte';
   import { navigateTo, registerBackHandler } from '$lib/stores/navigation';
-  import { openPersistentSession } from '$lib/stores/multiplayer.svelte';
   import * as m from '$lib/paraglide/messages';
   import { onMount, onDestroy, untrack } from 'svelte';
 
@@ -196,6 +195,7 @@
     if (!conversation || conversation.mode !== mode) return;
     await openHistoryChat(id);
     if (conversation?.mode === 'multiplayer') {
+      const { openPersistentSession } = await import('$lib/stores/multiplayer.svelte');
       await openPersistentSession(id, appState.activeCharacter);
       navigateTo('multiplayerRoom');
     } else {

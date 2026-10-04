@@ -1,4 +1,5 @@
 {
+  "view_load_failed": "This view could not be loaded.",
   "settings_service_tier_label": "Service tier",
   "settings_service_tier_hint": "Auto keeps the existing API behavior. Standard requests regular processing. Flex can cost less, but may be slower or unavailable depending on the model. Ryokan does not retry with Standard automatically. Explicit selections override service_tier in custom parameters.",
   "settings_service_tier_unsupported": "This tier is not supported for this provider/API. The selection is saved but is not sent.",

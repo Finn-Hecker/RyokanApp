@@ -14,6 +14,7 @@
   
   let {
     pageTitle,
+    animateEntrance = true,
     showSidebar = false,
     sidebarWidth = "w-64",
     maxContentWidth = "max-w-7xl",
@@ -22,6 +23,7 @@
     header
   }: {
     pageTitle: string;
+    animateEntrance?: boolean;
     showSidebar?: boolean;
     sidebarWidth?: string;
     maxContentWidth?: string;
@@ -31,6 +33,10 @@
   } = $props();
 
   let isMobileSidebarOpen = $state(false);
+
+  function enterPage(node: Element) {
+    return animateEntrance ? fade(node, { duration: 200 }) : { duration: 0 };
+  }
 
   $effect(() => {
     if (!showSidebar || !isMobileSidebarOpen) return;
@@ -44,7 +50,7 @@
 
 <div 
   class="h-full w-full flex overflow-hidden"
-  in:fade={{ duration: 200 }}
+  in:enterPage
   role="region"
   aria-label={pageTitle}
 >

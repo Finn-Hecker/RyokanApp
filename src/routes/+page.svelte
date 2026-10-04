@@ -2,13 +2,9 @@
   import { onMount, tick } from 'svelte';
   import { appState } from '$lib/stores/appState.svelte';
   import CharacterLobby from '$lib/components/lobby/CharacterLobby.svelte';
-  import ChatRoom from '$lib/components/chat/ChatRoom.svelte';
-  import Creator from '$lib/components/editor/Editor.svelte';
-  import SettingsPage from '$lib/components/settings/SettingsPage.svelte';
-  import Onboarding from '$lib/components/Onboarding.svelte';
-  import ListView   from '$lib/components/list/ListView.svelte';
-  import PlayHub   from '$lib/components/play/PlayLobby.svelte';
-  import Multiplayer   from '$lib/components/play/MultiplayerRoom.svelte';
+  import LazyView from '$lib/components/LazyView.svelte';
+  import { createLazyView } from '$lib/utils/lazyView';
+  import { prefetchLazyViews } from '$lib/utils/prefetchLazyViews';
   import { getAllSettings } from '$lib/utils/settings';
   import { onBackButtonPress } from '@tauri-apps/api/app';
   import { handleBackNavigation } from '$lib/stores/navigation';
@@ -19,9 +15,31 @@
   import * as m from '$lib/paraglide/messages';
   import { androidViewport } from '$lib/utils/androidViewport';
 
+  const onboarding = createLazyView(() => import('$lib/components/Onboarding.svelte'));
+  const editor = createLazyView(() => import('$lib/components/editor/Editor.svelte'));
+  const settings = createLazyView(() => import('$lib/components/settings/SettingsPage.svelte'));
+  const chat = createLazyView(() => import('$lib/components/chat/ChatRoom.svelte'));
+  const play = createLazyView(() => import('$lib/components/play/PlayLobby.svelte'));
+  const multiplayer = createLazyView(() => import('$lib/components/play/MultiplayerRoom.svelte'));
+  const list = createLazyView(() => import('$lib/components/list/ListView.svelte'));
+
+  const views = {
+    lobby: undefined,
+    create: editor,
+    roleEditor: editor,
+    worldInfoEditor: editor,
+    settings, chat, play, multiplayerRoom: multiplayer, list,
+  };
+  const lazyView = $derived(views[appState.currentView]);
+
   let loaded = $state(false); 
   let viewContainer = $state<HTMLDivElement>();
   let backTransition: Animation | undefined;
+
+  $effect(() => {
+    if (!loaded || appState.isOnboarding) return;
+    return prefetchLazyViews([chat, settings, editor, multiplayer, play]);
+  });
 
   async function handleAndroidBack() {
     const previousView = appState.currentView;
@@ -83,7 +101,9 @@
 {#if !loaded}
   <div class="h-screen w-screen bg-ryokan-bg"></div>
   {:else if appState.isOnboarding}
-  <Onboarding />
+  <div class="h-screen w-screen bg-ryokan-bg">
+    <LazyView view={onboarding} />
+  </div>
 {:else}
   <main
     use:androidViewport
@@ -95,18 +115,10 @@
     <div bind:this={viewContainer} class="flex-1 min-h-0 overflow-hidden relative z-0">
       {#if appState.currentView === 'lobby'}
         <CharacterLobby />
-      {:else if appState.currentView === 'create' || appState.currentView === 'roleEditor' || appState.currentView === 'worldInfoEditor'}
-        <Creator />
-      {:else if appState.currentView === 'settings'}
-        <SettingsPage /> 
-      {:else if appState.currentView === 'chat'}
-        <ChatRoom />
-      {:else if appState.currentView === 'play'}
-        <PlayHub  />
-      {:else if appState.currentView === 'multiplayerRoom'}
-        <Multiplayer  />
-      {:else if appState.currentView === 'list'}
-        <ListView  />
+      {:else if lazyView}
+        {#key lazyView}
+          <LazyView view={lazyView} />
+        {/key}
       {/if}
     </div>
   </main>

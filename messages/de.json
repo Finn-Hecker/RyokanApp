@@ -1,4 +1,5 @@
 {
+  "view_load_failed": "Diese Ansicht konnte nicht geladen werden.",
   "settings_service_tier_label": "Service Tier",
   "settings_service_tier_hint": "Auto behält das bisherige API-Verhalten bei. Standard fordert reguläre Verarbeitung an. Flex kann günstiger sein, je nach Modell aber länger dauern oder nicht verfügbar sein. Ryokan wiederholt die Anfrage nicht automatisch mit Standard. Eine explizite Auswahl hat Vorrang vor service_tier in benutzerdefinierten Parametern.",
   "settings_service_tier_unsupported": "Dieser Tier wird für diesen Provider/diese API nicht unterstützt. Die Auswahl wird gespeichert, aber nicht gesendet.",

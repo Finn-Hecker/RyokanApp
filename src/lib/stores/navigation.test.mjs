@@ -61,8 +61,12 @@ function page({ reducedMotion = false, deferredListener = false, userAgent = 'An
   const animations = [];
   let mount, back, resolveListener;
   let unregistered = 0;
+  let prefetchEffect;
+  const prefetchCalls = [];
   Object.assign(context, {
-    console, $state: value => value, tick: async () => {},
+    console, $state: value => value, $derived: value => value, $effect: callback => { prefetchEffect = callback; }, tick: async () => {},
+    prefetchLazyViews: views => { prefetchCalls.push(views); return () => {}; },
+    createLazyView: () => ({ component: undefined, load: () => { throw new Error('views must not load during page setup'); } }),
     window: { matchMedia: () => ({ matches: reducedMotion }) },
     navigator: { userAgent },
     onMount: callback => { mount = callback; },
@@ -81,8 +85,23 @@ function page({ reducedMotion = false, deferredListener = false, userAgent = 'An
   evaluate(source, context);
   vm.runInContext('viewContainer = container', context);
   return { context, invocations, animations, mount: () => mount(), back: payload => back(payload),
-    resolveListener: () => resolveListener(), unregistered: () => unregistered };
+    resolveListener: () => resolveListener(), unregistered: () => unregistered,
+    runPrefetchEffect: () => prefetchEffect(), prefetchCalls };
 }
+
+test('background prefetch starts only in the ready app, follows priority and excludes onboarding', () => {
+  const h = page();
+  assert.equal(h.runPrefetchEffect(), undefined);
+  assert.equal(h.prefetchCalls.length, 0);
+  vm.runInContext('loaded = true; appState.isOnboarding = true', h.context);
+  assert.equal(h.runPrefetchEffect(), undefined);
+  assert.equal(h.prefetchCalls.length, 0);
+  vm.runInContext('appState.isOnboarding = false', h.context);
+  assert.equal(typeof h.runPrefetchEffect(), 'function');
+  const expected = vm.runInContext('[chat, settings, editor, multiplayer, play]', h.context);
+  assert.deepEqual(Array.from(h.prefetchCalls[0]), Array.from(expected));
+  assert.ok(!h.prefetchCalls[0].includes(vm.runInContext('onboarding', h.context)));
+});
 
 for (const view of ['lobby', 'play']) {
   test(`back closes the sidebar before leaving ${view}`, () => {

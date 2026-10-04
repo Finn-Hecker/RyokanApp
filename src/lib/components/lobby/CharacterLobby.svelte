@@ -251,6 +251,7 @@
 <PageLayout
   pageTitle={greeting}
   showSidebar={true}
+  animateEntrance={false}
   maxContentWidth="max-w-7xl"
   {sidebar}
   {header}
