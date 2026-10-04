@@ -16,6 +16,7 @@
     rolePolicy = $bindable('open'),
     bundledRoles = [],
     avatarPreview = null,
+    snapshotMode = false,
     onAvatarFile,
     onAddRole,
     onRemoveRole,
@@ -29,6 +30,7 @@
     rolePolicy?: RolePolicy;
     bundledRoles?: BundledRoleSnapshot[];
     avatarPreview?: string | null;
+    snapshotMode?: boolean;
     onAvatarFile?: (file: File) => void;
     onAddRole?: (roleId: string) => Promise<void> | void;
     onRemoveRole?: (snapshotId: string) => Promise<void> | void;
@@ -45,6 +47,7 @@
   bind:prompt
   bind:greeting
   bind:worldInfoIds
+  showAlternateGreetings={!snapshotMode}
   alternate_greetings={alternate_greetings}
   onAltGreetingsChange={(updated) => (alternate_greetings = updated)}
   onAltGreetingsAdd={() =>
@@ -56,6 +59,8 @@
   }
 />
 
+{#if !snapshotMode}
 <BundledRolesPicker bind:rolePolicy {bundledRoles} onAdd={onAddRole} onRemove={onRemoveRole} />
 
 <CharacterPlayMode bind:playMode />
+{/if}

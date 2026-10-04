@@ -88,6 +88,59 @@ pub async fn get_chat_character_snapshot(
     Ok(snapshot)
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatCharacterEdit {
+    name: String,
+    prompt: String,
+    greeting: String,
+    initials: String,
+    #[serde(default)]
+    avatar_url: Option<String>,
+    #[serde(rename = "world_info_ids", default)]
+    world_info_ids: Vec<String>,
+}
+
+fn update_character_snapshot_row(
+    conn: &rusqlite::Connection,
+    chat_id: &str,
+    edit: ChatCharacterEdit,
+) -> Result<Value, String> {
+    if edit.name.trim().is_empty() || edit.prompt.trim().is_empty() {
+        return Err("Character name and prompt are required".into());
+    }
+    let raw: Option<String> = conn.query_row(
+        "SELECT character_snapshot FROM conversations WHERE id = ?1 AND mode = 'singleplayer'",
+        params![chat_id], |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+    let mut snapshot: Value = serde_json::from_str(
+        &raw.ok_or_else(|| "Chat has no character snapshot".to_string())?
+    ).map_err(|e| e.to_string())?;
+    let fields = snapshot.as_object_mut().ok_or_else(|| "Invalid character snapshot".to_string())?;
+    // Preserve identity, appearance metadata and any future snapshot fields.
+    // Neither the library card nor the chat's character_id is ever written.
+    let edited = serde_json::to_value(edit).map_err(|e| e.to_string())?;
+    fields.extend(edited.as_object().unwrap().clone());
+    conn.execute(
+        "UPDATE conversations SET character_snapshot = ?1 WHERE id = ?2 AND mode = 'singleplayer'",
+        params![snapshot.to_string(), chat_id],
+    ).map_err(|e| e.to_string())?;
+    Ok(snapshot)
+}
+
+#[tauri::command]
+pub async fn update_chat_character_snapshot(
+    app: AppHandle,
+    chat_id: String,
+    snapshot: ChatCharacterEdit,
+) -> Result<Value, String> {
+    let mut conn = get_connection(&app)?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let saved = update_character_snapshot_row(&tx, &chat_id, snapshot)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(saved)
+}
+
 /// Represents a chat session with an AI character in the database.
 #[derive(Serialize)]
 pub struct Conversation {
@@ -505,6 +558,49 @@ mod tests {
         ChatRoleSnapshot, RoleSelection,
     };
     use rusqlite::{params, Connection};
+
+    #[test]
+    fn snapshot_edits_are_chat_local_and_reject_missing_or_multiplayer_chats() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE characters (id TEXT PRIMARY KEY, name TEXT, desc TEXT);
+             INSERT INTO characters VALUES ('card', 'Library', 'Library prompt');
+             CREATE TABLE conversations (id TEXT PRIMARY KEY, character_id TEXT, mode TEXT, character_snapshot TEXT);"
+        ).unwrap();
+        let original = serde_json::json!({
+            "id": "card", "name": "Original", "prompt": "Original prompt", "greeting": "Hello",
+            "initials": "O", "color": "blue", "avatarUrl": null, "world_info_ids": ["world"],
+            "future_field": "preserved"
+        });
+        for (id, mode) in [("chat", "singleplayer"), ("sibling", "singleplayer"), ("multi", "multiplayer")] {
+            conn.execute("INSERT INTO conversations VALUES (?1, 'card', ?2, ?3)",
+                params![id, mode, original.to_string()]).unwrap();
+        }
+        let edit = || serde_json::from_value::<super::ChatCharacterEdit>(serde_json::json!({
+            "id": "different-card", "name": "Edited", "prompt": "Edited prompt", "greeting": "New greeting",
+            "initials": "E", "avatarUrl": "data:image/png;base64,test", "world_info_ids": ["new-world"]
+        })).unwrap();
+        let saved = super::update_character_snapshot_row(&conn, "chat", edit()).unwrap();
+        assert_eq!(saved["prompt"], "Edited prompt");
+        assert_eq!(saved["id"], "card");
+        assert_eq!(saved["color"], "blue");
+        assert_eq!(saved["future_field"], "preserved");
+        assert_eq!(saved["world_info_ids"], serde_json::json!(["new-world"]));
+        let read = |id| conn.query_row("SELECT character_snapshot FROM conversations WHERE id = ?1",
+            params![id], |row| row.get::<_, String>(0)).unwrap();
+        assert_eq!(read("chat"), saved.to_string());
+        assert_eq!(read("sibling"), original.to_string());
+        assert!(super::update_character_snapshot_row(&conn, "multi", edit()).is_err());
+        assert!(super::update_character_snapshot_row(&conn, "missing", edit()).is_err());
+        assert_eq!(read("multi"), original.to_string());
+        let mut invalid = edit();
+        invalid.name = " ".into();
+        assert!(super::update_character_snapshot_row(&conn, "chat", invalid).is_err());
+        assert_eq!(read("chat"), saved.to_string());
+        let card: (String, String) = conn.query_row("SELECT name, desc FROM characters WHERE id = 'card'",
+            [], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
+        assert_eq!(card, ("Library".into(), "Library prompt".into()));
+    }
 
     #[test]
     fn character_backfill_is_immutable_after_card_edits_and_deletion() {

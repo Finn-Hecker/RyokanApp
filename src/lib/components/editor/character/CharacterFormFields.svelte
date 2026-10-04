@@ -11,6 +11,7 @@
     greeting = $bindable(''),
     alternate_greetings = $bindable([]),
     worldInfoIds = $bindable([]),
+    showAlternateGreetings = true,
     onAltGreetingsChange,
     onAltGreetingsAdd,
     onAltGreetingsRemove
@@ -20,6 +21,7 @@
     greeting?: string;
     alternate_greetings?: string[];
     worldInfoIds?: string[];
+    showAlternateGreetings?: boolean;
     onAltGreetingsChange?: (updated: string[]) => void;
     onAltGreetingsAdd?: () => void;
     onAltGreetingsRemove?: (index: number) => void;
@@ -81,12 +83,14 @@
     ></textarea>
   </div>
 
+  {#if showAlternateGreetings}
   <AltGreetings
     greetings={alternate_greetings}
     onChange={onAltGreetingsChange}
     onAdd={onAltGreetingsAdd}
     onRemove={onAltGreetingsRemove}
   />
+  {/if}
 
   <WorldInfoPicker bind:selectedIds={worldInfoIds} />
 

@@ -44,6 +44,17 @@ function characterSnapshot(character: Character): ChatCharacterSnapshot {
     };
 }
 
+/** Save only the chat-owned card, and publish it after persistence succeeds. */
+export async function updateChatCharacterSnapshot(chatId: string, snapshot: ChatCharacterSnapshot): Promise<void> {
+    const saved = await invoke<ChatCharacterSnapshot>('update_chat_character_snapshot', {
+        chatId,
+        snapshot: { ...snapshot, world_info_ids: [...(snapshot.world_info_ids ?? [])] },
+    });
+    if (chatState.activeChatId === chatId) {
+        appState.activeCharacter = saved;
+    }
+}
+
 export interface RoleSelection {
     source: 'global' | 'bundled';
     id: string;

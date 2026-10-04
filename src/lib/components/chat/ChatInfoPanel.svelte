@@ -2,8 +2,11 @@
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import * as m from '$lib/paraglide/messages';
   import { getLocale } from '$lib/paraglide/runtime';
-  import { chatState } from '$lib/stores/chatStore.svelte';
+  import { chatState, updateChatCharacterSnapshot, type ChatCharacterSnapshot } from '$lib/stores/chatStore.svelte';
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
+  import CharacterTab from '$lib/components/editor/character/CharacterTab.svelte';
+  import { readImageAsDataUrl } from '$lib/components/editor/character/characterLogic';
+  import Button from '$lib/components/ui/Button.svelte';
 
   let {
     character = null,
@@ -18,6 +21,61 @@
   let activeConversation = $derived(
     chatState.conversations.find(c => c.id === chatState.activeChatId) ?? null
   );
+
+  let editingChatId = $state<string | null>(null);
+  let draft = $state<ChatCharacterSnapshot | null>(null);
+  let isSaving = $state(false);
+  let isReadingAvatar = $state(false);
+  let editError = $state('');
+  let canEditSnapshot = $derived(activeConversation?.mode === 'singleplayer' && !!character);
+
+  $effect(() => {
+    if (editingChatId && editingChatId !== chatState.activeChatId) {
+      draft = null;
+      editingChatId = null;
+      editError = '';
+    }
+  });
+
+  function beginEdit() {
+    if (!canEditSnapshot || !chatState.activeChatId) return;
+    editingChatId = chatState.activeChatId;
+    draft = { ...character, world_info_ids: [...(character.world_info_ids ?? [])] };
+    editError = '';
+  }
+
+  async function handleAvatarFile(file: File) {
+    const currentDraft = draft;
+    isReadingAvatar = true;
+    try {
+      const avatarUrl = await readImageAsDataUrl(file);
+      if (draft === currentDraft && draft) draft.avatarUrl = avatarUrl;
+    } catch {
+      editError = 'Das Avatar-Bild konnte nicht geladen werden.';
+    } finally {
+      isReadingAvatar = false;
+    }
+  }
+
+  async function saveSnapshot() {
+    if (!draft || !editingChatId || isSaving || isReadingAvatar || !draft.name.trim() || !draft.prompt.trim()) return;
+    isSaving = true;
+    editError = '';
+    const currentDraft = draft;
+    try {
+      await updateChatCharacterSnapshot(editingChatId, {
+        ...draft, initials: draft.name.substring(0, 1).toUpperCase(),
+      });
+      if (draft === currentDraft) {
+        draft = null;
+        editingChatId = null;
+      }
+    } catch {
+      if (draft === currentDraft) editError = 'Der Charakter-Snapshot konnte nicht gespeichert werden. Bitte erneut versuchen.';
+    } finally {
+      isSaving = false;
+    }
+  }
 
   const dateFormatter = new Intl.DateTimeFormat(getLocale(), {
     dateStyle: 'medium',
@@ -119,7 +177,25 @@
 
     <div class="info-body">
       {#if activeTab === 'character'}
-        {#if character}
+        {#if draft}
+          <p class="info-hint">Änderungen gelten nur für diesen Chat.</p>
+          <fieldset disabled={isSaving || isReadingAvatar} class="border-0 p-0 m-0 min-w-0">
+            <CharacterTab
+              snapshotMode
+              bind:name={draft.name}
+              bind:prompt={draft.prompt}
+              bind:greeting={draft.greeting}
+              bind:worldInfoIds={draft.world_info_ids}
+              avatarPreview={draft.avatarUrl ?? null}
+              onAvatarFile={handleAvatarFile}
+            />
+          </fieldset>
+          {#if editError}<p role="alert" class="text-sm text-red-400 mt-4">{editError}</p>{/if}
+          <div class="flex justify-end gap-2 mt-4">
+            <Button disabled={isSaving || isReadingAvatar} onclick={() => { draft = null; editingChatId = null; editError = ''; }}>Abbrechen</Button>
+            <Button disabled={isSaving || isReadingAvatar || !draft.name.trim() || !draft.prompt.trim()} onclick={saveSnapshot}>{isSaving ? 'Speichert…' : 'Speichern'}</Button>
+          </div>
+        {:else if character}
           <div class="info-head">
             <div class="info-avatar" style="--char-color: {character?.colorHex ?? '#6366f1'}">
               {#if character.avatarUrl}
@@ -134,6 +210,12 @@
               <h3>{character.name}</h3>
             </div>
           </div>
+
+          {#if canEditSnapshot}
+            <div class="flex justify-end mb-4">
+              <Button onclick={beginEdit}>Charakter bearbeiten</Button>
+            </div>
+          {/if}
 
           <div class="info-fields">
             {#if character.prompt}
