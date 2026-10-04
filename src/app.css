@@ -60,6 +60,14 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Apply to scroll containers and top-layer dialogs too: they can handle gestures
+   before the browser consults the document root. Keep one-finger scrolling. */
+html.android-no-zoom,
+html.android-no-zoom body,
+html.android-no-zoom body * {
+  touch-action: pan-x pan-y;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
 }
