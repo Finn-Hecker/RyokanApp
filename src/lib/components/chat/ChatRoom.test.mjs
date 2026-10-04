@@ -48,6 +48,52 @@ test('composer growth and shrink keep the chat end visible without moving older 
   assert.equal(container.scrollTop, 200);
 });
 
+test('opening and switching chats scroll to the newest message after rendering', async () => {
+  const effects = [];
+  let render;
+  const c = room({
+    $effect: callback => effects.push(callback),
+    tick: () => new Promise(resolve => { render = resolve; }),
+  });
+  const container = { clientHeight: 400, scrollHeight: 1000, scrollTop: 0 };
+  c.context.container = container;
+  c.run('chatContainer = container');
+  assert.equal(effects[0](), undefined, 'wait for initial history loading');
+  c.run('chatReady = true');
+  const cleanup = effects[0]();
+  assert.equal(container.scrollTop, 0);
+  container.scrollHeight = 1400;
+  render();
+  await Promise.resolve();
+  assert.equal(container.scrollTop, 1000);
+  assert.equal(c.run('bottomGap'), 0);
+
+  cleanup();
+  c.context.chatState.activeChatId = 'other-chat';
+  container.scrollHeight = 2200;
+  effects[0]();
+  render();
+  await Promise.resolve();
+  assert.equal(container.scrollTop, 1800);
+});
+
+test('a pending opening scroll is cancelled when the chat view is left', async () => {
+  const effects = [];
+  let render;
+  const c = room({
+    $effect: callback => effects.push(callback),
+    tick: () => new Promise(resolve => { render = resolve; }),
+  });
+  const container = { clientHeight: 400, scrollHeight: 1400, scrollTop: 200 };
+  c.context.container = container;
+  c.run('chatContainer = container; chatReady = true');
+  const cleanup = effects[0]();
+  cleanup();
+  render();
+  await Promise.resolve();
+  assert.equal(container.scrollTop, 200);
+});
+
 test('a failed save restores the draft and ends generating before any API request', async () => {
   const c = room({ addMessage: async () => { throw new Error('Disk error'); } });
   c.run(`inputText = ${JSON.stringify('draft\nmessage')}`);

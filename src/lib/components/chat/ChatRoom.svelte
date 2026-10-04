@@ -59,6 +59,21 @@
   let chatResizeObserver: ResizeObserver | undefined;
   let previousChatHeight = 0;
   let bottomGap = Number.POSITIVE_INFINITY;
+  let chatReady = $state(false);
+
+  // Only opening or switching conversations should move to the newest message.
+  // Wait for the loaded history to reach the DOM before measuring its height.
+  $effect(() => {
+    const chatId = chatState.activeChatId;
+    if (!chatReady || !chatId || !chatContainer) return;
+    let cancelled = false;
+    void tick().then(() => {
+      if (cancelled || chatState.activeChatId !== chatId || !chatContainer) return;
+      chatContainer.scrollTop = chatContainer.scrollHeight - chatContainer.clientHeight;
+      measureBottomGap();
+    });
+    return () => { cancelled = true; };
+  });
 
   function measureBottomGap() {
     if (!chatContainer) return;
@@ -108,6 +123,7 @@
       chatResizeObserver = new ResizeObserver(handleChatResize);
       chatResizeObserver.observe(chatContainer);
     }
+    chatReady = true;
 
     const win = getCurrentWindow();
     unlistenClose = await win.onCloseRequested(async (event) => {
