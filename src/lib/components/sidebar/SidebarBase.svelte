@@ -1305,7 +1305,7 @@
 {/snippet}
 
 {#if layout === 'inline'}
-  <aside class="sidebar-shell w-64 h-full border-r border-white/5 flex flex-col shrink-0">
+  <aside class="sidebar-shell w-64 h-full border-r border-white/5 flex flex-col shrink-0" oncontextmenu={(event) => { if (interactionMode === 'desktop') event.preventDefault(); }}>
     <div class="sidebar-header">
       <h2 class="text-lg font-medium text-ryokan-accent">{m.history_title()}</h2>
     </div>
@@ -1323,7 +1323,7 @@
     class="fixed inset-0 w-full h-full bg-black/60 z-40 cursor-pointer border-none"
   ></button>
 
-  <aside class="sidebar-shell fixed left-0 top-0 bottom-0 w-72 border-r border-white/5 shadow-2xl z-50 flex flex-col bg-ryokan-sidebar">
+  <aside class="sidebar-shell fixed left-0 top-0 bottom-0 w-72 border-r border-white/5 shadow-2xl z-50 flex flex-col bg-ryokan-sidebar" oncontextmenu={(event) => { if (interactionMode === 'desktop') event.preventDefault(); }}>
     <div class="sidebar-header sidebar-header--drawer flex justify-between items-center shrink-0">
       <h2 class="text-lg font-medium text-ryokan-accent">{m.history_title()}</h2>
       <button onclick={close} aria-label={m.history_close_label()} class="sidebar-close-button">✕</button>
