@@ -376,6 +376,17 @@ fn model_catalogs_use_only_advertised_context_and_capabilities() {
 }
 
 #[test]
+fn nanogpt_model_retains_normalized_prices() {
+    let model = nanogpt::model(&json!({"id":"priced","pricing":{
+        "prompt":2.5,"completion":10,"unit":"per_million_tokens","currency":"USD"
+    }})).unwrap();
+    let pricing = model.pricing.unwrap();
+    assert_eq!(pricing.prompt.as_deref(), Some("0.0000025"));
+    assert_eq!(pricing.completion.as_deref(), Some("0.00001"));
+    assert_eq!(pricing.source.as_deref(), Some("NanoGPT"));
+}
+
+#[test]
 fn native_defaults_and_summary_policy_stay_consistent_with_frontend_reserves() {
     let mut payload = request("anthropic");
     payload.request_parameter_config.max_tokens_enabled = false;

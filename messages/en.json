@@ -98,6 +98,8 @@
   "settings_model_category_all": "All",
   "settings_model_category_recent": "Recent",
   "settings_model_context": "{size} context",
+  "settings_model_price_hint": "Standard text prices in USD per million tokens. Source: {source}. Tier, modality and extra features may change the price.",
+  "settings_model_price_tiered": "Starting prices; longer contexts have higher rates.",
   "settings_model_category_free": "Free",
   "settings_model_category_favorites": "Favorites",
   "settings_model_available_count": "{count} models available",

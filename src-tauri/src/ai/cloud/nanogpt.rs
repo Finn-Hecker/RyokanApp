@@ -60,6 +60,7 @@ pub(super) fn model(value: &Value) -> Option<ModelInfo> {
     model.thinking_supported = value
         .pointer("/capabilities/reasoning")
         .and_then(Value::as_bool);
+    model.pricing = value.get("pricing").and_then(super::super::pricing::nanogpt_price);
     Some(model)
 }
 

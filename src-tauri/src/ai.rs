@@ -10,6 +10,7 @@ use tauri::{Emitter, Window};
 use tokio_util::sync::CancellationToken;
 
 mod cloud;
+mod pricing;
 
 const PROTECTED_API_PARAMETER_KEYS: [&str; 3] = ["messages", "model", "stream"];
 
@@ -666,6 +667,10 @@ pub struct ModelReasoningInfo {
 pub struct ModelPricing {
     prompt: Option<String>,
     completion: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    tiered: bool,
 }
 
 fn normalize_modalities(modalities: Vec<String>) -> Vec<String> {
@@ -758,7 +763,9 @@ fn normalize_models(entries: Vec<ModelEntry>, text_output_only: bool) -> Vec<Mod
 #[tauri::command]
 pub async fn fetch_models(url: String, api_key: String, provider_kind: Option<String>) -> Result<Vec<ModelInfo>, String> {
     if cloud::is_provider(provider_kind.as_deref()) {
-        return cloud::fetch_models(&url, &api_key, provider_kind.as_deref().unwrap()).await;
+        let mut models = cloud::fetch_models(&url, &api_key, provider_kind.as_deref().unwrap()).await?;
+        pricing::enrich(&mut models, &url, provider_kind.as_deref()).await;
+        return Ok(models);
     }
     let text_output_only = is_openrouter_url(&url);
     let mut req = CLIENT.get(format!("{}/models", url));
@@ -815,6 +822,7 @@ pub async fn fetch_models(url: String, api_key: String, provider_kind: Option<St
             }
         }
     }
+    pricing::enrich(&mut models, &url, provider_kind.as_deref()).await;
     Ok(models)
 }
 

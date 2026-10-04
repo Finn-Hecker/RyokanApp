@@ -5,7 +5,7 @@
   import type { ProviderKind } from '$lib/stores/appState.svelte';
   import type { ModelInfo } from '$lib/utils/settings';
   import { curatedProviderGroupForModel, curatedProviderGroups } from '$lib/utils/modelProviderGroups';
-  import { formatContextTokens, getRecentModels, modelPrices } from '$lib/utils/modelPickerData';
+  import { formatContextTokens, formatModelPrice, getRecentModels, modelPrices } from '$lib/utils/modelPickerData';
 
   let {
     models, metadata, selectedModel, providerKind, loading, error, onSelect, onRetry, onClose,
@@ -74,15 +74,22 @@
   }
 
   function contextLabel(model: string): string {
-    if (providerKind !== 'openrouter') return '';
+    if (providerKind !== 'openrouter' && providerKind !== 'nanogpt') return '';
     const size = formatContextTokens(metadata[model]?.contextLength);
     return size ? m.settings_model_context({ size }) : '';
   }
 
   function priceLabel(model: string): string {
-    if (providerKind !== 'openrouter' || isFree(model)) return '';
+    if (isFree(model)) return '';
     const prices = modelPrices(metadata[model]);
-    return prices ? `$${prices.input.toFixed(2)}/M in · $${prices.output.toFixed(2)}/M out` : '';
+    const prefix = metadata[model]?.pricing?.tiered ? '≥ ' : '';
+    return prices ? `${prefix}${formatModelPrice(prices.input)}/M in · ${prefix}${formatModelPrice(prices.output)}/M out` : '';
+  }
+
+  function priceTitle(model: string): string {
+    const pricing = metadata[model]?.pricing;
+    return m.settings_model_price_hint({ source: pricing?.source ?? 'API' })
+      + (pricing?.tiered ? ` ${m.settings_model_price_tiered()}` : '');
   }
 
   function scrollList(event: Event) {
@@ -121,7 +128,7 @@
             <strong title={model}>{model}</strong>
             <span class="model-meta">
               {#if isFree(model)}<span class="free-badge">{m.settings_model_category_free()}</span>{/if}
-              {#if priceLabel(model)}<span>{priceLabel(model)}</span>{/if}
+              {#if priceLabel(model)}<span title={priceTitle(model)}>{priceLabel(model)}</span>{/if}
               {#if contextLabel(model)}<span class="context-meta">{contextLabel(model)}</span>{/if}
             </span>
           </button>

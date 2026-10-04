@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formatContextTokens, getRecentModels, recordModelUse, modelPrices, pricePerMillion } from './modelPickerData.ts';
+import { formatContextTokens, formatModelPrice, getRecentModels, recordModelUse, modelPrices, pricePerMillion } from './modelPickerData.ts';
 
 test('recent models persist in use order without duplicates and stop at 20', () => {
   const values = new Map();
@@ -33,4 +33,12 @@ test('context sizes use consistent K and M notation', () => {
   assert.equal(formatContextTokens(1_000_000), '1M');
   assert.equal(formatContextTokens(2 * 1024 * 1024), '2M');
   assert.equal(formatContextTokens(Infinity), '');
+});
+
+test('normalized provider prices retain small nonzero rates', () => {
+  const prices = modelPrices({ id: 'nano', pricing: { prompt: '0.00000002', completion: '0.0000025', source: 'NanoGPT' } });
+  assert.deepEqual(prices, { input: 0.02, output: 2.5 });
+  assert.equal(formatModelPrice(0.001), '$0.001');
+  assert.equal(formatModelPrice(2.5), '$2.50');
+  assert.equal(formatModelPrice(0), '$0.00');
 });

@@ -40,6 +40,13 @@ export function modelPrices(info: ModelInfo | undefined): { input: number; outpu
   return input === null || output === null ? null : { input, output };
 }
 
+export function formatModelPrice(value: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency', currency: 'USD', minimumFractionDigits: 2,
+    maximumFractionDigits: value > 0 && value < 1 ? 4 : 2,
+  }).format(value);
+}
+
 export function formatContextTokens(tokens: number | null | undefined): string {
   if (tokens == null || !Number.isFinite(tokens) || tokens <= 0) return '';
   if (tokens >= 1_000_000) {

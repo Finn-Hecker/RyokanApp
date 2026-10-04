@@ -16,7 +16,7 @@
   } from '$lib/utils/modelProviderGroups';
   import { deleteConnectionSafely, ensureContextDetection, invalidateDetectedContext, normalizeSummaryConnectionId, refreshContextDetection, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION } from '$lib/utils/apiConnections';
   import { CONSERVATIVE_CONTEXT_FALLBACK, resolvedWorkingContextTarget, resolveSummaryConnection } from '$lib/utils/connectionCore';
-  import { formatContextTokens, getRecentModels, modelPrices } from '$lib/utils/modelPickerData';
+  import { formatContextTokens, formatModelPrice, getRecentModels, modelPrices } from '$lib/utils/modelPickerData';
   import { createDefaultApiParameterEnabled, type ApiParameterKey } from '$lib/utils/apiParameters';
   import { modelGenerationCapabilities } from '$lib/utils/generationCapabilities';
   import GeneralSection from './GeneralSection.svelte';
@@ -476,27 +476,26 @@
     }
   }
 
-  function formatPrice(value: number): string {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: value > 0 && value < 1 ? 2 : 0,
-      maximumFractionDigits: value < 1 ? 4 : 2,
-    }).format(value);
+  function formatPrice(value: number, modelId: string): string {
+    return `${modelMetadata[modelId]?.pricing?.tiered ? '≥ ' : ''}${formatModelPrice(value)}`;
+  }
+
+  function priceTitle(modelId: string): string {
+    const pricing = modelMetadata[modelId]?.pricing;
+    return m.settings_model_price_hint({ source: pricing?.source ?? 'API' })
+      + (pricing?.tiered ? ` ${m.settings_model_price_tiered()}` : '');
   }
 
   function modelPriceLabel(modelId: string): string {
-    if (!isOpenRouter) return "";
     const prices = modelPrices(modelMetadata[modelId]);
     if (!prices || (prices.input === 0 && prices.output === 0)) return "";
-    return `${formatPrice(prices.input)}/M input · ${formatPrice(prices.output)}/M output`;
+    return `${formatPrice(prices.input, modelId)}/M input · ${formatPrice(prices.output, modelId)}/M output`;
   }
 
   function mobilePriceLabel(modelId: string): string {
-    if (!isOpenRouter) return "";
     const prices = modelPrices(modelMetadata[modelId]);
     if (!prices || (prices.input === 0 && prices.output === 0)) return "";
-    return `In ${formatPrice(prices.input)}/M · Out ${formatPrice(prices.output)}/M`;
+    return `In ${formatPrice(prices.input, modelId)}/M · Out ${formatPrice(prices.output, modelId)}/M`;
   }
 
   function isFreeModel(modelId: string): boolean {
@@ -505,7 +504,7 @@
   }
 
   function contextLabel(modelId: string): string {
-    if (!isOpenRouter) return "";
+    if (!isOpenRouter && appState.apiSettings.providerKind !== 'nanogpt') return "";
     const size = formatContextTokens(modelMetadata[modelId]?.contextLength);
     return size ? m.settings_model_context({ size }) : "";
   }
@@ -755,7 +754,7 @@
                           <span class="desktop-model-name">{modelId}</span>
                           <span class="desktop-model-meta">
                             {#if isFreeModel(modelId)}<span class="free-badge">{m.settings_model_category_free()}</span>{/if}
-                            {#if modelPriceLabel(modelId)}<span class="desktop-meta-badge">{modelPriceLabel(modelId)}</span>{/if}
+                            {#if modelPriceLabel(modelId)}<span class="desktop-meta-badge" title={priceTitle(modelId)}>{modelPriceLabel(modelId)}</span>{/if}
                             {#if contextLabel(modelId)}<span class="desktop-meta-badge">{contextLabel(modelId)}</span>{/if}
                           </span>
                         </span>
@@ -824,7 +823,7 @@
                         <span class="mobile-model-name" title={modelId}>{modelId}</span>
                         <span class="mobile-model-details">
                           {#if isFreeModel(modelId)}<span class="free-badge">{m.settings_model_category_free()}</span>{/if}
-                          {#if mobilePriceLabel(modelId)}<span class="mobile-model-price" title={modelPriceLabel(modelId)}>{mobilePriceLabel(modelId)}</span>{/if}
+                          {#if mobilePriceLabel(modelId)}<span class="mobile-model-price" title={priceTitle(modelId)}>{mobilePriceLabel(modelId)}</span>{/if}
                           {#if contextLabel(modelId)}<span class="mobile-model-context">{contextLabel(modelId)}</span>{/if}
                         </span>
                       </button>

@@ -50,6 +50,8 @@ export interface ModelInfo {
   pricing?: {
     prompt?: string | null;
     completion?: string | null;
+    source?: string | null;
+    tiered?: boolean;
   } | null;
 }
 

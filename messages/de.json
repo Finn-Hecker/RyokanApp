@@ -99,6 +99,8 @@
   "settings_model_category_all": "Alle",
   "settings_model_category_recent": "Zuletzt",
   "settings_model_context": "{size} Kontext",
+  "settings_model_price_hint": "Standard-Textpreise in USD pro Million Tokens. Quelle: {source}. Tarif, Modalität und Zusatzfunktionen können den Preis ändern.",
+  "settings_model_price_tiered": "Ab-Preise; bei längerem Kontext gelten höhere Preise.",
   "settings_model_category_free": "Kostenlos",
   "settings_model_category_favorites": "Favoriten",
   "settings_model_available_count": "{count} Modelle verfügbar",
