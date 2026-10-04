@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Select from '$lib/components/ui/Select.svelte';
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { onMount } from 'svelte';
   import * as m from '$lib/paraglide/messages';
@@ -35,14 +36,10 @@
       <h3>{m.character_roles_title()}</h3>
       <p>{m.character_roles_subtitle()}</p>
     </div>
-    <label class="policy-select">
-      <span class="sr-only">{m.character_roles_title()}</span>
-      <select bind:value={rolePolicy}>
-        <option value="open">{m.character_roles_open()}</option>
-        <option value="restricted">{m.character_roles_restricted()}</option>
-      </select>
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-    </label>
+    <div class="policy-select">
+      <Select label={m.character_roles_title()} bind:value={rolePolicy} compact
+        items={[{ id: 'open', label: m.character_roles_open() }, { id: 'restricted', label: m.character_roles_restricted() }]} />
+    </div>
   </div>
 
   {#if bundledRoles.length > 0}
@@ -94,9 +91,7 @@
   .section-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
   .section-heading h3 { color:#d1d5db; font-size:14px; font-weight:600; }
   .section-heading p { margin-top:4px; color:#5f6570; font-size:12px; line-height:1.5; }
-  .policy-select { position:relative; flex:none; color:#aeb3bc; }
-  .policy-select select { min-width:112px; height:36px; appearance:none; border:1px solid rgba(255,255,255,.09); border-radius:9px; padding:0 32px 0 11px; color:#d1d5db; background:#202024; font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
-  .policy-select svg { position:absolute; top:12px; right:10px; pointer-events:none; }
+  .policy-select { position:relative; min-width:112px; flex:none; color:#aeb3bc; }
   .role-list { display:flex; flex-direction:column; gap:7px; margin-top:15px; }
   .role-row { display:flex; align-items:center; gap:10px; min-width:0; padding:8px 9px; border:1px solid rgba(255,255,255,.05); border-radius:11px; background:rgba(255,255,255,.025); }
   .role-row p { min-width:0; flex:1; overflow:hidden; color:#d1d5db; font-size:13px; font-weight:500; text-overflow:ellipsis; white-space:nowrap; }
@@ -118,7 +113,7 @@
   @media(max-width:520px) {
     .roles-section { padding:16px; }
     .section-heading { flex-direction:column; gap:12px; }
-    .policy-select, .policy-select select { width:100%; }
+    .policy-select { width:100%; }
     .add-role { width:100%; justify-content:center; min-height:44px; }
     .picker-role { min-height:60px; }
   }

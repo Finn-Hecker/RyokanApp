@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Select from '$lib/components/ui/Select.svelte';
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { activateApiConnection, appState } from "$lib/stores/appState.svelte";
@@ -135,11 +136,9 @@
       <div class="connection-card">
         <div class="connection-field">
           <label class="settings-label" for="chat-active-connection">{m.settings_connection_label()}</label>
-          <select id="chat-active-connection" class="connection-input" value={appState.activeApiConnectionId} onchange={(event) => selectConnection(event.currentTarget.value)}>
-            {#each appState.apiConnections as connection (connection.id)}
-              <option value={connection.id}>{connection.name}</option>
-            {/each}
-          </select>
+          <Select id="chat-active-connection" label={m.settings_connection_label()} value={appState.activeApiConnectionId}
+            items={appState.apiConnections.map(connection => ({ id: connection.id, label: connection.name }))}
+            onSelect={selectConnection} />
         </div>
         <div class="connection-field">
           <label class="settings-label" for="chat-active-model">{m.settings_model_label()}</label>
@@ -253,8 +252,6 @@
     font: inherit;
     font-size: 14px;
   }
-  select.connection-input { color-scheme: dark; }
-  select.connection-input option { background: #1c1c1e; color:var(--sheet-text); }
   .connection-input:focus-visible { outline: none; border-color: rgba(212,180,131,0.4); box-shadow: 0 0 0 3px rgba(212,180,131,0.06); }
   .model-trigger { display:flex; align-items:center; justify-content:space-between; gap:10px; text-align:left; cursor:pointer; }
   .model-trigger span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

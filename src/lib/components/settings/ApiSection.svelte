@@ -3,6 +3,7 @@
   import { activateApiConnection, appState, createDefaultConnection } from "$lib/stores/appState.svelte";
   import { fetchModels, type ModelInfo } from "$lib/utils/settings";
   import * as m from "$lib/paraglide/messages";
+  import Select from '$lib/components/ui/Select.svelte';
   import ProviderSelect from '$lib/components/ui/ProviderSelect.svelte';
   import Button from '$lib/components/ui/Button.svelte';
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
@@ -596,13 +597,10 @@
     <div class="connection-management">
       <label class="settings-label" for="active-connection">{m.settings_connection_label()}</label>
       <div class="connection-toolbar">
-        <select id="active-connection" class="settings-input" value={appState.activeApiConnectionId} onchange={(event) => selectConnection(event.currentTarget.value)}>
-          {#each appState.apiConnections as connection (connection.id)}
-            <option value={connection.id}>{connection.name}</option>
-          {/each}
-          <option disabled>──────────</option>
-          <option value={NEW_CONNECTION_ACTION}>{m.settings_connection_new()}</option>
-        </select>
+        <Select id="active-connection" label={m.settings_connection_label()} value={appState.activeApiConnectionId}
+          items={[...appState.apiConnections.map(connection => ({ id: connection.id, label: connection.name })),
+            { id: NEW_CONNECTION_ACTION, label: m.settings_connection_new(), separator: true }]}
+          onSelect={selectConnection} />
         <div class="connection-menu-wrap">
           <button type="button" class="connection-action connection-more" aria-label={m.settings_connection_options()} aria-haspopup="menu" aria-expanded={connectionMenuOpen} onclick={() => connectionMenuOpen = !connectionMenuOpen}>⋯</button>
           {#if connectionMenuOpen}
@@ -944,11 +942,12 @@
     <div class="context-controls">
       <label>
         <span class="settings-label">{m.settings_context_strategy()}</span>
-        <select class="settings-input" bind:value={appState.apiSettings.contextStrategy}>
-          <option value="economy">{m.settings_context_strategy_economy()}</option>
-          <option value="balanced">{m.settings_context_strategy_balanced()}</option>
-          <option value="maximum">{m.settings_context_strategy_maximum()}</option>
-        </select>
+        <Select label={m.settings_context_strategy()} bind:value={appState.apiSettings.contextStrategy}
+          items={[
+            { id: 'economy', label: m.settings_context_strategy_economy() },
+            { id: 'balanced', label: m.settings_context_strategy_balanced() },
+            { id: 'maximum', label: m.settings_context_strategy_maximum() },
+          ]} />
       </label>
     </div>
     <div class="context-strategy-help">
@@ -967,12 +966,9 @@
       </label>
       <label>
         <span class="settings-label">{m.settings_memory_summary_connection()}</span>
-        <select class="settings-input" bind:value={appState.summaryConnectionId} disabled={!appState.longTermMemory}>
-          <option value={SAME_AS_CHAT_CONNECTION}>{m.settings_memory_same_as_chat()}</option>
-          {#each appState.apiConnections as connection (connection.id)}
-            <option value={connection.id}>{connection.name}</option>
-          {/each}
-        </select>
+        <Select label={m.settings_memory_summary_connection()} bind:value={appState.summaryConnectionId} disabled={!appState.longTermMemory}
+          items={[{ id: SAME_AS_CHAT_CONNECTION, label: m.settings_memory_same_as_chat() },
+            ...appState.apiConnections.map(connection => ({ id: connection.id, label: connection.name }))]} />
         <span class="memory-help">{m.settings_memory_same_as_chat_help()}</span>
         {#if appState.longTermMemory && summaryConnection.id !== appState.apiSettings.id}
           <span class="memory-help">
@@ -1006,7 +1002,7 @@
   .provider-settings > .settings-divider { margin:24px 0; }
   .connection-management { min-width:0; }
   .connection-toolbar { display:flex; align-items:center; gap:8px; }
-  .connection-toolbar select { min-width:0; flex:1; }
+  .connection-toolbar :global(.select-trigger) { min-width:0; flex:1; }
   .connection-action { min-height:40px; padding:8px 11px; border:1px solid rgba(255,255,255,.08); border-radius:9px; color:#aaa7a3; background:rgba(255,255,255,.035); font-size:11px; font-weight:650; white-space:nowrap; cursor:pointer; }
   .connection-action:hover:not(:disabled) { color:#dfd8cf; border-color:rgba(212,180,131,.25); }
   .connection-action.danger:hover:not(:disabled) { color:#e8a19b; border-color:rgba(220,90,80,.25); }
