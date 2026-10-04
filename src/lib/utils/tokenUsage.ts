@@ -2,6 +2,8 @@
 export interface TokenUsage {
     inputTokens: number | null;
     cachedInputTokens: number | null;
+    /** Tokens written to the prompt cache, when reported by OpenRouter. */
+    cacheWriteTokens?: number | null;
     outputTokens: number | null;
     reasoningTokens: number | null;
     costUsd?: number | null;
@@ -55,6 +57,8 @@ export function parseUsage(value: unknown): TokenUsage | null {
         const count = record[field];
         if (typeof count === 'number' && Number.isSafeInteger(count) && count >= 0) result[field] = count;
     }
+    const cacheWrites = record.cacheWriteTokens;
+    if (typeof cacheWrites === 'number' && Number.isSafeInteger(cacheWrites) && cacheWrites >= 0) result.cacheWriteTokens = cacheWrites;
     if (typeof record.costUsd === 'number' && Number.isFinite(record.costUsd) && record.costUsd >= 0) result.costUsd = record.costUsd;
     for (const field of ['actualModel', 'serviceTier', 'connectionName'] as const) {
         if (typeof record[field] === 'string' && record[field].trim()) result[field] = record[field];

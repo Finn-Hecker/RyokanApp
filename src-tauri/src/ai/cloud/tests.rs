@@ -14,6 +14,66 @@ fn request(kind: &str) -> AiRequest {
 }
 
 #[test]
+fn openrouter_claude_automatic_cache_preserves_overrides_and_chat_identity() {
+    for model in ["anthropic/claude-sonnet-4.5", "anthropic/claude-opus-4.6", "anthropic/claude-haiku-4.5", "~anthropic/claude-sonnet-latest"] {
+        for purpose in [None, Some(RequestPurpose::Summary)] {
+            let mut payload = request("openrouter");
+            payload.model = model.into();
+            payload.chat_id = Some("chat-a".into());
+            payload.request_parameter_config.purpose = purpose;
+            let body = super::super::compatible_body(&payload).unwrap();
+            assert_eq!(body["cache_control"], json!({"type":"ephemeral"}));
+            assert_eq!(body["session_id"], "chat-a");
+            assert_eq!(body["messages"], json!(payload.messages));
+            for custom in [json!({"type":"ephemeral","ttl":"1h"}), json!(null), json!(false)] {
+                payload.request_parameter_config.additional_parameters.insert("cache_control".into(), custom.clone());
+                let body = super::super::compatible_body(&payload).unwrap();
+                assert_eq!(body["cache_control"], custom);
+                assert_eq!(body["session_id"], "chat-a");
+                assert_eq!(body["messages"], json!(payload.messages));
+            }
+        }
+    }
+}
+
+#[test]
+fn automatic_cache_does_not_affect_other_models_or_providers() {
+    for (kind, model) in [("openrouter", "openai/gpt-4.1"), ("openrouter", "anthropic/other"),
+        ("openrouter", "claude-sonnet-4.5"), ("openrouter", "other/claude-sonnet-4.5"),
+        ("openai", "anthropic/claude-sonnet-4.5"), ("generic_openai", "anthropic/claude-sonnet-4.5")] {
+        let mut payload = request(kind);
+        payload.model = model.into();
+        assert!(super::super::compatible_body(&payload).unwrap().get("cache_control").is_none());
+        let custom = json!({"type":"ephemeral","ttl":"1h"});
+        payload.request_parameter_config.additional_parameters.insert("cache_control".into(), custom.clone());
+        assert_eq!(super::super::compatible_body(&payload).unwrap()["cache_control"], custom);
+    }
+}
+
+#[test]
+fn openrouter_cache_writes_survive_sparse_streams_and_serialization() {
+    let initial = json!({"usage":{"prompt_tokens":120,"prompt_tokens_details":{"cached_tokens":80,"cache_write_tokens":30}}});
+    let first = super::super::stream_token_usage(&initial, Some("openrouter")).unwrap();
+    assert_eq!(first.cached_input_tokens, Some(80));
+    assert_eq!(first.cache_write_tokens, Some(30));
+    let final_usage = super::super::stream_token_usage(&json!({"usage":{"completion_tokens":10}}), Some("openrouter")).unwrap();
+    let merged = super::super::merge_token_usage(Some(first), final_usage);
+    assert_eq!(merged.cache_write_tokens, Some(30));
+    assert_eq!(serde_json::to_value(&merged).unwrap()["cacheWriteTokens"], 30);
+    for value in [json!(0), json!(42), json!(-1), json!("42"), json!(null)] {
+        let response = json!({"usage":{"prompt_tokens_details":{"cache_write_tokens":value}}});
+        let usage = super::super::stream_token_usage(&response, Some("openrouter"));
+        assert_eq!(usage.as_ref().and_then(|usage| usage.cache_write_tokens), value.as_u64());
+        assert_eq!(super::super::stream_token_usage(&response, Some("openai")), None);
+        if value == json!(0) {
+            assert_eq!(super::super::merge_token_usage(Some(merged.clone()), usage.unwrap()).cache_write_tokens, Some(0));
+        }
+    }
+    let legacy: TokenUsage = serde_json::from_value(json!({"inputTokens":10,"cachedInputTokens":5})).unwrap();
+    assert_eq!(legacy.cache_write_tokens, None);
+}
+
+#[test]
 fn openrouter_session_uses_persisted_chat_identity_for_chat_and_summary() {
     for chat_id in ["chat-a", "chat-b"] {
         for purpose in [None, Some(RequestPurpose::Summary)] {

@@ -172,7 +172,7 @@ mod usage_tests {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         conn.execute_batch("CREATE TABLE messages (id TEXT PRIMARY KEY, content TEXT, swipe_variants TEXT, swipe_index INTEGER, usage_variants TEXT);
             INSERT INTO messages VALUES ('a', 'first', '[\"first\"]', 0, '[null]');").unwrap();
-        let usage = TokenUsage { input_tokens: Some(30), cached_input_tokens: Some(20), output_tokens: Some(7), reasoning_tokens: None, cost_usd: Some(0.001), actual_model: Some("response-model".into()), service_tier: Some("flex".into()), connection_name: Some("Saved profile".into()) };
+        let usage = TokenUsage { input_tokens: Some(30), cached_input_tokens: Some(20), cache_write_tokens: Some(5), output_tokens: Some(7), reasoning_tokens: None, cost_usd: Some(0.001), actual_model: Some("response-model".into()), service_tier: Some("flex".into()), connection_name: Some("Saved profile".into()) };
         assert_eq!(append_swipe_variant(&conn, "a", "second".into(), Some(usage.clone())).unwrap(), 1);
         let (text, index, usage_json): (String, i64, String) = conn.query_row(
             "SELECT content, swipe_index, usage_variants FROM messages WHERE id = 'a'", [],

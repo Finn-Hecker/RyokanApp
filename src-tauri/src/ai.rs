@@ -335,6 +335,7 @@ impl StreamFailure {
 pub struct TokenUsage {
     pub input_tokens: Option<u64>,
     pub cached_input_tokens: Option<u64>,
+    pub cache_write_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
     pub reasoning_tokens: Option<u64>,
     pub cost_usd: Option<f64>,
@@ -345,7 +346,7 @@ pub struct TokenUsage {
 
 impl TokenUsage {
     fn is_empty(&self) -> bool {
-        self.input_tokens.is_none() && self.cached_input_tokens.is_none()
+        self.input_tokens.is_none() && self.cached_input_tokens.is_none() && self.cache_write_tokens.is_none()
             && self.output_tokens.is_none() && self.reasoning_tokens.is_none()
             && self.cost_usd.is_none() && self.actual_model.is_none() && self.service_tier.is_none()
     }
@@ -388,6 +389,7 @@ fn stream_token_usage(value: &serde_json::Value, provider_kind: Option<&str>) ->
     // OpenRouter usage.cost is the account charge, not upstream_inference_cost.
     // https://openrouter.ai/docs/cookbook/administration/usage-accounting
     if provider_kind == Some("openrouter") {
+        usage.cache_write_tokens = count_at(value, &["usage", "prompt_tokens_details", "cache_write_tokens"]);
         usage.cost_usd = value.pointer("/usage/cost").and_then(|v| v.as_f64())
             .filter(|cost| cost.is_finite() && *cost >= 0.0);
     }
@@ -412,6 +414,7 @@ fn merge_token_usage(previous: Option<TokenUsage>, incoming: TokenUsage) -> Toke
     TokenUsage {
         input_tokens: incoming.input_tokens.or(previous.input_tokens),
         cached_input_tokens: incoming.cached_input_tokens.or(previous.cached_input_tokens),
+        cache_write_tokens: incoming.cache_write_tokens.or(previous.cache_write_tokens),
         output_tokens: incoming.output_tokens.or(previous.output_tokens),
         reasoning_tokens: incoming.reasoning_tokens.or(previous.reasoning_tokens),
         cost_usd: incoming.cost_usd.or(previous.cost_usd),
@@ -1298,6 +1301,14 @@ fn compatible_body(payload: &AiRequest) -> Result<serde_json::Value, String> {
     );
 
     merge_additional_api_parameters(&mut body, additional_parameters);
+    // Request-level automatic caching follows the growing conversation. Explicit
+    // custom values (including null) take precedence; the provider checks eligibility.
+    if payload.provider_kind.as_deref() == Some("openrouter")
+        && payload.model.strip_prefix('~').unwrap_or(&payload.model).starts_with("anthropic/claude-")
+    {
+        body.as_object_mut().unwrap().entry("cache_control")
+            .or_insert_with(|| serde_json::json!({ "type": "ephemeral" }));
+    }
     // Apply after custom fields so rerolls and summaries cannot override the
     // persisted chat identity with a per-request session ID.
     if payload.provider_kind.as_deref() == Some("openrouter") {

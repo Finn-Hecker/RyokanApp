@@ -2,6 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { selectedUsage, withConnection, formatCachedUsage, formatUsageCount, formatUsageCost, parseUsage, persistedUsage } from './tokenUsage.ts';
 
+test('cache write tokens survive relay, connection snapshots and persisted swipes', () => {
+  for (const cacheWriteTokens of [0, 30]) {
+    const usage = parseUsage({ inputTokens: 120, cachedInputTokens: 80, cacheWriteTokens });
+    assert.equal(usage.cacheWriteTokens, cacheWriteTokens);
+    assert.equal(usage.cachedInputTokens, 80);
+    const snapshot = withConnection(usage, { name: 'OpenRouter' });
+    const restored = persistedUsage(JSON.stringify([null, snapshot]), 1);
+    assert.deepEqual(restored, snapshot);
+    assert.equal(selectedUsage({ usage_variants: [null, restored], swipe_index: 1 }).cacheWriteTokens, cacheWriteTokens);
+  }
+  assert.equal(parseUsage({ cacheWriteTokens: 0 }).cacheWriteTokens, 0);
+  assert.equal(parseUsage({ inputTokens: 10 }).cacheWriteTokens, undefined);
+  for (const cacheWriteTokens of [null, -1, 1.5, '30', Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(parseUsage({ cacheWriteTokens }), null);
+  }
+});
+
 test('usage follows the selected swipe without borrowing legacy or other variant data', () => {
   const usage = { inputTokens: 120, cachedInputTokens: 80, outputTokens: 30, reasoningTokens: 10, costUsd: 0.001, actualModel: 'resolved-model', serviceTier: 'flex' };
   const message = { usage_variants: [null, usage], swipe_index: 0 };
