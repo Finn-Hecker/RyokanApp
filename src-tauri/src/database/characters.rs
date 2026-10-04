@@ -191,7 +191,7 @@ fn normalize_play_mode(play_mode: Option<&str>) -> &'static str {
     }
 }
 
-fn image_data_url(bytes: Vec<u8>) -> String {
+pub(super) fn image_data_url(bytes: Vec<u8>) -> String {
     let mime = match image::guess_format(&bytes).ok() {
         Some(ImageFormat::Png) => "image/png",
         Some(ImageFormat::Jpeg) => "image/jpeg",

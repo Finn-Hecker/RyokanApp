@@ -2,7 +2,7 @@ import { reportDiagnostic } from '$lib/utils/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
 import { selectInitialGreeting } from '$lib/utils/characterGreeting';
 import { appState } from './appState.svelte';
-import { characterState, loadCharacters } from './characterStore.svelte';
+import { characterState, loadCharacters, type Character } from './characterStore.svelte';
 import { getLocale } from '$lib/paraglide/runtime';
 import { bumpConversationRevision, isMessageCoveredBySummary } from '$lib/utils/rollingSummaryCore';
 import type { TokenUsage } from '$lib/utils/tokenUsage';
@@ -31,6 +31,17 @@ export interface Conversation {
 export interface ChatRoleSnapshot {
     name: string;
     prompt: string;
+}
+
+export type ChatCharacterSnapshot = Pick<Character,
+    'id' | 'name' | 'prompt' | 'greeting' | 'initials' | 'color' | 'avatarUrl' | 'world_info_ids'>;
+
+function characterSnapshot(character: Character): ChatCharacterSnapshot {
+    return {
+        id: String(character.id), name: character.name, prompt: character.prompt,
+        greeting: character.greeting, initials: character.initials, color: character.color,
+        avatarUrl: character.avatarUrl, world_info_ids: [...(character.world_info_ids ?? [])],
+    };
 }
 
 export interface RoleSelection {
@@ -195,6 +206,7 @@ export async function startNewChat(character: any, roleSelection: RoleSelection 
             initialMessage: selectedGreeting,
             mode: 'singleplayer',
             roleSelection,
+            characterSnapshot: characterSnapshot(character),
         });
         await loadAllConversations('singleplayer');
         await loadMessages(newId);
@@ -206,19 +218,6 @@ export async function startNewChat(character: any, roleSelection: RoleSelection 
 
 export async function openHistoryChat(chatId: string) {
     await loadMessages(chatId);
-    const currentChat = chatState.conversations.find(c => c.id === chatId);
-    appState.activeCharacter = null;
-    if (currentChat?.character_id) {
-        if (characterState.allCharacters.length === 0) await loadCharacters();
-        const char = characterState.allCharacters.find(
-            c => c.id.toString() === currentChat.character_id
-        );
-        if (char) {
-            appState.activeCharacter = char;
-        } else {
-            reportDiagnostic('chat', true);
-        }
-    }
 }
 
 /**
@@ -244,6 +243,22 @@ export async function cloneChatFromMessage(messageId: string): Promise<string | 
 
 export async function loadMessages(chatId: string) {
     if (chatState.activeChatId !== chatId) {
+        // Resolve the chat-owned card before exposing this conversation to the
+        // composer. A deleted or edited library card must not alter its prompt.
+        const conversation = chatState.conversations.find(chat => chat.id === chatId);
+        if (characterState.allCharacters.length === 0) await loadCharacters();
+        const libraryCharacter = characterState.allCharacters.find(
+            character => String(character.id) === conversation?.character_id,
+        );
+        if (conversation?.mode === 'multiplayer') {
+            // Multiplayer restores its session-owned character separately.
+            appState.activeCharacter = libraryCharacter ?? null;
+        } else {
+            appState.activeCharacter = await invoke<ChatCharacterSnapshot | null>('get_chat_character_snapshot', {
+                chatId,
+                fallback: libraryCharacter ? characterSnapshot(libraryCharacter) : null,
+            });
+        }
         // Chat was switched: clear local history to avoid flickering
         chatState.currentMessages = [];
         chatState.hasMoreMessages = false;

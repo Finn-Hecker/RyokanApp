@@ -3,6 +3,90 @@ use rusqlite::{params};
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use crate::database::get_connection;
+use rusqlite::OptionalExtension;
+use serde_json::{json, Value};
+
+// Read custom cards from SQLite, so their snapshot does not depend on a stale
+// lobby object or whether its avatar has already been loaded.
+fn resolve_character_snapshot(
+    conn: &rusqlite::Connection,
+    character_id: Option<&str>,
+    fallback: Option<Value>,
+) -> Result<Option<Value>, String> {
+    let Some(id) = character_id else { return Ok(None) };
+    let stored = conn.query_row(
+        "SELECT name, desc, greeting, initials, color, world_info_ids, avatar,
+                personality, scenario, mes_example
+         FROM characters WHERE id = ?1",
+        params![id],
+        |row| {
+            let world_info = row.get::<_, Option<String>>(5)?.unwrap_or_default();
+            let avatar: Option<Vec<u8>> = row.get(6)?;
+            Ok(json!({
+                "id": id,
+                "name": row.get::<_, String>(0)?,
+                "prompt": crate::import::combine_legacy_prompt(
+                    &row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    &row.get::<_, Option<String>>(7)?.unwrap_or_default(),
+                    &row.get::<_, Option<String>>(8)?.unwrap_or_default(),
+                    &row.get::<_, Option<String>>(9)?.unwrap_or_default(),
+                ),
+                "greeting": row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                "initials": row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                "color": row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                "world_info_ids": serde_json::from_str::<Vec<String>>(&world_info).unwrap_or_default(),
+                "avatarUrl": avatar.filter(|bytes| !bytes.is_empty()).map(super::characters::image_data_url),
+            }))
+        },
+    ).optional().map_err(|e| e.to_string())?;
+    Ok(stored.or(fallback))
+}
+
+pub(super) fn backfill_character_snapshots(conn: &rusqlite::Connection) -> Result<(), String> {
+    let ids: Vec<(String, String)> = {
+        let mut stmt = conn.prepare(
+            "SELECT id, character_id FROM conversations
+             WHERE mode = 'singleplayer' AND character_snapshot IS NULL AND character_id IS NOT NULL"
+        ).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?
+    };
+    for (chat_id, character_id) in ids {
+        if let Some(snapshot) = resolve_character_snapshot(conn, Some(&character_id), None)? {
+            conn.execute(
+                "UPDATE conversations SET character_snapshot = ?1 WHERE id = ?2 AND character_snapshot IS NULL",
+                params![snapshot.to_string(), chat_id],
+            ).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_chat_character_snapshot(
+    app: AppHandle,
+    chat_id: String,
+    fallback: Option<Value>,
+) -> Result<Option<Value>, String> {
+    let mut conn = get_connection(&app)?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let (raw, character_id, mode): (Option<String>, Option<String>, String) = tx.query_row(
+        "SELECT character_snapshot, character_id, mode FROM conversations WHERE id = ?1",
+        params![chat_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).map_err(|e| e.to_string())?;
+    if let Some(raw) = raw {
+        return serde_json::from_str(&raw).map(Some).map_err(|e| e.to_string());
+    }
+    if mode != "singleplayer" { return Ok(None); }
+    let snapshot = resolve_character_snapshot(&tx, character_id.as_deref(), fallback)?;
+    if let Some(value) = &snapshot {
+        tx.execute("UPDATE conversations SET character_snapshot = ?1 WHERE id = ?2",
+            params![value.to_string(), chat_id]).map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(snapshot)
+}
 
 /// Represents a chat session with an AI character in the database.
 #[derive(Serialize)]
@@ -155,6 +239,7 @@ pub async fn create_chat(
     initial_message: Option<String>,
     mode: Option<String>,
     role_selection: Option<RoleSelection>,
+    character_snapshot: Option<Value>,
 ) -> Result<String, String> {
     let mut conn = get_connection(&app)?;
 
@@ -166,6 +251,15 @@ pub async fn create_chat(
         _ => "singleplayer",
     };
     let title = character_name;
+    let mut character_snapshot = if mode == "singleplayer" {
+        resolve_character_snapshot(&tx, character_id.as_deref(), character_snapshot)?
+    } else { None };
+    if let Some(snapshot) = character_snapshot.as_mut() {
+        if let Some(greeting) = initial_message.as_ref() {
+            snapshot["greeting"] = json!(greeting);
+        }
+    }
+    let character_snapshot_json = character_snapshot.map(|snapshot| snapshot.to_string());
     let role_snapshot = if mode == "singleplayer" {
         resolve_role_snapshot(&tx, character_id.as_deref(), role_selection.as_ref())?
     } else {
@@ -176,11 +270,11 @@ pub async fn create_chat(
         .transpose().map_err(|e| e.to_string())?;
 
     tx.execute(
-        "INSERT INTO conversations (id, title, character_id, mode, sort_order, role_snapshot)
+        "INSERT INTO conversations (id, title, character_id, mode, sort_order, role_snapshot, character_snapshot)
          VALUES (?1, ?2, ?3, ?4,
              (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM conversations
-              WHERE mode = ?4 AND folder_id IS NULL), ?5)",
-        params![new_id, title, character_id, mode, role_snapshot_json],
+              WHERE mode = ?4 AND folder_id IS NULL), ?5, ?6)",
+        params![new_id, title, character_id, mode, role_snapshot_json, character_snapshot_json],
     ).map_err(|e| e.to_string())?;
     
     if let Some(msg) = initial_message {
@@ -214,10 +308,10 @@ pub async fn clone_chat_from_message(
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     // Snapshot of the source conversation (title + character).
-    let (source_title, character_id, mode, role_snapshot): (String, Option<String>, String, Option<String>) = tx.query_row(
-        "SELECT title, character_id, mode, role_snapshot FROM conversations WHERE id = ?1",
+    let (source_title, character_id, mode, role_snapshot, character_snapshot): (String, Option<String>, String, Option<String>, Option<String>) = tx.query_row(
+        "SELECT title, character_id, mode, role_snapshot, character_snapshot FROM conversations WHERE id = ?1",
         params![chat_id],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
     ).map_err(|e| e.to_string())?;
 
     // All messages in chronological order, so we can cut at the right spot.
@@ -247,11 +341,11 @@ pub async fn clone_chat_from_message(
     let new_title = format!("🔗 {}", source_title);
 
     tx.execute(
-        "INSERT INTO conversations (id, title, character_id, mode, cloned_from_id, cloned_from_title, sort_order, role_snapshot)
+        "INSERT INTO conversations (id, title, character_id, mode, cloned_from_id, cloned_from_title, sort_order, role_snapshot, character_snapshot)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6,
              (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM conversations
-              WHERE mode = ?4 AND folder_id IS NULL), ?7)",
-        params![new_chat_id, new_title, character_id, mode, chat_id, source_title, role_snapshot],
+              WHERE mode = ?4 AND folder_id IS NULL), ?7, ?8)",
+        params![new_chat_id, new_title, character_id, mode, chat_id, source_title, role_snapshot, character_snapshot],
     ).map_err(|e| e.to_string())?;
 
     // Copy every message up to the cut-off with fresh ids, preserving role,
@@ -411,6 +505,64 @@ mod tests {
         ChatRoleSnapshot, RoleSelection,
     };
     use rusqlite::{params, Connection};
+
+    #[test]
+    fn character_backfill_is_immutable_after_card_edits_and_deletion() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE characters (
+                id TEXT PRIMARY KEY, name TEXT, desc TEXT, greeting TEXT,
+                initials TEXT, color TEXT, world_info_ids TEXT, avatar BLOB,
+                personality TEXT, scenario TEXT, mes_example TEXT
+             );
+             CREATE TABLE conversations (
+                id TEXT PRIMARY KEY, character_id TEXT, mode TEXT, character_snapshot TEXT
+             );
+             INSERT INTO characters VALUES (
+                'card', 'Original', 'Original prompt', 'Hello', 'OR', 'blue',
+                '[\"world\"]', NULL, '', '', ''
+             );
+             INSERT INTO conversations VALUES ('old-chat', 'card', 'singleplayer', NULL);"
+        ).unwrap();
+        super::backfill_character_snapshots(&conn).unwrap();
+        let saved = || conn.query_row(
+            "SELECT character_snapshot FROM conversations WHERE id = 'old-chat'",
+            [], |row| row.get::<_, String>(0),
+        ).unwrap();
+        let original = saved();
+        let snapshot: serde_json::Value = serde_json::from_str(&original).unwrap();
+        assert_eq!(snapshot["prompt"], "Original prompt");
+        assert_eq!(snapshot["world_info_ids"], serde_json::json!(["world"]));
+        conn.execute("UPDATE characters SET name = 'Edited', desc = 'Edited prompt'", []).unwrap();
+        let fresh = super::resolve_character_snapshot(&conn, Some("card"), None).unwrap().unwrap();
+        assert_eq!(fresh["prompt"], "Edited prompt");
+        super::backfill_character_snapshots(&conn).unwrap();
+        assert_eq!(saved(), original);
+        conn.execute("DELETE FROM characters", []).unwrap();
+        super::backfill_character_snapshots(&conn).unwrap();
+        assert_eq!(saved(), original);
+    }
+
+    #[test]
+    fn bundled_characters_use_frontend_snapshot_and_legacy_prompts_stay_complete() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE characters (
+                id TEXT PRIMARY KEY, name TEXT, desc TEXT, greeting TEXT,
+                initials TEXT, color TEXT, world_info_ids TEXT, avatar BLOB,
+                personality TEXT, scenario TEXT, mes_example TEXT
+             );
+             INSERT INTO characters VALUES (
+                'card', 'Original', 'Description', '', '', '', NULL, NULL,
+                'Personality', 'Scenario', 'Example'
+             );"
+        ).unwrap();
+        let fallback = serde_json::json!({"id": "1", "name": "Bundled", "prompt": "Bundled prompt"});
+        assert_eq!(super::resolve_character_snapshot(&conn, Some("1"), Some(fallback.clone())).unwrap(), Some(fallback.clone()));
+        let custom = super::resolve_character_snapshot(&conn, Some("card"), Some(fallback)).unwrap().unwrap();
+        assert_eq!(custom["prompt"], crate::import::combine_legacy_prompt("Description", "Personality", "Scenario", "Example"));
+        assert_eq!(custom["world_info_ids"], serde_json::json!([]));
+    }
 
     #[test]
     fn summary_compare_and_swap_is_null_safe_and_rejects_stale_writers() {

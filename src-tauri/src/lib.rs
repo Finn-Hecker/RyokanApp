@@ -108,6 +108,7 @@ pub fn run() {
             database::chats::rename_chat,
             database::chats::toggle_pin_chat,
             database::chats::get_conversations_page,
+            database::chats::get_chat_character_snapshot,
             database::chats::save_summary_meta,
             database::chats::compare_and_swap_summary_meta,
             database::chats::get_summary_meta,

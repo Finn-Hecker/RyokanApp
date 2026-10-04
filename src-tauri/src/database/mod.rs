@@ -205,7 +205,8 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
             cloned_from_title TEXT,
             folder_id TEXT REFERENCES chat_folders(id) ON DELETE SET NULL,
             sort_order INTEGER,
-            role_snapshot TEXT
+            role_snapshot TEXT,
+            character_snapshot TEXT
         );
 
         CREATE TABLE IF NOT EXISTS chat_folders (
@@ -355,6 +356,9 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
     let _ = conn.execute_batch(
         "ALTER TABLE conversations ADD COLUMN role_snapshot TEXT;"
     );
+    let _ = conn.execute_batch(
+        "ALTER TABLE conversations ADD COLUMN character_snapshot TEXT;"
+    );
     // Folder disclosure state is local UI organization and belongs alongside
     // the folder metadata so it survives restarts.
     let _ = conn.execute_batch(
@@ -379,6 +383,7 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
     // the reusable global Role library. Defaults preserve every existing Card.
     migrate_character_roles(&conn)
         .map_err(|e| format!("Failed to migrate Character Role snapshots: {}", e))?;
+    chats::backfill_character_snapshots(&conn)?;
 
     // "both" is no longer a supported mode. Normalize it, NULLs, and any
     // unknown values so older databases remain usable with the stricter model.
