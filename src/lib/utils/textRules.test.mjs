@@ -119,12 +119,12 @@ test('Settings saves the ordered payload via existing settings persistence and r
   assert.equal(context.settingsReady, true);
 });
 
-test('editor keeps drafts isolated, supports creation, replacement and stable sorting', () => {
+test('editor keeps drafts isolated, supports creation, replacement and drag previews', () => {
   const source = readFileSync(new URL('../components/settings/TextRulesSection.svelte', import.meta.url), 'utf8').match(/<script lang="ts">([\s\S]*?)<\/script>/)[1];
   const ast = ts.createSourceFile('TextRulesSection.ts', source, ts.ScriptTarget.Latest, true);
   const functions = ast.statements.filter(node => ts.isFunctionDeclaration(node)).map(node => node.getText(ast)).join('\n');
   const appState = { textRules: [rule(), rule({ id: 'two', name: 'Second' })] };
-  const context = vm.createContext({ appState, crypto: { randomUUID: () => 'created' }, templates: { name: 'Remove name' }, draft: null, sample: '', choosingTemplate: false, mobile: false, sampleOpen: true, preview: { error: null }, validSelection: true });
+  const context = vm.createContext({ appState, crypto: { randomUUID: () => 'created' }, templates: { name: 'Remove name' }, draft: null, sample: '', choosingTemplate: false, mobile: false, sampleOpen: true, preview: { error: null }, validSelection: true, previewOrder: null, draggingId: null });
   vm.runInContext(ts.transpile(functions, { target: ts.ScriptTarget.ES2022 }), context);
   context.edit(appState.textRules[0]);
   context.draft.scopes.push('user'); context.draft.name = 'Edited';
@@ -133,9 +133,12 @@ test('editor keeps drafts isolated, supports creation, replacement and stable so
   context.commit();
   assert.equal(appState.textRules[0].id, 'one');
   assert.equal(appState.textRules[0].name, 'Edited');
-  context.move(1, -1);
+  context.previewMove('two', 0);
+  assert.equal(appState.textRules[0].id, 'one');
+  context.finishMove(true);
   assert.deepEqual(Array.from(appState.textRules, r => r.id), ['two', 'one']);
-  context.move(0, -1);
+  context.previewMove('two', -1);
+  context.finishMove(true);
   assert.equal(appState.textRules[0].id, 'two');
   context.create(TEXT_RULE_TEMPLATES.find(template => template.id === 'name'));
   context.commit();
@@ -144,4 +147,28 @@ test('editor keeps drafts isolated, supports creation, replacement and stable so
   context.draft.name = 'Invalid'; context.preview.error = 'Invalid regex';
   context.commit();
   assert.equal(appState.textRules.at(-1).name, 'Remove name');
+});
+
+
+test('drag cancellation keeps execution order; committed order survives persistence and reaches display/send prompts', () => {
+  const source = readFileSync(new URL('../components/settings/TextRulesSection.svelte', import.meta.url), 'utf8').match(/<script lang="ts">([\s\S]*?)<\/script>/)[1];
+  const ast = ts.createSourceFile('rules.ts', source, ts.ScriptTarget.Latest, true);
+  const functions = ast.statements.filter(node => ts.isFunctionDeclaration(node)).map(node => node.getText(ast)).join('\n');
+  const appState = { textRules: [rule(), rule({ id: 'two', pattern: 'new', replacement: 'final' }), rule({ id: 'three', enabled: false })] };
+  const context = vm.createContext({ appState, previewOrder: null, draggingId: null });
+  vm.runInContext(ts.transpile(functions, { target: ts.ScriptTarget.ES2022 }), context);
+  context.previewMove('one', 2);
+  context.finishMove(false);
+  assert.deepEqual(appState.textRules.map(r => r.id), ['one', 'two', 'three']);
+  context.previewMove('two', 0);
+  context.finishMove(true);
+  const reloaded = parseTextRules(serializeTextRules(appState.textRules));
+  assert.deepEqual(reloaded.map(r => r.id), ['two', 'one', 'three']);
+  for (const target of ['display', 'send']) assert.equal(transformMessageText('old', reloaded, 'user', target), 'new');
+  const messages = buildPromptMessages({ character: null, worldInfos: [], recentMessages: [{ role: 'user', content: 'old' }], userPrompt: 'old', textRules: reloaded });
+  assert.equal(messages.at(-1).content, 'new');
+  assert.equal(messages.find(message => message.role === 'user').content, 'new');
+  context.previewMove('one', 999);
+  context.finishMove(true);
+  assert.equal(appState.textRules.at(-1).id, 'one');
 });

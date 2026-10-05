@@ -1,5 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { flip } from 'svelte/animate';
+  import { cubicOut } from 'svelte/easing';
+  import { sortableRules } from '$lib/utils/sortableRules';
   import { appState } from '$lib/stores/appState.svelte';
   import * as m from '$lib/paraglide/messages';
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
@@ -11,12 +14,19 @@
   let draft = $state<TextRule | null>(null);
   let sample = $state('');
   let mobile = $state(false);
+  let reducedMotion = $state(false);
   let sampleOpen = $state(true);
   onMount(() => {
     const query = window.matchMedia('(max-width: 767px)');
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
     const sync = () => mobile = query.matches;
+    const syncMotion = () => reducedMotion = motion.matches;
     sync(); query.addEventListener('change', sync);
-    return () => query.removeEventListener('change', sync);
+    syncMotion(); motion.addEventListener('change', syncMotion);
+    return () => {
+      query.removeEventListener('change', sync);
+      motion.removeEventListener('change', syncMotion);
+    };
   });
   const preview = $derived(draft ? previewTextRule(sample, draft) : null);
   const validSelection = $derived(Boolean(draft?.name.trim() && draft.scopes.length && draft.targets.length));
@@ -41,34 +51,67 @@
     if (appState.textRules.some(item => item.id === rule.id)) appState.textRules = appState.textRules.map(item => item.id === rule.id ? rule : item);
     else appState.textRules = [...appState.textRules, rule];
   }
-  function move(index: number, offset: number) {
+  let previewOrder = $state<TextRule[] | null>(null);
+  let draggingId = $state<string | null>(null);
+  const orderedRules = $derived(previewOrder ?? appState.textRules);
+  function previewMove(id: string, index: number) {
     const rules = [...appState.textRules];
-    const next = index + offset;
-    if (next < 0 || next >= rules.length) return;
-    [rules[index], rules[next]] = [rules[next], rules[index]];
-    appState.textRules = rules;
+    const from = rules.findIndex(rule => rule.id === id);
+    if (from < 0) return;
+    const [rule] = rules.splice(from, 1);
+    rules.splice(Math.max(0, Math.min(index, rules.length)), 0, rule);
+    draggingId = id;
+    if (previewOrder?.every((item, i) => item.id === rules[i]?.id)) return;
+    previewOrder = rules;
   }
+  function finishMove(commit: boolean) {
+    if (commit && previewOrder) appState.textRules = previewOrder;
+    previewOrder = null;
+    draggingId = null;
+  }
+  function keyboardMove(event: KeyboardEvent, id: string) {
+    if (event.target !== event.currentTarget || !event.altKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    event.preventDefault();
+    previewMove(id, appState.textRules.findIndex(rule => rule.id === id) + (event.key === 'ArrowUp' ? -1 : 1));
+    finishMove(true);
+  }
+
 </script>
 
+{#snippet actionIcon(action: 'edit' | 'delete' | 'add')}
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    {#if action === 'edit'}<path d="m16 3 5 5M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z" />
+    {:else if action === 'delete'}<path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6" />
+    {:else}<path d="M12 5v14M5 12h14" />{/if}
+  </svg>
+{/snippet}
+
 <section class="rules-section">
-  <div class="section-heading"><p class="hint">{m.text_rules_order()}</p><Button onclick={() => choosingTemplate = true}>{m.text_rules_add()}</Button></div>
-  {#if !appState.textRules.length}<p class="hint">{m.text_rules_empty()}</p>{/if}
-  <ol class="rules-list">
-    {#each appState.textRules as rule, index (rule.id)}
-      <li class="rule-row">
-        <label class="enabled"><span class="sr-only">{m.text_rules_enabled()}</span><input type="checkbox" role="switch" class="settings-switch-input sr-only" bind:checked={rule.enabled} aria-label={`${rule.name}: ${m.text_rules_enabled()}`} /><span class="settings-switch-track"><span class="settings-switch-thumb"></span></span></label>
-        <div class="rule-copy"><strong>{index + 1}. {rule.name}</strong><p class="hint">{rule.scopes.map(scope => scopes[scope]).join(' · ')} · {rule.targets.map(target => targets[target]).join(' · ')}</p>
+  <span id="rule-sort-help" class="sr-only">{m.text_rules_sort_help()}</span>
+  <div class="section-heading"><p class="hint">{m.text_rules_order()}</p><Button size="sm" onclick={() => choosingTemplate = true}>{@render actionIcon('add')}{m.text_rules_add()}</Button></div>
+  {#if !appState.textRules.length}
+    <div class="empty-state">
+      <span class="empty-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M8 5v14M5 19h6M14 12h6M17 9v6" /></svg></span>
+      <p class="hint">{m.text_rules_empty()}</p>
+    </div>
+  {:else}
+  <ol class="rules-list" use:sortableRules={{ preview: previewMove, finish: finishMove }}>
+    {#each orderedRules as rule, index (rule.id)}
+      <li class="rule-row" class:rule-disabled={!rule.enabled} class:rule-drag-source={draggingId === rule.id}
+        data-rule-id={rule.id} animate:flip={{ duration: reducedMotion ? 0 : 190, easing: cubicOut }}>
+        <span class="rule-number" aria-hidden="true">{index + 1}</span>
+        <div class="rule-copy" title={`${rule.name} · ${rule.scopes.map(scope => scopes[scope]).join(" · ")} · ${rule.targets.map(target => targets[target]).join(" · ")}`}><strong>{rule.name}</strong><div class="rule-meta"><span>{rule.scopes.map(scope => scopes[scope]).join(' · ')}</span><span class="rule-target">{rule.targets.map(target => targets[target]).join(' · ')}</span></div>
           {#if previewTextRule('', rule).error}<p class="error">{m.text_rules_invalid()}</p>{/if}
         </div>
         <div class="row-actions">
-          <Button variant="icon" ariaLabel={`${rule.name}: ${m.text_rules_up()}`} disabled={index === 0} onclick={() => move(index, -1)}>↑</Button>
-          <Button variant="icon" ariaLabel={`${rule.name}: ${m.text_rules_down()}`} disabled={index === appState.textRules.length - 1} onclick={() => move(index, 1)}>↓</Button>
-          <Button onclick={() => edit(rule)}>{m.text_rules_edit()}</Button>
-          <Button variant="danger" ariaLabel={`${rule.name}: ${m.text_rules_delete()}`} onclick={() => appState.textRules = appState.textRules.filter(item => item.id !== rule.id)}>{m.text_rules_delete()}</Button>
+          <button type="button" class="rule-action" aria-describedby="rule-sort-help" onkeydown={(event) => keyboardMove(event, rule.id)} aria-label={`${rule.name}: ${m.text_rules_edit()}`} title={m.text_rules_edit()} onclick={() => edit(rule)}>{@render actionIcon('edit')}</button>
+          <button type="button" class="rule-action" aria-label={`${rule.name}: ${m.text_rules_delete()}`} title={m.text_rules_delete()} onclick={() => appState.textRules = appState.textRules.filter(item => item.id !== rule.id)}>{@render actionIcon('delete')}</button>
         </div>
+        <label class="enabled" title={m.text_rules_enabled()}><span class="sr-only">{m.text_rules_enabled()}</span><input type="checkbox" role="switch" class="settings-switch-input sr-only" bind:checked={rule.enabled} aria-label={`${rule.name}: ${m.text_rules_enabled()}`} /><span class="settings-switch-track"><span class="settings-switch-thumb"></span></span></label>
       </li>
     {/each}
   </ol>
+  {/if}
 </section>
 
 {#if choosingTemplate}
@@ -143,14 +186,28 @@
 
 <style>
   .rules-section { display:flex; flex-direction:column; gap:16px; }
-  .section-heading { display:flex; flex-wrap:wrap; align-items:center; gap:16px; justify-content:space-between; }
+  .section-heading { display:flex; flex-wrap:wrap; align-items:center; gap:12px 20px; justify-content:space-between; }
+  .section-heading > .hint { flex:1; min-width:200px; max-width:420px; }
   .hint { color:var(--sheet-text-muted); font-size:12px; line-height:1.5; margin:0; }
-  .rules-list { list-style:none; margin:0; padding:0; display:grid; gap:12px; }
-  .rule-row { display:flex; flex-wrap:wrap; align-items:center; gap:14px; padding:12px 0; border-bottom:1px solid var(--sheet-divider); }
-  .rule-copy { flex:1; min-width:0; overflow-wrap:anywhere; }
-  .rule-copy strong { font-size:14px; }
-  .enabled { display:flex; align-items:center; min-height:44px; }
-  .row-actions { display:flex; flex-wrap:wrap; gap:8px; width:100%; }
+  .rules-list { list-style:none; margin:0; padding:0; border:1px solid var(--sheet-divider); border-radius:15px; background:rgba(255,255,255,.025); }
+  .rule-row { display:grid; grid-template-columns:28px minmax(0,1fr) auto auto; align-items:center; gap:10px; padding:10px 12px; position:relative; cursor:grab; user-select:none; -webkit-touch-callout:none; }
+  .rule-row + .rule-row { border-top:1px solid var(--sheet-divider); }
+  .rule-number { width:28px; height:28px; display:grid; place-items:center; border-radius:8px; background:rgba(212,180,131,.075); color:var(--accent); font-size:11px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .rule-copy { min-width:0; display:flex; align-items:center; gap:12px; overflow:hidden; }
+  .rule-copy strong { color:var(--sheet-text); font-size:13px; font-weight:600; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rule-meta { display:flex; align-items:center; gap:5px 8px; white-space:nowrap; overflow:hidden; color:var(--sheet-text-subtle); font-size:11px; line-height:1.5; }
+  .rule-target { padding:2px 7px; border-radius:6px; background:rgba(255,255,255,.04); color:var(--sheet-text-muted); }
+  .rule-disabled .rule-copy strong { color:var(--sheet-text-muted); }
+  .rule-disabled .rule-number { color:var(--sheet-text-subtle); background:rgba(255,255,255,.035); }
+  .enabled { display:flex; align-items:center; justify-content:center; min-height:44px; cursor:pointer; }
+  .row-actions { display:flex; align-items:center; gap:2px; }
+  .rule-action { width:32px; height:36px; display:grid; place-items:center; padding:0; border:0; border-radius:8px; background:transparent; color:var(--sheet-text-subtle); cursor:pointer; transition:color .15s,background .15s; }
+  .rule-action:hover:enabled { color:var(--sheet-text); background:var(--sheet-surface-hover); }
+  .rule-action:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .rule-action:disabled { opacity:.25; cursor:default; }
+  .empty-state { display:flex; flex-direction:column; align-items:center; gap:14px; padding:36px 24px; border:1px solid var(--sheet-divider); border-radius:15px; background:rgba(255,255,255,.025); text-align:center; }
+  .empty-state .hint { max-width:300px; }
+  .empty-icon { display:grid; place-items:center; width:48px; height:48px; border-radius:14px; color:var(--accent); background:rgba(212,180,131,.075); }
   .template-list { display:grid; gap:4px; }
   .template-option { display:flex; align-items:center; gap:12px; width:100%; padding:14px 12px; border:0; border-radius:12px; background:transparent; color:var(--sheet-text); text-align:left; cursor:pointer; font:inherit; }
   .template-option:hover { background:var(--sheet-surface-hover); }
@@ -189,8 +246,27 @@
   .sample-card { grid-column:2; grid-row:2; min-width:0; }
   .sample-card summary { padding-top:0; color:var(--sheet-text-muted); font-size:12px; }
   .sample-input { min-height:120px; }
-  @media(min-width:768px) { .row-actions { width:auto; } }
+  .rule-row:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+  .rule-drag-source { background:var(--sheet-selected); outline:1px dashed var(--sheet-selected-border); outline-offset:-2px; }
+  .rule-drag-source > * { opacity:.2; }
+  :global(.rule-drag-ghost) { background:var(--sheet-bg); border:1px solid var(--sheet-selected-border); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.3); cursor:grabbing; will-change:transform; }
+  .enabled .settings-switch-track { width:30px; height:18px; }
+  .enabled .settings-switch-thumb { width:10px; height:10px; }
+  .enabled .settings-switch-input:checked + .settings-switch-track .settings-switch-thumb { transform:translateX(12px); }
   @media(max-width:767px) {
+    .section-heading { gap:12px; }
+    .section-heading > .hint { min-width:0; flex-basis:100%; max-width:none; }
+    .section-heading :global(button) { min-height:44px; }
+    .rule-row { grid-template-columns:20px minmax(0,1fr) auto 34px; gap:5px; padding:4px 8px; min-height:52px; }
+    .rule-number { width:20px; height:20px; border-radius:6px; font-size:10px; }
+    .rule-copy { gap:6px; }
+    .rule-copy strong { font-size:13px; }
+    .rule-meta { display:none; }
+    .rule-copy .error { font-size:10px; white-space:nowrap; }
+    .enabled { align-self:start; min-height:36px; padding-top:6px; }
+    .row-actions { gap:0; }
+    .rule-action { width:34px; height:44px; }
+    .empty-state { padding:28px 20px; }
     .workspace { display:flex; flex-direction:column; gap:14px; }
     .result-card { position:sticky; top:-16px; z-index:1; order:-2; width:100%; background:var(--sheet-bg); padding:10px 12px; box-shadow:0 8px 14px var(--sheet-bg); }
     pre { min-height:24px; max-height:76px; margin-top:6px; font-size:13px; }

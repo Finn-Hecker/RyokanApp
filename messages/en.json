@@ -638,5 +638,6 @@
   "text_rules_application": "Apply to",
   "text_rules_remove_placeholder": "Leave empty to remove",
   "text_rules_preview_empty": "Enter an example text to see the result.",
-  "text_rules_sample_placeholder": "Enter text to try the rule …"
+  "text_rules_sample_placeholder": "Enter text to try the rule …",
+  "text_rules_sort_help": "Drag to reorder, or long press on mobile. Use Alt + Up/Down to reorder with the keyboard."
 }

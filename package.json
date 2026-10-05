@@ -17,7 +17,7 @@
     "test:updater": "node --experimental-strip-types --test src/lib/utils/updater.test.mjs scripts/updater-config.test.mjs",
     "test:usage": "node --experimental-strip-types --test src/lib/utils/tokenUsage.test.mjs",
     "test:tokens": "node --experimental-strip-types --test src/lib/utils/tokenEstimate.test.mjs src/lib/utils/requestBudget.test.mjs src/lib/utils/providerTokenBudget.test.mjs",
-    "test:text-rules": "node --experimental-strip-types --test src/lib/utils/textRules.test.mjs"
+    "test:text-rules": "node --experimental-strip-types --test src/lib/utils/textRules.test.mjs src/lib/utils/sortableRules.test.mjs"
   },
   "license": "GPL-3.0-only",
   "dependencies": {

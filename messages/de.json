@@ -639,5 +639,6 @@
   "text_rules_application": "Anwenden auf",
   "text_rules_remove_placeholder": "Leer lassen zum Entfernen",
   "text_rules_preview_empty": "Gib einen Beispieltext ein, um das Ergebnis zu sehen.",
-  "text_rules_sample_placeholder": "Text zum Ausprobieren eingeben …"
+  "text_rules_sample_placeholder": "Text zum Ausprobieren eingeben …",
+  "text_rules_sort_help": "Zum Sortieren ziehen oder auf Mobilgeräten gedrückt halten. Mit Alt + Pfeil hoch/runter per Tastatur verschieben."
 }
