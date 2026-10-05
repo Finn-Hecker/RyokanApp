@@ -52,6 +52,8 @@ android {
     }
     buildTypes {
         getByName("debug") {
+            // Keep in sync with bundle.android.debugApplicationIdSuffix in tauri.conf.json.
+            applicationIdSuffix = ".debug"
             manifestPlaceholders["usesCleartextTraffic"] = "true"
             isDebuggable = true
             isJniDebuggable = true
