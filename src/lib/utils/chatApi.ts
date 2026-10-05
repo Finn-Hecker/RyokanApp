@@ -1,10 +1,11 @@
+import type { TextRule } from '$lib/utils/textRules';
 import { invoke } from '@tauri-apps/api/core';
 import { recordModelUse } from '$lib/utils/modelPickerData';
 import { traceDecision, diagnosticOperation, diagnosticConnection } from '$lib/utils/diagnosticDecisions';
 import { worldInfoState } from '$lib/stores/worldInfoStore.svelte';
 import { chatState } from '$lib/stores/chatStore.svelte';
 import { buildPromptMessages } from '$lib/utils/chatPromptBuilder';
-import { snapshotApiConnection, type ApiConnection } from '$lib/stores/appState.svelte';
+import { appState, snapshotApiConnection, type ApiConnection } from '$lib/stores/appState.svelte';
 import { requestParameterConfig } from '$lib/utils/apiParameters';
 import type { Message } from '$lib/stores/chatStore.svelte';
 import {
@@ -28,6 +29,8 @@ export interface GenerationCallbacks {
 }
 
 export interface GenerationOptions {
+    /** Bound to the same rules during budgeting, summarization and generation. */
+    textRules?: readonly TextRule[];
     /** Persisted conversation ID, shared by chat and summary requests. */
     chatId?: string;
     /** Ephemeral diagnostic correlation/counts only; never part of provider requests. */
@@ -63,6 +66,7 @@ export interface ChatMessage {
 
 export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
     return buildPromptMessages({
+        textRules: options.textRules ?? appState.textRules,
         character: options.character,
         role: options.role === undefined ? chatState.activeRoleSnapshot : options.role,
         recentMessages: options.recentMessages,
@@ -96,6 +100,7 @@ export function generationConfigurationFingerprint(options: GenerationOptions): 
         options.character,
         options.role === undefined ? chatState.activeRoleSnapshot : options.role,
         worldInfoState.allWorldInfos,
+        (options.textRules ?? appState.textRules).filter(rule => rule.enabled && rule.targets.includes('send')),
     ]);
 }
 

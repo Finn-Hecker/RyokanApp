@@ -1,4 +1,5 @@
 import { buildSystemPrompt, buildWiString, buildWorldInfoBlock } from './promptBuilder.ts';
+import { applyTextRules, transformMessageText, type TextRule } from './textRules.ts';
 import { stripThinkingContent } from './thinkingOutput.ts';
 
 export interface PromptMessage {
@@ -26,6 +27,7 @@ export interface PromptWorldInfo {
 }
 
 export interface PromptBuildOptions {
+  textRules?: readonly TextRule[];
   character: {
     name?: string;
     prompt?: string;
@@ -55,16 +57,19 @@ const START_ROLEPLAY_MARKER = '[Start Roleplay]';
  */
 export function buildPromptMessages(options: PromptBuildOptions): ChatPromptMessage[] {
   const { character, recentMessages, userPrompt } = options;
+  const rules = options.textRules ?? [];
+  const sendText = (message: PromptMessage) => {
+    const transformed = transformMessageText(message.content, rules, message.role, 'send');
+    return message.role === 'assistant' ? stripThinkingContent(transformed) : transformed;
+  };
   const worldInfoById = new Map(options.worldInfos.map(worldInfo => [worldInfo.id, worldInfo]));
   const selectedIds = [...new Set(character?.world_info_ids ?? [])];
   const relevantEntries = selectedIds
     .flatMap(id => worldInfoById.get(id)?.entries ?? []);
   const recentContext = [
     options.summaryMeta?.currentSummary ?? '',
-    ...recentMessages.slice(-10).map(message =>
-      message.role === 'assistant' ? stripThinkingContent(message.content) : message.content
-    ),
-    userPrompt ?? '',
+    ...recentMessages.slice(-10).map(sendText),
+    applyTextRules(userPrompt ?? '', rules, 'user', 'send'),
   ].join(' ');
 
   const charName = character?.name || 'Unknown';
@@ -86,12 +91,10 @@ export function buildPromptMessages(options: PromptBuildOptions): ChatPromptMess
   const messages: ChatPromptMessage[] = [{ role: 'system', content: fullSystemContent }];
   messages.push(...newMessages.map(message => ({
     role: message.role,
-    content: message.role === 'assistant'
-      ? stripThinkingContent(message.content)
-      : message.content,
+    content: sendText(message),
   })));
 
-  if (userPrompt) messages.push({ role: 'user', content: userPrompt });
+  if (userPrompt) messages.push({ role: 'user', content: applyTextRules(userPrompt, rules, 'user', 'send') });
 
   const firstNonSystem = messages.find(message => message.role !== 'system');
   if (firstNonSystem?.role === 'assistant') {
@@ -100,8 +103,8 @@ export function buildPromptMessages(options: PromptBuildOptions): ChatPromptMess
   }
 
   const worldInfoBlock = buildWorldInfoBlock(
-    buildWiString(relevantEntries, 'before', recentContext),
-    buildWiString(relevantEntries, 'after', recentContext),
+    buildWiString(relevantEntries, 'before', recentContext, content => applyTextRules(content, rules, 'lorebook', 'send')),
+    buildWiString(relevantEntries, 'after', recentContext, content => applyTextRules(content, rules, 'lorebook', 'send')),
     charName,
   );
 

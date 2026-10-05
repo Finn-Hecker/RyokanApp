@@ -70,6 +70,7 @@ export function buildWiString(
   }>,
   position: 'before' | 'after',
   recentMessages: string,
+  transformContent: (content: string) => string = content => content,
 ): string {
   const normalizedContext = recentMessages.normalize('NFC');
   const matches = (key: string, caseSensitive = false, useRegex = false): boolean => {
@@ -98,7 +99,7 @@ export function buildWiString(
       if (!e.selective || e.use_regex) return true;
       return (e.secondary_keys ?? []).some(key => matches(key, e.case_sensitive, false));
     })
-    .map(e => e.content.trim())
+    .map(e => transformContent(e.content).trim())
     .filter(Boolean)
     .join('\n\n');
 }

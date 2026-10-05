@@ -660,3 +660,49 @@ test('stop during summary listener setup prevents network and persistence', asyn
     assert.equal(listeners.size, 0);
   } finally { harness.listen = previous; }
 });
+
+test('text rules reach provider payloads while raw responses and source history remain unchanged', async () => {
+  const originalRules = state.appState.textRules;
+  const profile = state.createDefaultConnection();
+  const source = [{ id: 'original', role: 'assistant', content: 'old', swipe_index: 0 }];
+  const rule = { id: 'regex', name: 'Replace', pattern: 'old', replacement: 'sent', flags: 'g', enabled: true, scopes: ['user', 'assistant'], targets: ['send'] };
+  const rules = [rule, { ...rule, id: 'screen', replacement: 'display', targets: ['display'] }];
+  state.appState.textRules = rules;
+  let payload;
+  const updates = [];
+  harness.invoke = async (command, args) => {
+    if (command !== 'call_ai_api') return;
+    payload = args.payload;
+    listeners.get('ai-token')?.({ payload: { generationId: payload.generation_id, token: 'old response' } });
+    return null;
+  };
+  try {
+    const options = { apiSettings: profile, character: null, recentMessages: source, userPrompt: 'old prompt', summaryMeta: { currentSummary: null, lastSummarizedMessageId: null }, textRules: structuredClone(rules) };
+    const before = chatApi.generationConfigurationFingerprint(options);
+    const result = await chatApi.runGeneration(options, { onStreamUpdate: text => updates.push(text), onThinkingPhaseChange() {} });
+    assert.equal(payload.messages.find(message => message.role === 'assistant').content, 'sent');
+    assert.equal(payload.messages.at(-1).content, 'sent prompt');
+    assert.equal(result.text, 'old response');
+    assert.equal(updates.at(-1), 'old response');
+    assert.equal(source[0].content, 'old');
+    state.appState.textRules[0].replacement = 'later';
+    assert.equal(chatApi.generationConfigurationFingerprint(options), before, 'an immutable request retains its rules');
+    assert.notEqual(chatApi.generationConfigurationFingerprint({ ...options, textRules: undefined }), before);
+  } finally { state.appState.textRules = originalRules; }
+});
+
+test('summary receives send rules, excludes display rules and leaves persisted history intact', async () => {
+  const originalRules = state.appState.textRules;
+  const f = fixture({ chatLimit: 8192, summaryLimit: 8192, lengths: [9000, 9000, 20] });
+  f.messages.forEach(message => { message.content = 'PRIVATE ' + message.content; });
+  const original = JSON.stringify(f.messages);
+  const rule = { id: 'send', name: 'Private', pattern: 'PRIVATE', replacement: 'PUBLIC', flags: 'g', enabled: true, scopes: ['user', 'assistant'], targets: ['send'] };
+  state.appState.textRules = [rule, { ...rule, id: 'display', pattern: 'PUBLIC', replacement: 'SCREEN', targets: ['display'] }];
+  try {
+    await f.run();
+    assert.ok(f.calls.length > 0);
+    assert.ok(f.calls.some(call => call.messages.some(message => message.content.includes('PUBLIC'))));
+    assert.ok(f.calls.every(call => call.messages.every(message => !message.content.includes('PRIVATE') && !message.content.includes('SCREEN'))));
+    assert.equal(JSON.stringify(f.messages), original);
+  } finally { state.appState.textRules = originalRules; }
+});

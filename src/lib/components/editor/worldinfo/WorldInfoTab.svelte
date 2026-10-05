@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { applyTextRules } from '$lib/utils/textRules';
+  import { appState } from '$lib/stores/appState.svelte';
   import * as m from '$lib/paraglide/messages';
   import { slide } from 'svelte/transition';
   import { createEmptyEntry, type WorldInfoEntry, type WiPosition } from './worldInfoLogic';
@@ -74,6 +76,7 @@
   {#if entries.length > 0}
     <div class="entry-list">
       {#each entries as entry (entry.id)}
+        {@const displayContent = applyTextRules(entry.content, appState.textRules, 'lorebook', 'display')}
         <div class="entry-card"
           class:entry-card--disabled={!entry.enabled}
           class:entry-card--after={entry.position === 'after'}
@@ -135,6 +138,9 @@
               oninput={e => updateContent(entry.id, e.currentTarget.value)}
               rows="4" class="entry-textarea"
               placeholder={m.wi_tab_content_placeholder()}></textarea>
+            {#if displayContent !== entry.content}
+              <div class="rule-preview"><span class="entry-section-label">{m.text_rules_lore_preview()}</span><pre>{displayContent}</pre></div>
+            {/if}
           </div>
 
           <div class="pos-strip" class:pos-strip--after={entry.position === 'after'}>
@@ -171,6 +177,8 @@
 </div>
 
 <style>
+  .rule-preview { margin-top:12px; color:var(--sheet-text-muted); }
+  .rule-preview pre { white-space:pre-wrap; overflow-wrap:anywhere; border:1px solid var(--sheet-border); background:var(--sheet-surface); border-radius:11px; padding:12px; font:inherit; font-size:13px; }
   .field-wrap {
     background: rgba(255,255,255,0.025);
     border: 1px solid rgba(255,255,255,0.08);

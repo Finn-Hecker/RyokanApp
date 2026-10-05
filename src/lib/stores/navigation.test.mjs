@@ -77,7 +77,7 @@ function page({ reducedMotion = false, deferredListener = false, userAgent = 'An
       return deferredListener ? new Promise(resolve => { resolveListener = () => resolve(listener); }) : Promise.resolve(listener);
     },
     getAllSettings: async () => [], loadWorldInfos: async () => {},
-    hydrateApiConnections: () => {}, updater: { initialize: async () => {} },
+    parseTextRules: () => [], TEXT_RULES_KEY: "text_rules_v1", hydrateApiConnections: () => {}, updater: { initialize: async () => {} },
     container: { animate: (...args) => { animations.push(args); return { cancel() {} }; } },
   });
   const source = readFileSync(new URL('../../routes/+page.svelte', import.meta.url), 'utf8')

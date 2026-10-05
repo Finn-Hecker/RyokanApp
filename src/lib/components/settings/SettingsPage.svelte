@@ -3,12 +3,14 @@
   import { appState } from "$lib/stores/appState.svelte";
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { getAllSettings, saveSetting } from "$lib/utils/settings";
+  import { parseTextRules, serializeTextRules, TEXT_RULES_KEY } from '$lib/utils/textRules';
   import { onMount } from "svelte";
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { setLocale } from "$lib/paraglide/runtime";
   import * as m from "$lib/paraglide/messages";
   import ApiSection from "./ApiSection.svelte";
   import GeneralSection from "./GeneralSection.svelte";
+  import TextRulesSection from "./TextRulesSection.svelte";
   import UpdateSection from './UpdateSection.svelte';
   import { downloadDiagnostics } from '$lib/utils/diagnostics';
   import { diagnosticsMetadata } from '$lib/utils/diagnosticsMetadata';
@@ -17,7 +19,7 @@
   import { validateAdditionalApiParameters } from "$lib/utils/additionalApiParameters";
   import { hydrateApiConnections, LONG_TERM_MEMORY_KEY, persistApiConnections, resolvedHardContextLimit, SUMMARY_CONNECTION_KEY } from "$lib/utils/apiConnections";
 
-  type SettingsCategory = "provider" | "memory" | "appearance" | "language" | "advanced" | "about";
+  type SettingsCategory = "provider" | "memory" | "textRules" | "appearance" | "language" | "advanced" | "about";
   type Category = { id: SettingsCategory; label: string; description: string; mobileDescription: string; icon: string };
 
   let powerUser = $state(false);
@@ -42,6 +44,7 @@
   const CATEGORIES: Category[] = [
     { id: "provider", label: m.settings_category_provider(), description: m.settings_category_provider_description(), mobileDescription: m.settings_category_provider_mobile_description(), icon: "M4 7h16M6 3h12v18H6zM9 11h6M9 15h6" },
     { id: "memory", label: m.settings_category_memory(), description: m.settings_category_memory_description(), mobileDescription: m.settings_category_memory_mobile_description(), icon: "M9 4.5a3 3 0 015.83-1M9 4.5A3 3 0 003.5 6v1A3.5 3.5 0 005 13.7V15a4 4 0 004 4M15 4.5A3 3 0 0120.5 6v1A3.5 3.5 0 0119 13.7V15a4 4 0 01-4 4M9 4.5V19M15 4.5V19M9 9h2M13 14h2" },
+    { id: "textRules", label: m.text_rules_title(), description: m.text_rules_description(), mobileDescription: m.text_rules_short_description(), icon: "M4 6h16M4 12h10M4 18h16" },
     { id: "appearance", label: m.settings_category_appearance(), description: m.settings_category_appearance_description(), mobileDescription: m.settings_category_appearance_mobile_description(), icon: "M3 6h18M6 10h12M9 14h6M12 18h.01" },
     { id: "language", label: m.settings_section_language(), description: m.settings_category_language_description(), mobileDescription: m.settings_category_language_description(), icon: "M12 21a9 9 0 100-18 9 9 0 000 18zm0 0c2.21 0 4-4.03 4-9s-1.79-9-4-9-4 4.03-4 9 1.79 9 4 9zM3.5 12h17" },
     { id: "advanced", label: m.settings_category_advanced(), description: m.settings_category_advanced_description(), mobileDescription: m.settings_category_advanced_mobile_description(), icon: "M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM19 12h2M3 12h2M12 3v2M12 19v2M5.64 5.64l1.42 1.42M16.94 16.94l1.42 1.42M18.36 5.64l-1.42 1.42M7.06 16.94l-1.42 1.42" },
@@ -75,6 +78,7 @@
     try {
       const settings = await getAllSettings();
       hydrateApiConnections(settings);
+      appState.textRules = parseTextRules(settings.find(row => row.key === TEXT_RULES_KEY)?.value);
       parameterEnabled = { ...appState.apiSettings.parameterEnabled };
       powerUser = settings.find(row => row.key === 'settings_power_user')?.value === 'true';
       const chatFontScale = Number(settings.find(row => row.key === 'chat_font_scale')?.value);
@@ -91,6 +95,7 @@
       appState.apiSettings.contextLimit = resolvedHardContextLimit(appState.apiSettings);
       await Promise.all([
         persistApiConnections(),
+        saveSetting(TEXT_RULES_KEY, serializeTextRules(appState.textRules)),
         saveSetting("settings_power_user", powerUser),
         saveSetting("chat_font_scale", appState.chatFontScale),
         saveSetting(LONG_TERM_MEMORY_KEY, appState.longTermMemory),
@@ -198,6 +203,7 @@
     <div bind:this={settingsContentEl} class="settings-content" class:settings-content--mobile-hidden={!mobileCategoryOpen}>
       <div class="content-panel" hidden={activeSection !== "provider" && activeSection !== "memory"}><ApiSection powerUser={powerUser} active={activeSection === "provider"} section={activeSection === "memory" ? "memory" : "provider"} {settingsReady} bind:parameterEnabled onConnectionChange={handleConnectionChange} /></div>
       <div class="content-panel" hidden={activeSection === "provider" || activeSection === "memory"}>
+        {#if activeSection === "textRules" && settingsReady}<TextRulesSection />{/if}
         {#if activeSection === "advanced"}
           <div class="advanced-mode">{@render powerToggle()}</div>
         {/if}

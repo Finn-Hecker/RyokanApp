@@ -2,6 +2,7 @@
   import { selectedUsage } from '$lib/utils/tokenUsage';
   import { reportDiagnostic } from '$lib/utils/diagnostics';
   import { invoke } from '@tauri-apps/api/core';
+  import { snapshotTextRules } from '$lib/utils/textRules';
   import { appState, snapshotActiveApiConnection } from '$lib/stores/appState.svelte';
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { tick, flushSync, onMount, onDestroy } from 'svelte';
@@ -320,6 +321,7 @@
       chatId,
       character:      appState.activeCharacter,
       apiSettings:    snapshotActiveApiConnection(),
+      textRules: snapshotTextRules(appState.textRules),
       recentMessages: chatState.currentMessages,
       userPrompt:     undefined as string | undefined,
       shouldCancel: () => sendCancelled || chatState.activeChatId !== chatId,
@@ -420,6 +422,7 @@
         chatId,
         character: appState.activeCharacter,
         apiSettings: snapshotActiveApiConnection(),
+        textRules: snapshotTextRules(appState.textRules),
         recentMessages: msgs.slice(0, idx),
         userPrompt: undefined,
         generationId,

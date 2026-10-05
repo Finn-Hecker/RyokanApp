@@ -78,7 +78,9 @@
   // A transformed dialog changes the containing block of fixed descendants.
   // A modal popup belongs in the native top layer, outside its animated panel.
   function portal(node: HTMLDivElement) {
-    (wrapper?.closest('dialog') ?? document.body).appendChild(node);
+    // Actions run before bind:this assignments are guaranteed to be available.
+    // The tooltip node already has its actual modal ancestry at this point.
+    (node.closest('dialog') ?? document.body).appendChild(node);
     return { destroy: () => node.remove() };
   }
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { parseTextRules, TEXT_RULES_KEY } from '$lib/utils/textRules';
   import { onMount, tick } from 'svelte';
   import { appState } from '$lib/stores/appState.svelte';
   import CharacterLobby from '$lib/components/lobby/CharacterLobby.svelte';
@@ -90,6 +91,7 @@
     appState.chatFontScale = Number.isFinite(chatFontScale) && chatFontScale >= 80 && chatFontScale <= 140 ? chatFontScale : 100;
 
     hydrateApiConnections(settings);
+    appState.textRules = parseTextRules(settings.find(row => row.key === TEXT_RULES_KEY)?.value);
 
     appState.isOnboarding = map['onboarding_completed'] !== 'true';
     loaded = true;

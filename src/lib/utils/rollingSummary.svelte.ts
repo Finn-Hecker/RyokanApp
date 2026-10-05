@@ -11,6 +11,7 @@ import type { Message } from '$lib/stores/chatStore.svelte';
 import { decodeMessage, type PersistedMessageRow } from '$lib/utils/messageData';
 import { buildApiMessages, generationConfigurationFingerprint, messageFingerprint } from '$lib/utils/chatApi';
 import type { GenerationOptions, GenerationPromptSnapshot } from '$lib/utils/chatApi';
+import { transformMessageText } from '$lib/utils/textRules';
 import { processThinkingOutput, stripThinkingContent } from '$lib/utils/chatApi';
 import {
     commitOrRollback,
@@ -655,8 +656,8 @@ async function performSummaryCheck(
         const clean = (message: Message) => ({
             role: message.role,
             content: message.role === 'assistant'
-                ? stripThinkingContent(message.content)
-                : message.content,
+                ? stripThinkingContent(transformMessageText(message.content, options.textRules ?? appState.textRules, 'assistant', 'send'))
+                : transformMessageText(message.content, options.textRules ?? appState.textRules, 'user', 'send'),
         });
         // Keep chat capacity independent. Pressure on the summary model only
         // advances the rolling marker; large imports/pastes still use chunking.

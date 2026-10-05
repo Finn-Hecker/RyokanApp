@@ -1,3 +1,4 @@
+import { snapshotTextRules } from '../../utils/textRules.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -20,7 +21,7 @@ function room(overrides = {}) {
     return statement.getText(ast);
   }).join('\n');
   const context = vm.createContext({
-    $state: value => value, $effect() {}, onMount() {}, onDestroy() {},
+    snapshotTextRules, $state: value => value, $effect() {}, onMount() {}, onDestroy() {},
     flushSync: callback => callback(), tick: async () => {},
     chatState: { activeChatId: 'chat', currentMessages: [], conversations: [] },
     summaryState: { isSummarizing: false }, appState: { activeCharacter: null },

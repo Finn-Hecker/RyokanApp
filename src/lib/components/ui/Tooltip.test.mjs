@@ -13,10 +13,10 @@ for (const modal of [false, true]) {
     const attached = [];
     const body = { appendChild: node => attached.push(['body', node]) };
     const dialog = { appendChild: node => attached.push(['dialog', node]) };
-    const context = vm.createContext({ document: { body }, wrapper: { closest: () => modal ? dialog : null } });
+    const context = vm.createContext({ document: { body } });
     vm.runInContext(ts.transpile(portal, { target: ts.ScriptTarget.ES2022 }), context);
     let removed = false;
-    const node = { remove: () => removed = true };
+    const node = { closest: selector => { assert.equal(selector, 'dialog'); return modal ? dialog : null; }, remove: () => removed = true };
     const action = context.portal(node);
     assert.deepEqual(attached, [[modal ? 'dialog' : 'body', node]]);
     action.destroy();

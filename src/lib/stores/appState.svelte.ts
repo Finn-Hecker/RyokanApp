@@ -2,6 +2,7 @@ import { createDefaultApiParameterEnabled, type ApiParameterKey } from '$lib/uti
 import type { ReasoningLevel, SavedGenerationCapabilities, ServiceTier } from '$lib/utils/generationCapabilities';
 import { CONSERVATIVE_CONTEXT_FALLBACK, resolvedHardContextLimit, resolveSummaryConnection, SAME_AS_CHAT_CONNECTION } from '$lib/utils/connectionCore';
 
+import type { TextRule } from '$lib/utils/textRules';
 import type { ProviderKind } from '$lib/utils/providers';
 export type { ProviderKind } from '$lib/utils/providers';
 import type { ContextStrategy } from '$lib/utils/connectionCore';
@@ -78,6 +79,7 @@ export const appState = $state({
   apiConnections: [initialConnection] as ApiConnection[],
   activeApiConnectionId: initialConnection.id,
   apiSettings: initialConnection as ApiConnection,
+  textRules: [] as TextRule[],
   longTermMemory: true,
   summaryConnectionId: SAME_AS_CHAT_CONNECTION,
 });
