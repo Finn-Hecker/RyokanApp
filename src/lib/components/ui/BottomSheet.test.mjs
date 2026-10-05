@@ -126,9 +126,97 @@ function sheet(props = {}, environment = {}) {
       changedTouches: [{ identifier: 0, clientX: x, clientY: y }], target, cancelable, preventDefault() { prevented = true; } });
     return prevented;
   }
+  function dispatch(name, target = backdrop, detail = 1) {
+    let prevented = false, stopped = false;
+    dialog.listeners[name]?.({ target, detail, preventDefault() { prevented = true; },
+      stopImmediatePropagation() { stopped = true; } });
+    if (name === 'click' && !stopped && target === backdrop) vm.runInContext('close()', context);
+    return { prevented, stopped };
+  }
   return { panel, dialog, backdrop, animations, touch, query, makeTarget: () => new Element(), back: () => back(), cleanup,
-    context, run: code => vm.runInContext(code, context), pause: ms => now += ms };
+    context, dispatch, run: code => vm.runInContext(code, context), pause: ms => now += ms };
 }
+
+// Use the production long-press action with a fake clock. The modal is mounted
+// by its real 350ms callback, while the source pointer is still held down.
+function longPressSheet() {
+  let now = 0, nextId = 0, opened;
+  const timers = new Map(), listeners = {};
+  const source = readFileSync(new URL('../lobby/mobileCharacterLongPress.ts', import.meta.url), 'utf8')
+    .replace(/^import .*;$/gm, '').replace('export const', 'const');
+  const context = vm.createContext({
+    node: { addEventListener(name, handler) { listeners[name] = handler; }, removeEventListener(name) { delete listeners[name]; } },
+    options: { enabled: true, onLongPress() { opened = sheet(); } },
+    window: { matchMedia: () => ({ matches: true }) },
+    setTimeout(callback, delay) { const id = ++nextId; timers.set(id, { callback, at: now + delay }); return id; },
+    clearTimeout(id) { timers.delete(id); },
+  });
+  vm.runInContext(ts.transpile(source, { target: ts.ScriptTarget.ES2022 }) + '\nmobileCharacterLongPress(node, options);', context);
+  listeners.pointerdown({ pointerType: 'touch', clientX: 0, clientY: 0 });
+  return {
+    get opened() { return opened; },
+    advance(ms) {
+      now += ms;
+      for (const [id, timer] of timers) if (timer.at <= now) { timers.delete(id); timer.callback(); }
+    },
+  };
+}
+
+for (const releaseAt of [350, 351, 530, 1000]) {
+  for (const release of ['pointerup', 'touchend']) {
+    test(`opening ${release} at ${releaseAt}ms cannot click-dismiss the long-press sheet`, () => {
+      const press = longPressSheet();
+      press.advance(349);
+      assert.equal(press.opened, undefined, 'threshold must stay at 350ms');
+      press.advance(1);
+      const s = press.opened;
+      assert.ok(s, 'the threshold opens the sheet before release');
+      press.advance(releaseAt - 350);
+      s.pause(releaseAt - 350);
+      s.dispatch(release);
+      assert.deepEqual(s.dispatch('click'), { prevented: true, stopped: true });
+      assert.equal(s.run('visible'), true, 'opening release must leave the sheet open');
+      s.dispatch(release === 'pointerup' ? 'pointerdown' : 'touchstart');
+      s.dispatch(release);
+      assert.deepEqual(s.dispatch('click'), { prevented: false, stopped: false });
+      assert.equal(s.run('visible'), false, 'the very next backdrop tap dismisses normally');
+      s.cleanup();
+    });
+  }
+}
+
+test('opening clicks on sheet actions are blocked before reaching their handlers', () => {
+  const s = sheet();
+  assert.deepEqual(s.dispatch('click', s.panel), { prevented: true, stopped: true });
+  s.dispatch('pointerdown', s.panel);
+  assert.deepEqual(s.dispatch('click', s.panel), { prevented: false, stopped: false });
+  s.cleanup();
+});
+
+test('desktop backdrop clicks and keyboard activation still dismiss normally', () => {
+  const desktop = sheet({}, { mobile: false });
+  desktop.dispatch('pointerdown'); desktop.dispatch('pointerup'); desktop.dispatch('click');
+  assert.equal(desktop.run('visible'), false);
+  desktop.cleanup();
+  const keyboard = sheet();
+  assert.deepEqual(keyboard.dispatch('click', keyboard.backdrop, 0), { prevented: false, stopped: false });
+  assert.equal(keyboard.run('visible'), false);
+  keyboard.cleanup();
+});
+
+test('cancelled and nested presses do not arm the sheet, and listeners are removed', () => {
+  const s = sheet();
+  for (const [start, cancel] of [['pointerdown', 'pointercancel'], ['touchstart', 'touchcancel']]) {
+    s.dispatch(start); s.dispatch(cancel);
+    assert.equal(s.dispatch('click').stopped, true);
+  }
+  const nested = s.makeTarget(); nested.modalOwner = {};
+  s.dispatch('pointerdown', nested);
+  assert.equal(s.dispatch('click').stopped, true);
+  assert.equal(s.run('visible'), true);
+  s.cleanup();
+  assert.equal(Object.keys(s.dialog.listeners).length, 0);
+});
 
 test('small pull follows the finger, fades the backdrop and snaps back', () => {
   const s = sheet();

@@ -185,6 +185,28 @@
     };
     const touchCancel = () => end(true);
     const click = (event: MouseEvent) => { if (performance.now() < suppressClickUntil) { event.preventDefault(); event.stopPropagation(); } };
+    // A long press can mount the modal before the opening finger is released.
+    // Its compatibility click may target the new backdrop (or an action). Only
+    // accept pointer clicks whose press began in this dialog; keyboard clicks
+    // have detail 0 and do not need a preceding pointer/touch start.
+    let pressedInside = false;
+    const press = (event: Event) => {
+      pressedInside = event.target instanceof Element && event.target.closest('dialog') === dialog;
+    };
+    const cancelPress = () => { pressedInside = false; };
+    const openingClick = (event: MouseEvent) => {
+      const accept = pressedInside;
+      pressedInside = false;
+      if (event.detail > 0 && !accept) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
+    dialog.addEventListener('pointerdown', press, true);
+    dialog.addEventListener('touchstart', press, { capture: true, passive: true });
+    dialog.addEventListener('pointercancel', cancelPress, true);
+    dialog.addEventListener('touchcancel', cancelPress, true);
+    dialog.addEventListener('click', openingClick, true);
     panel.addEventListener('touchstart', touchStart, { passive: true });
     panel.addEventListener('touchmove', touchMove, { passive: false });
     panel.addEventListener('touchend', touchEnd);
@@ -198,6 +220,11 @@
       panel.removeEventListener('touchstart', touchStart); panel.removeEventListener('touchmove', touchMove);
       panel.removeEventListener('touchend', touchEnd); panel.removeEventListener('touchcancel', touchCancel);
       panel.removeEventListener('click', click, true);
+      dialog.removeEventListener('pointerdown', press, true);
+      dialog.removeEventListener('touchstart', press, true);
+      dialog.removeEventListener('pointercancel', cancelPress, true);
+      dialog.removeEventListener('touchcancel', cancelPress, true);
+      dialog.removeEventListener('click', openingClick, true);
     };
   });
 </script>
