@@ -24,12 +24,12 @@
   import { canDragSheet, SheetVelocity, shouldDismissSheet } from '$lib/utils/bottomSheetGesture';
 
   let { onClose, label, children, header, toolbar, footer, onScroll, desktop = 'center', width = '560px', height = 'auto', dismissible = true,
-    beforeClose, breakpoint = 640, mobileOnly = false, forceMobile = false, describedBy, mobileHeight, compactMobileHeight, maxHeight = '100%', closeLabel = m.create_char_close_aria() }: {
+    beforeClose, breakpoint = 640, mobileOnly = false, forceMobile = false, compactMobile = true, describedBy, mobileHeight, compactMobileHeight, maxHeight = '100%', closeLabel = m.create_char_close_aria() }: {
     onClose: () => void; label: string; children: Snippet<[(after?: (() => void) | Event) => void]>;
     header?: Snippet; toolbar?: Snippet; footer?: Snippet<[(after?: (() => void) | Event) => void]>;
     onScroll?: (event: Event & { currentTarget: EventTarget & HTMLDivElement }) => void;
     desktop?: 'center' | 'side'; width?: string; height?: string; dismissible?: boolean;
-    beforeClose?: () => boolean; breakpoint?: number; mobileOnly?: boolean; forceMobile?: boolean; describedBy?: string;
+    beforeClose?: () => boolean; breakpoint?: number; mobileOnly?: boolean; forceMobile?: boolean; compactMobile?: boolean; describedBy?: string;
     mobileHeight?: string; compactMobileHeight?: string; maxHeight?: string; closeLabel?: string;
   } = $props();
   let dialog = $state<HTMLDialogElement>()!;
@@ -54,7 +54,7 @@
     const opacity = getComputedStyle(backdrop).opacity;
     panel.inert = true;
     settling.forEach(animation => animation.cancel());
-    const options: KeyframeAnimationOptions = { duration: reduced ? 0 : 220, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' };
+    const options: KeyframeAnimationOptions = { duration: reduced ? 0 : mobile && compactMobile ? 160 : 220, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' };
     settling = [panel.animate([{ transform: transform === 'none' ? 'translate3d(0,0,0)' : transform },
       { transform: mobile ? `translate3d(0,${panel.getBoundingClientRect().height}px,0)` : 'translate3d(0,24px,0)' }], options),
       backdrop.animate([{ opacity }, { opacity: 0 }], options)];
@@ -82,13 +82,14 @@
 
   function backdropMotion(node: HTMLElement) {
     const opacity = Number(node.style.opacity || 1);
-    return { duration: reduced || !visible ? 0 : 260, css: (t: number) => `opacity:${t * opacity}` };
+    const isMobile = forceMobile || window.matchMedia(`(max-width: ${breakpoint - 1}px)`).matches;
+    return { duration: reduced || !visible ? 0 : isMobile && compactMobile ? 180 : 260, css: (t: number) => `opacity:${t * opacity}` };
   }
 
   function motion(node: HTMLElement) {
     const isMobile = forceMobile || window.matchMedia(`(max-width: ${breakpoint - 1}px)`).matches;
     const offset = distance || (isMobile ? node.getBoundingClientRect().height : 24);
-    return { duration: reduced || !visible ? 0 : 260, easing: (t: number) => 1 - Math.pow(1 - t, 3),
+    return { duration: reduced || !visible ? 0 : isMobile && compactMobile ? 180 : 260, easing: (t: number) => 1 - Math.pow(1 - t, 3),
       css: (t: number) => isMobile ? `transform:translate3d(0,${(1-t)*offset}px,0)`
         : `opacity:${t};transform:translate3d(${desktop === 'side' ? (1-t)*24 : 0}px,${desktop === 'center' ? (1-t)*12 : 0}px,0)` };
   }
@@ -98,7 +99,7 @@
     backdrop.style.opacity = String(Math.max(0, 1 - distance / sheetHeight));
   }
   function snapBack() {
-    const options = { duration: reduced ? 0 : 320, easing: 'cubic-bezier(.16,1,.3,1)' };
+    const options = { duration: reduced ? 0 : compactMobile ? 220 : 320, easing: 'cubic-bezier(.16,1,.3,1)' };
     settling = [panel.animate([{ transform: `translate3d(0,${distance}px,0)` }, { transform: 'translate3d(0,0,0)' }], options),
       backdrop.animate([{ opacity: backdrop.style.opacity || '1' }, { opacity: 1 }], options)];
     distance = 0;
@@ -162,7 +163,7 @@
     query.addEventListener('change', sync);
     reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     dialog.showModal();
-    const timer = setTimeout(() => ready = true, reduced ? 0 : 280);
+    const timer = setTimeout(() => ready = true, reduced ? 0 : mobile && compactMobile ? 180 : 280);
     const unregister = registerBackHandler(() => { if (!dismissible || !dialog.open) return false; close(); return true; });
     const touchStart = (event: TouchEvent) => {
       if (event.touches.length !== 1) { end(true); return; }
@@ -201,7 +202,7 @@
   });
 </script>
 
-<dialog bind:this={dialog} use:androidViewport use:lockBackground class:mobile class:side={desktop === 'side'} aria-label={label} aria-describedby={describedBy} data-exiting={visible ? undefined : ''}
+<dialog bind:this={dialog} use:androidViewport use:lockBackground class:mobile class:compact-mobile={compactMobile} class:side={desktop === 'side'} aria-label={label} aria-describedby={describedBy} data-exiting={visible ? undefined : ''}
     oncancel={(event) => { event.preventDefault(); close(); }} style={`--sheet-width:${width};--sheet-height:${height};--sheet-max-height:${maxHeight};--sheet-mobile-height:${mobileHeight ?? height};--sheet-compact-height:${compactMobileHeight ?? mobileHeight ?? height}`}>
     <button bind:this={backdrop} class="backdrop" aria-label={closeLabel} tabindex="-1" onclick={close} transition:backdropMotion|global></button>
     <div bind:this={panel} class="panel" transition:motion|global onoutrostart={releaseForOutro}>
@@ -267,7 +268,17 @@
   .mobile .content, .mobile .sheet-header, .mobile .sheet-toolbar, .mobile .sheet-footer { padding-left:calc(var(--sheet-gutter) + env(safe-area-inset-left)); padding-right:calc(var(--sheet-gutter) + env(safe-area-inset-right)); }
   .mobile .sheet-footer :global(.sheet-footer-actions > button) { flex:1; }
   .mobile .handle { display:flex; flex:0 0 26px; align-items:center; justify-content:center; touch-action:none; user-select:none; }
+  .mobile.compact-mobile .panel { --sheet-gutter:12px; max-height:min(var(--sheet-max-height),calc(var(--app-visible-height,100dvh) * .8),calc(var(--app-visible-height,100dvh) - env(safe-area-inset-top) - 12px)); border-radius:18px 18px 0 0; }
+  .mobile.compact-mobile .handle { flex-basis:20px; }
+  .mobile.compact-mobile .sheet-header { gap:8px; padding-top:2px; padding-bottom:8px; }
+  .mobile.compact-mobile .panel:not(:has(.handle)) .sheet-header { padding-top:12px; }
+  .mobile.compact-mobile .sheet-heading :global(h1), .mobile.compact-mobile .sheet-heading :global(h2), .mobile.compact-mobile .sheet-heading :global(h3) { font-size:16px; }
+  .mobile.compact-mobile .sheet-close { border-radius:12px; }
+  .mobile.compact-mobile .content { padding-top:8px; padding-bottom:8px; }
+  .mobile.compact-mobile .sheet-toolbar, .mobile.compact-mobile .sheet-footer { padding-top:10px; padding-bottom:10px; }
+  .mobile.compact-mobile .sheet-footer :global(.sheet-footer-actions > button) { min-height:44px; padding:8px 12px; border-radius:12px; }
   @media (max-height:500px) { .mobile .panel { height:var(--sheet-compact-height); max-height:calc(var(--app-visible-height,100dvh) - env(safe-area-inset-top) - 12px); } }
+  @media (max-height:500px) { .mobile.compact-mobile .panel { max-height:min(var(--sheet-max-height),calc(var(--app-visible-height,100dvh) - env(safe-area-inset-top) - 12px)); } }
   .handle span { width:38px; height:4px; border-radius:999px; background:rgba(255,255,255,.16); }
   @media (prefers-reduced-motion:reduce) { .sheet-close { transition:none; } }
 </style>

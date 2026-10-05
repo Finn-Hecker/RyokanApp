@@ -154,7 +154,7 @@
   })());
 </script>
 
-<BottomSheet {onClose} label="Info" height="min(640px, calc(var(--app-visible-height, 100dvh) * .85))" mobileHeight="min(640px, calc(var(--app-visible-height, 100dvh) * .88))">
+<BottomSheet {onClose} label="Info" height="min(640px, calc(var(--app-visible-height, 100dvh) * .85))" mobileHeight="auto">
   {#snippet toolbar()}
       <div class="info-tabs">
         <button

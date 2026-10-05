@@ -65,7 +65,7 @@
   let gesture = $state<MobileGesture | null>(null);
   let gestureRoot: HTMLDivElement;
   let completingDrag = false;
-  const LONG_PRESS_DURATION = 525;
+  const LONG_PRESS_DURATION = 350;
   const MOVE_TOLERANCE = 10;
   const SWIPE_OPEN_THRESHOLD = 44;
   const MAX_SWIPE_TRANSLATION = 56;

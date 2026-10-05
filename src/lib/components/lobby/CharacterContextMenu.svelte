@@ -214,11 +214,11 @@
 
 <style>
   .sheet-action {
-    min-height: 54px;
-    padding: 14px 12px;
-    gap: 14px;
+    min-height: 44px;
+    padding: 9px 10px;
+    gap: 12px;
     border: 1px solid transparent;
-    border-radius: 14px;
+    border-radius: 10px;
     font-size: 14px;
     font-weight: 550;
     color: var(--sheet-text);

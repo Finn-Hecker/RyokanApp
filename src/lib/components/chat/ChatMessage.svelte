@@ -1,5 +1,4 @@
 <script lang="ts">
-  import Button from '$lib/components/ui/Button.svelte';
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { onMount } from 'svelte';
   import UsageDetails from './UsageDetails.svelte';
@@ -65,7 +64,6 @@
   let isCloning = $state(false);
   let longPressTimer: ReturnType<typeof setTimeout> | undefined;
   let longPressStart: { x: number; y: number } | null = null;
-  let mobileLongPressPending = $state(false);
   // Keep inline controls out of the mobile DOM. Defaulting to mobile also keeps
   // them out of SSR/pre-hydration markup until the viewport is known.
   let isMobileViewport = $state(true);
@@ -183,14 +181,12 @@
   function startMobileLongPress(event: PointerEvent) {
     if (editMode || !window.matchMedia('(max-width: 639px)').matches || event.pointerType !== 'touch' || !hasMobileActions || (event.target as HTMLElement).closest('button, input, textarea, a, [contenteditable]')) return;
     longPressStart = { x: event.clientX, y: event.clientY };
-    mobileLongPressPending = true;
     longPressTimer = setTimeout(() => {
       window.getSelection()?.removeAllRanges();
       navigator.vibrate?.(8);
       onMobileActionsOpen?.(msg.id);
-      mobileLongPressPending = false;
       longPressTimer = undefined;
-    }, 500);
+    }, 350);
   }
 
   function cancelMobileLongPress(event?: PointerEvent) {
@@ -201,7 +197,6 @@
     if (longPressTimer) clearTimeout(longPressTimer);
     longPressTimer = undefined;
     longPressStart = null;
-    mobileLongPressPending = false;
   }
 
   function closeMobileActions() {
@@ -258,7 +253,6 @@
   role="group"
   class="flex {msg.isUser ? 'justify-end mb-6' : 'justify-start mb-8'}"
   class:mobile-message-typography={isMobileInteraction}
-  class:mobile-long-press-pending={mobileLongPressPending}
   onpointerdown={startMobileLongPress}
   onpointermove={cancelMobileLongPress}
   onpointerup={cancelMobileLongPress}
@@ -459,9 +453,6 @@
 
 {#if mobileActionsOpen}
   <BottomSheet onClose={closeMobileActions} label="Message actions" mobileOnly>
-    {#snippet footer(close)}
-      <div class="sheet-footer-actions"><Button size="lg" variant="secondary" onclick={close}>{m.chat_cancel()}</Button></div>
-    {/snippet}
     {#snippet children(close)}
     <div>
       <div class="mobile-action-sheet-actions">
@@ -593,12 +584,9 @@
       display: none;
     }
 
-    .mobile-long-press-pending {
-      opacity: .88;
-    }
-
     [data-message-id] {
       touch-action: pan-y;
+      -webkit-tap-highlight-color: transparent;
       -webkit-touch-callout: none;
       -webkit-user-select: none;
       user-select: none;
@@ -614,7 +602,7 @@
 
   @media (max-width: 639px) {
     .mobile-action-sheet-actions { display: grid; gap: 3px; }
-    .mobile-action { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 54px; padding: 14px 12px; border: 0; border-radius: 14px; background: transparent; color: var(--sheet-text); font:inherit; font-weight:500; line-height:1.4; text-align: left; }
+    .mobile-action { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; padding: 9px 10px; border: 0; border-radius: 10px; background: transparent; color: var(--sheet-text); font:inherit; font-weight:500; line-height:1.4; text-align: left; }
     .mobile-action:active:not(:disabled) { background: var(--sheet-surface-hover); }
     .mobile-action:disabled { color: rgba(255,255,255,.28); }
     .mobile-action small { color: rgba(255,255,255,.38); font-size: 12px; }

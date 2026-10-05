@@ -771,7 +771,7 @@
             </div>
 
             {:else}
-            <BottomSheet onClose={closeModelPicker} label={m.settings_model_select_title()} breakpoint={768} height="min(760px, calc(var(--app-visible-height, 100dvh) * .86))">
+            <BottomSheet onClose={closeModelPicker} compactMobile={false} label={m.settings_model_select_title()} breakpoint={768} height="min(760px, calc(var(--app-visible-height, 100dvh) * .86))">
               {#snippet header()}<h3 id="mobile-model-sheet-title">{m.settings_model_select_title()}</h3>{/snippet}
               {#snippet toolbar()}
 

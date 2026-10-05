@@ -31,8 +31,8 @@
 
 <BottomSheet {onClose} label={m.lobby_aria_character_options()} breakpoint={768} mobileOnly>
   {#snippet header()}
-    {#if char}<div class="flex items-center gap-3">
-        <div class="h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/5">
+    {#if char}<div class="flex items-center gap-2.5">
+        <div class="h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/5">
           <CharacterAvatar {char} fallbackTextClass="text-base" />
         </div>
         <div class="min-w-0 flex-1">

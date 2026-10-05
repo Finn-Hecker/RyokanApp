@@ -27,7 +27,7 @@ export const mobileCharacterLongPress: Action<HTMLButtonElement, LongPressOption
       if (suppressTimeout) clearTimeout(suppressTimeout);
       suppressTimeout = setTimeout(() => (suppressClick = false), 3000);
       options.onLongPress();
-    }, 500);
+    }, 350);
   }
 
   function pointerMove(event: PointerEvent) {

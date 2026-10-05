@@ -111,7 +111,7 @@
   function persistActive() { void persistApiConnections(); }
 </script>
 
-<BottomSheet {onClose} label={m.settings_section_ai_behavior()} mobileHeight="min(720px, calc(var(--app-visible-height, 100dvh) * .82))" compactMobileHeight="calc(var(--app-visible-height, 100dvh) * .92)" desktop="side" width="440px" beforeClose={() => { if (modelPickerOpen) { modelPickerOpen = false; return true; } return false; }}>
+<BottomSheet {onClose} label={m.settings_section_ai_behavior()} desktop="side" width="440px" beforeClose={() => { if (modelPickerOpen) { modelPickerOpen = false; return true; } return false; }}>
   {#snippet footer(close)}
 
       <label class="power-user-toggle" title={m.settings_power_user_title()}>

@@ -128,11 +128,11 @@
   @keyframes tier-pop-in { from { opacity:.65; transform:translateY(-4px) scale(.98); } }
 
   @media (max-width:767px) {
-    .tier-trigger { min-height:56px; padding:10px 10px 10px 14px; border-radius:13px; }
+    .tier-trigger { min-height:48px; padding:8px 10px; border-radius:12px; }
     .trigger-value { font-size:14px; }
     .trigger-icon { width:34px; height:34px; border-radius:10px; }
     :global(.tier-options) { gap:4px; }
-    :global(.tier-option) { min-height:56px; padding:14px; border-radius:14px; font-size:14px; }
+    :global(.tier-option) { min-height:44px; padding:9px 10px; border-radius:10px; font-size:14px; }
   }
 
   @media (prefers-reduced-motion:reduce) {

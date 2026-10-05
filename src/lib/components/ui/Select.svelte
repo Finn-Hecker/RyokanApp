@@ -136,10 +136,10 @@
   .compact .select-name { font-size:12px; }
   .select-option.separated { border-top:1px solid var(--sheet-divider); margin-top:4px; border-top-left-radius:0; border-top-right-radius:0; }
   @media (max-width:767px) {
-    .select-trigger { min-height:54px; }
+    .select-trigger { min-height:48px; }
     .select-trigger.compact { min-height:44px; }
-    .select-option { min-height:62px; padding:12px; border-radius:14px; }
-    .select-option .select-icon { width:36px; height:36px; border-radius:11px; }
+    .select-option { min-height:44px; padding:8px 10px; border-radius:10px; }
+    .select-option .select-icon { width:28px; height:28px; border-radius:8px; }
     .select-list { display:grid; gap:4px; }
     .select-option:active { background:rgba(212,180,131,.15); }
     .select-option .select-name { font-size:14px; }

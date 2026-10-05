@@ -34,7 +34,7 @@ function controller(filename, globals = {}) {
     context,
     run: code => vm.runInContext(code, context),
     longPress() {
-      for (const [id, timer] of timers) if (timer.delay === 525) { timers.delete(id); timer.callback(); }
+      for (const [id, timer] of timers) if (timer.delay === 350) { timers.delete(id); timer.callback(); }
     },
   };
 }

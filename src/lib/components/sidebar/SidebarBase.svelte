@@ -1442,7 +1442,7 @@
   :global(.context-action--danger:hover) { color:#f09a9a; background:rgba(239,68,68,.09); }
   :global(.context-separator) { height:1px; margin:4px 7px; background:rgba(255,255,255,.055); }
   :global(.context-sheet-actions) { display:grid; gap:4px; }
-  :global(.context-sheet-actions .context-action) { min-height:54px; padding:14px 12px; gap:14px; border-radius:14px; color:var(--sheet-text); font-size:14px; font-weight:500; }
+  :global(.context-sheet-actions .context-action) { min-height:44px; padding:9px 10px; gap:12px; border-radius:10px; color:var(--sheet-text); font-size:14px; font-weight:500; }
   :global(.context-sheet-actions .context-action svg) { width:18px; height:18px; }
   :global(.context-sheet-actions .context-action:hover) { background:var(--sheet-surface-hover); }
   :global(.context-sheet-actions .context-action--danger) { color:var(--sheet-danger); }

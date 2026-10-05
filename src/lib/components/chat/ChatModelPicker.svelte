@@ -98,7 +98,7 @@
   }
 </script>
 
-<BottomSheet {onClose} label={m.settings_model_select_title()} onScroll={scrollList} breakpoint={768} width="920px" height="min(720px, calc(var(--app-visible-height, 100dvh) * .86))">
+<BottomSheet {onClose} compactMobile={false} label={m.settings_model_select_title()} onScroll={scrollList} breakpoint={768} width="920px" height="min(720px, calc(var(--app-visible-height, 100dvh) * .86))">
   {#snippet header()}
       <h2 id="chat-model-picker-title">{m.settings_model_select_title()}</h2>
       <p>{m.settings_model_available_count({ count: String(models.length) })}</p>
