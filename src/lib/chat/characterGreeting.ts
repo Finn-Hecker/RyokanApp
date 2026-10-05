@@ -1,4 +1,4 @@
-import { reportDiagnostic } from '$lib/utils/diagnostics';
+import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
 export function selectInitialGreeting(character: {
   name: string;
   greeting?: string;

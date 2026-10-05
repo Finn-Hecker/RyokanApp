@@ -1,4 +1,4 @@
-import type { ApiRequestParameterConfig, EffectiveTokenBudget } from './rollingSummaryCore';
+import type { ApiRequestParameterConfig, EffectiveTokenBudget } from '../summary/rollingSummaryCore';
 
 // Native contracts only. Existing providers never enter this policy.
 // Anthropic Messages: max_tokens includes thinking; manual budgets must be >=1024.

@@ -1,4 +1,4 @@
-import { PROVIDERS } from './providers.ts';
+import { PROVIDERS } from '../ai/connections/providers.ts';
 const providers = new Set<string>(PROVIDERS.map(provider => provider.kind));
 
 /** Explicit projection: do not spread settings or serialize arbitrary model IDs/URLs. */

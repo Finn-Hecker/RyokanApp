@@ -1,4 +1,4 @@
-import { reportDiagnostic } from '$lib/utils/diagnostics';
+import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
 /**
  * Multiplayer client for the zero knowledge relay server.
  *
@@ -19,18 +19,18 @@ import { reportDiagnostic } from '$lib/utils/diagnostics';
  */
 
 import { appState, snapshotActiveApiConnection } from './appState.svelte';
-import { requestParameterConfig } from '$lib/utils/apiParameters';
+import { requestParameterConfig } from '$lib/ai/connections/apiParameters';
 import { navigateTo, returnTo } from './navigation';
 import { invoke } from '@tauri-apps/api/core';
-import { processThinkingOutput } from '$lib/utils/chatApi';
-import { recordModelUse } from '$lib/utils/modelPickerData';
+import { processThinkingOutput } from '$lib/ai/generation/chatApi';
+import { recordModelUse } from '$lib/ai/connections/modelPickerData';
 import { getClientLanguageName } from '$lib/utils/clientLanguage';
-import { selectInitialGreeting } from '$lib/utils/characterGreeting';
+import { selectInitialGreeting } from '$lib/chat/characterGreeting';
 import type { Character } from './characterStore.svelte';
-import { measureRequestBudget } from '$lib/utils/requestBudget';
-import { estimateBudgetTokens } from '$lib/utils/tokenEstimate';
-import { resolvedHardContextLimit } from '$lib/utils/connectionCore';
-import { parseUsage as parseRelayUsage, persistedUsage, withConnection, type TokenUsage } from '$lib/utils/tokenUsage';
+import { measureRequestBudget } from '$lib/ai/tokens/requestBudget';
+import { estimateBudgetTokens } from '$lib/ai/tokens/tokenEstimate';
+import { resolvedHardContextLimit } from '$lib/ai/connections/connectionCore';
+import { parseUsage as parseRelayUsage, persistedUsage, withConnection, type TokenUsage } from '$lib/ai/tokens/tokenUsage';
 
 // Configuration
 

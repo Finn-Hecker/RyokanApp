@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
-import { resolvedWorkingContextTarget, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION } from './connectionCore.ts';
+import { relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { resolvedWorkingContextTarget, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION } from '../connections/connectionCore.ts';
 import { contextSafetyMargin, deriveEffectiveTokenBudget, summarySafetyMargin } from './rollingSummaryCore.ts';
-import { estimateBudgetTokens } from './tokenEstimate.ts';
+import { estimateBudgetTokens } from '../tokens/tokenEstimate.ts';
 
 // Execute the production orchestrator and connection resolver with only the
 // desktop boundary and Svelte state creation replaced. No real provider calls.
@@ -20,6 +22,12 @@ const modules = new Map([
   ['$lib/stores/worldInfoStore.svelte', mock('export const worldInfoState = { allWorldInfos: [] };')],
   ['$lib/utils/clientLanguage', mock('export const getClientLanguageName = () => "English";')],
 ]);
+const libRoot = new URL('../../', import.meta.url);
+function relativeProductionSpecifier(file, specifier) {
+  const target = new URL(specifier, file);
+  return '$lib/' + relative(fileURLToPath(libRoot), fileURLToPath(target))
+    .replaceAll('\\', '/').replace(/\.ts$/, '');
+}
 harness.chatState = { activeChatId: null, summaryMeta: null };
 harness.listen = async (name, callback) => {
   listeners.set(name, callback);
@@ -28,7 +36,7 @@ harness.listen = async (name, callback) => {
 async function loadProduction(specifier) {
   if (modules.has(specifier)) return modules.get(specifier);
   if (!specifier.startsWith('$lib/')) return new URL(specifier, import.meta.url).href;
-  const path = new URL(`../${specifier.slice('$lib/'.length)}.ts`, import.meta.url);
+  const path = new URL(`${specifier.slice('$lib/'.length)}.ts`, libRoot);
   let source = ts.transpileModule(await readFile(path, 'utf8'), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
   }).outputText;
@@ -36,7 +44,9 @@ async function loadProduction(specifier) {
     source = 'const $state = Object.assign(value => value, { snapshot: value => structuredClone(value) });\n' + source;
   }
   for (const match of [...source.matchAll(/from ['"]([^'"]+)['"]/g)]) {
-    source = source.replace(match[0], `from '${await loadProduction(match[1])}'`);
+    const dependency = match[1].startsWith('.')
+      ? relativeProductionSpecifier(path, match[1]) : match[1];
+    source = source.replace(match[0], `from '${await loadProduction(dependency)}'`);
   }
   source = source.replace("import('@tauri-apps/api/event')", `import('${modules.get('@tauri-apps/api/event')}')`);
   const url = asModule(source);
@@ -44,10 +54,10 @@ async function loadProduction(specifier) {
   return url;
 }
 const state = await import(await loadProduction('$lib/stores/appState.svelte'));
-const runtime = await import(await loadProduction('$lib/utils/rollingSummary.svelte'));
-const connections = await import(await loadProduction('$lib/utils/apiConnections'));
-const chatApi = await import(await loadProduction('$lib/utils/chatApi'));
-const parameters = await import(await loadProduction('$lib/utils/apiParameters'));
+const runtime = await import(await loadProduction('$lib/ai/summary/rollingSummary.svelte'));
+const connections = await import(await loadProduction('$lib/ai/connections/apiConnections'));
+const chatApi = await import(await loadProduction('$lib/ai/generation/chatApi'));
+const parameters = await import(await loadProduction('$lib/ai/connections/apiParameters'));
 let serial = 0;
 
 test('native and NanoGPT profiles round-trip without migration or a persisted budget discriminator', async () => {

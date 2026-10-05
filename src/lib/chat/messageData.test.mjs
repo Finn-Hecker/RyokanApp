@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { decodeMessage } from './messageData.ts';
-import { selectedUsage } from './tokenUsage.ts';
+import { selectedUsage } from '../ai/tokens/tokenUsage.ts';
 
 test('persisted swipe content and usage decode together without changing the IPC row', () => {
   const usage = [{ inputTokens: 100 }, null, { inputTokens: 300, serviceTier: 'flex' }];

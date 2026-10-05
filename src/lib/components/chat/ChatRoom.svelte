@@ -1,17 +1,17 @@
 <script lang="ts">
-  import { selectedUsage } from '$lib/utils/tokenUsage';
-  import { reportDiagnostic } from '$lib/utils/diagnostics';
+  import { selectedUsage } from '$lib/ai/tokens/tokenUsage';
+  import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
   import { invoke } from '@tauri-apps/api/core';
-  import { snapshotTextRules } from '$lib/utils/textRules';
+  import { snapshotTextRules } from '$lib/ai/prompt/textRules';
   import { appState, snapshotActiveApiConnection } from '$lib/stores/appState.svelte';
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { tick, flushSync, onMount, onDestroy } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { chatState, addMessage, addSwipeVariant, loadMessages, updateMessage, deleteMessage, setSwipeIndex, loadMoreMessages, cloneChatFromMessage, type DisplayMessage } from '$lib/stores/chatStore.svelte';
-  import { runGeneration, type GenerationOptions } from '$lib/utils/chatApi';
-  import { describeGenerationError, type GenerationErrorInfo } from '$lib/utils/generationError';
-  import { positionSentChatMessage } from '$lib/utils/chatScroll';
-  import { summaryState, checkAndSummarizeIfNeeded, assertPreparedGenerationFits, rememberGenerationAnchor, cancelActiveSummary, SummaryCancelledError } from '$lib/utils/rollingSummary.svelte';
+  import { runGeneration, type GenerationOptions } from '$lib/ai/generation/chatApi';
+  import { describeGenerationError, type GenerationErrorInfo } from '$lib/ai/generation/generationError';
+  import { positionSentChatMessage } from '$lib/chat/chatScroll';
+  import { summaryState, checkAndSummarizeIfNeeded, assertPreparedGenerationFits, rememberGenerationAnchor, cancelActiveSummary, SummaryCancelledError } from '$lib/ai/summary/rollingSummary.svelte';
   import * as m from '$lib/paraglide/messages';
   import ChatHeader from './ChatHeader.svelte';
   import ChatInput from './ChatInput.svelte';

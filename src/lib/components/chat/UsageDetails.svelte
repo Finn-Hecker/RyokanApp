@@ -2,7 +2,7 @@
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import * as m from '$lib/paraglide/messages';
   import { getLocale } from '$lib/paraglide/runtime';
-  import { formatCachedUsage, formatUsageCount, formatUsageCost, type TokenUsage } from '$lib/utils/tokenUsage';
+  import { formatCachedUsage, formatUsageCount, formatUsageCost, type TokenUsage } from '$lib/ai/tokens/tokenUsage';
 
   let { usage, swipeIndex, totalVariants, onClose }: {
     usage?: TokenUsage | null;

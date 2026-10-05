@@ -3,9 +3,9 @@
   import { onMount } from 'svelte';
   import * as m from '$lib/paraglide/messages';
   import type { ProviderKind } from '$lib/stores/appState.svelte';
-  import type { ModelInfo } from '$lib/utils/settings';
-  import { curatedProviderGroupForModel, curatedProviderGroups } from '$lib/utils/modelProviderGroups';
-  import { formatContextTokens, formatModelPrice, getRecentModels, modelPrices } from '$lib/utils/modelPickerData';
+  import type { ModelInfo } from '$lib/settings/settings';
+  import { curatedProviderGroupForModel, curatedProviderGroups } from '$lib/ai/connections/modelProviderGroups';
+  import { formatContextTokens, formatModelPrice, getRecentModels, modelPrices } from '$lib/ai/connections/modelPickerData';
 
   let {
     models, metadata, selectedModel, providerKind, loading, error, onSelect, onRetry, onClose,

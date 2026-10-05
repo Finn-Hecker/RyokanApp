@@ -3,9 +3,9 @@
   import { onMount } from 'svelte';
   import UsageDetails from './UsageDetails.svelte';
   import * as m from '$lib/paraglide/messages';
-  import { renderMessageMarkdown } from '$lib/utils/renderMessageMarkdown';
+  import { renderMessageMarkdown } from '$lib/chat/renderMessageMarkdown';
   import { setSwipeIndex } from '$lib/stores/chatStore.svelte';
-  import { transformMessageText } from '$lib/utils/textRules';
+  import { transformMessageText } from '$lib/ai/prompt/textRules';
   import { appState } from '$lib/stores/appState.svelte';
   import type { InteractionMode } from '$lib/stores/appState.svelte';
   import type { DisplayMessage } from '$lib/stores/chatStore.svelte';

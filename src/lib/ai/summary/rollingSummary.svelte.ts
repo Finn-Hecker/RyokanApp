@@ -1,18 +1,18 @@
-import { traceDecision, diagnosticOperation, diagnosticScope, diagnosticConnection, type DiagnosticMeasurement, type DiagnosticDecision } from '$lib/utils/diagnosticDecisions';
-import type { TokenUsage } from '$lib/utils/tokenUsage';
-import { reportDiagnostic } from '$lib/utils/diagnostics';
+import { traceDecision, diagnosticOperation, diagnosticScope, diagnosticConnection, type DiagnosticMeasurement, type DiagnosticDecision } from '$lib/diagnostics/diagnosticDecisions';
+import type { TokenUsage } from '$lib/ai/tokens/tokenUsage';
+import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { appState, snapshotSummaryApiConnection } from '$lib/stores/appState.svelte';
-import { requestParameterConfig as createRequestParameterConfig, summaryParameterConfig } from '$lib/utils/apiParameters';
+import { requestParameterConfig as createRequestParameterConfig, summaryParameterConfig } from '$lib/ai/connections/apiParameters';
 import { getClientLanguageName } from '$lib/utils/clientLanguage';
 import { chatState } from '$lib/stores/chatStore.svelte';
 import type { Message } from '$lib/stores/chatStore.svelte';
-import { decodeMessage, type PersistedMessageRow } from '$lib/utils/messageData';
-import { buildApiMessages, generationConfigurationFingerprint, messageFingerprint } from '$lib/utils/chatApi';
-import type { GenerationOptions, GenerationPromptSnapshot } from '$lib/utils/chatApi';
-import { transformMessageText } from '$lib/utils/textRules';
-import { processThinkingOutput, stripThinkingContent } from '$lib/utils/chatApi';
+import { decodeMessage, type PersistedMessageRow } from '$lib/chat/messageData';
+import { buildApiMessages, generationConfigurationFingerprint, messageFingerprint } from '$lib/ai/generation/chatApi';
+import type { GenerationOptions, GenerationPromptSnapshot } from '$lib/ai/generation/chatApi';
+import { transformMessageText } from '$lib/ai/prompt/textRules';
+import { processThinkingOutput, stripThinkingContent } from '$lib/ai/generation/chatApi';
 import {
     commitOrRollback,
     boundedSummaryOutputCap,
@@ -32,12 +32,12 @@ import {
     type ApiRequestParameterConfig,
     type SummaryMarkerState,
     type PromptUsageAnchor,
-} from '$lib/utils/rollingSummaryCore';
-import { adaptiveSummaryOutputCap, resolvedHardContextLimit, resolvedWorkingContextTarget, shouldTriggerSummary, summaryCompressionGoal } from '$lib/utils/connectionCore';
-import { countRequestMessages, countRequestAdditional } from '$lib/utils/requestBudget';
-import { ensureContextDetection } from '$lib/utils/apiConnections';
-import { estimateBudgetTokens } from '$lib/utils/tokenEstimate';
-export { estimateTokens } from '$lib/utils/tokenEstimate';
+} from '$lib/ai/summary/rollingSummaryCore';
+import { adaptiveSummaryOutputCap, resolvedHardContextLimit, resolvedWorkingContextTarget, shouldTriggerSummary, summaryCompressionGoal } from '$lib/ai/connections/connectionCore';
+import { countRequestMessages, countRequestAdditional } from '$lib/ai/tokens/requestBudget';
+import { ensureContextDetection } from '$lib/ai/connections/apiConnections';
+import { estimateBudgetTokens } from '$lib/ai/tokens/tokenEstimate';
+export { estimateTokens } from '$lib/ai/tokens/tokenEstimate';
 
 const DEFAULT_CONTEXT_LIMIT = 4096;
 const DEFAULT_SUMMARY_TOKENS = 1024;

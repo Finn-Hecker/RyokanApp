@@ -1,6 +1,6 @@
 import { buildSystemPrompt, buildWiString, buildWorldInfoBlock } from './promptBuilder.ts';
 import { applyTextRules, transformMessageText, type TextRule } from './textRules.ts';
-import { stripThinkingContent } from './thinkingOutput.ts';
+import { stripThinkingContent } from '../generation/thinkingOutput.ts';
 
 export interface PromptMessage {
   id?: string;

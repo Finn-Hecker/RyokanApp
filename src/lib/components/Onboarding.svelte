@@ -6,11 +6,11 @@
   import { appState } from '$lib/stores/appState.svelte';
   import { registerBackHandler } from '$lib/stores/navigation';
   import { invoke } from '@tauri-apps/api/core';
-  import { persistApiConnections } from '$lib/utils/apiConnections';
-  import { reportDiagnostic } from '$lib/utils/diagnostics';
+  import { persistApiConnections } from '$lib/ai/connections/apiConnections';
+  import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
   import { androidViewport } from '$lib/utils/androidViewport';
   import { getLocale, setLocale } from '$lib/paraglide/runtime';
-  import { PROVIDER_LABELS } from '$lib/utils/providers';
+  import { PROVIDER_LABELS } from '$lib/ai/connections/providers';
   import * as m from '$lib/paraglide/messages';
 
   let step = $state(0);

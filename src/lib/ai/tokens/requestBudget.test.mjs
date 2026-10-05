@@ -3,11 +3,11 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 import { measureRequestBudget } from './requestBudget.ts';
-import { requestParameterConfig, createDefaultApiParameterEnabled } from './apiParameters.ts';
-import { resolvedHardContextLimit } from './connectionCore.ts';
+import { requestParameterConfig, createDefaultApiParameterEnabled } from '../connections/apiParameters.ts';
+import { resolvedHardContextLimit } from '../connections/connectionCore.ts';
 import { estimateBudgetTokens } from './tokenEstimate.ts';
 
-const source = await readFile(new URL('../stores/multiplayer.svelte.ts', import.meta.url), 'utf8');
+const source = await readFile(new URL('../../stores/multiplayer.svelte.ts', import.meta.url), 'utf8');
 const body = source.slice(source.indexOf('async function buildLlmMessages('), source.indexOf('\nfunction insertSorted('));
 const compiled = ts.transpileModule(body, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 function builder(messages, count) {

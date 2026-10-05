@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { reportDiagnostic } from '$lib/utils/diagnostics';
+  import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
   import { CHARACTER_CARD_ACCEPT } from '$lib/utils/imageFormats';
   import { onMount } from 'svelte';
   import { appState } from '$lib/stores/appState.svelte';

@@ -1,7 +1,7 @@
 <script lang="ts">
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { activateApiConnection, appState, createDefaultConnection } from "$lib/stores/appState.svelte";
-  import { fetchModels, type ModelInfo } from "$lib/utils/settings";
+  import { fetchModels, type ModelInfo } from "$lib/settings/settings";
   import * as m from "$lib/paraglide/messages";
   import Select from '$lib/components/ui/Select.svelte';
   import ProviderSelect from '$lib/components/ui/ProviderSelect.svelte';
@@ -13,12 +13,12 @@
     curatedProviderGroupForModel,
     curatedProviderGroups,
     type CuratedProviderGroupId,
-  } from '$lib/utils/modelProviderGroups';
-  import { deleteConnectionSafely, ensureContextDetection, invalidateDetectedContext, normalizeSummaryConnectionId, refreshContextDetection, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION } from '$lib/utils/apiConnections';
-  import { CONSERVATIVE_CONTEXT_FALLBACK, resolvedWorkingContextTarget, resolveSummaryConnection } from '$lib/utils/connectionCore';
-  import { formatContextTokens, formatModelPrice, getRecentModels, modelPrices } from '$lib/utils/modelPickerData';
-  import { createDefaultApiParameterEnabled, type ApiParameterKey } from '$lib/utils/apiParameters';
-  import { modelGenerationCapabilities } from '$lib/utils/generationCapabilities';
+  } from '$lib/ai/connections/modelProviderGroups';
+  import { deleteConnectionSafely, ensureContextDetection, invalidateDetectedContext, normalizeSummaryConnectionId, refreshContextDetection, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION } from '$lib/ai/connections/apiConnections';
+  import { CONSERVATIVE_CONTEXT_FALLBACK, resolvedWorkingContextTarget, resolveSummaryConnection } from '$lib/ai/connections/connectionCore';
+  import { formatContextTokens, formatModelPrice, getRecentModels, modelPrices } from '$lib/ai/connections/modelPickerData';
+  import { createDefaultApiParameterEnabled, type ApiParameterKey } from '$lib/ai/connections/apiParameters';
+  import { modelGenerationCapabilities } from '$lib/ai/connections/generationCapabilities';
   import GeneralSection from './GeneralSection.svelte';
   import ServiceTierControl from './ServiceTierControl.svelte';
 
@@ -44,7 +44,7 @@
     onConnectionChange?: (previousConnectionId: string) => void;
   } = $props();
 
-  import { PROVIDERS as providerCatalog, type ProviderDefinition } from '$lib/utils/providers';
+  import { PROVIDERS as providerCatalog, type ProviderDefinition } from '$lib/ai/connections/providers';
 
   type ProviderTab = 'local' | 'cloud';
 

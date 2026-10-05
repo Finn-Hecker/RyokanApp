@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { applyTextRules } from '$lib/utils/textRules';
+  import { applyTextRules } from '$lib/ai/prompt/textRules';
   import { appState } from '$lib/stores/appState.svelte';
   import * as m from '$lib/paraglide/messages';
   import { slide } from 'svelte/transition';
   import { createEmptyEntry, type WorldInfoEntry, type WiPosition } from './worldInfoLogic';
   import TokenBadge from '$lib/components/TokenBadge.svelte';
-  import { countTokens } from '$lib/utils/tokenCount';
+  import { countTokens } from '$lib/ai/tokens/tokenCount';
 
   let {
     name = $bindable(''),

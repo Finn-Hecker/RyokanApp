@@ -1,4 +1,4 @@
-import type { TokenUsage } from './tokenUsage.ts';
+import type { TokenUsage } from '../ai/tokens/tokenUsage.ts';
 
 export interface Message {
     id?: string;

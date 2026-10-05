@@ -4,8 +4,8 @@
   import { appState } from '$lib/stores/appState.svelte';
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { loadAllConversations } from '$lib/stores/chatStore.svelte';
-  import { positionSentChatMessage } from '$lib/utils/chatScroll';
-  import { renderMessageMarkdown } from '$lib/utils/renderMessageMarkdown';
+  import { positionSentChatMessage } from '$lib/chat/chatScroll';
+  import { renderMessageMarkdown } from '$lib/chat/renderMessageMarkdown';
   import {
     mpState,
     enterRoom,

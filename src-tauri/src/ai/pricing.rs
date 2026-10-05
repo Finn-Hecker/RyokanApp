@@ -189,7 +189,7 @@ mod tests {
             "gemini-test":{"cost":{"input":1.25,"output":10,"tiers":[{"input":2.5,"output":15}]}},
             "missing":{"cost":{"input":1}},"invalid":{"cost":{"input":-1,"output":1}}
         }},"openai":{"models":{"gemini-test":{"cost":{"input":99,"output":99}}}}});
-        let mut models = super::super::normalize_models(
+        let mut models = super::super::models::normalize_models(
             ["gemini-test", "gemini-test-snapshot", "missing", "invalid"]
                 .into_iter()
                 .map(|id| serde_json::from_value(json!({"id":id})).unwrap())

@@ -1,4 +1,4 @@
-import type { ProviderKind } from './providers';
+import type { ProviderKind } from '../ai/connections/providers';
 import { invoke } from '@tauri-apps/api/core';
 
 // Correlation is local to this WebView session. Raw identities never leave this map.

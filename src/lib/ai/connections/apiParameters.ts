@@ -1,5 +1,5 @@
-import type { ApiConnection } from "../stores/appState.svelte";
-import type { ApiRequestParameterConfig } from "./rollingSummaryCore";
+import type { ApiConnection } from "../../stores/appState.svelte";
+import type { ApiRequestParameterConfig } from "../summary/rollingSummaryCore";
 import { validateAdditionalApiParameters } from "./additionalApiParameters.ts";
 import { normalizeServiceTier, reasoningCapability, supportedServiceTiers, type ReasoningLevel } from './generationCapabilities.ts';
 

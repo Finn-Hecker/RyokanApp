@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
-import { buildPromptMessages } from '../utils/chatPromptBuilder.ts';
+import { buildPromptMessages } from '../ai/prompt/chatPromptBuilder.ts';
 
 function store(overrides = {}) {
   const source = readFileSync(new URL('./chatStore.svelte.ts', import.meta.url), 'utf8');

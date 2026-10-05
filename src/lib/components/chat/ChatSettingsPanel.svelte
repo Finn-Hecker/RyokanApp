@@ -1,17 +1,17 @@
 <script lang="ts">
   import Select from '$lib/components/ui/Select.svelte';
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
-  import { reportDiagnostic } from '$lib/utils/diagnostics';
+  import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
   import { activateApiConnection, appState } from "$lib/stores/appState.svelte";
-  import { fetchModels, getAllSettings, saveSetting, type ModelInfo } from "$lib/utils/settings";
+  import { fetchModels, getAllSettings, saveSetting, type ModelInfo } from "$lib/settings/settings";
   import * as m from "$lib/paraglide/messages";
   import { onMount } from "svelte";
   import {
     createDefaultApiParameterEnabled,
     type ApiParameterKey,
-  } from "$lib/utils/apiParameters";
-  import { ensureContextDetection, invalidateDetectedContext, persistApiConnections } from '$lib/utils/apiConnections';
-  import { modelGenerationCapabilities } from '$lib/utils/generationCapabilities';
+  } from "$lib/ai/connections/apiParameters";
+  import { ensureContextDetection, invalidateDetectedContext, persistApiConnections } from '$lib/ai/connections/apiConnections';
+  import { modelGenerationCapabilities } from '$lib/ai/connections/generationCapabilities';
   import ParameterControl from '$lib/components/settings/ParameterControl.svelte';
   import ReasoningControl from '$lib/components/settings/ReasoningControl.svelte';
   import ThinkingBudgetControl from '$lib/components/settings/ThinkingBudgetControl.svelte';

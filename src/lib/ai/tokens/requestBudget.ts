@@ -1,4 +1,4 @@
-import { contextSafetyMargin, deriveEffectiveTokenBudget, fitsContextBudget, type ApiRequestParameterConfig } from './rollingSummaryCore.ts';
+import { contextSafetyMargin, deriveEffectiveTokenBudget, fitsContextBudget, type ApiRequestParameterConfig } from '../summary/rollingSummaryCore.ts';
 
 export type RequestMessage = { role: string; content: string };
 export type TokenCounter = (text: string) => Promise<number>;

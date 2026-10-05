@@ -1,10 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
-import { traceDecision, diagnosticConnection, type DiagnosticDecision } from '$lib/utils/diagnosticDecisions';
+import { traceDecision, diagnosticConnection, type DiagnosticDecision } from '$lib/diagnostics/diagnosticDecisions';
 import { appState, createDefaultConnection, replaceApiConnections, type ApiConnection, type DetectedContextMetadata } from '$lib/stores/appState.svelte';
-import type { SettingRow } from '$lib/utils/settings';
-import { normalizeServiceTier } from '$lib/utils/generationCapabilities';
-import { acceptDetectedContext, connectionIdentity, resolveMemorySettings, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION, validContextSize } from '$lib/utils/connectionCore';
-export { acceptDetectedContext, adaptiveSummaryOutputCap, connectionIdentity, CONSERVATIVE_CONTEXT_FALLBACK, deleteConnectionSafely, deriveWorkingContextTarget, normalizeSummaryConnectionId, resolveMemorySettings, resolveSummaryConnection, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION, shouldTriggerSummary, summaryCompressionGoal, validContextSize } from '$lib/utils/connectionCore';
+import type { SettingRow } from '$lib/settings/settings';
+import { normalizeServiceTier } from '$lib/ai/connections/generationCapabilities';
+import { acceptDetectedContext, connectionIdentity, resolveMemorySettings, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION, validContextSize } from '$lib/ai/connections/connectionCore';
+export { acceptDetectedContext, adaptiveSummaryOutputCap, connectionIdentity, CONSERVATIVE_CONTEXT_FALLBACK, deleteConnectionSafely, deriveWorkingContextTarget, normalizeSummaryConnectionId, resolveMemorySettings, resolveSummaryConnection, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION, shouldTriggerSummary, summaryCompressionGoal, validContextSize } from '$lib/ai/connections/connectionCore';
 
 export const API_CONNECTIONS_KEY = 'api_connections';
 export const ACTIVE_API_CONNECTION_KEY = 'active_api_connection_id';

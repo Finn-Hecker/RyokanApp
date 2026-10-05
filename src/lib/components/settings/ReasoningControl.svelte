@@ -2,7 +2,7 @@
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { createListbox } from '$lib/utils/listbox.svelte';
   import type { ApiConnection } from '$lib/stores/appState.svelte';
-  import { reasoningCapability, type ReasoningLevel } from '$lib/utils/generationCapabilities';
+  import { reasoningCapability, type ReasoningLevel } from '$lib/ai/connections/generationCapabilities';
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
   import * as m from '$lib/paraglide/messages';
 

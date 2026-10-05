@@ -1,12 +1,12 @@
-import { createDefaultApiParameterEnabled, type ApiParameterKey } from '$lib/utils/apiParameters';
-import type { ReasoningLevel, SavedGenerationCapabilities, ServiceTier } from '$lib/utils/generationCapabilities';
-import { CONSERVATIVE_CONTEXT_FALLBACK, resolvedHardContextLimit, resolveSummaryConnection, SAME_AS_CHAT_CONNECTION } from '$lib/utils/connectionCore';
+import { createDefaultApiParameterEnabled, type ApiParameterKey } from '$lib/ai/connections/apiParameters';
+import type { ReasoningLevel, SavedGenerationCapabilities, ServiceTier } from '$lib/ai/connections/generationCapabilities';
+import { CONSERVATIVE_CONTEXT_FALLBACK, resolvedHardContextLimit, resolveSummaryConnection, SAME_AS_CHAT_CONNECTION } from '$lib/ai/connections/connectionCore';
 
-import type { TextRule } from '$lib/utils/textRules';
-import type { ProviderKind } from '$lib/utils/providers';
-export type { ProviderKind } from '$lib/utils/providers';
-import type { ContextStrategy } from '$lib/utils/connectionCore';
-export type { ContextStrategy } from '$lib/utils/connectionCore';
+import type { TextRule } from '$lib/ai/prompt/textRules';
+import type { ProviderKind } from '$lib/ai/connections/providers';
+export type { ProviderKind } from '$lib/ai/connections/providers';
+import type { ContextStrategy } from '$lib/ai/connections/connectionCore';
+export type { ContextStrategy } from '$lib/ai/connections/connectionCore';
 export type ContextProvenance = 'runtime' | 'provider_advertised' | 'theoretical' | 'kobold_true_max' | 'kobold_config_fallback';
 
 export interface DetectedContextMetadata {

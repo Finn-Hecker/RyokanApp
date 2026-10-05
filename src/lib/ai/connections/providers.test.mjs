@@ -5,7 +5,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { PROVIDERS } from './providers.ts';
 import { modelGenerationCapabilities } from './generationCapabilities.ts';
 
-const source = await readFile(new URL('../components/Onboarding.svelte', import.meta.url), 'utf8');
+const source = await readFile(new URL('../../components/Onboarding.svelte', import.meta.url), 'utf8');
 const finishSource = stripTypeScriptTypes(source.slice(source.indexOf('  async function finish()'), source.indexOf('</script>')));
 
 function setup({ ready = true, failConnection = false, failCompletion = false, provider = 'openai' } = {}) {

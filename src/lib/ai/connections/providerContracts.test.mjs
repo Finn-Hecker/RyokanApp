@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { deriveEffectiveTokenBudget } from './rollingSummaryCore.ts';
+import { deriveEffectiveTokenBudget } from '../summary/rollingSummaryCore.ts';
 import { supportedServiceTiers } from './generationCapabilities.ts';
 import { PROVIDERS } from './providers.ts';
 
-const contracts = JSON.parse(await readFile(new URL('../../../tests/fixtures/provider-contracts.json', import.meta.url), 'utf8'));
+const contracts = JSON.parse(await readFile(new URL('../../../../tests/fixtures/provider-contracts.json', import.meta.url), 'utf8'));
 test('shared Rust/TypeScript fixtures reserve the exact final wire output cap', () => {
   for (const contract of contracts) {
     const budget = deriveEffectiveTokenBudget(contract.config);

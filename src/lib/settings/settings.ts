@@ -1,4 +1,4 @@
-import { reportDiagnostic } from '$lib/utils/diagnostics';
+import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
 import { invoke } from "@tauri-apps/api/core";
 
 export interface SettingRow {

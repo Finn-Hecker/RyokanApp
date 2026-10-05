@@ -1,7 +1,7 @@
 <script lang="ts">
   import * as m from '$lib/paraglide/messages';
-  import type { ApiParameterKey } from '$lib/utils/apiParameters';
-  import { generationParameterStatus, type GenerationConnection } from '$lib/utils/generationCapabilities';
+  import type { ApiParameterKey } from '$lib/ai/connections/apiParameters';
+  import { generationParameterStatus, type GenerationConnection } from '$lib/ai/connections/generationCapabilities';
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
 
   let { connection, parameter }: { connection: GenerationConnection; parameter: ApiParameterKey } = $props();

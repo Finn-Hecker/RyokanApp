@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { reportDiagnostic } from '$lib/utils/diagnostics';
+  import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
   import { appState } from "$lib/stores/appState.svelte";
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
-  import { getAllSettings, saveSetting } from "$lib/utils/settings";
-  import { parseTextRules, serializeTextRules, TEXT_RULES_KEY } from '$lib/utils/textRules';
+  import { getAllSettings, saveSetting } from "$lib/settings/settings";
+  import { parseTextRules, serializeTextRules, TEXT_RULES_KEY } from '$lib/ai/prompt/textRules';
   import { onMount } from "svelte";
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { setLocale } from "$lib/paraglide/runtime";
@@ -12,12 +12,12 @@
   import GeneralSection from "./GeneralSection.svelte";
   import TextRulesSection from "./TextRulesSection.svelte";
   import UpdateSection from './UpdateSection.svelte';
-  import { downloadDiagnostics } from '$lib/utils/diagnostics';
-  import { diagnosticsMetadata } from '$lib/utils/diagnosticsMetadata';
+  import { downloadDiagnostics } from '$lib/diagnostics/diagnostics';
+  import { diagnosticsMetadata } from '$lib/diagnostics/diagnosticsMetadata';
   import Button from "$lib/components/ui/Button.svelte";
-  import { createDefaultApiParameterEnabled, type ApiParameterKey } from "$lib/utils/apiParameters";
-  import { validateAdditionalApiParameters } from "$lib/utils/additionalApiParameters";
-  import { hydrateApiConnections, LONG_TERM_MEMORY_KEY, persistApiConnections, resolvedHardContextLimit, SUMMARY_CONNECTION_KEY } from "$lib/utils/apiConnections";
+  import { createDefaultApiParameterEnabled, type ApiParameterKey } from "$lib/ai/connections/apiParameters";
+  import { validateAdditionalApiParameters } from "$lib/ai/connections/additionalApiParameters";
+  import { hydrateApiConnections, LONG_TERM_MEMORY_KEY, persistApiConnections, resolvedHardContextLimit, SUMMARY_CONNECTION_KEY } from "$lib/ai/connections/apiConnections";
 
   type SettingsCategory = "provider" | "memory" | "textRules" | "appearance" | "language" | "advanced" | "about";
   type Category = { id: SettingsCategory; label: string; description: string; mobileDescription: string; icon: string };

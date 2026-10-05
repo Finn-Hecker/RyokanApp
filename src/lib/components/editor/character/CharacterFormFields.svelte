@@ -3,7 +3,7 @@
   import AltGreetings from './AltGreetings.svelte';
   import WorldInfoPicker from './WorldInfoPicker.svelte';
   import TokenBadge from '$lib/components/TokenBadge.svelte';
-  import { countCoreCharacterTokens } from '$lib/utils/tokenCount';
+  import { countCoreCharacterTokens } from '$lib/ai/tokens/tokenCount';
 
   let {
     name = $bindable(''),

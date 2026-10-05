@@ -1,14 +1,14 @@
-import { reportDiagnostic } from '$lib/utils/diagnostics';
+import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
-import { selectInitialGreeting } from '$lib/utils/characterGreeting';
+import { selectInitialGreeting } from '$lib/chat/characterGreeting';
 import { appState } from './appState.svelte';
 import { characterState, loadCharacters, type Character } from './characterStore.svelte';
 import { getLocale } from '$lib/paraglide/runtime';
-import { bumpConversationRevision, isMessageCoveredBySummary } from '$lib/utils/rollingSummaryCore';
-import type { TokenUsage } from '$lib/utils/tokenUsage';
+import { bumpConversationRevision, isMessageCoveredBySummary } from '$lib/ai/summary/rollingSummaryCore';
+import type { TokenUsage } from '$lib/ai/tokens/tokenUsage';
 
-import { decodeMessage, type Message, type PersistedMessageRow } from '$lib/utils/messageData';
-export type { Message } from '$lib/utils/messageData';
+import { decodeMessage, type Message, type PersistedMessageRow } from '$lib/chat/messageData';
+export type { Message } from '$lib/chat/messageData';
 
 export interface Conversation {
     id: string;
@@ -79,7 +79,7 @@ export interface DisplayMessage {
     senderName: string;
     swipeVariants: string[];
     swipeIndex: number;
-    generationError?: import('$lib/utils/generationError').GenerationErrorInfo;
+    generationError?: import('$lib/ai/generation/generationError').GenerationErrorInfo;
 }
 
 /** Persisted rolling-summary metadata for the active chat session. */

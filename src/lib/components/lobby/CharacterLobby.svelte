@@ -1,6 +1,6 @@
 <script lang="ts">
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
-  import { reportDiagnostic } from '$lib/utils/diagnostics';
+  import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
   import { appState } from '$lib/stores/appState.svelte';
   import { navigateTo, registerBackHandler } from '$lib/stores/navigation';
   import { characterState, loadCharacters, toggleHideCharacter, togglePinCharacter, deleteCharacter, loadHiddenIds, loadPinnedIds } from '$lib/stores/characterStore.svelte';

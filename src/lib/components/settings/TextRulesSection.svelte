@@ -2,13 +2,13 @@
   import { onMount } from 'svelte';
   import { flip } from 'svelte/animate';
   import { cubicOut } from 'svelte/easing';
-  import { sortableRules } from '$lib/utils/sortableRules';
+  import { sortableRules } from '$lib/components/settings/sortableRules';
   import { appState } from '$lib/stores/appState.svelte';
   import * as m from '$lib/paraglide/messages';
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import Button from '$lib/components/ui/Button.svelte';
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
-  import { previewTextRule, TEXT_RULE_SCOPES, TEXT_RULE_TARGETS, TEXT_RULE_TEMPLATES, type TextRule } from '$lib/utils/textRules';
+  import { previewTextRule, TEXT_RULE_SCOPES, TEXT_RULE_TARGETS, TEXT_RULE_TEMPLATES, type TextRule } from '$lib/ai/prompt/textRules';
 
   let choosingTemplate = $state(false);
   let draft = $state<TextRule | null>(null);

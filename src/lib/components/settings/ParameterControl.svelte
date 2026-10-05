@@ -4,7 +4,7 @@
   import type { ApiConnection } from '$lib/stores/appState.svelte';
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
   import GenerationCapabilityWarning from './GenerationCapabilityWarning.svelte';
-  import { parameterSettings, clampParameter, closestPreset, type SamplingParameter } from '$lib/utils/parameterSettings';
+  import { parameterSettings, clampParameter, closestPreset, type SamplingParameter } from '$lib/ai/connections/parameterSettings';
 
   let { connection, parameter, enabled, powerUser, onToggle, onValue, tooltip, note, chat = false }: {
     connection: ApiConnection; parameter: SamplingParameter; enabled: boolean; powerUser: boolean;

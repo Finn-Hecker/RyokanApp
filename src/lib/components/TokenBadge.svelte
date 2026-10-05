@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { countTokens } from '$lib/utils/tokenCount';
+  import { countTokens } from '$lib/ai/tokens/tokenCount';
 
   let {
     text = '',

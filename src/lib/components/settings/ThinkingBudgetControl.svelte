@@ -2,7 +2,7 @@
   import type { ApiConnection } from '$lib/stores/appState.svelte';
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
   import * as m from '$lib/paraglide/messages';
-  import { resolveGenerationCapabilities } from '$lib/utils/generationCapabilities';
+  import { resolveGenerationCapabilities } from '$lib/ai/connections/generationCapabilities';
   import { getLocale } from '$lib/paraglide/runtime';
 
   let { connection, powerUser = false, onChange = () => {} }: { connection: ApiConnection; powerUser?: boolean; onChange?: () => void } = $props();

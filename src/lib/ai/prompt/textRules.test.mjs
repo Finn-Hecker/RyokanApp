@@ -94,7 +94,7 @@ test('production prompt transforms history, new messages and selected lore witho
 });
 
 function settingsFunctions() {
-  const source = readFileSync(new URL('../components/settings/SettingsPage.svelte', import.meta.url), 'utf8').match(/<script lang="ts">([\s\S]*?)<\/script>/)[1];
+  const source = readFileSync(new URL('../../components/settings/SettingsPage.svelte', import.meta.url), 'utf8').match(/<script lang="ts">([\s\S]*?)<\/script>/)[1];
   const ast = ts.createSourceFile('SettingsPage.ts', source, ts.ScriptTarget.Latest, true);
   return ast.statements.filter(node => ts.isFunctionDeclaration(node) && ['loadSettings', 'saveSettings'].includes(node.name.text)).map(node => node.getText(ast)).join('\n');
 }
@@ -120,7 +120,7 @@ test('Settings saves the ordered payload via existing settings persistence and r
 });
 
 test('editor keeps drafts isolated, supports creation, replacement and drag previews', () => {
-  const source = readFileSync(new URL('../components/settings/TextRulesSection.svelte', import.meta.url), 'utf8').match(/<script lang="ts">([\s\S]*?)<\/script>/)[1];
+  const source = readFileSync(new URL('../../components/settings/TextRulesSection.svelte', import.meta.url), 'utf8').match(/<script lang="ts">([\s\S]*?)<\/script>/)[1];
   const ast = ts.createSourceFile('TextRulesSection.ts', source, ts.ScriptTarget.Latest, true);
   const functions = ast.statements.filter(node => ts.isFunctionDeclaration(node)).map(node => node.getText(ast)).join('\n');
   const appState = { textRules: [rule(), rule({ id: 'two', name: 'Second' })] };
@@ -151,7 +151,7 @@ test('editor keeps drafts isolated, supports creation, replacement and drag prev
 
 
 test('drag cancellation keeps execution order; committed order survives persistence and reaches display/send prompts', () => {
-  const source = readFileSync(new URL('../components/settings/TextRulesSection.svelte', import.meta.url), 'utf8').match(/<script lang="ts">([\s\S]*?)<\/script>/)[1];
+  const source = readFileSync(new URL('../../components/settings/TextRulesSection.svelte', import.meta.url), 'utf8').match(/<script lang="ts">([\s\S]*?)<\/script>/)[1];
   const ast = ts.createSourceFile('rules.ts', source, ts.ScriptTarget.Latest, true);
   const functions = ast.statements.filter(node => ts.isFunctionDeclaration(node)).map(node => node.getText(ast)).join('\n');
   const appState = { textRules: [rule(), rule({ id: 'two', pattern: 'new', replacement: 'final' }), rule({ id: 'three', enabled: false })] };

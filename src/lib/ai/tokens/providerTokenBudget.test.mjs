@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { deriveEffectiveTokenBudget, fitsContextBudget, contextSafetyMargin } from './rollingSummaryCore.ts';
-import { createDefaultApiParameterEnabled, requestParameterConfig } from './apiParameters.ts';
-import { modelGenerationCapabilities, reasoningCapability } from './generationCapabilities.ts';
+import { deriveEffectiveTokenBudget, fitsContextBudget, contextSafetyMargin } from '../summary/rollingSummaryCore.ts';
+import { createDefaultApiParameterEnabled, requestParameterConfig } from '../connections/apiParameters.ts';
+import { modelGenerationCapabilities, reasoningCapability } from '../connections/generationCapabilities.ts';
 
 const config = (budgetProvider, patch = {}) => ({ budgetProvider,
   maxTokensEnabled: true, thinkingBudgetEnabled: false, maxTokens: 4096, thinkingBudget: 2048,

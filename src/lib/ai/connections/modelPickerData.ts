@@ -1,4 +1,4 @@
-import type { ModelInfo } from './settings';
+import type { ModelInfo } from '../../settings/settings';
 
 const RECENT_KEY = 'ryokan-recent-models';
 const RECENT_LIMIT = 20;

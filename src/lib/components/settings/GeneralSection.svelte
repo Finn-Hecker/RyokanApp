@@ -6,12 +6,12 @@
   import {
     createDefaultApiParameterEnabled,
     type ApiParameterKey,
-  } from "$lib/utils/apiParameters";
-  import { validateAdditionalApiParameters } from "$lib/utils/additionalApiParameters";
+  } from "$lib/ai/connections/apiParameters";
+  import { validateAdditionalApiParameters } from "$lib/ai/connections/additionalApiParameters";
   import ParameterControl from '$lib/components/settings/ParameterControl.svelte';
   import ReasoningControl from './ReasoningControl.svelte';
   import ThinkingBudgetControl from './ThinkingBudgetControl.svelte';
-  import { ANTHROPIC_DEFAULT_OUTPUT_CAP, GEMINI_DEFAULT_OUTPUT_CAP } from '$lib/utils/providerTokenBudget';
+  import { ANTHROPIC_DEFAULT_OUTPUT_CAP, GEMINI_DEFAULT_OUTPUT_CAP } from '$lib/ai/tokens/providerTokenBudget';
 
   export let powerUser: boolean = false;
   export let category: "parameters" | "advanced" | "appearance" | "language" = "parameters";

@@ -1,6 +1,6 @@
 <script lang="ts">
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
-  import { reportDiagnostic } from '$lib/utils/diagnostics';
+  import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
   import { flip } from 'svelte/animate';
   import type { AnimationConfig } from 'svelte/animate';
   import { cubicOut } from 'svelte/easing';

@@ -1,6 +1,6 @@
-import { reportDiagnostic } from '$lib/utils/diagnostics';
+import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
-import { getSetting } from '$lib/utils/settings';
+import { getSetting } from '$lib/settings/settings';
 
 const DEFAULT_ROLE_SETTING = 'default_role_id';
 

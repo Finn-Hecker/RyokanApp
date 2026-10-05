@@ -1,4 +1,4 @@
-import { nativeTokenBudget, type NativeBudgetProvider } from './providerTokenBudget.ts';
+import { nativeTokenBudget, type NativeBudgetProvider } from '../tokens/providerTokenBudget.ts';
 
 export interface SummaryMarkerState {
   currentSummary: string | null;

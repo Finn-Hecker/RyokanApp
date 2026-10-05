@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { reportDiagnostic } from '$lib/utils/diagnostics';
+  import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
   import { onDestroy } from 'svelte';
   import SidebarBase from './SidebarBase.svelte';
   import type { ConversationMode } from '$lib/stores/chatStore.svelte';

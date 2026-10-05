@@ -1,23 +1,23 @@
-import type { TextRule } from '$lib/utils/textRules';
+import type { TextRule } from '$lib/ai/prompt/textRules';
 import { invoke } from '@tauri-apps/api/core';
-import { recordModelUse } from '$lib/utils/modelPickerData';
-import { traceDecision, diagnosticOperation, diagnosticConnection } from '$lib/utils/diagnosticDecisions';
+import { recordModelUse } from '$lib/ai/connections/modelPickerData';
+import { traceDecision, diagnosticOperation, diagnosticConnection } from '$lib/diagnostics/diagnosticDecisions';
 import { worldInfoState } from '$lib/stores/worldInfoStore.svelte';
 import { chatState } from '$lib/stores/chatStore.svelte';
-import { buildPromptMessages } from '$lib/utils/chatPromptBuilder';
+import { buildPromptMessages } from '$lib/ai/prompt/chatPromptBuilder';
 import { appState, snapshotApiConnection, type ApiConnection } from '$lib/stores/appState.svelte';
-import { requestParameterConfig } from '$lib/utils/apiParameters';
+import { requestParameterConfig } from '$lib/ai/connections/apiParameters';
 import type { Message } from '$lib/stores/chatStore.svelte';
 import {
     deriveEffectiveTokenBudget,
     type ApiRequestParameterConfig,
     type SummaryMarkerState,
-} from '$lib/utils/rollingSummaryCore';
-import { processThinkingOutput, stripThinkingContent } from '$lib/utils/thinkingOutput';
-import type { TokenUsage } from '$lib/utils/tokenUsage';
-import { withConnection } from '$lib/utils/tokenUsage';
+} from '$lib/ai/summary/rollingSummaryCore';
+import { processThinkingOutput, stripThinkingContent } from '$lib/ai/generation/thinkingOutput';
+import type { TokenUsage } from '$lib/ai/tokens/tokenUsage';
+import { withConnection } from '$lib/ai/tokens/tokenUsage';
 
-export { processThinkingOutput, stripThinkingContent } from '$lib/utils/thinkingOutput';
+export { processThinkingOutput, stripThinkingContent } from '$lib/ai/generation/thinkingOutput';
 
 export class GenerationCancelledError extends Error {
     constructor() { super('Generation cancelled'); this.name = 'GenerationCancelledError'; }

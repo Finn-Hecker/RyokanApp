@@ -1,17 +1,17 @@
 <script lang="ts">
-  import { parseTextRules, TEXT_RULES_KEY } from '$lib/utils/textRules';
+  import { parseTextRules, TEXT_RULES_KEY } from '$lib/ai/prompt/textRules';
   import { onMount, tick } from 'svelte';
   import { appState } from '$lib/stores/appState.svelte';
   import CharacterLobby from '$lib/components/lobby/CharacterLobby.svelte';
   import LazyView from '$lib/components/LazyView.svelte';
   import { createLazyView } from '$lib/utils/lazyView';
   import { prefetchLazyViews } from '$lib/utils/prefetchLazyViews';
-  import { getAllSettings } from '$lib/utils/settings';
+  import { getAllSettings } from '$lib/settings/settings';
   import { onBackButtonPress } from '@tauri-apps/api/app';
   import { handleBackNavigation } from '$lib/stores/navigation';
   import { invoke } from '@tauri-apps/api/core';
   import { loadWorldInfos } from '$lib/stores/worldInfoStore.svelte';
-  import { hydrateApiConnections } from '$lib/utils/apiConnections';
+  import { hydrateApiConnections } from '$lib/ai/connections/apiConnections';
   import { updater } from '$lib/stores/updater';
   import * as m from '$lib/paraglide/messages';
   import { androidViewport } from '$lib/utils/androidViewport';

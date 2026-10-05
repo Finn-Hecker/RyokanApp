@@ -15,7 +15,7 @@ import {
   unicodeCodePointBoundaries,
   withRequestTokenValues,
 } from './rollingSummaryCore.ts';
-import { shouldTriggerSummary } from './connectionCore.ts';
+import { shouldTriggerSummary } from '../connections/connectionCore.ts';
 
 const messages = ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id }));
 

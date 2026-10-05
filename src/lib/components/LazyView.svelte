@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack, type Component } from 'svelte';
   import type { LazyViewLoader } from '$lib/utils/lazyView';
-  import { reportDiagnostic } from '$lib/utils/diagnostics';
+  import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
   import * as m from '$lib/paraglide/messages';
 
   let { view }: { view: LazyViewLoader } = $props();
