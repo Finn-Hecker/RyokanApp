@@ -44,6 +44,7 @@ export interface ApiConnection extends ApiSettings {
   serviceTier: ServiceTier;
   id: string;
   name: string;
+  /** Restore-session association; use connectionPresetIsActive for active status. */
   appliedPresetId?: string | null;
   presetRestoreSnapshot?: PresetRestoreSnapshot;
   providerKind: ProviderKind;

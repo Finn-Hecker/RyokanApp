@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { appState, snapshotApiConnection, type ApiConnection } from '$lib/stores/appState.svelte';
   import { createDefaultApiParameterEnabled, type ApiParameterKey } from '$lib/ai/connections/apiParameters';
-  import { capturePreset, importPreset, PresetError, MAX_PRESET_BYTES, type RyokanPreset, type StoredPreset } from '$lib/ai/presets/presetCore';
+  import { capturePreset, connectionPresetIsActive, importPreset, PresetError, MAX_PRESET_BYTES, type RyokanPreset, type StoredPreset } from '$lib/ai/presets/presetCore';
   import { loadPresetLibrary, savePresetLibrary, deletePreset, downloadPreset } from '$lib/ai/presets/presetLibrary';
   import { clearExportFeedback, showExportFeedback } from '$lib/stores/exportFeedback';
   import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
@@ -78,7 +78,7 @@
     finally { busy = false; }
   }
   async function apply(item: StoredPreset) {
-    if (busy || draft || appState.apiSettings.appliedPresetId === item.id) return;
+    if (busy || draft || isActive(item)) return;
     busy = true; error = ''; status = '';
     try { await onApply($state.snapshot(item.preset), item.id); status = m.preset_applied(); }
     catch (cause) { showError(cause); }
@@ -97,8 +97,12 @@
     catch (cause) { showError(cause); }
     finally { busy = false; }
   }
+  function isActive(item: StoredPreset) {
+    // GeneralSection also edits switches through this separate bindable state.
+    return connectionPresetIsActive({ ...appState.apiSettings, parameterEnabled }, $state.snapshot(item));
+  }
   async function deactivate() {
-    if (busy || draft || !appState.apiSettings.appliedPresetId) return;
+    if (busy || draft || (!appState.apiSettings.appliedPresetId && !appState.apiSettings.presetRestoreSnapshot)) return;
     busy = true; error = ''; status = '';
     try { await onDeactivate(); status = m.preset_deactivated(); }
     catch (cause) { showError(cause); }
@@ -157,6 +161,9 @@
         <input bind:this={fileInput} type="file" accept=".json,application/json" hidden onchange={importFile} />
       </div>
     </div>
+    {#if (appState.apiSettings.appliedPresetId || appState.apiSettings.presetRestoreSnapshot) && !items.some(isActive)}
+      <div class="actions"><Button size="sm" disabled={busy || !!draft} onclick={deactivate}>{m.preset_deactivate()}</Button></div>
+    {/if}
     {#if !items.length}
       <div class="empty-state">
         <span class="empty-icon" aria-hidden="true">{@render actionIcon('add')}</span>
@@ -169,12 +176,12 @@
           <li class="preset-row">
             <div class="preset-copy">
               <div class="preset-name"><strong title={item.preset.name}>{item.preset.name}</strong>
-                {#if appState.apiSettings.appliedPresetId === item.id}<span class="active-badge">{m.preset_active()}</span>{/if}
+                {#if isActive(item)}<span class="active-badge">{m.preset_active()}</span>{/if}
               </div>
               <div class="preset-meta">{Object.keys(item.preset.providers).map(provider => PROVIDER_LABELS[provider as keyof typeof PROVIDER_LABELS]).join(' · ')}</div>
             </div>
             <div class="row-actions">
-              <button type="button" class="preset-action apply-action" class:applied={appState.apiSettings.appliedPresetId === item.id} disabled={busy || !!draft} aria-label={`${item.preset.name}: ${appState.apiSettings.appliedPresetId === item.id ? m.preset_deactivate() : m.preset_apply()}`} title={appState.apiSettings.appliedPresetId === item.id ? m.preset_deactivate() : m.preset_apply()} onclick={() => appState.apiSettings.appliedPresetId === item.id ? deactivate() : apply(item)}><span class="apply-icon">{@render actionIcon(appState.apiSettings.appliedPresetId === item.id ? 'deactivate' : 'apply')}</span><span class="apply-label">{appState.apiSettings.appliedPresetId === item.id ? m.preset_deactivate() : m.preset_apply()}</span></button>
+              <button type="button" class="preset-action apply-action" class:applied={isActive(item)} disabled={busy || !!draft} aria-label={`${item.preset.name}: ${isActive(item) ? m.preset_deactivate() : m.preset_apply()}`} title={isActive(item) ? m.preset_deactivate() : m.preset_apply()} onclick={() => isActive(item) ? deactivate() : apply(item)}><span class="apply-icon">{@render actionIcon(isActive(item) ? 'deactivate' : 'apply')}</span><span class="apply-label">{isActive(item) ? m.preset_deactivate() : m.preset_apply()}</span></button>
               <button type="button" class="preset-action" disabled={busy || !!draft} aria-label={`${item.preset.name}: ${m.preset_edit()}`} title={m.preset_edit()} onclick={() => edit(item)}>{@render actionIcon('edit')}</button>
               <button type="button" class="preset-action" disabled={busy || !!draft} aria-label={`${item.preset.name}: ${m.preset_export()}`} title={m.preset_export()} onclick={() => exportFile(item)}>{@render actionIcon('export')}</button>
               <button type="button" class="preset-action" disabled={busy || !!draft} aria-label={`${item.preset.name}: ${m.preset_delete()}`} title={m.preset_delete()} onclick={() => { deletingId = item.id; status = ''; }}>{@render actionIcon('delete')}</button>

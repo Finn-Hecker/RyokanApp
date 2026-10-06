@@ -21,6 +21,7 @@
   import { modelGenerationCapabilities } from '$lib/ai/connections/generationCapabilities';
   import GeneralSection from './GeneralSection.svelte';
   import ServiceTierControl from './ServiceTierControl.svelte';
+  import { transitionPresetProvider } from '$lib/ai/presets/presetCore';
 
   const NEW_CONNECTION_ACTION = '__new_connection__';
 
@@ -44,7 +45,7 @@
     onConnectionChange?: (previousConnectionId: string) => void;
   } = $props();
 
-  import { PROVIDERS as providerCatalog, type ProviderDefinition } from '$lib/ai/connections/providers';
+  import { PROVIDERS as providerCatalog, type ProviderDefinition, type ProviderKind } from '$lib/ai/connections/providers';
 
   type ProviderTab = 'local' | 'cloud';
 
@@ -282,9 +283,19 @@
     return registerBackHandler(() => { closeKeyEditor(true); return true; });
   });
 
+  function preparePresetProvider(kind: ProviderKind, customMode: boolean) {
+    const connection = appState.apiSettings;
+    const next = transitionPresetProvider(connection, kind, customMode, createDefaultConnection());
+    if (next !== connection) {
+      Object.assign(connection, next);
+      parameterEnabled = { ...connection.parameterEnabled };
+    }
+  }
+
   function selectProvider(provider: Provider) {
     modelLoadRequest++;
     lastAttemptedModelConfig = "";
+    preparePresetProvider(provider.kind, false);
     appState.apiSettings.customMode = false;
     appState.apiSettings.providerKind = provider.kind;
     appState.apiSettings.url   = provider.url;
@@ -301,6 +312,7 @@
   function selectCustom() {
     modelLoadRequest++;
     lastAttemptedModelConfig = "";
+    preparePresetProvider('generic_openai', true);
     appState.apiSettings.customMode = true;
     appState.apiSettings.providerKind = 'generic_openai';
     appState.apiSettings.url   = "";

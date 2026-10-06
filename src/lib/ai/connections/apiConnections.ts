@@ -60,7 +60,7 @@ function normalizeConnection(value: Partial<ApiConnection>, legacy: Map<string, 
   connection.serviceTier = normalizeServiceTier(connection.serviceTier);
   connection.appliedPresetId = typeof connection.appliedPresetId === 'string' && connection.appliedPresetId.length > 0
     ? connection.appliedPresetId : null;
-  connection.presetRestoreSnapshot = connection.appliedPresetId ? normalizePresetRestore(connection.presetRestoreSnapshot) : undefined;
+  connection.presetRestoreSnapshot = normalizePresetRestore(connection.presetRestoreSnapshot);
   if (!['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(connection.reasoningLevel)) connection.reasoningLevel = 'auto';
   if (!validContextSize(connection.manualContextCap)) connection.manualContextCap = null;
   if (!connection.detectedContext || !validContextSize(connection.detectedContext.tokens)) connection.detectedContext = null;

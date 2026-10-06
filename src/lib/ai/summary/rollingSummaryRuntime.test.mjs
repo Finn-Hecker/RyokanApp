@@ -1092,7 +1092,7 @@ test('resolved presets reach immutable request snapshots and the production prom
   await chatApi.runGeneration({ apiSettings: snapshot, character: { name: 'Rin', prompt: 'Card' }, recentMessages: [], userPrompt: 'Hi' },
     { onStreamUpdate() {}, onThinkingPhaseChange() {} });
   assert.ok(payload.messages[0].content.startsWith('Preset system'));
-  assert.deepEqual(payload.messages.at(-1), { role: 'system', content: 'Preset final' });
+  assert.deepEqual(payload.messages.at(-1), { role: 'user', content: 'Hi\n\n[Post-history instruction]\nPreset final' });
   assert.equal(payload.presence_penalty, 1.5);
   assert.equal(payload.request_parameter_config.presencePenaltyEnabled, true);
   assert.deepEqual(payload.request_parameter_config.additionalParameters, { chat_template_kwargs: { enable_thinking: false } });

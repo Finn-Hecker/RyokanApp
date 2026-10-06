@@ -1,0 +1,126 @@
+[
+  {
+    "name": "send after history",
+    "recentMessages": [
+      {
+        "role": "user",
+        "content": "Earlier"
+      },
+      {
+        "role": "assistant",
+        "content": "Reply"
+      }
+    ],
+    "userPrompt": "Next",
+    "postHistoryPrompt": "Final",
+    "conversation": [
+      {
+        "role": "user",
+        "content": "Earlier"
+      },
+      {
+        "role": "assistant",
+        "content": "Reply"
+      },
+      {
+        "role": "user",
+        "content": "Next\n\n[Post-history instruction]\nFinal"
+      }
+    ]
+  },
+  {
+    "name": "retry after assistant",
+    "recentMessages": [
+      {
+        "role": "user",
+        "content": "Earlier"
+      },
+      {
+        "role": "assistant",
+        "content": "Reply"
+      }
+    ],
+    "postHistoryPrompt": "Final",
+    "conversation": [
+      {
+        "role": "user",
+        "content": "Earlier"
+      },
+      {
+        "role": "assistant",
+        "content": "Reply"
+      },
+      {
+        "role": "user",
+        "content": "[Post-history instruction]\nFinal"
+      }
+    ]
+  },
+  {
+    "name": "empty history",
+    "recentMessages": [],
+    "postHistoryPrompt": " Final ",
+    "conversation": [
+      {
+        "role": "user",
+        "content": "[Post-history instruction]\nFinal"
+      }
+    ]
+  },
+  {
+    "name": "leading assistant greeting",
+    "recentMessages": [
+      {
+        "role": "assistant",
+        "content": "Greeting"
+      }
+    ],
+    "postHistoryPrompt": "Final",
+    "conversation": [
+      {
+        "role": "user",
+        "content": "[Start Roleplay]"
+      },
+      {
+        "role": "assistant",
+        "content": "Greeting"
+      },
+      {
+        "role": "user",
+        "content": "[Post-history instruction]\nFinal"
+      }
+    ]
+  },
+  {
+    "name": "history ends with user",
+    "recentMessages": [
+      {
+        "role": "user",
+        "content": "Current"
+      }
+    ],
+    "postHistoryPrompt": "Final",
+    "conversation": [
+      {
+        "role": "user",
+        "content": "Current\n\n[Post-history instruction]\nFinal"
+      }
+    ]
+  },
+  {
+    "name": "blank instruction",
+    "recentMessages": [
+      {
+        "role": "user",
+        "content": "Current"
+      }
+    ],
+    "postHistoryPrompt": "  ",
+    "conversation": [
+      {
+        "role": "user",
+        "content": "Current"
+      }
+    ]
+  }
+]

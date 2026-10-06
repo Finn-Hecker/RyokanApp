@@ -59,7 +59,9 @@ export function supportedServiceTiers(connection: Pick<GenerationConnection, 'pr
 // Ollama /api/openai-compatibility. The latter explicitly lists chat fields.
 const API_CONTRACTS: Record<string, readonly string[]> = {
   llama_cpp: ['temperature', 'max_tokens', 'top_p', 'top_k', 'min_p', 'frequency_penalty'],
-  lm_studio: ['temperature', 'max_tokens', 'top_p', 'top_k', 'presence_penalty', 'frequency_penalty'],
+  // LM Studio's wire spelling is repeat_penalty; expose its multiplicative
+  // semantics using Ryokan's normalized repetition_penalty capability.
+  lm_studio: ['temperature', 'max_tokens', 'top_p', 'top_k', 'repetition_penalty', 'presence_penalty', 'frequency_penalty'],
   koboldcpp: ['temperature', 'max_tokens', 'top_p', 'top_k', 'min_p'],
   ollama: ['temperature', 'top_p', 'max_tokens', 'presence_penalty', 'frequency_penalty'],
 };
@@ -179,6 +181,9 @@ export function resolveGenerationCapabilities(connection: GenerationConnection):
 }
 
 export function generationParameterStatus(connection: GenerationConnection, key: ApiParameterKey): GenerationParameterStatus {
+  // Ollama's compatible API documents only additive penalties. Never infer
+  // multiplicative support from its presence_penalty field.
+  if (connection.providerKind === 'ollama' && key === 'repetitionPenalty') return 'unreported';
   const capabilities = resolveGenerationCapabilities(connection);
   if (capabilities.supportedParameters.includes(GENERATION_PARAMETER_FIELDS[key])) return 'supported';
   // Only a model-specific advertised list can justify a warning. Missing

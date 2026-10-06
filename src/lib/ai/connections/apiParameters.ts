@@ -39,7 +39,8 @@ export function requestParameterConfig(connection: ApiConnection): ApiRequestPar
       ? { budgetProvider: connection.providerKind as 'anthropic' | 'gemini' } : {}),
     serviceTier: supportedServiceTiers(connection).includes(tier) ? tier : 'auto',
     temperatureEnabled: enabled.temperature, maxTokensEnabled: enabled.maxTokens,
-    presencePenaltyEnabled: enabled.repetitionPenalty, thinkingBudgetEnabled: (connection.providerKind === 'llama_cpp'
+    presencePenaltyEnabled: connection.providerKind !== 'ollama' && enabled.repetitionPenalty,
+    thinkingBudgetEnabled: (connection.providerKind === 'llama_cpp'
       || connection.providerKind === 'anthropic' || connection.providerKind === 'gemini') && enabled.thinkingBudget,
     topPEnabled: enabled.topP, topKEnabled: enabled.topK, minPEnabled: enabled.minP,
     frequencyPenaltyEnabled: enabled.frequencyPenalty,

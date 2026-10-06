@@ -13,7 +13,10 @@ test('native prompt instructions preserve context, use plain text and append onl
   assert.ok(messages[0].content.startsWith('Custom {{char}} text'));
   for (const text of ['Character facts', 'Player facts', 'Memory facts']) assert.ok(messages[0].content.includes(text));
   assert.ok(messages.find(m => m.role === 'user' && m.content.includes('Next')).content.includes('World facts'));
-  assert.deepEqual(messages.at(-1), { role: 'system', content: 'Final instruction' });
+  assert.equal(messages.at(-1).role, 'user');
+  assert.ok(messages.at(-1).content.includes('World facts'));
+  assert.ok(messages.at(-1).content.endsWith('Next\n\n[Post-history instruction]\nFinal instruction'));
+  assert.equal(messages.filter(message => message.role === 'system').length, 1);
   const empty = buildPromptMessages({ ...options, systemPrompt: '', postHistoryPrompt: '  ' });
   assert.ok(empty[0].content.startsWith('You are Rin.'));
   assert.equal(empty.at(-1).role, 'user');
@@ -133,4 +136,27 @@ test('World Info can trigger from summarized conversation history', () => {
     }],
   });
   assert.equal(messages.at(-1).content.split('SUMMARY_MATCH').length - 1, 1);
+});
+
+
+test('post-history shared provider fixtures keep the normal system prompt and a final conversational instruction', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const cases = JSON.parse(await readFile(new URL('../../../../tests/fixtures/post-history-prompts.json', import.meta.url), 'utf8'));
+  for (const fixture of cases) {
+    const messages = buildPromptMessages({ ...fixture, systemPrompt: 'Main instructions', character: null, worldInfos: [] });
+    assert.deepEqual(messages, [{ role: 'system', content: 'Main instructions' }, ...fixture.conversation], fixture.name);
+  }
+});
+
+test('post-history instructions follow world context and history without modifying source messages', () => {
+  const history = [{ role: 'user', content: 'Hi' }, { role: 'assistant', content: 'Reply' }];
+  const before = structuredClone(history);
+  const messages = buildPromptMessages({ systemPrompt: 'Main', postHistoryPrompt: 'Final',
+    character: { name: 'Rin', world_info_ids: ['world'] }, recentMessages: history, worldInfos: [{ id: 'world',
+      entries: [{ keys: [], enabled: true, position: 'after', content: 'World' }] }] });
+  assert.equal(messages[0].content, 'Main');
+  assert.equal(messages.at(-2).content, 'Reply');
+  assert.deepEqual(messages.at(-1), { role: 'user', content: '[Post-history instruction]\nFinal' });
+  assert.ok(messages[1].content.includes('World'));
+  assert.deepEqual(history, before);
 });

@@ -197,8 +197,12 @@ pub(super) fn apply_compatible_sampling(
     }
     for (enabled, name, value) in [
         (
-            config.repetition_penalty_enabled,
-            "repetition_penalty",
+            config.repetition_penalty_enabled && payload.provider_kind.as_deref() != Some("ollama"),
+            if payload.provider_kind.as_deref() == Some("lm_studio") {
+                "repeat_penalty"
+            } else {
+                "repetition_penalty"
+            },
             payload.repetition_penalty.map(|v| serde_json::json!(v)),
         ),
         (

@@ -10,15 +10,15 @@ type SamplingKey = typeof SAMPLING_KEYS[number];
 const RESTORE_KEYS = [...SAMPLING_KEYS, 'maxTokens', 'thinkingBudget', 'reasoningLevel', 'serviceTier',
   'additionalApiParameters', 'systemPrompt', 'postHistoryPrompt'] as const;
 const RESTORE_PARAMETER_KEYS = [...SAMPLING_KEYS, 'maxTokens', 'thinkingBudget'] as const;
+const PROVIDER_RESTORE_KEYS = ['maxTokens', 'thinkingBudget', 'reasoningLevel', 'serviceTier', 'additionalApiParameters'] as const;
 export type PresetRestoreSnapshot = Pick<ApiConnection, typeof RESTORE_KEYS[number]> & {
   parameterEnabled: Pick<ApiConnection['parameterEnabled'], typeof RESTORE_PARAMETER_KEYS[number]>;
 };
 
 /** Profile-local manual baseline. Keep original custom JSON formatting and disabled values. */
 export function capturePresetRestore(connection: ApiConnection): PresetRestoreSnapshot {
-  const additional = validateAdditionalApiParameters(connection.additionalApiParameters || '');
-  if (!additional.valid) fail();
-  safeJson(additional.value ?? {});
+  // Private profile data is not a portable preset. Preserve raw custom JSON,
+  // including URLs, formatting and unfinished editor drafts.
   return {
     ...Object.fromEntries(RESTORE_KEYS.map(key => [key, connection[key]])),
     parameterEnabled: Object.fromEntries(RESTORE_PARAMETER_KEYS.map(key => [key, connection.parameterEnabled[key]])),
@@ -52,13 +52,50 @@ export function deactivateConnectionPreset(connection: ApiConnection): ApiConnec
 
 export function activateConnectionPreset(connection: ApiConnection, preset: RyokanPreset, id: string): ApiConnection {
   // Legacy associations without a baseline can only preserve their current settings.
-  const restore = connection.appliedPresetId && connection.presetRestoreSnapshot
+  const restore = connection.presetRestoreSnapshot
     ? capturePresetRestore({ ...connection, ...connection.presetRestoreSnapshot } as ApiConnection)
     : capturePresetRestore(connection);
   const baseline = { ...connection, ...restore,
     parameterEnabled: { ...connection.parameterEnabled, ...restore.parameterEnabled } };
   return { ...resolvePreset(baseline, preset), appliedPresetId: id, presetRestoreSnapshot: restore };
 }
+
+/** End the restore session in its old context before entering another provider. */
+export function transitionPresetProvider(connection: ApiConnection, providerKind: ProviderKind,
+  customMode: boolean, defaults: ApiConnection): ApiConnection {
+  if ((connection.providerKind === providerKind && connection.customMode === customMode)
+    || (!connection.appliedPresetId && !connection.presetRestoreSnapshot)) return connection;
+  const restored = deactivateConnectionPreset(connection);
+  return { ...restored,
+    ...Object.fromEntries(PROVIDER_RESTORE_KEYS.map(key => [key, defaults[key]])),
+    parameterEnabled: { ...restored.parameterEnabled,
+      maxTokens: defaults.parameterEnabled.maxTokens, thinkingBudget: defaults.parameterEnabled.thinkingBudget },
+  };
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') return `{${Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .map(([key, child]) => `${JSON.stringify(key)}:${canonicalJson(child)}`).join(',')}}`;
+  return JSON.stringify(value);
+}
+function sameAdditionalParameters(left: string, right: string): boolean {
+  if (left === right) return true;
+  const a = validateAdditionalApiParameters(left), b = validateAdditionalApiParameters(right);
+  return a.valid && b.valid && canonicalJson(a.value ?? {}) === canonicalJson(b.value ?? {});
+}
+
+/** The ID owns a restore session. Active status additionally requires a match
+ * with the library entry's effective configuration in this provider context.
+ * Library edits never mutate profiles or already captured request snapshots. */
+export function connectionPresetIsActive(connection: ApiConnection, item: StoredPreset): boolean {
+  if (connection.appliedPresetId !== item.id || !connection.presetRestoreSnapshot) return false;
+  const expected = resolvePreset(deactivateConnectionPreset(connection), item.preset);
+  return RESTORE_KEYS.every(key => key === 'additionalApiParameters'
+    ? sameAdditionalParameters(connection[key], expected[key]) : connection[key] === expected[key])
+    && RESTORE_PARAMETER_KEYS.every(key => connection.parameterEnabled[key] === expected.parameterEnabled[key]);
+}
+
 export interface ParameterValue { enabled: boolean; value: number }
 export interface ProviderPresetSettings {
   maxTokens: ParameterValue;

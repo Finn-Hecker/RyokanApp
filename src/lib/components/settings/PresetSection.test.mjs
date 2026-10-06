@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { proxy, snapshot } from 'svelte/internal/client';
-import { capturePreset, resolvePreset, importPreset, exportPreset, PresetError, MAX_PRESET_BYTES } from '../../ai/presets/presetCore.ts';
+import { capturePreset, activateConnectionPreset, connectionPresetIsActive, resolvePreset, importPreset, exportPreset, PresetError, MAX_PRESET_BYTES } from '../../ai/presets/presetCore.ts';
 import { createDefaultApiParameterEnabled } from '../../ai/connections/apiParameters.ts';
 
 const source = readFileSync(new URL('./PresetSection.svelte', import.meta.url), 'utf8');
@@ -20,7 +20,7 @@ function fixture() {
   const context = vm.createContext({ appState: { apiSettings: connection }, parameterEnabled: { ...connection.parameterEnabled },
     items: [], ready: false, busy: false, status: '', error: '', draft: null, deletingId: '',
     crypto: { randomUUID: () => `new-${writes.length}` }, structuredClone, $state: { snapshot },
-    snapshotApiConnection: snapshot, capturePreset, resolvePreset, importPreset, PresetError, MAX_PRESET_BYTES,
+    snapshotApiConnection: snapshot, capturePreset, activateConnectionPreset, connectionPresetIsActive, resolvePreset, importPreset, PresetError, MAX_PRESET_BYTES,
     reportDiagnostic() {}, clearExportFeedback() {}, showExportFeedback() {}, m: new Proxy({}, { get: (_, key) => () => key }),
     savePresetLibrary: async items => { writes.push(structuredClone(snapshot(items))); },
     loadPresetLibrary: async () => [], onApply: async () => {}, onDeactivate: async () => {}, onDeleted: () => {},
@@ -122,21 +122,36 @@ test('native import adds an isolated library entry without applying it or replac
   assert.equal(context.items, before); assert.equal(context.error, 'preset_error_invalid');
 });
 
-test('active badge follows the current connection association without a management selection', () => {
+test('active badge follows effective settings and library edits while preserving the restore session', async () => {
   const { context, connection, syncConnection } = fixture();
-  const badgeCondition = source.match(/\{#if (appState\.apiSettings\.appliedPresetId === item\.id)\}/)[1];
-  context.item = { id: 'first' };
+  const preset = capturePreset({ ...connection, temperature: 1.4 }, 'Active');
+  const item = { id: 'first', preset };
+  Object.assign(connection, activateConnectionPreset(connection, preset, item.id));
+  context.parameterEnabled = { ...connection.parameterEnabled };
+  context.items = [item]; context.item = item;
+  const badgeCondition = source.match(/\{#if (isActive\(item\))\}/)[1];
   const isActive = () => vm.runInContext(badgeCondition, context);
-  connection.appliedPresetId = 'first'; connection.id = 'a';
   syncConnection(); assert.equal(isActive(), true);
+  connection.temperature = 1.5;
+  assert.equal(isActive(), false);
+  assert.equal(connection.presetRestoreSnapshot.temperature, 0.8);
+  connection.temperature = 1.4;
+  context.parameterEnabled.temperature = !connection.parameterEnabled.temperature;
+  assert.equal(isActive(), false, 'pending UI switch edits also remove the badge');
+  context.parameterEnabled = { ...connection.parameterEnabled };
+  assert.equal(isActive(), true);
+  context.edit(item); context.draft.temperature = 2; await context.save();
+  context.item = context.items[0];
+  assert.equal(isActive(), false, 'editing active library settings removes the badge');
+  let calls = 0;
+  context.onApply = async (preset, id) => { calls++; Object.assign(connection, activateConnectionPreset(connection, preset, id)); };
+  await context.apply(context.items[0]);
+  assert.equal(calls, 1, 'a modified association can reapply the same ID');
+  assert.equal(isActive(), true);
+  assert.equal(connection.presetRestoreSnapshot.temperature, 0.8);
   context.appState.apiSettings = { ...connection, id: 'b', appliedPresetId: 'second' };
   syncConnection(); assert.equal(isActive(), false);
-  context.item.id = 'second'; assert.equal(isActive(), true);
-  context.appState.apiSettings = connection;
-  context.item.id = 'first'; syncConnection(); assert.equal(isActive(), true);
-  delete connection.appliedPresetId;
-  syncConnection(); assert.equal(isActive(), false);
-  assert.doesNotMatch(source, /selectedId|const selected\b/);
+  assert.match(source, /!items.some\(isActive\)/, 'modified sessions still offer manual restoration');
 });
 
 test('creating and editing library entries retain the applied association and settings', async () => {
@@ -156,7 +171,7 @@ test('library shows every preset with direct accessible actions and row-local de
   for (const action of ['apply(item)', 'edit(item)', 'exportFile(item)', 'deletingId = item.id']) assert.ok(source.includes(action));
   for (const action of ['edit', 'export', 'delete']) assert.ok(source.includes('`${item.preset.name}: ${m.preset_' + action + '()}`'));
   assert.match(source, /disabled=\{busy \|\| !!draft\}/);
-  assert.match(source, /class="apply-label">\{appState.apiSettings.appliedPresetId === item.id \? m.preset_deactivate\(\) : m.preset_apply\(\)\}/);
+  assert.match(source, /class="apply-label">\{isActive\(item\) \? m.preset_deactivate\(\) : m.preset_apply\(\)\}/);
   assert.match(source, /\{#if deletingId === item.id\}[\s\S]*?onclick=\{remove\}/);
   const mobile = source.slice(source.indexOf('@media(max-width:767px)'));
   assert.match(mobile, /\.preset-row \{ grid-template-columns:minmax\(0,1fr\) auto;/);
@@ -198,9 +213,9 @@ test('row actions operate on the requested item and never change the association
   const { context, connection } = fixture();
   const first = { id: 'first', preset: capturePreset(connection, 'First') };
   const second = { id: 'second', preset: capturePreset(connection, 'Second') };
-  context.items = [first, second]; connection.appliedPresetId = first.id;
+  context.items = [first, second]; Object.assign(connection, activateConnectionPreset(connection, first.preset, first.id));
   const applied = []; const exported = [];
-  context.onApply = async (preset, id) => { applied.push([preset.name, id]); connection.appliedPresetId = id; };
+  context.onApply = async (preset, id) => { applied.push([preset.name, id]); Object.assign(connection, activateConnectionPreset(connection, preset, id)); };
   context.downloadPreset = async item => exported.push(item.id);
   await context.exportFile(second);
   assert.deepEqual(exported, ['second']); assert.equal(connection.appliedPresetId, first.id);

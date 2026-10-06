@@ -166,6 +166,12 @@ test('production persistence and hydration retain independent snapshots across a
   const legacy = { ...structuredClone(defaults), id: 'legacy' };
   delete legacy.appliedPresetId; delete legacy.presetRestoreSnapshot;
   context.appState.apiConnections.push(legacy);
+  // Private restore state survives independently of the association and may
+  // contain legitimate URL-valued request data that portable presets reject.
+  connection.appliedPresetId = null;
+  context.appState.apiConnections.forEach((profile, i) => {
+    if (profile.presetRestoreSnapshot) profile.presetRestoreSnapshot.additionalApiParameters = ` {"stop":["https://manual-${i}.test/stop"]} `;
+  });
   const before = structuredClone(context.appState.apiConnections);
   let rows;
   Object.assign(context, { crypto: { randomUUID: () => 'new' },
@@ -210,4 +216,19 @@ test('failed deletion retains the library and restores persisted references on s
     assert.deepEqual(disk, before);
     assert.deepEqual(context.appState.apiConnections, before.profiles);
   }
+});
+
+
+test('deleting a modified preset association restores its original manual baseline', async () => {
+  const { context, connection, items } = fixture();
+  const original = structuredClone(connection.presetRestoreSnapshot);
+  connection.temperature = 2.5;
+  connection.additionalApiParameters = '{"stop":["EDITED"]}';
+  const request = structuredClone(connection);
+  items.find(item => item.id === 'old').preset.generation.temperature.value = 3;
+  await context.deletePreset(items, 'old');
+  assert.equal(connection.appliedPresetId, null);
+  assert.equal(connection.presetRestoreSnapshot, undefined);
+  assert.deepEqual(capturePresetRestore(connection), original);
+  assert.equal(request.temperature, 2.5, 'captured request remains isolated');
 });

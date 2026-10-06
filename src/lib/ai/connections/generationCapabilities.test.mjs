@@ -108,3 +108,23 @@ test('thinking support does not invent effort levels and contract parameters do 
   assert.equal(unknown.thinkingSupported, null);
   assert.equal(unknown.reasoningSupported, null);
 });
+
+
+test('multiplicative penalty capabilities and request switches do not borrow additive presence support', () => {
+  const connection = { providerKind: 'lm_studio', url: 'http://localhost:1234/v1', model: 'fixture',
+    parameterEnabled: { ...createDefaultApiParameterEnabled(), repetitionPenalty: true }, additionalApiParameters: '' };
+  assert.equal(generationParameterStatus(connection, 'repetitionPenalty'), 'supported');
+  assert.equal(requestParameterConfig(connection).presencePenaltyEnabled, true);
+  connection.providerKind = 'ollama';
+  assert.equal(resolveGenerationCapabilities(connection).supportedParameters.includes('repetition_penalty'), false);
+  assert.equal(generationParameterStatus(connection, 'repetitionPenalty'), 'unreported');
+  assert.equal(requestParameterConfig(connection).presencePenaltyEnabled, false);
+  assert.equal(connection.parameterEnabled.repetitionPenalty, true, 'unsupported providers do not mutate the preset value/switch');
+  connection.additionalApiParameters = '{"presence_penalty":0.25}';
+  assert.deepEqual(requestParameterConfig(connection).additionalParameters, { presence_penalty: 0.25 });
+  connection.providerKind = 'openrouter'; connection.url = 'https://openrouter.ai/api/v1';
+  connection.generationCapabilities = modelGenerationCapabilities(connection, ['presence_penalty']);
+  assert.equal(generationParameterStatus(connection, 'repetitionPenalty'), 'unreported');
+  connection.generationCapabilities = modelGenerationCapabilities(connection, ['repetition_penalty']);
+  assert.equal(generationParameterStatus(connection, 'repetitionPenalty'), 'supported');
+});

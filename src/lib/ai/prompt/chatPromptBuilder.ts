@@ -123,6 +123,14 @@ export function buildPromptMessages(options: PromptBuildOptions): ChatPromptMess
     }
   }
 
-  if (options.postHistoryPrompt?.trim()) messages.push({ role: 'system', content: options.postHistoryPrompt.trim() });
+  // Native APIs and compatible gateways/templates may hoist system messages.
+  // Keep this instruction in conversation order on every provider path, merging
+  // into a final user turn when possible to retain alternating roles.
+  if (options.postHistoryPrompt?.trim()) {
+    const instruction = `[Post-history instruction]\n${options.postHistoryPrompt.trim()}`;
+    const last = messages.at(-1);
+    if (last?.role === 'user') messages[messages.length - 1] = { ...last, content: `${last.content}\n\n${instruction}` };
+    else messages.push({ role: 'user', content: instruction });
+  }
   return messages;
 }

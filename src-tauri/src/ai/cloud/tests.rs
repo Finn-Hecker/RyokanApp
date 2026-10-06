@@ -766,3 +766,68 @@ async fn compatible_summary_rejects_truncation_even_below_cap_and_keeps_chat_beh
     assert!(super::super::consume_compatible(response, &payload, &CancellationToken::new(), |_, _| Ok(())).await.is_err());
     thread.join().unwrap();
 }
+
+
+#[test]
+fn post_history_instructions_remain_after_history_on_every_provider_path() {
+    let fixtures: Value = serde_json::from_str(include_str!("../../../../tests/fixtures/post-history-prompts.json")).unwrap();
+    for fixture in fixtures.as_array().unwrap() {
+        for kind in ["anthropic", "gemini", "nanogpt", "openrouter", "openai", "xai", "llama_cpp", "lm_studio", "koboldcpp", "ollama", "generic_openai"] {
+            let mut payload = request(kind);
+            let mut messages = vec![json!({"role":"system","content":"Main instructions"})];
+            messages.extend(fixture["conversation"].as_array().unwrap().iter().cloned());
+            payload.messages = messages;
+            let body = match kind {
+                "anthropic" => anthropic::body(&payload, Default::default()).unwrap(),
+                "gemini" => gemini::body(&payload, Default::default()).unwrap(),
+                "nanogpt" => nanogpt::body(&payload, Default::default()).unwrap(),
+                _ => super::super::compatible_body(&payload).unwrap(),
+            };
+            match kind {
+                "anthropic" => {
+                    assert_eq!(body["system"], "Main instructions");
+                    assert_eq!(body["messages"], fixture["conversation"], "{} {kind}", fixture["name"]);
+                }
+                "gemini" => {
+                    assert_eq!(body["systemInstruction"]["parts"][0]["text"], "Main instructions");
+                    let contents: Vec<Value> = fixture["conversation"].as_array().unwrap().iter().map(|m|
+                        json!({"role":if m["role"] == "assistant" {"model"} else {"user"}, "parts":[{"text":m["content"]}]})).collect();
+                    assert_eq!(body["contents"], json!(contents), "{} {kind}", fixture["name"]);
+                }
+                _ => assert_eq!(body["messages"], json!(payload.messages), "{} {kind}", fixture["name"]),
+            }
+        }
+    }
+}
+
+#[test]
+fn multiplicative_penalty_uses_provider_wire_spelling_and_never_additive_presence() {
+    for kind in ["nanogpt", "openrouter", "openai", "xai", "llama_cpp", "lm_studio", "koboldcpp", "ollama", "generic_openai", "anthropic", "gemini"] {
+        let mut payload = request(kind);
+        let body = match kind {
+            "anthropic" => anthropic::body(&payload, Default::default()).unwrap(),
+            "gemini" => gemini::body(&payload, Default::default()).unwrap(),
+            "nanogpt" => nanogpt::body(&payload, Default::default()).unwrap(),
+            _ => super::super::compatible_body(&payload).unwrap(),
+        };
+        assert!(body.get("presence_penalty").is_none(), "{kind}");
+        assert!(body["generationConfig"].get("presencePenalty").is_none(), "{kind}");
+        if kind == "lm_studio" {
+            assert!((body["repeat_penalty"].as_f64().unwrap() - 1.12).abs() < 1e-6);
+            assert!(body.get("repetition_penalty").is_none());
+        } else if ["ollama", "anthropic", "gemini"].contains(&kind) {
+            assert!(body.get("repetition_penalty").is_none());
+        } else {
+            assert!((body["repetition_penalty"].as_f64().unwrap() - 1.12).abs() < 1e-6);
+        }
+        if kind == "lm_studio" || kind == "ollama" {
+            payload.request_parameter_config.additional_parameters.insert("presence_penalty".into(), json!(0.25));
+            let body = super::super::compatible_body(&payload).unwrap();
+            assert_eq!(body["presence_penalty"], json!(0.25), "explicit additive custom parameter stays independent");
+            if kind == "lm_studio" {
+                payload.request_parameter_config.additional_parameters.insert("repeat_penalty".into(), json!(1.5));
+                assert_eq!(super::super::compatible_body(&payload).unwrap()["repeat_penalty"], json!(1.5));
+            }
+        }
+    }
+}
