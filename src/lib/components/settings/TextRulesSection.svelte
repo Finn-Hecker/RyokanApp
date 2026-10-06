@@ -86,6 +86,12 @@
   </svg>
 {/snippet}
 
+{#snippet templateExample(text: string)}
+  {#each text.split(/\r?\n/) as line}
+    <span class="example-line" class:blank-line={!line}>{line || '\u00a0'}</span>
+  {/each}
+{/snippet}
+
 <section class="rules-section">
   <span id="rule-sort-help" class="sr-only">{m.text_rules_sort_help()}</span>
   <div class="section-heading"><p class="hint">{m.text_rules_order()}</p><Button size="sm" onclick={() => choosingTemplate = true}>{@render actionIcon('add')}{m.text_rules_add()}</Button></div>
@@ -119,13 +125,13 @@
     {#snippet children(close)}
       <div class="template-list">
         {#each TEXT_RULE_TEMPLATES as template}
-          <button class="template-option" onclick={() => close(() => create(template))}>
+          <button type="button" class="template-option" onclick={() => close(() => create(template))}>
             <span class="template-copy"><strong>{templates[template.id]}</strong>
-              <span class="template-example"><span>{template.example}</span><span class="example-arrow" aria-hidden="true">→</span><span>{previewTextRule(template.example, template).text}</span></span>
+              <span class="template-example"><span>{@render templateExample(template.example)}</span><span class="example-arrow" aria-hidden="true">→</span><span>{@render templateExample(previewTextRule(template.example, template).text)}</span></span>
             </span><span class="chevron" aria-hidden="true">›</span>
           </button>
         {/each}
-        <button class="template-option custom-option" onclick={() => close(() => create())}><strong>{m.text_rules_custom()}</strong><span class="chevron" aria-hidden="true">+</span></button>
+        <button type="button" class="template-option custom-option" onclick={() => close(() => create())}><strong>{m.text_rules_custom()}</strong><span class="chevron" aria-hidden="true">+</span></button>
       </div>
     {/snippet}
   </BottomSheet>
@@ -179,7 +185,7 @@
       {/if}
     {/snippet}
     {#snippet footer(close)}
-      <div class="sheet-footer-actions"><Button variant="ghost" onclick={close}>{m.text_rules_cancel()}</Button><Button variant="primary" disabled={!validSelection || Boolean(preview?.error)} onclick={() => { commit(); close(); }}>{m.text_rules_apply()}</Button></div>
+      <div class="sheet-footer-actions"><Button variant="secondary" onclick={close}>{m.text_rules_cancel()}</Button><Button variant="primary" disabled={!validSelection || Boolean(preview?.error)} onclick={() => { commit(); close(); }}>{m.text_rules_apply()}</Button></div>
     {/snippet}
   </BottomSheet>
 {/if}
@@ -208,17 +214,22 @@
   .empty-state { display:flex; flex-direction:column; align-items:center; gap:14px; padding:36px 24px; border:1px solid var(--sheet-divider); border-radius:15px; background:rgba(255,255,255,.025); text-align:center; }
   .empty-state .hint { max-width:300px; }
   .empty-icon { display:grid; place-items:center; width:48px; height:48px; border-radius:14px; color:var(--accent); background:rgba(212,180,131,.075); }
-  .template-list { display:grid; gap:4px; }
-  .template-option { display:flex; align-items:center; gap:12px; width:100%; padding:14px 12px; border:0; border-radius:12px; background:transparent; color:var(--sheet-text); text-align:left; cursor:pointer; font:inherit; }
-  .template-option:hover { background:var(--sheet-surface-hover); }
+  .template-list { display:grid; gap:10px; }
+  .template-option { display:flex; align-items:center; gap:12px; width:100%; padding:14px; border:1px solid var(--sheet-border); border-radius:12px; background:var(--sheet-surface); color:var(--sheet-text); text-align:left; cursor:pointer; font:inherit; transition:background .15s,border-color .15s; }
+  .template-option:hover { background:var(--sheet-surface-hover); border-color:var(--sheet-selected-border); }
+  .template-option:focus-visible, .custom-option:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .template-option:active, .custom-option:active { background:var(--sheet-selected); border-color:var(--sheet-selected-border); }
   .template-copy { display:grid; gap:8px; flex:1; min-width:0; }
   .template-option strong { font-size:13px; font-weight:600; }
   .template-example { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:10px; color:var(--sheet-text-muted); font-size:12px; line-height:1.4; }
   .template-example > span { white-space:pre-wrap; overflow-wrap:anywhere; }
+  .example-line { display:block; }
+  .example-line.blank-line { height:4px; line-height:4px; }
   .template-example > span:last-child { color:var(--sheet-text); }
   .example-arrow, .chevron { color:var(--accent); }
-  .chevron { margin-left:auto; font-size:20px; }
-  .custom-option { border-top:1px solid var(--sheet-divider); margin-top:4px; }
+  .chevron { display:grid; place-items:center; flex:0 0 28px; height:28px; margin-left:auto; border-radius:8px; background:var(--sheet-selected); font-size:22px; }
+  .custom-option { border:1px solid var(--sheet-border); margin-top:4px; background:var(--sheet-surface); padding:14px 12px; }
+  .custom-option .chevron { flex-basis:auto; height:auto; background:transparent; font-size:20px; }
   .workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); grid-template-rows:auto 1fr; gap:16px 24px; align-items:start; color:var(--sheet-text); }
   .edit-column { grid-column:1; grid-row:1 / 3; display:grid; gap:16px; min-width:0; }
   .field { display:block; min-width:0; }
@@ -275,6 +286,7 @@
     .sample-card summary { padding:10px 0; }
     .settings-input { font-size:16px; padding:10px 12px; }
     textarea { min-height:58px; }
-    .template-option { padding:12px 8px; }
+    .template-option { padding:12px; }
+    .custom-option { padding:12px 8px; }
   }
 </style>
