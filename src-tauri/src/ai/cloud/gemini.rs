@@ -206,6 +206,7 @@ pub(super) fn event(value: &Value) -> Result<CloudEvent, String> {
             return Err(format!("Gemini generation stopped: {reason}"));
         }
         event.finished = true;
+        event.finish_reason = Some(reason.into());
     }
     if let Some(metadata) = value.get("usageMetadata") {
         let candidate = metadata.get("candidatesTokenCount").and_then(Value::as_u64);

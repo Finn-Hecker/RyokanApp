@@ -99,6 +99,7 @@ pub(super) fn event(value: &Value) -> Result<CloudEvent, String> {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .into(),
+        finish_reason: value.pointer("/choices/0/finish_reason").and_then(Value::as_str).map(str::to_owned),
         usage: usage.filter(|usage| !usage.is_empty()),
         ..Default::default()
     })

@@ -120,10 +120,32 @@ export function contextSafetyMargin(contextLimit: number): number {
 
 export const summarySafetyMargin = contextSafetyMargin;
 
-/** Leave room for the previous summary, output, and new events even on small models. */
-export function boundedSummaryOutputCap(desired: number, contextLimit: number, promptOverhead: number): number {
+/** Combined generation cap: visible summary plus an explicit reasoning allowance. */
+export function summaryGenerationOutputCap(visibleTokens: number): number {
+  return visibleTokens * 4;
+}
+
+/** Preserve explicit thinking budgets while reserving space for a visible summary. */
+export function summaryRequestParameterConfig(config: ApiRequestParameterConfig, visibleTokens: number): ApiRequestParameterConfig {
+  const reasoning = summaryReasoningReserve(config);
+  const total = Math.max(summaryGenerationOutputCap(visibleTokens), reasoning + visibleTokens);
+  // Compatible requests add the profile's manual budget at the Rust boundary;
+  // native caps already include it. Never add it twice or reset it to zero.
+  const additive = !config.budgetProvider && config.thinkingBudgetEnabled ? config.thinkingBudget : 0;
+  return { ...config, maxTokens: Math.max(1, total - additive) };
+}
+
+function summaryReasoningReserve(config: ApiRequestParameterConfig): number {
+  return Math.max(deriveEffectiveTokenBudget(config).calculation.reasoning_limit ?? 0,
+    !config.budgetProvider && config.thinkingBudgetEnabled ? config.thinkingBudget : 0);
+}
+
+/** Leave room for previous summary, new events and the combined generation cap. */
+export function boundedSummaryOutputCap(desired: number, contextLimit: number, promptOverhead: number, config?: ApiRequestParameterConfig): number {
+  const available = contextLimit - summarySafetyMargin(contextLimit) - promptOverhead;
+  const reasoning = config ? summaryReasoningReserve(config) : 0;
   return Math.max(0, Math.min(desired,
-    Math.floor((contextLimit - summarySafetyMargin(contextLimit) - promptOverhead) / 3)));
+    Math.floor(available / 6), Math.floor((available - reasoning) / 3)));
 }
 
 function strictTokenLimit(value: unknown): number | null {

@@ -16,6 +16,7 @@ import { processThinkingOutput, stripThinkingContent } from '$lib/ai/generation/
 import {
     commitOrRollback,
     boundedSummaryOutputCap,
+    summaryRequestParameterConfig as createSummaryRequestParameterConfig,
     bumpConversationRevision,
     canReusePromptAnchor,
     currentConversationRevision,
@@ -29,7 +30,6 @@ import {
     summarySafetyMargin,
     contextSafetyMargin,
     unicodeCodePointBoundaries,
-    withRequestTokenValues,
     type ApiRequestParameterConfig,
     type SummaryMarkerState,
     type PromptUsageAnchor,
@@ -426,10 +426,9 @@ async function summaryRequestFits(
         countAdditionalParameterTokens(requestParameterConfig, model),
     ]);
     const inputTokens = messageTokens + additionalParameterTokens;
-    const summaryRequestParameterConfig = withRequestTokenValues(
+    const summaryRequestParameterConfig = createSummaryRequestParameterConfig(
         requestParameterConfig,
         maximumSummaryTokens,
-        0,
     );
     const outputReserve = deriveEffectiveTokenBudget(
         summaryRequestParameterConfig,
@@ -462,10 +461,9 @@ async function requestSummary(
     assertOperationCurrent(operation);
 
     const apiSettings = operation.apiSettings;
-    const summaryRequestParameterConfig = withRequestTokenValues(
+    const summaryRequestParameterConfig = createSummaryRequestParameterConfig(
         operation.requestParameterConfig,
         maximumSummaryTokens,
-        0,
     );
     const effectiveBudget = deriveEffectiveTokenBudget(summaryRequestParameterConfig);
     const generationId = crypto.randomUUID();
@@ -501,18 +499,23 @@ async function requestSummary(
                         maximumSummaryTokens,
                     ),
                 }],
-                temperature: 0.3,
-                presence_penalty: 0,
-                top_p: 1,
-                top_k: 0,
-                min_p: 0,
-                frequency_penalty: 0,
+                temperature: apiSettings.temperature,
+                presence_penalty: apiSettings.presencePenalty,
+                top_p: apiSettings.topP,
+                top_k: apiSettings.topK,
+                min_p: apiSettings.minP,
+                frequency_penalty: apiSettings.frequencyPenalty,
             },
         });
-        // Provider output includes reasoning and therefore conservatively bounds
-        // the visible summary. Zero/malformed counts cannot validate nonempty text.
+        // Validate visible text separately from the combined reasoning/output budget.
+        // Missing or inconsistent reasoning counts fall back to counting the text.
         if (Number.isSafeInteger(usage?.outputTokens) && usage!.outputTokens! > 0) {
-            reportedOutputTokens = usage!.outputTokens!;
+            const reasoning = usage?.reasoningTokens;
+            if (reasoning === 0) {
+                reportedOutputTokens = usage!.outputTokens!;
+            } else if (typeof reasoning === 'number' && Number.isSafeInteger(reasoning) && reasoning > 0 && reasoning < usage!.outputTokens!) {
+                reportedOutputTokens = usage!.outputTokens! - reasoning;
+            }
         }
         traceDecision({ kind: 'usage', operation: operation.diagnosticId, request: diagnosticOperation(),
             connection: diagnosticConnection(apiSettings), purpose: 'summary',
@@ -998,9 +1001,8 @@ export function checkAndSummarizeIfNeeded(
                     const overhead = await countMessagesTokens([{ role: 'user', content:
                         buildSummaryPrompt('x', [], maximumSummaryTokens) }], operation.apiSettings.model)
                         + await countAdditionalParameterTokens(operation.requestParameterConfig, operation.apiSettings.model);
-                    operation.maximumSummaryTokens = boundedSummaryOutputCap(maximumSummaryTokens, operation.contextLimit, overhead);
-                    if (operation.maximumSummaryTokens < 1) throw new ContextBudgetError('The summary instructions exceed the summary model context limit.');
-                    operation.requestParameterConfig = summaryParameterConfig(operation.apiSettings, operation.maximumSummaryTokens);
+                    operation.maximumSummaryTokens = boundedSummaryOutputCap(maximumSummaryTokens, operation.contextLimit, overhead, operation.requestParameterConfig);
+                    if (operation.maximumSummaryTokens < 1) throw new ContextBudgetError('The summary instructions and configured thinking budget leave no room for a summary within the summary model context limit.');
                 }
                 const prepared = await performSummaryCheck(operation, options, beforeMessageId);
                 traceSummaryState(operation, 'ready');

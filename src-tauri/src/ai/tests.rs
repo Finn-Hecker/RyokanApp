@@ -487,6 +487,39 @@ fn reasoning_uses_only_the_selected_provider_dialect() {
 }
 
 #[test]
+fn summary_requests_preserve_provider_reasoning_defaults_and_explicit_configuration() {
+    for provider in [Some("openrouter"), Some("generic_openai"), None] {
+        let mut payload: super::AiRequest = serde_json::from_value(serde_json::json!({
+            "provider_kind": provider, "url": "https://example.test/v1", "api_key": "",
+            "model": "fixture/model", "messages": [{"role": "user", "content": "Summarize"}],
+            "temperature": 0.3,
+            "request_parameter_config": {
+                "purpose": "summary", "reasoningDialect": null, "reasoningLevel": "auto",
+                "temperatureEnabled": true, "maxTokensEnabled": true,
+                "thinkingBudgetEnabled": false, "maxTokens": 1024, "thinkingBudget": 0,
+                "additionalParameters": {}
+            }
+        })).unwrap();
+        let body = super::compatible_body(&payload).unwrap();
+        assert!(body.get("reasoning").is_none(), "{provider:?}: {body}");
+        assert!(body.get("reasoning_effort").is_none());
+        assert!(body.get("thinking_budget_tokens").is_none());
+        assert_eq!(body["temperature"], serde_json::json!(payload.temperature));
+        assert_eq!(body["max_tokens"], 1024);
+        assert!(body.get("chat_template_kwargs").is_none());
+
+        let reasoning = serde_json::json!({"enabled": true, "effort": "high"});
+        payload
+            .request_parameter_config
+            .additional_parameters
+            .insert("reasoning".into(), reasoning.clone());
+        let configured = super::compatible_body(&payload).unwrap();
+        assert_eq!(configured["reasoning"], reasoning);
+        assert_eq!(configured["max_tokens"], 1024);
+    }
+}
+
+#[test]
 fn bound_request_uses_config_without_duplicate_token_values() {
     for (enabled, expected) in [(false, 300), (true, 2800)] {
         let payload: super::AiRequest = serde_json::from_value(serde_json::json!({
@@ -501,6 +534,36 @@ fn bound_request_uses_config_without_duplicate_token_values() {
             body.get("thinking_budget_tokens").and_then(|v| v.as_u64()),
             if enabled { Some(2500) } else { None }
         );
+    }
+}
+
+#[test]
+fn summary_preserves_compatible_profile_reasoning_and_override_precedence() {
+    for (provider, dialect) in [
+        ("openrouter", "openrouter"), ("openai", "openai"), ("xai", "xai"),
+        ("llama_cpp", "llama_cpp_effort"), ("lm_studio", "lm_studio"),
+        ("koboldcpp", ""), ("ollama", ""), ("generic_openai", ""),
+    ] {
+        let mut payload: super::AiRequest = serde_json::from_value(serde_json::json!({
+            "provider_kind": provider, "url": "https://example.test/v1", "api_key": "",
+            "model": "fixture", "messages": [{"role":"user","content":"Summary"}], "temperature":0.6,
+            "request_parameter_config": {"reasoningDialect":dialect,"reasoningLevel":"high",
+                "maxTokensEnabled":true,"thinkingBudgetEnabled":provider == "llama_cpp",
+                "maxTokens":4000,"thinkingBudget":6000,
+                "additionalParameters":{"reasoning":{"effort":"low"},"reasoning_effort":"low",
+                    "chat_template_kwargs":{"enable_thinking":false,"custom":true}}}
+        })).unwrap();
+        let chat = super::compatible_body(&payload).unwrap();
+        payload.request_parameter_config.purpose = Some(super::RequestPurpose::Summary);
+        let summary = super::compatible_body(&payload).unwrap();
+        assert_eq!(summary, chat, "{provider}");
+        assert_eq!(summary["reasoning"]["effort"], "low");
+        assert_eq!(summary["reasoning_effort"], "low");
+        assert_eq!(summary["chat_template_kwargs"]["enable_thinking"], false);
+        if provider == "llama_cpp" {
+            assert_eq!(summary["thinking_budget_tokens"], 6000);
+            assert_eq!(summary["max_tokens"], 10000);
+        }
     }
 }
 

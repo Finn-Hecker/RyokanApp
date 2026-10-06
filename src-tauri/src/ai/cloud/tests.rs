@@ -412,6 +412,33 @@ fn native_defaults_and_summary_policy_stay_consistent_with_frontend_reserves() {
 }
 
 #[test]
+fn summary_preserves_native_thinking_and_json_override_precedence() {
+    let mut payload = request("anthropic");
+    payload.request_parameter_config.thinking_budget_enabled = true;
+    payload.request_parameter_config.thinking_budget = 2048;
+    for (kind, custom) in [
+        ("anthropic", json!({"thinking":{"type":"enabled","budget_tokens":3000},"output_config":{"effort":"high"}})),
+        ("gemini", json!({"generationConfig":{"thinkingConfig":{"thinkingBudget":-1}}})),
+        ("nanogpt", json!({"reasoning_effort":"high"})),
+    ] {
+        payload.request_parameter_config.purpose = None;
+        let build = |p: &AiRequest| match kind {
+            "anthropic" => anthropic::body(p, custom.as_object().unwrap().clone()),
+            "gemini" => gemini::body(p, custom.as_object().unwrap().clone()),
+            _ => nanogpt::body(p, custom.as_object().unwrap().clone()),
+        };
+        let chat = build(&payload).unwrap();
+        payload.request_parameter_config.purpose = Some(super::super::RequestPurpose::Summary);
+        assert_eq!(build(&payload).unwrap(), chat, "{kind}");
+        match kind {
+            "anthropic" => assert_eq!(chat["thinking"]["budget_tokens"], 3000),
+            "gemini" => assert_eq!(chat["generationConfig"]["thinkingConfig"]["thinkingBudget"], -1),
+            _ => assert_eq!(chat["reasoning_effort"], "high"),
+        }
+    }
+}
+
+#[test]
 fn native_custom_parameters_cannot_change_prompt_or_bypass_budget_accounting() {
     let payload = request("gemini");
     for custom in [
@@ -483,7 +510,7 @@ async fn all_new_providers_parse_fragmented_utf8_sse_and_terminal_usage() {
         let (url,thread) = server(body.into(),200);
         let response = CLIENT.get(url).send().await.unwrap();
         let mut received = String::new();
-        let usage = consume(response,CloudProvider::parse(Some(kind)).unwrap(),&CancellationToken::new(),|text,thinking| {
+        let usage = consume(response,CloudProvider::parse(Some(kind)).unwrap(),&CancellationToken::new(),false,|text,thinking| {
             received.push_str(&std::mem::take(text)); thinking.clear(); Ok(())
         }).await.unwrap().unwrap();
         assert_eq!(received,"日本"); assert_eq!(usage.output_tokens,Some(20));
@@ -501,7 +528,7 @@ async fn interrupted_and_malformed_streams_fail_instead_of_succeeding_silently()
         let (url, thread) = server(body.into(), 200);
         let response = CLIENT.get(url).send().await.unwrap();
         assert!(
-            consume(response, CloudProvider::Gemini, &CancellationToken::new(), |_, _| Ok(()))
+            consume(response, CloudProvider::Gemini, &CancellationToken::new(), false, |_, _| Ok(()))
                 .await
                 .is_err()
         );
@@ -515,7 +542,7 @@ async fn cancellation_ends_a_native_stream_and_does_not_require_a_terminal_event
     let response = CLIENT.get(url).send().await.unwrap();
     let token = CancellationToken::new();
     token.cancel();
-    assert!(consume(response, CloudProvider::Anthropic, &token, |_, _| Ok(()))
+    assert!(consume(response, CloudProvider::Anthropic, &token, false, |_, _| Ok(()))
         .await
         .is_ok());
     thread.join().unwrap();
@@ -569,7 +596,7 @@ async fn stop_interrupts_both_connection_and_idle_native_stream() {
             .unwrap();
         if headers_first {
             assert!(
-                consume(response.unwrap(), CloudProvider::Anthropic, &token, |_, _| Ok(()))
+                consume(response.unwrap(), CloudProvider::Anthropic, &token, false, |_, _| Ok(()))
                     .await
                     .is_ok()
             );
@@ -683,5 +710,47 @@ async fn stop_interrupts_an_idle_http_error_body() {
     tokio::spawn(async move { tokio::time::sleep(Duration::from_millis(10)).await; cancel.cancel(); });
     assert!(tokio::time::timeout(Duration::from_secs(1), read_error_body(response, &token)).await.unwrap().is_none());
     release.send(()).unwrap();
+    thread.join().unwrap();
+}
+
+#[tokio::test]
+async fn summaries_require_normal_completion_across_provider_protocols() {
+    for (kind, body, valid) in [
+        (CloudProvider::NanoGpt, "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n", false),
+        (CloudProvider::NanoGpt, "data: [DONE]\n\n", false),
+        (CloudProvider::NanoGpt, "data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n", true),
+        (CloudProvider::Gemini, "data: {\"candidates\":[{\"finishReason\":\"MAX_TOKENS\"}]}\n\n", false),
+        (CloudProvider::Gemini, "data: {\"candidates\":[{\"finishReason\":\"STOP\"}]}\n\n", true),
+        (CloudProvider::Anthropic, "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\"}}\n\ndata: {\"type\":\"message_stop\"}\n\n", false),
+        (CloudProvider::Anthropic, "data: {\"type\":\"message_stop\"}\n\n", false),
+        (CloudProvider::Anthropic, "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\ndata: {\"type\":\"message_stop\"}\n\n", true),
+    ] {
+        let (url, thread) = server(body.into(), 200);
+        let response = CLIENT.get(url).send().await.unwrap();
+        assert_eq!(consume(response, kind, &CancellationToken::new(), true, |_, _| Ok(())).await.is_ok(), valid, "{kind:?}: {body}");
+        thread.join().unwrap();
+    }
+}
+
+#[tokio::test]
+async fn compatible_summary_rejects_truncation_even_below_cap_and_keeps_chat_behavior() {
+    for reason in ["length", "content_filter", "tool_calls", "error", "unknown", "stop"] {
+        for summary in [false, true] {
+            let body = format!("data: {{\"choices\":[{{\"delta\":{{\"content\":\"partial\"}},\"finish_reason\":\"{reason}\"}}]}}\n\ndata: {{\"usage\":{{\"completion_tokens\":802,\"completion_tokens_details\":{{\"reasoning_tokens\":773}}}}}}\n\ndata: [DONE]\n\n");
+            let (url, thread) = server(body, 200);
+            let response = CLIENT.get(url).send().await.unwrap();
+            let mut payload = request("openrouter");
+            if summary { payload.request_parameter_config.purpose = Some(RequestPurpose::Summary); }
+            let result = super::super::consume_compatible(response, &payload, &CancellationToken::new(), |_, _| Ok(())).await;
+            assert_eq!(result.is_ok(), !summary || reason == "stop");
+            if reason == "stop" { assert_eq!(result.unwrap().unwrap().reasoning_tokens, Some(773)); }
+            thread.join().unwrap();
+        }
+    }
+    let (url, thread) = server("data: [DONE]\n\n".into(), 200);
+    let response = CLIENT.get(url).send().await.unwrap();
+    let mut payload = request("generic_openai");
+    payload.request_parameter_config.purpose = Some(RequestPurpose::Summary);
+    assert!(super::super::consume_compatible(response, &payload, &CancellationToken::new(), |_, _| Ok(())).await.is_err());
     thread.join().unwrap();
 }

@@ -357,6 +357,70 @@ test('rolling summary uses the same persisted chat identity with shared or separ
   }
 });
 
+test('summary uses the selected profile snapshot, including overrides, without leaking chat settings', async () => {
+  for (const same of [false, true]) {
+    const f = fixture({ same, chatLimit: 8192, lengths: [16000, 16000, 20] });
+    f.chat.additionalApiParameters = '{"reasoning_effort":"low"}';
+    f.chat.temperature = 0.8;
+    const selected = same ? f.chat : f.summary;
+    selected.additionalApiParameters = '{"reasoning_effort":"high","max_tokens":99,"max_completion_tokens":99}';
+    selected.temperature = 0.6;
+    selected.parameterEnabled.temperature = true;
+    f.beforeResponse = () => {
+      selected.additionalApiParameters = '{"reasoning_effort":"none"}';
+      selected.temperature = 0.1;
+    };
+    await f.run();
+    assert.ok(f.calls.length > 0);
+    for (const p of f.calls) {
+      assert.equal(p.temperature, 0.6);
+      assert.equal(p.request_parameter_config.temperatureEnabled, true);
+      assert.deepEqual(p.request_parameter_config.additionalParameters, { reasoning_effort: 'high' });
+      assert.ok(p.request_parameter_config.maxTokens > 99);
+    }
+  }
+});
+
+test('native summary keeps manual and custom thinking budgets and reserves visible output', async () => {
+  for (const providerKind of ['anthropic', 'gemini', 'llama_cpp']) {
+    for (const custom of [false, true]) {
+      const f = fixture({ chatLimit: 8192, lengths: [16000, 16000, 20] });
+      f.summary.providerKind = providerKind;
+      f.summary.parameterEnabled.thinkingBudget = true;
+      f.summary.thinkingBudget = 6000;
+      const additional = providerKind === 'anthropic' ? { thinking: { type: 'enabled', budget_tokens: 9000 } }
+        : providerKind === 'gemini' ? { generationConfig: { thinkingConfig: { thinkingBudget: 9000 }, maxOutputTokens: 99 } }
+        : { thinking_budget_tokens: 9000, chat_template_kwargs: { enable_thinking: true } };
+      if (custom) f.summary.additionalApiParameters = JSON.stringify(additional);
+      await f.run();
+      assert.ok(f.calls.length > 0);
+      for (const p of f.calls) {
+        const config = p.request_parameter_config;
+        const budget = deriveEffectiveTokenBudget(config);
+        assert.equal(config.thinkingBudget, 6000);
+        assert.equal(config.thinkingBudgetEnabled, true);
+        assert.equal(budget.calculation.reasoning_limit, custom ? 9000 : 6000);
+        assert.equal(budget.calculation.invalid_reasoning_limit, false);
+        assert.ok(budget.reserveTokens > (custom ? 9000 : 6000));
+      }
+    }
+  }
+});
+
+test('a summary thinking budget that exceeds context never sends or commits a reduced budget', async () => {
+  const f = fixture({ chatLimit: 8192, summaryLimit: 8192, lengths: [16000, 40000, 20] });
+  f.summary.additionalApiParameters = '{"reasoning":{"max_tokens":12000}}';
+  f.setMeta({ summary: 'Existing facts', last_id: f.messages[0].id });
+  await assert.rejects(f.run(), error => {
+    assert.ok(error instanceof runtime.ContextBudgetError);
+    assert.match(error.message, /thinking budget/);
+    return true;
+  });
+  assert.equal(f.calls.length, 0);
+  assert.deepEqual(f.meta(), { summary: 'Existing facts', last_id: f.messages[0].id });
+  assert.equal(JSON.parse(f.summary.additionalApiParameters).reasoning.max_tokens, 12000);
+});
+
 test('chat and summary requests carry their own tiers, including same-as-chat', async () => {
   for (const same of [false, true]) {
     const f = fixture({ same, chatLimit: 8192, lengths: [16000, 16000, 20] });
@@ -569,7 +633,7 @@ test('missing or invalid provider output usage retains conservative summary vali
 
 test('provider output above the summary cap still requires recompression and cannot commit', async () => {
   const f = fixture({ chatLimit: 1048576, same: true, strategy: 'economy', lengths: [45000, 45000, 100] });
-  f.reportedUsage = { outputTokens: 513 };
+  f.reportedUsage = { outputTokens: 513, reasoningTokens: 0 };
   await f.run();
   assert.equal(f.calls.length, 2);
   assert.equal(f.meta().summary, null);
@@ -580,7 +644,7 @@ test('provider output above the summary cap still requires recompression and can
 test('recompression also accepts provider usage instead of rejecting its local overestimate', async () => {
   const f = fixture({ chatLimit: 1048576, same: true, strategy: 'economy', lengths: [45000, 45000, 100] });
   f.beforeResponse = () => {
-    f.reportedUsage = { outputTokens: f.calls.length === 1 ? 513 : 410 };
+    f.reportedUsage = { outputTokens: f.calls.length === 1 ? 513 : 410, reasoningTokens: 0 };
     f.responseText = 'word '.repeat(410);
   };
   await f.run();
@@ -926,4 +990,47 @@ test('summary receives send rules, excludes display rules and leaves persisted h
     assert.ok(f.calls.every(call => call.messages.every(message => !message.content.includes('PRIVATE') && !message.content.includes('SCREEN'))));
     assert.equal(JSON.stringify(f.messages), original);
   } finally { state.appState.textRules = originalRules; }
+});
+
+
+test('summary generation reserves reasoning separately and validates only visible usage', async () => {
+  for (const provider of ['generic_openai', 'openrouter', 'nanogpt', 'anthropic', 'gemini']) {
+    const f = fixture({ chatLimit: 1048576, same: true, strategy: 'economy', lengths: [45000, 45000, 100] });
+    f.chat.providerKind = provider;
+    f.summary.providerKind = provider;
+    f.responseText = 'Complete summary.';
+    f.reportedUsage = { outputTokens: 1800, reasoningTokens: 1400 };
+    await f.run();
+    assert.equal(f.calls.length, 1);
+    assert.equal(f.calls[0].request_parameter_config.maxTokens, 2048);
+    assert.equal(f.meta().summary, f.responseText);
+    assert.ok(f.decisions.some(d => d.state === 'result' && d.summary_tokens === 400));
+  }
+});
+
+test('failed completion after partial summary tokens preserves existing memory and coverage', async () => {
+  const f = fixture({ chatLimit: 1048576, same: true, strategy: 'economy', lengths: [20, 45000, 45000, 100] });
+  const previous = { summary: 'Existing complete memory.', last_id: f.messages[0].id };
+  f.setMeta(previous);
+  f.beforeResponse = () => {
+    listeners.get('ai-token')?.({ payload: { generationId: f.calls.at(-1).generation_id, token: 'Cut off at a small' } });
+    throw new Error('Summary generation did not finish normally');
+  };
+  await f.run();
+  assert.deepEqual(f.meta(), previous);
+  assert.ok(f.decisions.some(d => d.state === 'failed'));
+  assert.ok(!f.decisions.some(d => d.state === 'committed'));
+});
+
+
+test('unreported reasoning never treats combined usage as visible summary length', async () => {
+  for (const reasoningTokens of [undefined, null, -1, 1.5, 1800, 1900]) {
+    const f = fixture({ chatLimit: 1048576, same: true, strategy: 'economy', lengths: [45000, 45000, 100] });
+    f.responseText = 'Complete summary.';
+    f.reportedUsage = { outputTokens: 1800, reasoningTokens };
+    await f.run();
+    assert.equal(f.calls.length, 1);
+    assert.equal(f.meta().summary, f.responseText);
+    assert.ok(!f.decisions.some(d => d.state === 'recompress'));
+  }
 });

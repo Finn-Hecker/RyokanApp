@@ -49,14 +49,20 @@ export function requestParameterConfig(connection: ApiConnection): ApiRequestPar
   };
 }
 
-/** Summary intent is explicit; provider wire fields are added at the Rust boundary. */
+/** The selected summary profile owns generation settings; only output caps are summary-owned. */
 export function summaryParameterConfig(connection: ApiConnection, maximumSummaryTokens: number): ApiRequestParameterConfig {
   const profile = requestParameterConfig(connection);
+  const additionalParameters = { ...profile.additionalParameters };
+  delete additionalParameters.max_tokens;
+  delete additionalParameters.max_completion_tokens;
+  if (connection.providerKind === 'gemini' && additionalParameters.generationConfig
+    && typeof additionalParameters.generationConfig === 'object' && !Array.isArray(additionalParameters.generationConfig)) {
+    const generation = { ...additionalParameters.generationConfig as Record<string, unknown> };
+    delete generation.maxOutputTokens;
+    additionalParameters.generationConfig = generation;
+  }
   return {
-    purpose: 'summary', budgetProvider: profile.budgetProvider, serviceTier: profile.serviceTier,
-    reasoningDialect: connection.providerKind === 'nanogpt' ? profile.reasoningDialect : null,
-    reasoningLevel: connection.providerKind === 'nanogpt' && reasoningCapability(connection)?.levels.includes('none') ? 'none' : 'auto',
-    temperatureEnabled: true, maxTokensEnabled: true, thinkingBudgetEnabled: false,
-    maxTokens: maximumSummaryTokens, thinkingBudget: 0, additionalParameters: {},
+    ...profile, purpose: 'summary', maxTokensEnabled: true,
+    maxTokens: maximumSummaryTokens, additionalParameters,
   };
 }

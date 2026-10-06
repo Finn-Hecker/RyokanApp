@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  boundedSummaryOutputCap,
+  summaryGenerationOutputCap,
+  summaryRequestParameterConfig,
+  summarySafetyMargin,
   canReusePromptAnchor,
   commitOrRollback,
   deriveEffectiveTokenBudget,
@@ -18,6 +22,43 @@ import {
 import { shouldTriggerSummary } from '../connections/connectionCore.ts';
 
 const messages = ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id }));
+
+test('summary reserves explicit thinking without changing its budget or counting it twice', () => {
+  for (const budgetProvider of [undefined, 'anthropic', 'gemini']) {
+    const profile = { budgetProvider, maxTokensEnabled: true, maxTokens: 100,
+      thinkingBudgetEnabled: true, thinkingBudget: 6000, additionalParameters: {} };
+    const summary = summaryRequestParameterConfig(profile, 512);
+    assert.equal(summary.thinkingBudget, 6000);
+    assert.equal(deriveEffectiveTokenBudget(summary).reserveTokens, 6512);
+    assert.equal(deriveEffectiveTokenBudget(summary).calculation.invalid_reasoning_limit, false);
+    assert.equal(profile.maxTokens, 100);
+    assert.equal(boundedSummaryOutputCap(512, 4096, 500, profile), 0);
+  }
+  for (const [budgetProvider, additionalParameters] of [
+    [undefined, { reasoning: { max_tokens: 9000 } }],
+    ['anthropic', { thinking: { type: 'enabled', budget_tokens: 9000 } }],
+    ['gemini', { generationConfig: { thinkingConfig: { thinkingBudget: 9000 } } }],
+  ]) {
+    const profile = { budgetProvider, maxTokensEnabled: true, maxTokens: 100,
+      thinkingBudgetEnabled: false, thinkingBudget: 0, additionalParameters };
+    const summary = summaryRequestParameterConfig(profile, 512);
+    assert.equal(deriveEffectiveTokenBudget(summary).reserveTokens, 9512);
+    assert.deepEqual(summary.additionalParameters, additionalParameters);
+    const visible = boundedSummaryOutputCap(2048, 16384, 500, profile);
+    assert.ok(deriveEffectiveTokenBudget(summaryRequestParameterConfig(profile, visible)).reserveTokens
+      + visible * 2 + 500 + summarySafetyMargin(16384) <= 16384);
+  }
+});
+
+test('compatible custom thinking does not hide the additive profile budget', () => {
+  const profile = { maxTokensEnabled: true, maxTokens: 100, thinkingBudgetEnabled: true,
+    thinkingBudget: 6000, additionalParameters: { thinking_budget_tokens: 0 } };
+  const summary = summaryRequestParameterConfig(profile, 512);
+  assert.equal(summary.thinkingBudget, 6000);
+  assert.equal(summary.additionalParameters.thinking_budget_tokens, 0);
+  assert.equal(deriveEffectiveTokenBudget(summary).reserveTokens, 6512);
+  assert.equal(boundedSummaryOutputCap(512, 4096, 500, profile), 0);
+});
 
 const anchor = {
   historyFingerprint: ['["u1","user","hello",0]'],
@@ -326,4 +367,16 @@ test('oversized message boundaries never split UTF-16 surrogate pairs', () => {
     boundaries.slice(1).map((end, index) => text.slice(boundaries[index], end)).join(''),
     text,
   );
+});
+
+
+test('bounded visible summary leaves room for reasoning, previous memory and new events', () => {
+  for (const context of [512, 2048, 3000, 8192, 131072]) {
+    const overhead = 454;
+    const visible = boundedSummaryOutputCap(2048, context, overhead);
+    if (visible > 0) {
+      assert.ok(overhead + summarySafetyMargin(context) + visible * 2 + summaryGenerationOutputCap(visible) <= context);
+      assert.equal(summaryGenerationOutputCap(visible), visible * 4);
+    }
+  }
 });

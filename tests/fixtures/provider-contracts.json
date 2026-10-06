@@ -449,9 +449,6 @@
       ],
       "stream": true,
       "max_tokens": 512,
-      "reasoning": {
-        "enabled": false
-      },
       "stream_options": {
         "include_usage": true
       }
@@ -459,7 +456,7 @@
     "reserveTokens": 512
   },
   {
-    "name": "llama_cpp summary policy",
+    "name": "llama_cpp summary preserves thinking default",
     "kind": "llama_cpp",
     "url": "http://localhost:8080/v1",
     "config": {
@@ -482,7 +479,7 @@
       "stream": true,
       "max_tokens": 512,
       "chat_template_kwargs": {
-        "enable_thinking": false
+        "enable_thinking": true
       },
       "stream_options": {
         "include_usage": true

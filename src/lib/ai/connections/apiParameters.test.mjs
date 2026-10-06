@@ -1,7 +1,33 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createDefaultApiParameterEnabled, requestParameterConfig } from './apiParameters.ts';
+import { createDefaultApiParameterEnabled, requestParameterConfig, summaryParameterConfig } from './apiParameters.ts';
 import { modelGenerationCapabilities } from './generationCapabilities.ts';
+
+test('summary preserves its selected profile and overrides only total output caps', () => {
+  for (const providerKind of ['openrouter', 'nanogpt', 'anthropic', 'gemini', 'llama_cpp', 'lm_studio', 'openai', 'xai', 'generic_openai']) {
+    const connection = { providerKind, url: 'https://openrouter.ai/api/v1', model: 'reasoner',
+      reasoningLevel: 'high', serviceTier: 'auto', maxTokens: 99, thinkingBudget: 6000,
+      parameterEnabled: { ...createDefaultApiParameterEnabled(), temperature: true, topP: true, thinkingBudget: true },
+      additionalApiParameters: JSON.stringify({ max_tokens: 99, max_completion_tokens: 100,
+        reasoning: { effort: 'low', max_tokens: 7000 }, reasoning_effort: 'low',
+        thinking: { type: 'enabled', budget_tokens: 7000 }, output_config: { effort: 'max' },
+        chat_template_kwargs: { enable_thinking: false }, temperature: 0.7,
+        generationConfig: { maxOutputTokens: 99, thinkingConfig: { thinkingBudget: -1 }, topP: 0.8 } }) };
+    connection.generationCapabilities = modelGenerationCapabilities(connection, ['reasoning'], { supported: true, allowedOptions: ['high'] });
+    const profile = requestParameterConfig(connection);
+    const summary = summaryParameterConfig(connection, 1024);
+    const expected = structuredClone(profile);
+    expected.purpose = 'summary';
+    expected.maxTokensEnabled = true;
+    expected.maxTokens = 1024;
+    delete expected.additionalParameters.max_tokens;
+    delete expected.additionalParameters.max_completion_tokens;
+    if (providerKind === 'gemini') delete expected.additionalParameters.generationConfig.maxOutputTokens;
+    assert.deepEqual(summary, expected, providerKind);
+    assert.equal(profile.additionalParameters.max_tokens, 99);
+    assert.equal(profile.additionalParameters.generationConfig.maxOutputTokens, 99);
+  }
+});
 
 test('service tier stays profile-bound and is gated by the actual API endpoint', () => {
   const connection = { providerKind: 'openai', url: 'https://api.openai.com/v1',

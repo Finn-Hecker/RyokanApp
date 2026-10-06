@@ -151,7 +151,10 @@ pub(super) fn event(value: &Value) -> Result<CloudEvent, String> {
                 event.usage = usage(message);
             }
         }
-        Some("message_delta") => event.usage = usage(value),
+        Some("message_delta") => {
+            event.usage = usage(value);
+            event.finish_reason = value.pointer("/delta/stop_reason").and_then(Value::as_str).map(str::to_owned);
+        },
         Some("content_block_start") => {
             event.text = value
                 .pointer("/content_block/text")

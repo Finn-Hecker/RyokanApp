@@ -444,6 +444,16 @@ async fn read_error_body(response: reqwest::Response, token: &CancellationToken)
     }
 }
 
+// Transport completion alone cannot establish that a replacement memory is complete.
+fn validate_summary_completion(summary: bool, reason: Option<&str>) -> Result<(), StreamFailure> {
+    if summary && !matches!(reason, Some("stop" | "STOP" | "end_turn" | "stop_sequence")) {
+        return Err(StreamFailure::Protocol(
+            "Summary generation did not finish normally; the previous memory was preserved.".into(),
+        ));
+    }
+    Ok(())
+}
+
 // Kept separate from native streaming: compatible servers use finish_reason or DONE.
 async fn consume_compatible<F>(
     response: reqwest::Response,
@@ -457,6 +467,7 @@ where
     let mut stream = response.bytes_stream().eventsource();
     let mut reported_usage = None;
     let mut finished = false;
+    let mut finish_reason = None;
 
     let mut token_batch = String::new();
     let mut thinking_batch = String::new();
@@ -498,6 +509,10 @@ where
                         match serde_json::from_value::<StreamChunk>(value) {
                             Ok(chunk) => {
                                 finished |= chunk.choices.iter().any(|choice| choice.finish_reason.is_some());
+                                if let Some(reason) = chunk.choices.first().and_then(|c| c.finish_reason.as_ref()) {
+                                    finish_reason = Some(reason.clone());
+                                    validate_summary_completion(payload.request_parameter_config.purpose == Some(parameters::RequestPurpose::Summary), Some(reason))?;
+                                }
                                 if let Some(delta) = chunk.choices.first().map(|c| &c.delta) {
                                     if let Some(content) = delta.content.as_ref() {
                                         token_batch.push_str(content);
@@ -531,6 +546,9 @@ where
         return Err(StreamFailure::Protocol(
             "The provider stream ended before completion.".into(),
         ));
+    }
+    if !token.is_cancelled() {
+        validate_summary_completion(payload.request_parameter_config.purpose == Some(parameters::RequestPurpose::Summary), finish_reason.as_deref())?;
     }
     Ok(reported_usage)
 }

@@ -181,25 +181,6 @@ pub(super) fn request_stream_usage(body: &mut serde_json::Value) {
     options["include_usage"] = serde_json::json!(true);
 }
 
-/// Application intent translated only for endpoints with matching controls.
-pub(super) fn apply_summary_policy(body: &mut serde_json::Value, payload: &AiRequest) {
-    if payload.request_parameter_config.purpose != Some(RequestPurpose::Summary) {
-        return;
-    }
-    match payload.provider_kind.as_deref() {
-        Some("openrouter") => body["reasoning"] = serde_json::json!({"enabled": false}),
-        Some("llama_cpp" | "lm_studio" | "koboldcpp" | "ollama") => {
-            body["chat_template_kwargs"] = serde_json::json!({"enable_thinking": false});
-        }
-        // Preserve Custom's previous explicit compatibility policy.
-        Some("generic_openai") | None => {
-            body["chat_template_kwargs"] = serde_json::json!({"enable_thinking": false});
-            body["reasoning"] = serde_json::json!({"enabled": false});
-        }
-        _ => {} // Native/default thinking is allowed to consume the combined output cap.
-    }
-}
-
 /// Only sampler fields whose semantics are identical for compatible providers.
 pub(super) fn apply_compatible_sampling(
     body: &mut serde_json::Value,
@@ -307,7 +288,6 @@ pub(super) fn compatible_body(payload: &AiRequest) -> Result<serde_json::Value, 
             body["session_id"] = serde_json::json!(chat_id);
         }
     }
-    apply_summary_policy(&mut body, payload);
     apply_service_tier(
         &mut body,
         payload.provider_kind.as_deref(),

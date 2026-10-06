@@ -214,6 +214,7 @@ struct CloudEvent {
     usage: Option<TokenUsage>,
     terminal: bool,
     finished: bool,
+    finish_reason: Option<String>,
 }
 
 fn decode(kind: CloudProvider, data: &str) -> Result<CloudEvent, StreamFailure> {
@@ -245,6 +246,7 @@ async fn consume<F>(
     response: reqwest::Response,
     kind: CloudProvider,
     token: &CancellationToken,
+    summary: bool,
     mut flush: F,
 ) -> Result<Option<TokenUsage>, StreamFailure>
 where
@@ -255,6 +257,7 @@ where
     let mut thinking = String::new();
     let mut usage = None;
     let mut finished = false;
+    let mut finish_reason = None;
     let mut tick = tokio::time::interval(Duration::from_millis(25));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
@@ -265,6 +268,10 @@ where
                 let Some(event) = event else { break; };
                 let event = event.map_err(|_| StreamFailure::Transport("The provider stream was interrupted.".into()))?;
                 let event = decode(kind, &event.data)?;
+                if let Some(reason) = event.finish_reason {
+                    super::validate_summary_completion(summary, Some(&reason))?;
+                    finish_reason = Some(reason);
+                }
                 text.push_str(&event.text);
                 thinking.push_str(&event.thinking);
                 if let Some(incoming) = event.usage { usage = Some(merge_token_usage(usage, incoming)); }
@@ -280,6 +287,7 @@ where
             "The provider stream ended before completion.".into(),
         ));
     }
+    super::validate_summary_completion(summary, finish_reason.as_deref())?;
     Ok(usage)
 }
 
@@ -348,7 +356,7 @@ pub(super) async fn generate(
             &payload.messages,
         ));
     }
-    consume(response, kind, token, |text, thinking| {
+    consume(response, kind, token, payload.request_parameter_config.purpose == Some(super::parameters::RequestPurpose::Summary), |text, thinking| {
         flush_batches(window, text, thinking, &payload.generation_id)
     })
     .await
