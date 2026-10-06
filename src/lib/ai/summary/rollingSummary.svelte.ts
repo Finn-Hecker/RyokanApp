@@ -163,11 +163,11 @@ function traceBudget(
     summaryLimit = 0, summaryPressure = false, retry = false,
 ): void {
     const working = resolvedWorkingContextTarget(options.apiSettings);
-    const chatPressure = shouldTriggerSummary(measurement.total, working);
+    const chatPressure = shouldTriggerSummary(measurement.promptTokens, working) || !measurement.fits;
     traceDecision({ kind: 'budget', operation, conversation: diagnosticScope(chatState.activeChatId ?? 'no-active-chat'),
         connection: diagnosticConnection(options.apiSettings), strategy: options.apiSettings.contextStrategy, compression_goal: summaryCompressionGoal(working), stage, measurement: measurement.diagnostic,
         working_target: working, summary_limit: summaryLimit, summary_pressure: summaryPressure,
-        trigger: !appState.longTermMemory ? 'disabled' : chatPressure && summaryPressure ? 'both' : chatPressure ? 'chat' : summaryPressure ? 'summary' : 'none',
+        trigger: !appState.longTermMemory ? 'disabled' : chatPressure ? 'chat' : 'none',
         history_count: history.length, marker_index: resolveSummaryMarker(history, meta).markerIndex,
         has_summary: Boolean(meta.currentSummary), revision: currentConversationRevision(chatState.activeChatId ?? ''), retry,
     });
@@ -416,7 +416,7 @@ async function requestSummary(
     messagesToCompress: { role: string; content: string }[],
     operation: SummaryOperation,
     maximumSummaryTokens = DEFAULT_SUMMARY_TOKENS,
-): Promise<string> {
+): Promise<{ text: string; outputTokens: number | null }> {
     assertOperationCurrent(operation);
     if (!(await summaryRequestFits(
         previousSummary,
@@ -441,6 +441,7 @@ async function requestSummary(
     const generationId = crypto.randomUUID();
     operation.generationId = generationId;
     let rawBuffer = '';
+    let reportedOutputTokens: number | null = null;
     let unlisten: (() => void) | undefined;
     let unlistenThinking: (() => void) | undefined;
     try {
@@ -478,6 +479,11 @@ async function requestSummary(
                 frequency_penalty: 0,
             },
         });
+        // Provider output includes reasoning and therefore conservatively bounds
+        // the visible summary. Zero/malformed counts cannot validate nonempty text.
+        if (Number.isSafeInteger(usage?.outputTokens) && usage!.outputTokens! > 0) {
+            reportedOutputTokens = usage!.outputTokens!;
+        }
         traceDecision({ kind: 'usage', operation: operation.diagnosticId, request: diagnosticOperation(),
             connection: diagnosticConnection(apiSettings), purpose: 'summary',
             local_input_tokens: await countMessagesTokens([{ role: 'user', content: buildSummaryPrompt(previousSummary, messagesToCompress, maximumSummaryTokens) }], apiSettings.model)
@@ -496,28 +502,28 @@ async function requestSummary(
     const { text: processed } = processThinkingOutput(rawBuffer.trim(), true);
     const result = stripThinkingContent(processed);
     if (!result) throw new Error('Summary generation returned empty.');
-    return result;
+    return { text: result, outputTokens: reportedOutputTokens };
 }
 
 async function enforceSummaryLimit(
-    summary: string,
+    summary: { text: string; outputTokens: number | null },
     operation: SummaryOperation,
     maximumSummaryTokens = DEFAULT_SUMMARY_TOKENS,
 ): Promise<string> {
-    const summaryTokens = await countTokens(summary, operation.apiSettings.model);
+    const summaryTokens = summary.outputTokens ?? await countTokens(summary.text, operation.apiSettings.model);
     traceSummaryState(operation, 'result', 'none', 0, 0, summaryTokens);
-    if (summaryTokens <= maximumSummaryTokens) return summary;
+    if (summaryTokens <= maximumSummaryTokens) return summary.text;
     traceSummaryState(operation, 'recompress', 'none', 0, 0, summaryTokens);
     const recompressed = await requestSummary(
         null,
-        [{ role: 'assistant', content: summary }],
+        [{ role: 'assistant', content: summary.text }],
         operation,
         maximumSummaryTokens,
     );
-    if ((await countTokens(recompressed, operation.apiSettings.model)) > maximumSummaryTokens) {
+    if ((recompressed.outputTokens ?? await countTokens(recompressed.text, operation.apiSettings.model)) > maximumSummaryTokens) {
         throw new ContextBudgetError('The model returned a rolling summary above its token limit.');
     }
-    return recompressed;
+    return recompressed.text;
 }
 
 async function largestFittingPrefix(
@@ -587,8 +593,8 @@ async function generateRollingSummary(
             break;
         }
 
-        summary = await requestSummary(summary, batch, operation, maximumSummaryTokens);
-        summary = await enforceSummaryLimit(summary, operation, maximumSummaryTokens);
+        const generated = await requestSummary(summary, batch, operation, maximumSummaryTokens);
+        summary = await enforceSummaryLimit(generated, operation, maximumSummaryTokens);
     }
 
     if (!summary) throw new Error('Summary generation returned empty.');
@@ -659,8 +665,8 @@ async function performSummaryCheck(
                 ? stripThinkingContent(transformMessageText(message.content, options.textRules ?? appState.textRules, 'assistant', 'send'))
                 : transformMessageText(message.content, options.textRules ?? appState.textRules, 'user', 'send'),
         });
-        // Keep chat capacity independent. Pressure on the summary model only
-        // advances the rolling marker; large imports/pastes still use chunking.
+        // Summary capacity is diagnostic information here. Once chat input or
+        // hard capacity triggers compression, generation chunks to this window.
         const summaryTailFits = (summaryMeta: SummaryMarkerState, trace = false) => summaryRequestFits(
             summaryMeta.currentSummary,
             history.slice(resolveSummaryMarker(history, summaryMeta).startIndex, -1).map(clean),
@@ -681,7 +687,7 @@ async function performSummaryCheck(
         );
         assertOperationCurrent(operation);
         traceBudget(operation.diagnosticId, options, history, meta, initialFit, 'decision', operation.contextLimit, summaryPressure, Boolean(beforeMessageId));
-        if (!shouldTriggerSummary(initialFit.total, workingTarget) && !summaryPressure) {
+        if (!shouldTriggerSummary(initialFit.promptTokens, workingTarget) && initialFit.fits) {
             return { recentMessages: history, summaryMeta: meta, requestParameterConfig };
         }
 
@@ -748,7 +754,7 @@ async function performSummaryCheck(
                     requestParameterConfig,
                 );
                 assertOperationCurrent(operation);
-                if (recompressedFit.total <= workingTarget && await summaryTailFits(workingMeta)) {
+                if (recompressedFit.promptTokens <= workingTarget && recompressedFit.fits) {
                     await commitSummary(operation, meta, workingMeta);
                     return {
                         recentMessages: history,
@@ -778,8 +784,8 @@ async function performSummaryCheck(
                 requestParameterConfig,
             );
             compressionCount = count;
-            if ((projected.total <= goal || (count === preferredTailStart && projected.total <= workingTarget))
-                && await summaryTailFits(projectedMeta)) break;
+            if (projected.fits && (projected.promptTokens <= goal
+                || (count === preferredTailStart && projected.promptTokens <= workingTarget))) break;
         }
         const middle = newMessages.slice(0, compressionCount);
         const tail = newMessages.slice(compressionCount);
@@ -854,7 +860,7 @@ async function performSummaryCheck(
             requestParameterConfig,
         );
 
-        while (tail.length > 1 && (finalFit.total > goal || !(await summaryTailFits(candidateMeta)))) {
+        while (tail.length > 1 && (finalFit.promptTokens > goal || !finalFit.fits)) {
             const next = tail.shift()!;
             newSummary = await generateRollingSummary(newSummary, [clean(next)], operation, operation.maximumSummaryTokens);
             lastCompressedId = next.id ?? null;

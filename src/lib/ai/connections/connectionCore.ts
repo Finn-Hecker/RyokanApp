@@ -26,8 +26,8 @@ export function resolvedWorkingContextTarget(connection: ContextInputs & { conte
   return deriveWorkingContextTarget(resolvedHardContextLimit(connection), connection.contextStrategy);
 }
 
-/** Total request budget, including output and safety reserves (not raw input).
- * Maximum uses the hard window; measured request reserves determine usable input.
+/** Soft input-token target, independent of output and safety reserves.
+ * The hard window still bounds the complete request, including reserves.
  * Economy/Balanced deliberately limit cost with sublinear growth and ceilings. */
 export function deriveWorkingContextTarget(hardLimit: number, strategy: ContextStrategy): number {
   const hard = validContextSize(Math.floor(hardLimit)) ? Math.floor(hardLimit) : CONSERVATIVE_CONTEXT_FALLBACK;

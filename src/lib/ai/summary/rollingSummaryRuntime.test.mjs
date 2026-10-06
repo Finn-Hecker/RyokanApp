@@ -172,7 +172,7 @@ function fixture({ chatLimit = 524288, summaryLimit = 131072, same = false, manu
   const detections = [];
   const decisions = [];
   const count = estimateBudgetTokens;
-  const f = { chat, summary, messages, calls, detections, decisions, reportedUsage: null, beforeResponse: null, count,
+  const f = { chat, summary, messages, calls, detections, decisions, reportedUsage: null, responseText: 'Established facts.', beforeResponse: null, count,
     meta: () => meta,
     setMeta: value => { meta = value; },
     async run() {
@@ -208,7 +208,7 @@ function fixture({ chatLimit = 524288, summaryLimit = 131072, same = false, manu
       assert.equal(p.provider_kind, summary.providerKind);
       calls.push({ ...p, input });
       await f.beforeResponse?.();
-      listeners.get('ai-token')?.({ payload: { generationId: p.generation_id, token: 'Established facts.' } });
+      listeners.get('ai-token')?.({ payload: { generationId: p.generation_id, token: f.responseText } });
       return f.reportedUsage;
     }
     throw new Error(`Unexpected command: ${command}`);
@@ -318,14 +318,28 @@ test('generation details bind the original profile and preserve response metadat
   assert.deepEqual(result.usage, { ...providerUsage, connectionName: 'Original profile' });
 });
 
-test('512K chat and 128K summary: early summary pressure, bounded chunks, independent chat target', async () => {
+test('512K chat and 128K summary: summary pressure alone leaves chat history intact', async () => {
   const f = fixture({ lengths: [260000, 260000, 20] });
   const { options } = await f.run();
-  assert.ok(f.calls.length > 0);
+  assert.equal(f.calls.length, 0);
   assert.equal(options.apiSettings.contextLimit, 524288);
   assert.equal(resolvedWorkingContextTarget(options.apiSettings), 524288);
   assert.equal(f.detections.length, 2);
+  assert.equal(f.meta().summary, null);
+  const decision = f.decisions.find(d => d.kind === 'budget' && d.stage === 'decision');
+  assert.equal(decision.summary_pressure, true);
+  assert.equal(decision.trigger, 'none');
+});
+
+test('summary window chunks compression after chat capacity actually overflows', async () => {
+  const f = fixture({ lengths: [800000, 800000, 20] });
+  await f.run();
+  assert.ok(f.calls.length > 1);
   assert.ok(f.meta().summary);
+  const decision = f.decisions.find(d => d.kind === 'budget' && d.stage === 'decision');
+  assert.equal(decision.measurement.total > decision.measurement.hard_limit, true);
+  assert.equal(decision.summary_pressure, true);
+  assert.equal(decision.trigger, 'chat');
 });
 
 test('smaller chat and larger summary: chat strategy triggers compression', async () => {
@@ -346,7 +360,7 @@ test('same-as-chat and explicitly selected chat reuse capacity and one detection
 });
 
 test('unknown summary capacity uses 32K fallback and chunks an oversized individual message', async () => {
-  const f = fixture({ summaryLimit: null, lengths: [200000, 20] });
+  const f = fixture({ summaryLimit: null, strategy: 'economy', lengths: [200000, 20] });
   await f.run();
   assert.equal(f.summary.detectedContext, null);
   assert.equal(resolvedHardContextLimit(f.summary), 32768);
@@ -362,14 +376,14 @@ test('manual chat cap constrains chat but does not leak into a separate summary 
 });
 
 test('summary model selection change cancels in-flight work before persistence', async () => {
-  const f = fixture({ summaryLimit: 8192, lengths: [30000, 20] });
+  const f = fixture({ chatLimit: 8192, summaryLimit: 8192, lengths: [30000, 20] });
   f.beforeResponse = () => { state.appState.summaryConnectionId = SAME_AS_CHAT_CONNECTION; };
   await assert.rejects(f.run(), runtime.SummaryCancelledError);
   assert.equal(f.meta().summary, null);
 });
 
 test('small summary window sizes its output reserve and near-limit chunks safely', async () => {
-  const f = fixture({ summaryLimit: 2048, lengths: [30000, 20] });
+  const f = fixture({ chatLimit: 8192, summaryLimit: 2048, lengths: [30000, 20] });
   await f.run();
   assert.ok(f.calls.length > 1);
   assert.ok(f.calls.every(p => deriveEffectiveTokenBudget(p.request_parameter_config).payloadMaxTokens < 2048));
@@ -377,7 +391,7 @@ test('small summary window sizes its output reserve and near-limit chunks safely
 });
 
 test('restored oversized summary is reprocessed for a smaller summary model', async () => {
-  const f = fixture({ summaryLimit: 2048, lengths: [20, 40000, 20] });
+  const f = fixture({ chatLimit: 8192, summaryLimit: 2048, lengths: [20, 40000, 20] });
   f.setMeta({ summary: 'old facts '.repeat(2000), last_id: f.messages[0].id });
   await f.run();
   assert.ok(f.calls.length > 1);
@@ -388,6 +402,108 @@ test('normal chat below both working budgets does not invoke summary generation'
   const f = fixture();
   await f.run();
   assert.equal(f.calls.length, 0);
+});
+
+test('32K soft input trigger is independent of 1M safety and output reserves', async () => {
+  const f = fixture({ chatLimit: 1048576, same: true, strategy: 'economy', lengths: [14500, 14500, 100] });
+  f.chat.parameterEnabled.maxTokens = true;
+  f.chat.maxTokens = 8192;
+  await f.run();
+  const below = f.decisions.find(d => d.kind === 'budget' && d.stage === 'decision');
+  assert.equal(below.working_target, 32768);
+  assert.equal(below.measurement.prompt_tokens, 10946);
+  assert.equal(below.measurement.safety_tokens, 20972);
+  assert.equal(below.measurement.reserve_tokens, 8192);
+  assert.ok(below.measurement.total > below.working_target);
+  assert.equal(below.trigger, 'none');
+  assert.equal(f.calls.length, 0);
+
+  f.messages[0].content = 'x'.repeat(45000);
+  f.messages[1].content = 'x'.repeat(45000);
+  await f.run();
+  const above = f.decisions.filter(d => d.kind === 'budget' && d.stage === 'decision').at(-1);
+  assert.ok(above.measurement.prompt_tokens > above.working_target);
+  assert.equal(above.trigger, 'chat');
+  assert.ok(f.meta().summary);
+  const compressed = f.decisions.find(d => d.kind === 'budget' && d.stage === 'after_compression');
+  assert.ok(compressed.measurement.prompt_tokens <= above.compression_goal);
+  assert.ok(compressed.measurement.total <= compressed.measurement.hard_limit);
+});
+
+test('hard capacity triggers below the soft input target with completion and safety reserves', async () => {
+  const f = fixture({ chatLimit: 32768, same: true, lengths: [33000, 33000, 20] });
+  f.chat.additionalApiParameters = JSON.stringify({ max_completion_tokens: 8192 });
+  await f.run();
+  const before = f.decisions.find(d => d.kind === 'budget' && d.stage === 'decision');
+  assert.ok(before.measurement.prompt_tokens < before.working_target);
+  assert.ok(before.measurement.total > before.measurement.hard_limit);
+  assert.equal(before.trigger, 'chat');
+  assert.ok(f.meta().summary);
+  const after = f.decisions.find(d => d.kind === 'budget' && d.stage === 'after_compression');
+  assert.ok(after.measurement.total <= after.measurement.hard_limit);
+});
+
+test('provider output usage accepts an overestimated summary and commits instead of repeating fallback', async () => {
+  const f = fixture({ chatLimit: 1048576, same: true, strategy: 'economy', lengths: [45000, 45000, 100] });
+  f.responseText = 'word '.repeat(410);
+  f.reportedUsage = { inputTokens: 17000, outputTokens: 410, reasoningTokens: 0 };
+  assert.ok(f.count(f.responseText) > 512);
+  await f.run();
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.meta().summary, f.responseText.trim());
+  assert.ok(f.meta().last_id);
+  assert.ok(f.decisions.some(d => d.state === 'result' && d.summary_tokens === 410));
+  assert.ok(f.decisions.some(d => d.state === 'committed'));
+  assert.ok(!f.decisions.some(d => ['recompress', 'failed', 'fallback_accepted'].includes(d.state)));
+  await f.run();
+  assert.equal(f.calls.length, 1, 'committed marker prevents repeating the same compression');
+});
+
+test('missing or invalid provider output usage retains conservative summary validation', async () => {
+  for (const outputTokens of [undefined, null, 0, -1, 1.5, '410', Number.MAX_SAFE_INTEGER + 1]) {
+    const f = fixture({ chatLimit: 1048576, same: true, strategy: 'economy', lengths: [45000, 45000, 100] });
+    f.responseText = 'word '.repeat(410);
+    f.reportedUsage = { outputTokens };
+    await f.run();
+    assert.equal(f.calls.length, 2);
+    assert.equal(f.meta().summary, null);
+    assert.ok(f.decisions.some(d => d.state === 'failed' && d.reason === 'budget'));
+    assert.ok(f.decisions.some(d => d.state === 'fallback_accepted'));
+  }
+});
+
+test('provider output above the summary cap still requires recompression and cannot commit', async () => {
+  const f = fixture({ chatLimit: 1048576, same: true, strategy: 'economy', lengths: [45000, 45000, 100] });
+  f.reportedUsage = { outputTokens: 513 };
+  await f.run();
+  assert.equal(f.calls.length, 2);
+  assert.equal(f.meta().summary, null);
+  assert.ok(f.decisions.some(d => d.state === 'recompress'));
+  assert.ok(f.decisions.some(d => d.state === 'failed' && d.reason === 'budget'));
+});
+
+test('recompression also accepts provider usage instead of rejecting its local overestimate', async () => {
+  const f = fixture({ chatLimit: 1048576, same: true, strategy: 'economy', lengths: [45000, 45000, 100] });
+  f.beforeResponse = () => {
+    f.reportedUsage = { outputTokens: f.calls.length === 1 ? 513 : 410 };
+    f.responseText = 'word '.repeat(410);
+  };
+  await f.run();
+  assert.equal(f.calls.length, 2);
+  assert.equal(f.meta().summary, f.responseText.trim());
+  assert.ok(f.decisions.some(d => d.state === 'recompress'));
+  assert.ok(f.decisions.some(d => d.state === 'committed'));
+});
+
+test('accepting provider output usage cannot bypass the final conservative chat capacity guard', async () => {
+  const f = fixture({ chatLimit: 32768, same: true, lengths: [33000, 33000, 20] });
+  f.chat.additionalApiParameters = JSON.stringify({ max_completion_tokens: 8192 });
+  f.responseText = 'word '.repeat(21000);
+  f.reportedUsage = { outputTokens: 410 };
+  await assert.rejects(f.run(), runtime.ContextBudgetError);
+  assert.equal(f.meta().summary, null);
+  assert.ok(f.decisions.some(d => d.state === 'failed' && d.reason === 'budget'));
+  assert.ok(f.decisions.some(d => d.state === 'fallback_rejected'));
 });
 
 test('Maximum retains near-capacity history across small and large same-model windows', async () => {
@@ -474,11 +590,11 @@ test('changed summary model gets a fresh detection on the next generation', asyn
 });
 
 test('a manual summary cap is respected independently of the chat strategy', async () => {
-  const f = fixture({ lengths: [40000, 20] });
+  const f = fixture({ strategy: 'economy', lengths: [100000, 20] });
   f.summary.manualContextCap = 2048;
   await f.run();
   assert.ok(f.calls.length > 1);
-  assert.equal(resolvedWorkingContextTarget(f.chat), 524288);
+  assert.equal(resolvedWorkingContextTarget(f.chat), 32768);
 });
 
 test('detection refresh metadata alone does not invalidate the normal provider usage anchor', () => {
@@ -511,7 +627,7 @@ test('an older automatic detection cannot overwrite a newer manual refresh', asy
 });
 
 test('a smaller detected summary window cancels active work before committing', async () => {
-  const f = fixture({ summaryLimit: 8192, lengths: [40000, 20] });
+  const f = fixture({ chatLimit: 8192, summaryLimit: 8192, lengths: [40000, 20] });
   f.beforeResponse = () => { f.summary.detectedContext.tokens = 2048; };
   await assert.rejects(f.run(), runtime.SummaryCancelledError);
   assert.equal(f.meta().summary, null);
@@ -521,7 +637,7 @@ test('diagnostics explain no-trigger, chat pressure, summary pressure and memory
   for (const [settings, trigger] of [
     [{ lengths: [100, 100, 20] }, 'none'],
     [{ chatLimit: 8192, summaryLimit: 131072, lengths: [16000, 16000, 20] }, 'chat'],
-    [{ chatLimit: 524288, summaryLimit: 8192, lengths: [16000, 16000, 20] }, 'summary'],
+    [{ chatLimit: 524288, summaryLimit: 8192, lengths: [16000, 16000, 20] }, 'none'],
   ]) {
     const f = fixture(settings);
     await f.run();
@@ -530,11 +646,11 @@ test('diagnostics explain no-trigger, chat pressure, summary pressure and memory
     assert.equal(decision.measurement.total, decision.measurement.prompt_tokens + decision.measurement.reserve_tokens + decision.measurement.safety_tokens);
     assert.equal(decision.working_target, resolvedWorkingContextTarget(f.chat));
     assert.equal(decision.measurement.hard_limit, resolvedHardContextLimit(f.chat));
-    if (trigger === 'summary') {
+    if (decision.summary_pressure && trigger === 'none') {
       const pressure = f.decisions.find(d => d.kind === 'summary_capacity' && d.stage === 'pressure');
       assert.equal(pressure.fits, false);
       assert.ok(pressure.input_tokens + pressure.output_reserve + pressure.safety_tokens > pressure.hard_limit);
-      assert.ok(f.decisions.some(d => d.state === 'committed'));
+      assert.equal(f.calls.length, 0);
     }
   }
   const f = fixture();
@@ -594,7 +710,7 @@ test('diagnostics identify stale markers and cancellation reasons', async () => 
   assert.ok(stale.decisions.some(d => d.state === 'marker_reset' && d.reason === 'marker_invalid'));
   assert.ok(stale.decisions.some(d => d.state === 'committed'));
   assert.ok(!JSON.stringify(stale.decisions).includes('PRIVATE_SUMMARY'));
-  const f = fixture({ summaryLimit: 8192, lengths: [40000, 20] });
+  const f = fixture({ chatLimit: 8192, summaryLimit: 8192, lengths: [40000, 20] });
   f.beforeResponse = () => { f.summary.detectedContext.tokens = 2048; };
   await assert.rejects(f.run(), runtime.SummaryCancelledError);
   assert.ok(f.decisions.some(d => d.state === 'cancelled' && d.reason === 'context_shrunk'));
@@ -656,7 +772,7 @@ test('visible answer ends native thinking and a later thought can restart it', a
 
 
 test('stop during summary listener setup prevents network and persistence', async () => {
-  const f = fixture({ summaryLimit: 4096, lengths: [100, 18000, 100] });
+  const f = fixture({ chatLimit: 8192, summaryLimit: 4096, lengths: [100, 24000, 100] });
   const previous = harness.listen;
   try {
     harness.listen = async (name, callback) => {
@@ -703,7 +819,7 @@ test('text rules reach provider payloads while raw responses and source history 
 
 test('summary receives send rules, excludes display rules and leaves persisted history intact', async () => {
   const originalRules = state.appState.textRules;
-  const f = fixture({ chatLimit: 8192, summaryLimit: 8192, lengths: [9000, 9000, 20] });
+  const f = fixture({ chatLimit: 8192, summaryLimit: 8192, lengths: [12000, 12000, 20] });
   f.messages.forEach(message => { message.content = 'PRIVATE ' + message.content; });
   const original = JSON.stringify(f.messages);
   const rule = { id: 'send', name: 'Private', pattern: 'PRIVATE', replacement: 'PUBLIC', flags: 'g', enabled: true, scopes: ['user', 'assistant'], targets: ['send'] };
