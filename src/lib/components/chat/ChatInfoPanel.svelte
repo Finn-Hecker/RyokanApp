@@ -7,6 +7,8 @@
   import CharacterTab from '$lib/components/editor/character/CharacterTab.svelte';
   import { readImageAsDataUrl } from '$lib/components/editor/character/characterLogic';
   import Button from '$lib/components/ui/Button.svelte';
+  import { updateRollingSummary } from '$lib/ai/summary/rollingSummary.svelte';
+  import type { SummaryMeta } from '$lib/stores/chatStore.svelte';
 
   let {
     character = null,
@@ -14,7 +16,7 @@
     onClose
   }: {
     character?: any;
-    activeTab?: 'character' | 'chat';
+    activeTab?: 'character' | 'chat' | 'summary';
     onClose: () => void;
   } = $props();
 
@@ -28,6 +30,41 @@
   let isReadingAvatar = $state(false);
   let editError = $state('');
   let canEditSnapshot = $derived(activeConversation?.mode === 'singleplayer' && !!character);
+  let summaryDraft = $state<{ chatId: string; expected: SummaryMeta; text: string } | null>(null);
+  let isSavingSummary = $state(false);
+  let summaryError = $state('');
+
+  $effect(() => {
+    if (summaryDraft && summaryDraft.chatId !== chatState.activeChatId) {
+      summaryDraft = null;
+      summaryError = '';
+    }
+  });
+
+  function beginSummaryEdit() {
+    if (activeConversation?.mode !== 'singleplayer' || !chatState.activeChatId || !chatState.summaryMeta.currentSummary) return;
+    summaryDraft = {
+      chatId: chatState.activeChatId,
+      expected: { ...chatState.summaryMeta },
+      text: chatState.summaryMeta.currentSummary,
+    };
+    summaryError = '';
+  }
+
+  async function saveSummary() {
+    if (!summaryDraft || isSavingSummary) return;
+    const currentDraft = summaryDraft;
+    isSavingSummary = true;
+    summaryError = '';
+    try {
+      await updateRollingSummary(currentDraft.chatId, currentDraft.expected, currentDraft.text);
+      if (summaryDraft === currentDraft) summaryDraft = null;
+    } catch (error) {
+      if (summaryDraft === currentDraft) summaryError = error instanceof Error ? error.message : 'Die Summary konnte nicht gespeichert werden. Bitte erneut versuchen.';
+    } finally {
+      isSavingSummary = false;
+    }
+  }
 
   $effect(() => {
     if (editingChatId && editingChatId !== chatState.activeChatId) {
@@ -154,7 +191,7 @@
   })());
 </script>
 
-<BottomSheet {onClose} label="Info" height="min(640px, calc(var(--app-visible-height, 100dvh) * .85))" mobileHeight="auto">
+<BottomSheet {onClose} label="Info" height="min(640px, calc(var(--app-visible-height, 100dvh) * .85))" mobileHeight="calc(var(--app-visible-height, 100dvh) * .8)">
   {#snippet toolbar()}
       <div class="info-tabs">
         <button
@@ -170,6 +207,13 @@
           onclick={() => (activeTab = 'chat')}
         >
           Chat
+        </button>
+        <button
+          class="info-tab"
+          class:active={activeTab === 'summary'}
+          onclick={() => (activeTab = 'summary')}
+        >
+          Summary
         </button>
       </div>
       {/snippet}
@@ -242,6 +286,26 @@
           <p class="info-empty">Kein Charakter ausgewählt.</p>
         {/if}
 
+      {:else if activeTab === 'summary'}
+        <div class="info-head">
+          <div class="info-head-text"><h3>Rolling Summary</h3></div>
+        </div>
+        {#if summaryDraft}
+          <label class="info-label" for="rolling-summary">Summary bearbeiten</label>
+          <textarea id="rolling-summary" class="summary-editor" bind:value={summaryDraft.text} disabled={isSavingSummary} rows="12"></textarea>
+          <div class="flex justify-end gap-2 mt-4">
+            <Button disabled={isSavingSummary} onclick={() => { summaryDraft = null; summaryError = ''; }}>Abbrechen</Button>
+            <Button disabled={isSavingSummary} onclick={saveSummary}>{isSavingSummary ? 'Speichert…' : 'Speichern'}</Button>
+          </div>
+        {:else if chatState.summaryMeta.currentSummary}
+          <p class="info-value">{chatState.summaryMeta.currentSummary}</p>
+          {#if activeConversation?.mode === 'singleplayer'}
+            <div class="flex justify-end mt-4"><Button onclick={beginSummaryEdit}>Summary bearbeiten</Button></div>
+          {/if}
+        {:else}
+          <p class="info-empty">Noch keine Summary vorhanden. Sie wird bei Bedarf automatisch aus dem bisherigen Chat erstellt.</p>
+        {/if}
+        {#if summaryError}<p role="alert" class="text-sm text-red-400 mt-4">{summaryError}</p>{/if}
       {:else}
         <div class="info-head">
           <div class="info-avatar info-avatar--icon">
@@ -328,6 +392,27 @@
 </BottomSheet>
 
 <style>
+  .summary-editor {
+    display: block;
+    width: 100%;
+    min-height: 220px;
+    margin-top: 8px;
+    padding: 12px;
+    border: 1px solid var(--sheet-border);
+    border-radius: 12px;
+    background: var(--sheet-surface);
+    color: var(--sheet-text);
+    font: inherit;
+    line-height: 1.65;
+    resize: vertical;
+    user-select: text;
+  }
+
+  .summary-editor:focus-visible {
+    outline: 2px solid #d4b483;
+    outline-offset: 2px;
+  }
+
   .info-tabs {
     display: flex;
     gap: 4px;

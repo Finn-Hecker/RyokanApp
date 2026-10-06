@@ -58,7 +58,102 @@ const runtime = await import(await loadProduction('$lib/ai/summary/rollingSummar
 const connections = await import(await loadProduction('$lib/ai/connections/apiConnections'));
 const chatApi = await import(await loadProduction('$lib/ai/generation/chatApi'));
 const parameters = await import(await loadProduction('$lib/ai/connections/apiParameters'));
+const revisions = await import(await loadProduction('$lib/ai/summary/rollingSummaryCore'));
 let serial = 0;
+
+test('manual summary editing preserves coverage, persists and feeds the next generation prompt', async () => {
+  const f = fixture({ chatLimit: 32768, same: true, lengths: [20, 20, 20] });
+  f.setMeta({ summary: 'Old facts', last_id: f.messages[0].id });
+  const expected = { currentSummary: 'Old facts', lastSummarizedMessageId: f.messages[0].id };
+  harness.chatState.summaryMeta = expected;
+  const revision = revisions.currentConversationRevision(harness.chatState.activeChatId);
+  await runtime.updateRollingSummary(harness.chatState.activeChatId, expected, '  Manually corrected facts  ');
+  assert.deepEqual(f.meta(), { summary: 'Manually corrected facts', last_id: f.messages[0].id });
+  assert.deepEqual(harness.chatState.summaryMeta, { ...expected, currentSummary: 'Manually corrected facts' });
+  assert.ok(revisions.currentConversationRevision(harness.chatState.activeChatId) > revision);
+  const { options, prepared } = await f.run();
+  const prompt = chatApi.buildApiMessages({ ...options, ...prepared });
+  assert.ok(prompt.some(message => message.content.includes('Manually corrected facts')));
+  assert.ok(prompt.every(message => !message.content.includes('Old facts')));
+  assert.equal(f.calls.length, 0);
+});
+
+test('manual summary CAS rejects a stale editor and refreshes the shared state', async () => {
+  const f = fixture({ same: true });
+  f.setMeta({ summary: 'New automatic facts', last_id: f.messages[1].id });
+  await assert.rejects(runtime.updateRollingSummary(harness.chatState.activeChatId,
+    { currentSummary: 'Old facts', lastSummarizedMessageId: f.messages[0].id }, 'Manual facts'), /inzwischen geändert/);
+  assert.equal(f.meta().summary, 'New automatic facts');
+  assert.deepEqual(harness.chatState.summaryMeta,
+    { currentSummary: 'New automatic facts', lastSummarizedMessageId: f.messages[1].id });
+});
+
+test('manual save failure leaves the committed shared summary untouched', async () => {
+  fixture({ same: true });
+  const expected = { currentSummary: 'Old facts', lastSummarizedMessageId: 'marker' };
+  harness.chatState.summaryMeta = expected;
+  harness.invoke = async () => { throw new Error('Persistence failed'); };
+  await assert.rejects(runtime.updateRollingSummary(harness.chatState.activeChatId, expected, 'Manual facts'), /Persistence failed/);
+  assert.equal(harness.chatState.summaryMeta, expected);
+});
+
+test('clearing a summary clears its coverage marker and does not publish into another chat', async () => {
+  const f = fixture({ same: true });
+  f.setMeta({ summary: 'Old facts', last_id: f.messages[0].id });
+  const chatId = harness.chatState.activeChatId;
+  const saved = runtime.updateRollingSummary(chatId,
+    { currentSummary: 'Old facts', lastSummarizedMessageId: f.messages[0].id }, '  ');
+  const otherMeta = { currentSummary: 'Other chat', lastSummarizedMessageId: 'other-marker' };
+  harness.chatState.activeChatId = 'other-chat';
+  harness.chatState.summaryMeta = otherMeta;
+  await saved;
+  assert.deepEqual(f.meta(), { summary: null, last_id: null });
+  assert.equal(harness.chatState.summaryMeta, otherMeta);
+});
+
+test('manual edit cancels an in-flight automatic summary before committing its own text', async () => {
+  const f = fixture({ chatLimit: 8192, same: true, lengths: [18000, 40000, 40] });
+  const expected = { currentSummary: 'Old facts', lastSummarizedMessageId: f.messages[0].id };
+  f.setMeta({ summary: expected.currentSummary, last_id: expected.lastSummarizedMessageId });
+  const invoke = harness.invoke;
+  let stopped = false;
+  harness.invoke = async (command, args) => {
+    if (command === 'stop_generation') { stopped = true; return; }
+    return invoke(command, args);
+  };
+  let saved;
+  f.beforeResponse = () => {
+    saved = runtime.updateRollingSummary(harness.chatState.activeChatId, expected, 'Manual facts');
+  };
+  await assert.rejects(f.run(), runtime.SummaryCancelledError);
+  await saved;
+  assert.equal(stopped, true);
+  assert.deepEqual(f.meta(), { summary: 'Manual facts', last_id: expected.lastSummarizedMessageId });
+  assert.equal(harness.chatState.summaryMeta.currentSummary, 'Manual facts');
+});
+
+test('manual edit waits for an automatic CAS rollback without losing its original marker', async () => {
+  const f = fixture({ chatLimit: 8192, same: true, lengths: [18000, 40000, 40] });
+  const expected = { currentSummary: 'Old facts', lastSummarizedMessageId: f.messages[0].id };
+  f.setMeta({ summary: expected.currentSummary, last_id: expected.lastSummarizedMessageId });
+  const invoke = harness.invoke;
+  let saved;
+  const swaps = [];
+  harness.invoke = async (command, args) => {
+    if (command === 'stop_generation') return;
+    const result = await invoke(command, args);
+    if (command === 'compare_and_swap_summary_meta') {
+      swaps.push({ ...f.meta() });
+      if (!saved) saved = runtime.updateRollingSummary(harness.chatState.activeChatId, expected, 'Manual facts');
+    }
+    return result;
+  };
+  await assert.rejects(f.run(), runtime.SummaryCancelledError);
+  await saved;
+  assert.ok(swaps.length >= 3, 'automatic candidate, cancelled rollback, manual commit');
+  assert.deepEqual(swaps.at(-2), { summary: 'Old facts', last_id: expected.lastSummarizedMessageId });
+  assert.deepEqual(f.meta(), { summary: 'Manual facts', last_id: expected.lastSummarizedMessageId });
+});
 
 test('native and NanoGPT profiles round-trip without migration or a persisted budget discriminator', async () => {
   const profiles = ['nanogpt', 'anthropic', 'gemini'].map((providerKind, index) => ({

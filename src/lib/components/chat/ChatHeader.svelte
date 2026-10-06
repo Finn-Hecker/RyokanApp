@@ -16,7 +16,7 @@
   } = $props();
 
   let showInfoPanel = $state(false);
-  let infoTab = $state<'character' | 'chat'>('character');
+  let infoTab = $state<'character' | 'chat' | 'summary'>('character');
   let showSettingsPanel = $state(false);
 
 

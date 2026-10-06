@@ -16,6 +16,7 @@ import { processThinkingOutput, stripThinkingContent } from '$lib/ai/generation/
 import {
     commitOrRollback,
     boundedSummaryOutputCap,
+    bumpConversationRevision,
     canReusePromptAnchor,
     currentConversationRevision,
     deriveEffectiveTokenBudget,
@@ -309,6 +310,35 @@ async function compareAndSwapPersistedSummary(
 
 function applySummaryToActiveChat(chatId: string, meta: SummaryMarkerState): void {
     if (chatState.activeChatId === chatId) chatState.summaryMeta = { ...meta };
+}
+
+/** Edit the saved text without moving its coverage boundary or overwriting newer work. */
+export function updateRollingSummary(
+    chatId: string,
+    expected: SummaryMarkerState,
+    text: string,
+): Promise<void> {
+    const previous = { ...expected };
+    const summary = text.trim();
+    const next: SummaryMarkerState = {
+        currentSummary: summary || null,
+        lastSummarizedMessageId: summary ? previous.lastSummarizedMessageId : null,
+    };
+    bumpConversationRevision(chatId);
+    const cancellation = cancelActiveSummary(chatId);
+    // Wait for cancelled commits/rollbacks before attempting the manual CAS.
+    const work = summarySerial.catch(() => undefined).then(async () => {
+        await cancellation;
+        if (!await compareAndSwapPersistedSummary(chatId, previous, next)) {
+            applySummaryToActiveChat(chatId, await loadPersistedSummary(chatId));
+            throw new Error('Die Summary wurde inzwischen geändert. Bitte die aktuelle Version erneut bearbeiten.');
+        }
+        bumpConversationRevision(chatId);
+        promptAnchors.delete(chatId);
+        applySummaryToActiveChat(chatId, next);
+    });
+    summarySerial = work.then(() => undefined, () => undefined);
+    return work;
 }
 
 async function persistSummaryCorrection(
@@ -929,7 +959,7 @@ export function checkAndSummarizeIfNeeded(
     beforeMessageId?: string,
 ): Promise<PreparedGenerationContext> {
     const selectionFingerprint = summarySelectionFingerprint();
-    const workKey = JSON.stringify([summaryWorkKey(chatId, beforeMessageId), selectionFingerprint, options.apiSettings]);
+    const workKey = JSON.stringify([summaryWorkKey(chatId, beforeMessageId), selectionFingerprint, options.apiSettings, currentConversationRevision(chatId)]);
     const existing = summaryWorkByBoundary.get(workKey);
     if (existing) { options.diagnosticOperation = existing.diagnosticId; return existing; }
 
