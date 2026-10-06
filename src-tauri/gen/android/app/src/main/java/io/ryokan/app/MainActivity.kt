@@ -4,7 +4,11 @@ import android.net.Uri
 import android.os.Bundle
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
+import androidx.annotation.Keep
 
+// Rust/Tauri resolves Activity bridge methods by name through JNI.
+// Keep the class and its members, including future custom bridge methods.
+@Keep
 class MainActivity : TauriActivity() {
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
