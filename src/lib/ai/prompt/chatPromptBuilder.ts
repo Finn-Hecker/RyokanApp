@@ -27,6 +27,8 @@ export interface PromptWorldInfo {
 }
 
 export interface PromptBuildOptions {
+  systemPrompt?: string;
+  postHistoryPrompt?: string;
   textRules?: readonly TextRule[];
   character: {
     name?: string;
@@ -74,6 +76,7 @@ export function buildPromptMessages(options: PromptBuildOptions): ChatPromptMess
 
   const charName = character?.name || 'Unknown';
   const baseSystemPrompt = buildSystemPrompt({
+    systemPrompt: options.systemPrompt,
     charName,
     prompt: character?.prompt,
     role: options.role,
@@ -120,5 +123,6 @@ export function buildPromptMessages(options: PromptBuildOptions): ChatPromptMess
     }
   }
 
+  if (options.postHistoryPrompt?.trim()) messages.push({ role: 'system', content: options.postHistoryPrompt.trim() });
   return messages;
 }

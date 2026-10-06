@@ -167,7 +167,7 @@ fn nanogpt_request_and_usage_match_its_documented_compatible_contract() {
     .unwrap();
     assert_eq!(body["temperature"], 0.2);
     assert_eq!(body["stream_options"]["include_usage"], true);
-    assert_eq!(body["repetition_penalty"], json!(payload.presence_penalty));
+    assert_eq!(body["repetition_penalty"], json!(payload.repetition_penalty));
     assert_eq!(body["max_tokens"], 4096);
     assert_eq!(body["messages"], json!(payload.messages));
     assert!(body.get("thinking_budget_tokens").is_none());
@@ -409,6 +409,18 @@ fn native_defaults_and_summary_policy_stay_consistent_with_frontend_reserves() {
         assert!(body.get("chat_template_kwargs").is_none());
         assert!(body.get("reasoning").is_none());
     }
+}
+
+#[test]
+fn repetition_penalty_and_additive_presence_penalty_remain_distinct() {
+    let payload = request("nanogpt");
+    assert_eq!(payload.repetition_penalty, Some(1.12));
+    let body = nanogpt::body(
+        &payload,
+        json!({"presence_penalty":0.4}).as_object().unwrap().clone(),
+    ).unwrap();
+    assert_eq!(body["repetition_penalty"], json!(payload.repetition_penalty));
+    assert_eq!(body["presence_penalty"], json!(0.4));
 }
 
 #[test]

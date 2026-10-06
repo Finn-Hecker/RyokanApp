@@ -73,7 +73,7 @@ pub(super) fn body(
             generation["frequencyPenalty"] = json!(value);
         }
     }
-    // Ryokan's presencePenalty is a multiplicative repetition penalty, not the
+    // Ryokan's repetitionPenalty is a multiplicative repetition penalty, not the
     // additive presencePenalty Gemini exposes. It is deliberately not remapped.
     if config.thinking_budget_enabled {
         generation["thinkingConfig"] =

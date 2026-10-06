@@ -1,6 +1,6 @@
 import * as m from '$lib/paraglide/messages';
 
-export type SamplingParameter = 'temperature' | 'maxTokens' | 'presencePenalty' | 'topP' | 'topK' | 'minP' | 'frequencyPenalty';
+export type SamplingParameter = 'temperature' | 'maxTokens' | 'repetitionPenalty' | 'topP' | 'topK' | 'minP' | 'frequencyPenalty';
 
 /** Shared presets and input bounds; persistence belongs to the caller. */
 export function parameterSettings(parameter: SamplingParameter) {
@@ -49,7 +49,7 @@ export function parameterSettings(parameter: SamplingParameter) {
   const settings = {
     temperature: { label: m.settings_creativity_label(), presets: TEMPERATURES, fallback: 0.8, min: 0, max: 2, step: 0.01, low: m.settings_slider_precise(), high: m.settings_slider_creative(), decimals: 2 },
     maxTokens: { label: m.settings_tokens_label(), presets: MAX_TOKENS_PRESETS, fallback: 300, min: 50, max: 4000, step: 10, low: m.settings_slider_short(), high: m.settings_slider_long(), decimals: 0 },
-    presencePenalty: { label: m.settings_penalty_label(), presets: PENALTY_PRESETS, fallback: 1.12, min: 0.8, max: 2, step: 0.01, low: m.settings_slider_tolerant(), high: m.settings_slider_strict(), decimals: 2 },
+    repetitionPenalty: { label: m.settings_penalty_label(), presets: PENALTY_PRESETS, fallback: 1.12, min: 0.8, max: 2, step: 0.01, low: m.settings_slider_tolerant(), high: m.settings_slider_strict(), decimals: 2 },
     topP: { label: m.settings_topp_label(), presets: TOP_P_PRESETS, fallback: 0.9, min: 0, max: 1, step: 0.01, low: m.settings_slider_focused(), high: m.settings_slider_diverse(), decimals: 2 },
     topK: { label: m.settings_topk_label(), presets: TOP_K_PRESETS, fallback: 40, min: 0, max: 200, step: 1, low: m.settings_slider_narrow(), high: m.settings_slider_wide(), decimals: 0 },
     minP: { label: m.settings_minp_label(), presets: MIN_P_PRESETS, fallback: 0.05, min: 0, max: 0.5, step: 0.01, low: m.settings_slider_off(), high: m.settings_slider_strict(), decimals: 2 },
@@ -61,7 +61,7 @@ export function parameterSettings(parameter: SamplingParameter) {
 export function clampParameter(parameter: SamplingParameter, value: number): number {
   // Temperature already comes from a bounded range input.
   if (parameter === 'temperature') return value;
-  const bounds = { maxTokens: [50, 4000, 1], presencePenalty: [0.8, 2, 100], topP: [0, 1, 100], topK: [0, 200, 1], minP: [0, 0.5, 100], frequencyPenalty: [0, 2, 100] } as const;
+  const bounds = { maxTokens: [50, 4000, 1], repetitionPenalty: [0.8, 2, 100], topP: [0, 1, 100], topK: [0, 200, 1], minP: [0, 0.5, 100], frequencyPenalty: [0, 2, 100] } as const;
   const [min, max, precision] = bounds[parameter];
   return Math.max(min, Math.min(max, Math.round(value * precision) / precision));
 }

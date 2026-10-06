@@ -3,6 +3,7 @@ import type { ReasoningLevel, SavedGenerationCapabilities, ServiceTier } from '$
 import { CONSERVATIVE_CONTEXT_FALLBACK, resolvedHardContextLimit, resolveSummaryConnection, SAME_AS_CHAT_CONNECTION } from '$lib/ai/connections/connectionCore';
 
 import type { TextRule } from '$lib/ai/prompt/textRules';
+import type { PresetRestoreSnapshot } from '$lib/ai/presets/presetCore';
 import type { ProviderKind } from '$lib/ai/connections/providers';
 export type { ProviderKind } from '$lib/ai/connections/providers';
 import type { ContextStrategy } from '$lib/ai/connections/connectionCore';
@@ -24,9 +25,10 @@ export interface ApiSettings {
   apiKey: string;
   model: string;
   systemPrompt: string;
+  postHistoryPrompt: string;
   temperature: number;
   maxTokens: number;
-  presencePenalty: number;
+  repetitionPenalty: number;
   topP: number;
   topK: number;
   minP: number;
@@ -42,6 +44,8 @@ export interface ApiConnection extends ApiSettings {
   serviceTier: ServiceTier;
   id: string;
   name: string;
+  appliedPresetId?: string | null;
+  presetRestoreSnapshot?: PresetRestoreSnapshot;
   providerKind: ProviderKind;
   parameterEnabled: Record<ApiParameterKey, boolean>;
   generationCapabilities?: SavedGenerationCapabilities | null;
@@ -55,8 +59,8 @@ export const DEFAULT_CONNECTION_ID = 'default';
 
 export function createDefaultConnection(id = DEFAULT_CONNECTION_ID, name = 'Default'): ApiConnection {
   return {
-    id, name, providerKind: 'lm_studio', url: 'http://127.0.0.1:1234/v1', apiKey: '', model: '', systemPrompt: '',
-    temperature: 0.8, thinkingBudget: 2500, reasoningLevel: 'auto', maxTokens: 300, presencePenalty: 1.12, topP: 0.9,
+    id, name, appliedPresetId: null, providerKind: 'lm_studio', url: 'http://127.0.0.1:1234/v1', apiKey: '', model: '', systemPrompt: '', postHistoryPrompt: '',
+    temperature: 0.8, thinkingBudget: 2500, reasoningLevel: 'auto', maxTokens: 300, repetitionPenalty: 1.12, topP: 0.9,
     topK: 40, minP: 0.05, frequencyPenalty: 0, contextLimit: CONSERVATIVE_CONTEXT_FALLBACK, manualContextCap: null,
     detectedContext: null, contextDetectionError: null, contextStrategy: 'balanced', serviceTier: 'auto',
     parameterEnabled: createDefaultApiParameterEnabled(), customMode: false, additionalApiParameters: '',

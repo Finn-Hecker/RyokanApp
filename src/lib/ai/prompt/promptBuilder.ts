@@ -1,6 +1,7 @@
 export interface PromptBuilderOptions {
   charName: string;
   prompt?: string | null;
+  systemPrompt?: string;
   role?: { name: string; prompt: string } | null;
 }
 
@@ -17,6 +18,7 @@ function replacePlaceholders(
 export function buildSystemPrompt({
   charName,
   prompt,
+  systemPrompt,
   role,
 }: PromptBuilderOptions): string {
   const coreInstructions = `You are ${charName}.
@@ -29,7 +31,8 @@ Stay fully in character.`;
     ? replacePlaceholders(prompt.trim(), charName)
     : '';
 
-  const sections = [coreInstructions];
+  // Plain preset instructions replace the default; character/role context remains intact.
+  const sections = [systemPrompt?.trim() || coreInstructions];
   if (cardPrompt) sections.push(cardPrompt);
   if (role) {
     const rolePrompt = replacePlaceholders(role.prompt.trim(), charName, role.name);

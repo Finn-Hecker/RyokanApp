@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { save } from '@tauri-apps/plugin-dialog';
+import { exportFile } from '$lib/utils/fileExport';
 import { appState } from '$lib/stores/appState.svelte';
 import { supportedImageFormat } from '$lib/utils/imageFormats';
 import {
@@ -64,26 +64,8 @@ export async function exportCharacterCard(id: string, name: string): Promise<boo
   const pngBytes: number[] = await invoke('export_character_card', { id: String(id) });
   const filename = `${name.replace(/[^a-z0-9]/gi, '_') || 'character'}.png`;
 
-  if (appState.interactionMode === 'mobile') {
-    const uri = await save({
-      defaultPath: filename,
-      filters: [{ name: 'PNG', extensions: ['png'] }]
-    });
-    if (uri === null) return false;
-    await invoke('write_android_export', { uri, bytes: pngBytes });
-    return true;
-  }
-
-  const blob = new Blob([new Uint8Array(pngBytes)], { type: 'image/png' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  return true;
+  return exportFile(new Uint8Array(pngBytes), filename, 'image/png',
+    { name: 'PNG', extensions: ['png'] }, appState.interactionMode === 'mobile');
 }
 
 export async function readImageAsDataUrl(file: File): Promise<string> {

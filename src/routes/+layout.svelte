@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import "../app.css";
+  import ExportToast from "$lib/components/ui/ExportToast.svelte";
+  import { exportFeedback } from "$lib/stores/exportFeedback";
 
   onMount(() => {
     if (!/Android/i.test(navigator.userAgent)) return;
@@ -28,3 +30,4 @@
 </script>
 
 <slot />
+<ExportToast type={$exportFeedback?.type ?? null} message={$exportFeedback?.message} />

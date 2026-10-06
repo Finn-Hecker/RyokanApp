@@ -12,3 +12,4 @@ vite.config.ts.timestamp-*
 /updater-test-output/
 /docs/*
 !/docs/architecture.md
+!/docs/presets.md

@@ -11,7 +11,7 @@
 
   import SimpleFormPage from '$lib/components/layouts/SimpleFormPage.svelte';
   import Button from '$lib/components/ui/Button.svelte';
-  import ExportToast from '$lib/components/editor/shared/ExportToast.svelte';
+  import { clearExportFeedback, showExportFeedback } from '$lib/stores/exportFeedback';
   import DeleteConfirmDialog from '$lib/components/editor/shared/DeleteConfirmDialog.svelte';
 
   import CharacterTab from '$lib/components/editor/character/CharacterTab.svelte';
@@ -99,8 +99,6 @@
   let importInput = $state<HTMLInputElement | null>(null);
   let editorRoot: HTMLDivElement;
   
-  let exportToast = $state<'success' | 'error' | null>(null);
-  let toastTimeout: ReturnType<typeof setTimeout>;
   let fromRoleManager = $state(false);
 
   $effect(() => {
@@ -169,12 +167,6 @@
   );
 
   let saveLabel = $derived(m.create_page_btn_done());
-
-  function showToast(type: 'success' | 'error') {
-    clearTimeout(toastTimeout);
-    exportToast = type;
-    toastTimeout = setTimeout(() => (exportToast = null), 2800);
-  }
 
   function goBack() {
     appState.editingCharacter =  null;
@@ -376,11 +368,13 @@
     if (!editChar?.id) return;
     menuOpen = false;
     isExporting = true;
+    clearExportFeedback();
     try {
-      if (await exportCharacterCard(editChar.id, charName)) showToast('success');
+      if (await exportCharacterCard(editChar.id, charName)) showExportFeedback('success',
+        appState.interactionMode === 'mobile' ? m.toast_export_success() : m.toast_download_started());
     } catch (e) {
       reportDiagnostic('editor');
-      showToast('error');
+      showExportFeedback('error', m.toast_export_failed());
     } finally {
       isExporting = false;
     }
@@ -400,8 +394,6 @@
       onCancel={() => (showDeleteConfirm = false)}
     />
   {/if}
-
-  <ExportToast type={exportToast} />
 
   <input
     type="file"

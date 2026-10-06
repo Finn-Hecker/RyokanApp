@@ -1,6 +1,8 @@
 <script lang="ts">
   import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
-  import { appState } from "$lib/stores/appState.svelte";
+  import { appState, snapshotApiConnection } from "$lib/stores/appState.svelte";
+  import PresetSection from './PresetSection.svelte';
+  import { activateConnectionPreset, deactivateConnectionPreset, type RyokanPreset } from '$lib/ai/presets/presetCore';
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { getAllSettings, saveSetting } from "$lib/settings/settings";
   import { parseTextRules, serializeTextRules, TEXT_RULES_KEY } from '$lib/ai/prompt/textRules';
@@ -12,6 +14,7 @@
   import GeneralSection from "./GeneralSection.svelte";
   import TextRulesSection from "./TextRulesSection.svelte";
   import UpdateSection from './UpdateSection.svelte';
+  import { clearExportFeedback, showExportFeedback } from '$lib/stores/exportFeedback';
   import { downloadDiagnostics } from '$lib/diagnostics/diagnostics';
   import { diagnosticsMetadata } from '$lib/diagnostics/diagnosticsMetadata';
   import Button from "$lib/components/ui/Button.svelte";
@@ -19,25 +22,25 @@
   import { validateAdditionalApiParameters } from "$lib/ai/connections/additionalApiParameters";
   import { hydrateApiConnections, LONG_TERM_MEMORY_KEY, persistApiConnections, resolvedHardContextLimit, SUMMARY_CONNECTION_KEY } from "$lib/ai/connections/apiConnections";
 
-  type SettingsCategory = "provider" | "memory" | "textRules" | "appearance" | "language" | "advanced" | "about";
+  type SettingsCategory = "provider" | "presets" | "memory" | "textRules" | "appearance" | "language" | "advanced" | "about";
   type Category = { id: SettingsCategory; label: string; description: string; mobileDescription: string; icon: string };
 
   let powerUser = $state(false);
   let exportingDiagnostics = $state(false);
-  let diagnosticsStatus = $state('');
 
   async function exportDiagnostics() {
     if (exportingDiagnostics) return;
     exportingDiagnostics = true;
-    diagnosticsStatus = '';
+    clearExportFeedback();
     try {
       const exported = await downloadDiagnostics(
         diagnosticsMetadata(appState.apiSettings, appState.longTermMemory),
         appState.interactionMode
       );
-      if (exported) diagnosticsStatus = m.settings_diagnostics_started();
+      if (exported) showExportFeedback('success',
+        appState.interactionMode === 'mobile' ? m.toast_diagnostics_exported() : m.toast_download_started());
     } catch {
-      diagnosticsStatus = m.settings_diagnostics_failed();
+      showExportFeedback('error', m.settings_diagnostics_failed());
     } finally {
       exportingDiagnostics = false;
     }
@@ -46,6 +49,7 @@
 
   const CATEGORIES: Category[] = [
     { id: "provider", label: m.settings_category_provider(), description: m.settings_category_provider_description(), mobileDescription: m.settings_category_provider_mobile_description(), icon: "M4 7h16M6 3h12v18H6zM9 11h6M9 15h6" },
+    { id: 'presets', label: m.preset_title(), description: m.preset_description(), mobileDescription: m.preset_short_description(), icon: 'M4 5h16v14H4zM8 9h8M8 13h5' },
     { id: "memory", label: m.settings_category_memory(), description: m.settings_category_memory_description(), mobileDescription: m.settings_category_memory_mobile_description(), icon: "M9 4.5a3 3 0 015.83-1M9 4.5A3 3 0 003.5 6v1A3.5 3.5 0 005 13.7V15a4 4 0 004 4M15 4.5A3 3 0 0120.5 6v1A3.5 3.5 0 0119 13.7V15a4 4 0 01-4 4M9 4.5V19M15 4.5V19M9 9h2M13 14h2" },
     { id: "textRules", label: m.text_rules_title(), description: m.text_rules_description(), mobileDescription: m.text_rules_short_description(), icon: "M4 6h16M4 12h10M4 18h16" },
     { id: "appearance", label: m.settings_category_appearance(), description: m.settings_category_appearance_description(), mobileDescription: m.settings_category_appearance_mobile_description(), icon: "M3 6h18M6 10h12M9 14h6M12 18h.01" },
@@ -72,6 +76,31 @@
   function handleConnectionChange(previousConnectionId: string) {
     const previous = appState.apiConnections.find(connection => connection.id === previousConnectionId);
     if (previous) previous.parameterEnabled = { ...parameterEnabled };
+    parameterEnabled = { ...appState.apiSettings.parameterEnabled };
+  }
+
+  async function applyPreset(preset: RyokanPreset, id: string) {
+    const connection = appState.apiSettings;
+    const previous = snapshotApiConnection(connection);
+    previous.parameterEnabled = { ...parameterEnabled };
+    // Resolve once into the profile, before any chat/summary/multiplayer snapshot.
+    Object.assign(connection, activateConnectionPreset(previous, preset, id));
+    parameterEnabled = { ...connection.parameterEnabled };
+    try { await persistApiConnections(); }
+    catch (cause) { Object.assign(connection, previous, { appliedPresetId: previous.appliedPresetId ?? null, presetRestoreSnapshot: previous.presetRestoreSnapshot }); parameterEnabled = { ...previous.parameterEnabled }; throw cause; }
+  }
+
+  async function deactivatePreset() {
+    const connection = appState.apiSettings;
+    const previous = snapshotApiConnection(connection);
+    previous.parameterEnabled = { ...parameterEnabled };
+    Object.assign(connection, deactivateConnectionPreset(previous));
+    parameterEnabled = { ...connection.parameterEnabled };
+    try { await persistApiConnections(); }
+    catch (cause) { Object.assign(connection, previous); parameterEnabled = { ...previous.parameterEnabled }; throw cause; }
+  }
+
+  function syncPresetParameters() {
     parameterEnabled = { ...appState.apiSettings.parameterEnabled };
   }
 
@@ -206,6 +235,7 @@
     <div bind:this={settingsContentEl} class="settings-content" class:settings-content--mobile-hidden={!mobileCategoryOpen}>
       <div class="content-panel" hidden={activeSection !== "provider" && activeSection !== "memory"}><ApiSection powerUser={powerUser} active={activeSection === "provider"} section={activeSection === "memory" ? "memory" : "provider"} {settingsReady} bind:parameterEnabled onConnectionChange={handleConnectionChange} /></div>
       <div class="content-panel" hidden={activeSection === "provider" || activeSection === "memory"}>
+        {#if activeSection === "presets" && settingsReady}<PresetSection {parameterEnabled} onApply={applyPreset} onDeactivate={deactivatePreset} onDeleted={syncPresetParameters} />{/if}
         {#if activeSection === "textRules" && settingsReady}<TextRulesSection />{/if}
         {#if activeSection === "advanced"}
           <div class="advanced-mode">{@render powerToggle()}</div>
@@ -218,7 +248,6 @@
             <Button variant="secondary" disabled={exportingDiagnostics} onclick={exportDiagnostics}>
               {exportingDiagnostics ? m.settings_diagnostics_exporting() : m.settings_diagnostics_export()}
             </Button>
-            <p class="power-description" role="status" style="margin-top: 8px">{diagnosticsStatus}</p>
           </div>
         {/if}
         {#if activeSection === "appearance" || activeSection === "language"}

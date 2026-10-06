@@ -11,8 +11,11 @@
   import ParameterControl from '$lib/components/settings/ParameterControl.svelte';
   import ReasoningControl from './ReasoningControl.svelte';
   import ThinkingBudgetControl from './ThinkingBudgetControl.svelte';
+  import PromptControls from './PromptControls.svelte';
   import { ANTHROPIC_DEFAULT_OUTPUT_CAP, GEMINI_DEFAULT_OUTPUT_CAP } from '$lib/ai/tokens/providerTokenBudget';
 
+  export let connection: import("$lib/stores/appState.svelte").ApiConnection = appState.apiSettings;
+  export let promptPrefix = 'connection';
   export let powerUser: boolean = false;
   export let category: "parameters" | "advanced" | "appearance" | "language" = "parameters";
 
@@ -20,7 +23,7 @@
     createDefaultApiParameterEnabled();
 
   $: additionalApiParametersValidation = validateAdditionalApiParameters(
-    appState.apiSettings.additionalApiParameters,
+    connection.additionalApiParameters,
   );
 
   $: additionalApiParametersError = additionalApiParametersValidation.valid
@@ -78,11 +81,13 @@
 
     {#if category === "parameters"}
 
-    <ReasoningControl connection={appState.apiSettings} />
-    <ThinkingBudgetControl connection={appState.apiSettings} {powerUser} />
-    <ParameterControl connection={appState.apiSettings} parameter="temperature" enabled={parameterEnabled.temperature} {powerUser}
+    <ReasoningControl connection={connection} />
+    <ThinkingBudgetControl connection={connection} {powerUser} onChange={() => {
+      parameterEnabled = { ...parameterEnabled, thinkingBudget: connection.parameterEnabled.thinkingBudget };
+    }} />
+    <ParameterControl connection={connection} parameter="temperature" enabled={parameterEnabled.temperature} {powerUser}
       onToggle={() => toggleParameter("temperature")}
-      onValue={(value) => { appState.apiSettings.temperature = value; }}>
+      onValue={(value) => { connection.temperature = value; }}>
       {#snippet tooltip()}{m.settings_creativity_tooltip_p1()}<br><br>
         {m.settings_creativity_tooltip_p2a()}<br>
         {m.settings_creativity_tooltip_p2b()}<br><br>
@@ -90,62 +95,66 @@
     </ParameterControl>
 
     <div class="settings-divider"></div>
-    <ParameterControl connection={appState.apiSettings} parameter="maxTokens" enabled={parameterEnabled.maxTokens} {powerUser}
+    <ParameterControl connection={connection} parameter="maxTokens" enabled={parameterEnabled.maxTokens} {powerUser}
       onToggle={() => toggleParameter("maxTokens")}
-      onValue={(value) => { appState.apiSettings.maxTokens = value; }}>
+      onValue={(value) => { connection.maxTokens = value; }}>
       {#snippet tooltip()}{m.settings_tokens_tooltip_p1()}<br><br>
         {m.settings_tokens_tooltip_p2()}<br><br>
         <span class="tooltip-hint">{m.settings_tokens_tooltip_hint()}</span>{/snippet}
-      {#snippet note()}{#if appState.apiSettings.providerKind === 'anthropic' || appState.apiSettings.providerKind === 'gemini'}
+      {#snippet note()}{#if connection.providerKind === 'anthropic' || connection.providerKind === 'gemini'}
         <p class="native-token-note">{getLocale() === 'de'
         ? 'Gemeinsames Limit für Thinking und Antwort. Bei deaktiviertem Schalter: '
-        : 'Combined limit for thinking and answer. With the switch off: '}{appState.apiSettings.providerKind === 'anthropic'
+        : 'Combined limit for thinking and answer. With the switch off: '}{connection.providerKind === 'anthropic'
         ? ANTHROPIC_DEFAULT_OUTPUT_CAP : GEMINI_DEFAULT_OUTPUT_CAP} Tokens.</p>
         {/if}{/snippet}
     </ParameterControl>
 
     <div class="settings-divider"></div>
-    <ParameterControl connection={appState.apiSettings} parameter="presencePenalty" enabled={parameterEnabled.presencePenalty} {powerUser}
-      onToggle={() => toggleParameter("presencePenalty")}
-      onValue={(value) => { appState.apiSettings.presencePenalty = value; }}>
+    <ParameterControl connection={connection} parameter="repetitionPenalty" enabled={parameterEnabled.repetitionPenalty} {powerUser}
+      onToggle={() => toggleParameter("repetitionPenalty")}
+      onValue={(value) => { connection.repetitionPenalty = value; }}>
       {#snippet tooltip()}{m.settings_penalty_tooltip_p1()}<br><br>
         <span class="tooltip-warn">{m.settings_penalty_tooltip_warn()}</span><br><br>
         <span class="tooltip-hint">{m.settings_penalty_tooltip_hint()}</span>{/snippet}
     </ParameterControl>
 
+    <div class="settings-divider"></div>
+    <PromptControls systemPrompt={connection.systemPrompt} postHistoryPrompt={connection.postHistoryPrompt}
+      onSystemChange={(value) => { connection.systemPrompt = value; }}
+      onPostHistoryChange={(value) => { connection.postHistoryPrompt = value; }} prefix={promptPrefix} />
     {/if}
 
     {#if category === "advanced"}
-    <ParameterControl connection={appState.apiSettings} parameter="topP" enabled={parameterEnabled.topP} {powerUser}
+    <ParameterControl connection={connection} parameter="topP" enabled={parameterEnabled.topP} {powerUser}
       onToggle={() => toggleParameter("topP")}
-      onValue={(value) => { appState.apiSettings.topP = value; }}>
+      onValue={(value) => { connection.topP = value; }}>
       {#snippet tooltip()}{m.settings_topp_tooltip_p1()}<br><br>
         {m.settings_topp_tooltip_p2()}<br><br>
         <span class="tooltip-hint">{m.settings_topp_tooltip_hint()}</span>{/snippet}
     </ParameterControl>
 
     <div class="settings-divider"></div>
-    <ParameterControl connection={appState.apiSettings} parameter="topK" enabled={parameterEnabled.topK} {powerUser}
+    <ParameterControl connection={connection} parameter="topK" enabled={parameterEnabled.topK} {powerUser}
       onToggle={() => toggleParameter("topK")}
-      onValue={(value) => { appState.apiSettings.topK = value; }}>
+      onValue={(value) => { connection.topK = value; }}>
       {#snippet tooltip()}{m.settings_topk_tooltip_p1()}<br><br>
         {m.settings_topk_tooltip_p2()}<br><br>
         <span class="tooltip-hint">{m.settings_topk_tooltip_hint()}</span>{/snippet}
     </ParameterControl>
 
     <div class="settings-divider"></div>
-    <ParameterControl connection={appState.apiSettings} parameter="minP" enabled={parameterEnabled.minP} {powerUser}
+    <ParameterControl connection={connection} parameter="minP" enabled={parameterEnabled.minP} {powerUser}
       onToggle={() => toggleParameter("minP")}
-      onValue={(value) => { appState.apiSettings.minP = value; }}>
+      onValue={(value) => { connection.minP = value; }}>
       {#snippet tooltip()}{m.settings_minp_tooltip_p1()}<br><br>
         {m.settings_minp_tooltip_p2()}<br><br>
         <span class="tooltip-hint">{m.settings_minp_tooltip_hint()}</span>{/snippet}
     </ParameterControl>
 
     <div class="settings-divider"></div>
-    <ParameterControl connection={appState.apiSettings} parameter="frequencyPenalty" enabled={parameterEnabled.frequencyPenalty} {powerUser}
+    <ParameterControl connection={connection} parameter="frequencyPenalty" enabled={parameterEnabled.frequencyPenalty} {powerUser}
       onToggle={() => toggleParameter("frequencyPenalty")}
-      onValue={(value) => { appState.apiSettings.frequencyPenalty = value; }}>
+      onValue={(value) => { connection.frequencyPenalty = value; }}>
       {#snippet tooltip()}{m.settings_freqpenalty_tooltip_p1()}<br><br>
         {m.settings_freqpenalty_tooltip_p2()}<br><br>
         <span class="tooltip-hint">{m.settings_freqpenalty_tooltip_hint()}</span>{/snippet}
@@ -167,7 +176,7 @@
         id="additional-api-parameters"
         class="settings-input additional-parameters-input"
         class:additional-parameters-input--error={additionalApiParametersError}
-        bind:value={appState.apiSettings.additionalApiParameters}
+        bind:value={connection.additionalApiParameters}
         placeholder={m.settings_additional_api_parameters_placeholder()}
         aria-describedby="additional-api-parameters-description additional-api-parameters-error"
         aria-invalid={additionalApiParametersError ? "true" : "false"}

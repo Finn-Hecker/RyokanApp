@@ -3,6 +3,22 @@ import assert from 'node:assert/strict';
 import { buildSystemPrompt } from './promptBuilder.ts';
 import { buildPromptMessages } from './chatPromptBuilder.ts';
 
+test('native prompt instructions preserve context, use plain text and append only after history', () => {
+  const options = { systemPrompt: 'Custom {{char}} text', postHistoryPrompt: 'Final instruction',
+    character: { name: 'Rin', prompt: 'Character facts', world_info_ids: ['wi'] },
+    role: { name: 'Alex', prompt: 'Player facts' }, recentMessages: [{ role: 'assistant', content: 'Reply' }],
+    userPrompt: 'Next', worldInfos: [{ id: 'wi', entries: [{ keys: [], enabled: true, position: 'before', content: 'World facts' }] }],
+    summaryMeta: { currentSummary: 'Memory facts', lastSummarizedMessageId: null } };
+  const messages = buildPromptMessages(options);
+  assert.ok(messages[0].content.startsWith('Custom {{char}} text'));
+  for (const text of ['Character facts', 'Player facts', 'Memory facts']) assert.ok(messages[0].content.includes(text));
+  assert.ok(messages.find(m => m.role === 'user' && m.content.includes('Next')).content.includes('World facts'));
+  assert.deepEqual(messages.at(-1), { role: 'system', content: 'Final instruction' });
+  const empty = buildPromptMessages({ ...options, systemPrompt: '', postHistoryPrompt: '  ' });
+  assert.ok(empty[0].content.startsWith('You are Rin.'));
+  assert.equal(empty.at(-1).role, 'user');
+});
+
 test('no Role preserves the previous system prompt layout', () => {
   const prompt = buildSystemPrompt({ charName: 'Klea', prompt: 'Character card' });
   assert.match(prompt, /You are Klea\./);

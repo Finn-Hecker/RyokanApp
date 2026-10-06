@@ -6,7 +6,7 @@ import { normalizeServiceTier, reasoningCapability, supportedServiceTiers, type 
 export type ApiParameterKey =
   | "temperature"
   | "maxTokens"
-  | "presencePenalty"
+  | "repetitionPenalty"
   | "thinkingBudget"
   | "topP"
   | "topK"
@@ -17,7 +17,7 @@ export function createDefaultApiParameterEnabled(): Record<ApiParameterKey, bool
   return {
     temperature: false,
     maxTokens: false,
-    presencePenalty: false,
+    repetitionPenalty: false,
     thinkingBudget: false,
     topP: false,
     topK: false,
@@ -39,7 +39,7 @@ export function requestParameterConfig(connection: ApiConnection): ApiRequestPar
       ? { budgetProvider: connection.providerKind as 'anthropic' | 'gemini' } : {}),
     serviceTier: supportedServiceTiers(connection).includes(tier) ? tier : 'auto',
     temperatureEnabled: enabled.temperature, maxTokensEnabled: enabled.maxTokens,
-    presencePenaltyEnabled: enabled.presencePenalty, thinkingBudgetEnabled: (connection.providerKind === 'llama_cpp'
+    presencePenaltyEnabled: enabled.repetitionPenalty, thinkingBudgetEnabled: (connection.providerKind === 'llama_cpp'
       || connection.providerKind === 'anthropic' || connection.providerKind === 'gemini') && enabled.thinkingBudget,
     topPEnabled: enabled.topP, topKEnabled: enabled.topK, minPEnabled: enabled.minP,
     frequencyPenaltyEnabled: enabled.frequencyPenalty,

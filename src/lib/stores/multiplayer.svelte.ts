@@ -1385,7 +1385,7 @@ async function runGeneration(): Promise<void> {
           model: s.model,
           messages,
           temperature: s.temperature,
-          presence_penalty: s.presencePenalty,
+          presence_penalty: s.repetitionPenalty,
           top_p: s.topP,
           top_k: s.topK,
           min_p: s.minP,
@@ -1501,6 +1501,7 @@ async function buildLlmMessages(s = appState.apiSettings, parameters = requestPa
   const count = async (text: string) => estimateBudgetTokens(text);
   while (true) {
     const messages = prefix.concat(merged);
+    if (s.postHistoryPrompt?.trim()) messages.push({ role: 'system', content: s.postHistoryPrompt.trim() });
     if ((await measureRequestBudget(messages, parameters, limit, count)).fits) return messages;
     if (merged.length <= 1) throw new Error('The required prompt and output reserve exceed the configured context token limit.');
     merged.shift();

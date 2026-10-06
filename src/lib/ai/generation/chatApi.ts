@@ -66,6 +66,8 @@ export interface ChatMessage {
 
 export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
     return buildPromptMessages({
+        systemPrompt: options.apiSettings.systemPrompt,
+        postHistoryPrompt: options.apiSettings.postHistoryPrompt,
         textRules: options.textRules ?? appState.textRules,
         character: options.character,
         role: options.role === undefined ? chatState.activeRoleSnapshot : options.role,
@@ -174,7 +176,7 @@ export async function runGeneration(
                 model:              apiSettings.model,
                 messages,
                 temperature:        apiSettings.temperature,
-                presence_penalty:   apiSettings.presencePenalty,
+                presence_penalty:   apiSettings.repetitionPenalty,
                 top_p:              apiSettings.topP,
                 top_k:              apiSettings.topK,
                 min_p:              apiSettings.minP,

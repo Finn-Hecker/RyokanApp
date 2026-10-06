@@ -500,7 +500,7 @@ async function requestSummary(
                     ),
                 }],
                 temperature: apiSettings.temperature,
-                presence_penalty: apiSettings.presencePenalty,
+                presence_penalty: apiSettings.repetitionPenalty,
                 top_p: apiSettings.topP,
                 top_k: apiSettings.topK,
                 min_p: apiSettings.minP,

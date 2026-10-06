@@ -192,12 +192,10 @@ pub(crate) struct AiRequest {
     model: String,
     messages: Vec<serde_json::Value>,
     temperature: f32,
-    // NOTE: historically named `presence_penalty` but intentionally mapped below to the
-    // JSON key "repetition_penalty" — that's the llama.cpp/koboldcpp sampler local models
-    // (LM Studio included) actually understand and it's the more effective anti-repeat
-    // knob for roleplay. Kept as-is to avoid breaking existing saved settings; true
-    // OpenAI-style presence/frequency penalties are added separately below.
-    presence_penalty: Option<f32>,
+    // Keep the legacy IPC name; this is the multiplicative repetition sampler.
+    // Additive presence penalties are distinct provider-specific custom parameters.
+    #[serde(rename = "presence_penalty")]
+    repetition_penalty: Option<f32>,
 
     // --- Additional roleplay-relevant sampling params ---
     #[serde(alias = "topP")]

@@ -880,11 +880,11 @@
     {/if}
     <div class="generation-group">
       <h2 class="api-model-section-title">{m.settings_generation_basic()}</h2>
-      <GeneralSection {powerUser} bind:parameterEnabled category="parameters" />
+      <GeneralSection bind:connection={appState.apiSettings} {powerUser} bind:parameterEnabled category="parameters" />
     </div>
     <div class="generation-group">
       <h3>{m.settings_generation_sampling()}</h3>
-      <GeneralSection {powerUser} bind:parameterEnabled category="advanced" />
+      <GeneralSection bind:connection={appState.apiSettings} {powerUser} bind:parameterEnabled category="advanced" />
     </div>
   </div>
   {/if}

@@ -172,9 +172,9 @@
         </ParameterControl>
 
         <div class="settings-divider"></div>
-        <ParameterControl connection={appState.apiSettings} parameter="presencePenalty" enabled={parameterEnabled.presencePenalty} {powerUser} chat
-          onToggle={() => toggleParameter("presencePenalty")}
-          onValue={(value) => { appState.apiSettings.presencePenalty = value; persistActive(); }}>
+        <ParameterControl connection={appState.apiSettings} parameter="repetitionPenalty" enabled={parameterEnabled.repetitionPenalty} {powerUser} chat
+          onToggle={() => toggleParameter("repetitionPenalty")}
+          onValue={(value) => { appState.apiSettings.repetitionPenalty = value; persistActive(); }}>
           {#snippet tooltip()}{m.settings_penalty_tooltip_p1()}<br><br>
             <span class="tooltip-warn">{m.settings_penalty_tooltip_warn()}</span><br><br>
             <span class="tooltip-hint">{m.settings_penalty_tooltip_hint()}</span>{/snippet}

@@ -56,7 +56,8 @@ pub(super) struct RequestApiParameterConfig {
     pub(super) temperature_enabled: bool,
     pub(super) max_tokens_enabled: bool,
     #[serde(default)]
-    pub(super) presence_penalty_enabled: bool,
+    #[serde(rename = "presencePenaltyEnabled")]
+    pub(super) repetition_penalty_enabled: bool,
     pub(super) thinking_budget_enabled: bool,
     #[serde(default)]
     pub(super) top_p_enabled: bool,
@@ -196,9 +197,9 @@ pub(super) fn apply_compatible_sampling(
     }
     for (enabled, name, value) in [
         (
-            config.presence_penalty_enabled,
+            config.repetition_penalty_enabled,
             "repetition_penalty",
-            payload.presence_penalty.map(|v| serde_json::json!(v)),
+            payload.repetition_penalty.map(|v| serde_json::json!(v)),
         ),
         (
             config.top_p_enabled,

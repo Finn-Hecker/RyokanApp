@@ -76,6 +76,7 @@ export interface ApiRequestParameterConfig {
   readonly reasoningLevel?: 'auto' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   readonly temperatureEnabled?: boolean;
   readonly maxTokensEnabled: boolean;
+  /** Legacy IPC spelling, exclusively the multiplicative repetition penalty. */
   readonly presencePenaltyEnabled?: boolean;
   readonly thinkingBudgetEnabled: boolean;
   readonly topPEnabled?: boolean;

@@ -65,7 +65,7 @@ const API_CONTRACTS: Record<string, readonly string[]> = {
 };
 
 export const GENERATION_PARAMETER_FIELDS: Record<ApiParameterKey, string> = {
-  temperature: 'temperature', maxTokens: 'max_tokens', presencePenalty: 'repetition_penalty',
+  temperature: 'temperature', maxTokens: 'max_tokens', repetitionPenalty: 'repetition_penalty',
   thinkingBudget: 'thinking_budget_tokens', topP: 'top_p', topK: 'top_k',
   minP: 'min_p', frequencyPenalty: 'frequency_penalty',
 };

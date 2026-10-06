@@ -1,3 +1,4 @@
+import { exportFile } from '../utils/fileExport.ts';
 import { invoke } from '@tauri-apps/api/core';
 
 export type DiagnosticArea = 'runtime' | 'settings' | 'chat' | 'character' | 'role' | 'world_info' | 'editor' | 'sidebar' | 'multiplayer' | 'summary';
@@ -20,28 +21,6 @@ export async function downloadDiagnostics(
   interactionMode: 'desktop' | 'mobile' = 'desktop'
 ): Promise<boolean> {
   const content = await invoke<string>('export_diagnostics', { metadata });
-  if (interactionMode === 'mobile') {
-    const { save } = await import('@tauri-apps/plugin-dialog');
-    const uri = await save({
-      defaultPath: 'ryokan-diagnostics.json',
-      filters: [{ name: 'JSON', extensions: ['json'] }]
-    });
-    if (uri === null) return false;
-    await invoke('write_android_export', { uri, bytes: Array.from(new TextEncoder().encode(content)) });
-    return true;
-  }
-
-  const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
-  const link = document.createElement('a');
-  try {
-    link.href = url;
-    link.download = 'ryokan-diagnostics.json';
-    document.body.appendChild(link);
-    link.click();
-  } finally {
-    link.remove();
-    // Allow WebViews time to consume the download before revoking its URL.
-    setTimeout(() => URL.revokeObjectURL(url), 30_000);
-  }
-  return true;
+  return exportFile(new TextEncoder().encode(content), 'ryokan-diagnostics.json', 'application/json',
+    { name: 'JSON', extensions: ['json'] }, interactionMode === 'mobile');
 }

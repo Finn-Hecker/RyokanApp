@@ -3,6 +3,7 @@ import { traceDecision, diagnosticConnection, type DiagnosticDecision } from '$l
 import { appState, createDefaultConnection, replaceApiConnections, type ApiConnection, type DetectedContextMetadata } from '$lib/stores/appState.svelte';
 import type { SettingRow } from '$lib/settings/settings';
 import { normalizeServiceTier } from '$lib/ai/connections/generationCapabilities';
+import { normalizePresetRestore } from '$lib/ai/presets/presetCore';
 import { acceptDetectedContext, connectionIdentity, resolveMemorySettings, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION, validContextSize } from '$lib/ai/connections/connectionCore';
 export { acceptDetectedContext, adaptiveSummaryOutputCap, connectionIdentity, CONSERVATIVE_CONTEXT_FALLBACK, deleteConnectionSafely, deriveWorkingContextTarget, normalizeSummaryConnectionId, resolveMemorySettings, resolveSummaryConnection, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION, shouldTriggerSummary, summaryCompressionGoal, validContextSize } from '$lib/ai/connections/connectionCore';
 
@@ -19,11 +20,19 @@ function traceDetection(connection: ApiConnection, outcome: Extract<DiagnosticDe
     hard_limit: resolvedHardContextLimit(connection), provenance: connection.detectedContext?.provenance ?? 'unknown' });
 }
 function normalizeConnection(value: Partial<ApiConnection>, legacy: Map<string, string>): ApiConnection {
+  // The persisted/wire name predates the distinction from additive presence penalties.
+  const old = value as Partial<ApiConnection> & { presencePenalty?: number; parameterEnabled?: Partial<ApiConnection['parameterEnabled']> & { presencePenalty?: boolean } };
+  value = { ...value, repetitionPenalty: value.repetitionPenalty ?? old.presencePenalty,
+    parameterEnabled: { ...value.parameterEnabled, repetitionPenalty: value.parameterEnabled?.repetitionPenalty ?? old.parameterEnabled?.presencePenalty } } as Partial<ApiConnection>;
+  delete (value as typeof old).presencePenalty;
+  if (value.repetitionPenalty == null) delete value.repetitionPenalty;
+  delete (value.parameterEnabled as typeof old.parameterEnabled)?.presencePenalty;
+  if (value.parameterEnabled?.repetitionPenalty == null) delete (value.parameterEnabled as Partial<ApiConnection['parameterEnabled']>)?.repetitionPenalty;
   const fallback = createDefaultConnection(value.id || crypto.randomUUID(), value.name || 'Connection');
   // Older profile records may predate some generation fields. Copy legacy values
   // only for missing fields; an explicit profile value always wins.
   const legacyNumbers = {
-    temperature: 'api_temperature', maxTokens: 'api_max_tokens', presencePenalty: 'api_presence_penalty',
+    temperature: 'api_temperature', maxTokens: 'api_max_tokens', repetitionPenalty: 'api_presence_penalty',
     thinkingBudget: 'api_thinking_budget', topP: 'api_top_p', topK: 'api_top_k',
     minP: 'api_min_p', frequencyPenalty: 'api_frequency_penalty',
   } as const;
@@ -40,7 +49,7 @@ function normalizeConnection(value: Partial<ApiConnection>, legacy: Map<string, 
   const enabled = { ...fallback.parameterEnabled, ...value.parameterEnabled };
   const legacySwitches = {
     temperature: 'api_temperature_enabled', maxTokens: 'api_max_tokens_enabled',
-    presencePenalty: 'api_presence_penalty_enabled', thinkingBudget: 'api_thinking_budget_enabled',
+    repetitionPenalty: 'api_presence_penalty_enabled', thinkingBudget: 'api_thinking_budget_enabled',
     topP: 'api_top_p_enabled', topK: 'api_top_k_enabled', minP: 'api_min_p_enabled',
     frequencyPenalty: 'api_frequency_penalty_enabled',
   } as const;
@@ -49,6 +58,9 @@ function normalizeConnection(value: Partial<ApiConnection>, legacy: Map<string, 
   }
   const connection = { ...fallback, ...generation, ...value, parameterEnabled: enabled };
   connection.serviceTier = normalizeServiceTier(connection.serviceTier);
+  connection.appliedPresetId = typeof connection.appliedPresetId === 'string' && connection.appliedPresetId.length > 0
+    ? connection.appliedPresetId : null;
+  connection.presetRestoreSnapshot = connection.appliedPresetId ? normalizePresetRestore(connection.presetRestoreSnapshot) : undefined;
   if (!['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(connection.reasoningLevel)) connection.reasoningLevel = 'auto';
   if (!validContextSize(connection.manualContextCap)) connection.manualContextCap = null;
   if (!connection.detectedContext || !validContextSize(connection.detectedContext.tokens)) connection.detectedContext = null;
@@ -75,7 +87,12 @@ export function hydrateApiConnections(settings: SettingRow[]): void {
 }
 
 export async function persistApiConnections(): Promise<void> {
-  await invoke('save_api_connections', { connectionsJson: JSON.stringify(appState.apiConnections), activeConnectionId: appState.activeApiConnectionId });
+  // Preserve existing profile records; only runtime and native presets use the correct name.
+  const records = appState.apiConnections.map(({ repetitionPenalty, parameterEnabled, ...connection }) => {
+    const { repetitionPenalty: repetitionEnabled, ...enabled } = parameterEnabled;
+    return { ...connection, presencePenalty: repetitionPenalty, parameterEnabled: { ...enabled, presencePenalty: repetitionEnabled } };
+  });
+  await invoke('save_api_connections', { connectionsJson: JSON.stringify(records), activeConnectionId: appState.activeApiConnectionId });
 }
 
 export function invalidateDetectedContext(connection: ApiConnection): void {

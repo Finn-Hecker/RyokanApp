@@ -35,7 +35,7 @@ test('export failure propagates to the UI without creating a download', async ()
   delete globalThis.window;
 });
 
-test('export downloads the backend report locally and cleans up its URL', async (t) => {
+test('desktop export dispatches the backend report and cleans up its URL', async (t) => {
   const metadata = diagnosticsMetadata({ providerKind: 'ollama', model: '/private/model' }, true);
   const report = '{"schemaVersion":1,"logs":[]}';
   let blob;
@@ -66,3 +66,25 @@ test('export downloads the backend report locally and cleans up its URL', async 
     delete globalThis.document;
   }
 });
+
+for (const outcome of ['success', 'cancel', 'failure']) {
+  test(`Android diagnostics export: ${outcome}`, async () => {
+    const writes = [];
+    globalThis.window = { __TAURI_INTERNALS__: { invoke: async (command, args) => {
+      if (command === 'export_diagnostics') return '{"logs":[]}';
+      if (command === 'plugin:dialog|save') {
+        assert.equal(args.options.defaultPath, 'ryokan-diagnostics.json');
+        return outcome === 'cancel' ? null : 'content://diagnostics';
+      }
+      assert.equal(command, 'write_android_export');
+      writes.push(args);
+      if (outcome === 'failure') throw new Error('write failed');
+    } } };
+    try {
+      if (outcome === 'failure') await assert.rejects(downloadDiagnostics(diagnosticsMetadata({}, false), 'mobile'), /write failed/);
+      else assert.equal(await downloadDiagnostics(diagnosticsMetadata({}, false), 'mobile'), outcome === 'success');
+      assert.equal(writes.length, outcome === 'cancel' ? 0 : 1);
+      if (writes.length) assert.equal(new TextDecoder().decode(new Uint8Array(writes[0].bytes)), '{"logs":[]}');
+    } finally { delete globalThis.window; }
+  });
+}

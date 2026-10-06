@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { capturePreset, resolvePreset } from '../presets/presetCore.ts';
+
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 import { relative } from 'node:path';
@@ -16,6 +18,7 @@ globalThis.__summaryTest = harness;
 const asModule = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 const mock = source => asModule(`const h = globalThis.__summaryTest;\n${source}`);
 const modules = new Map([
+  ['@tauri-apps/plugin-dialog', mock('export const save = () => { throw new Error("Unexpected export dialog in summary tests"); };')],
   ['@tauri-apps/api/core', mock('export const invoke = (...args) => h.invoke(...args);')],
   ['@tauri-apps/api/event', mock('export const listen = (...args) => h.listen(...args);')],
   ['$lib/stores/chatStore.svelte', mock('export const chatState = h.chatState;')],
@@ -60,6 +63,27 @@ const chatApi = await import(await loadProduction('$lib/ai/generation/chatApi'))
 const parameters = await import(await loadProduction('$lib/ai/connections/apiParameters'));
 const revisions = await import(await loadProduction('$lib/ai/summary/rollingSummaryCore'));
 let serial = 0;
+
+test('per-connection applied preset IDs survive persistence and hydration alongside legacy profiles', async () => {
+  const first = { ...state.createDefaultConnection('preset-a'), appliedPresetId: 'first', temperature: 1.2 };
+  const second = { ...state.createDefaultConnection('preset-b'), appliedPresetId: 'second', temperature: 1.2 };
+  const legacy = state.createDefaultConnection('legacy');
+  delete legacy.appliedPresetId;
+  state.replaceApiConnections([first, second, legacy], second.id);
+  const request = state.snapshotActiveApiConnection();
+  let saved;
+  harness.invoke = async (command, args) => { assert.equal(command, 'save_api_connections'); saved = args; };
+  await connections.persistApiConnections();
+  connections.hydrateApiConnections([{ key: connections.API_CONNECTIONS_KEY, value: saved.connectionsJson },
+    { key: connections.ACTIVE_API_CONNECTION_KEY, value: saved.activeConnectionId }]);
+  assert.deepEqual(state.appState.apiConnections.map(profile => profile.appliedPresetId), ['first', 'second', null]);
+  assert.equal(state.appState.apiSettings.appliedPresetId, 'second');
+  state.activateApiConnection(first.id);
+  assert.equal(state.appState.apiSettings.appliedPresetId, 'first');
+  state.appState.apiSettings.appliedPresetId = null;
+  state.appState.apiSettings.temperature = 0.3;
+  assert.equal(request.appliedPresetId, 'second'); assert.equal(request.temperature, 1.2);
+});
 
 test('manual summary editing preserves coverage, persists and feeds the next generation prompt', async () => {
   const f = fixture({ chatLimit: 32768, same: true, lengths: [20, 20, 20] });
@@ -1033,4 +1057,43 @@ test('unreported reasoning never treats combined usage as visible summary length
     assert.equal(f.meta().summary, f.responseText);
     assert.ok(!f.decisions.some(d => d.state === 'recompress'));
   }
+});
+
+test('legacy repetition fields hydrate, retain values and switches, and persist with the stable profile contract', async () => {
+  const legacy = { ...state.createDefaultConnection('legacy'), presencePenalty: 1.6 };
+  delete legacy.repetitionPenalty;
+  legacy.parameterEnabled.presencePenalty = true;
+  delete legacy.parameterEnabled.repetitionPenalty;
+  connections.hydrateApiConnections([{ key: connections.API_CONNECTIONS_KEY, value: JSON.stringify([legacy]) }]);
+  assert.equal(state.appState.apiSettings.repetitionPenalty, 1.6);
+  assert.equal(state.appState.apiSettings.parameterEnabled.repetitionPenalty, true);
+  assert.equal(Object.hasOwn(state.appState.apiSettings, 'presencePenalty'), false);
+  let saved;
+  harness.invoke = async (_, args) => { saved = args; };
+  await connections.persistApiConnections();
+  const stored = JSON.parse(saved.connectionsJson)[0];
+  assert.equal(stored.presencePenalty, 1.6);
+  assert.equal(stored.parameterEnabled.presencePenalty, true);
+  assert.equal(Object.hasOwn(stored, 'repetitionPenalty'), false);
+  assert.equal(parameters.requestParameterConfig(state.appState.apiSettings).presencePenaltyEnabled, true);
+});
+
+test('resolved presets reach immutable request snapshots and the production prompt path', async () => {
+  const source = state.createDefaultConnection();
+  source.systemPrompt = 'Preset system'; source.postHistoryPrompt = 'Preset final';
+  source.repetitionPenalty = 1.5; source.parameterEnabled.repetitionPenalty = true;
+  source.additionalApiParameters = '{"chat_template_kwargs":{"enable_thinking":false}}';
+  const preset = capturePreset(source, 'Native');
+  const applied = resolvePreset(state.createDefaultConnection(), preset);
+  const snapshot = state.snapshotApiConnection(applied);
+  preset.prompt.system = 'Later edit'; applied.systemPrompt = 'Later profile edit';
+  let payload;
+  harness.invoke = async (command, args) => { if (command === 'call_ai_api') payload = args.payload; return null; };
+  await chatApi.runGeneration({ apiSettings: snapshot, character: { name: 'Rin', prompt: 'Card' }, recentMessages: [], userPrompt: 'Hi' },
+    { onStreamUpdate() {}, onThinkingPhaseChange() {} });
+  assert.ok(payload.messages[0].content.startsWith('Preset system'));
+  assert.deepEqual(payload.messages.at(-1), { role: 'system', content: 'Preset final' });
+  assert.equal(payload.presence_penalty, 1.5);
+  assert.equal(payload.request_parameter_config.presencePenaltyEnabled, true);
+  assert.deepEqual(payload.request_parameter_config.additionalParameters, { chat_template_kwargs: { enable_thinking: false } });
 });
