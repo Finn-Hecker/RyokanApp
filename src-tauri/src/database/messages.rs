@@ -38,6 +38,77 @@ fn message_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbMessage> {
     })
 }
 
+#[derive(Serialize)]
+pub struct ChatMessageUpdate {
+    message: DbMessage,
+    conversation: super::chats::Conversation,
+}
+
+fn read_chat_message_update(conn: &rusqlite::Connection, chat_id: &str, message_id: &str) -> Result<ChatMessageUpdate, String> {
+    let message = conn.query_row(
+        "SELECT id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at, usage_variants
+         FROM messages WHERE conversation_id = ?1 AND id = ?2",
+        params![chat_id, message_id], message_from_row,
+    ).map_err(|e| e.to_string())?;
+    Ok(ChatMessageUpdate { message, conversation: super::chats::read_conversation(conn, chat_id)? })
+}
+
+/// Read the committed row and SQLite-owned title/activity together, without
+/// reloading the conversation library or the already displayed history.
+#[tauri::command]
+pub async fn get_chat_message_update(app: AppHandle, chat_id: String, message_id: String) -> Result<ChatMessageUpdate, String> {
+    let mut conn = get_connection(&app)?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    read_chat_message_update(&tx, &chat_id, &message_id)
+}
+
+#[cfg(test)]
+mod message_update_tests {
+    use super::*;
+
+    fn fixture() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE conversations (id TEXT PRIMARY KEY, title TEXT, character_id TEXT, mode TEXT,
+                created_at TEXT, updated_at TEXT, is_pinned INTEGER, cloned_from_id TEXT,
+                cloned_from_title TEXT, folder_id TEXT, sort_order INTEGER, role_snapshot TEXT);
+             CREATE TABLE messages (id TEXT PRIMARY KEY, conversation_id TEXT, role TEXT, content TEXT,
+                author TEXT, swipe_variants TEXT, swipe_index INTEGER, created_at TEXT, usage_variants TEXT);
+             INSERT INTO conversations VALUES ('chat', 'SQLite title', 'card', 'singleplayer', 'created', 'updated',
+                1, 'origin', 'Original title', 'folder', 7, '{\"name\":\"Player\",\"prompt\":\"Role prompt\"}');
+             INSERT INTO messages VALUES ('message', 'chat', 'assistant', 'second', NULL,
+                '[\"first\",\"second\"]', 1, 'saved timestamp', '[null,{\"inputTokens\":42,\"serviceTier\":\"flex\"}]');"
+        ).unwrap();
+        conn
+    }
+
+    #[test]
+    fn targeted_update_keeps_authoritative_message_variants_usage_and_conversation_metadata() {
+        let conn = fixture();
+        let update = read_chat_message_update(&conn, "chat", "message").unwrap();
+        assert_eq!(update.message.id, "message");
+        assert_eq!(update.message.content, "second");
+        assert_eq!(update.message.swipe_index, 1);
+        assert_eq!(update.message.created_at, "saved timestamp");
+        assert_eq!(update.message.swipe_variants, "[\"first\",\"second\"]");
+        assert_eq!(update.message.usage_variants, "[null,{\"inputTokens\":42,\"serviceTier\":\"flex\"}]");
+        assert_eq!(update.conversation.title, "SQLite title");
+        assert_eq!(update.conversation.updated_at, "updated");
+        assert!(update.conversation.is_pinned);
+        assert_eq!(update.conversation.folder_id.as_deref(), Some("folder"));
+        assert_eq!(update.conversation.sort_order, 7);
+        assert_eq!(update.conversation.cloned_from_title.as_deref(), Some("Original title"));
+        assert_eq!(update.conversation.role_snapshot.unwrap().prompt, "Role prompt");
+    }
+
+    #[test]
+    fn targeted_update_cannot_read_a_message_from_another_chat() {
+        let conn = fixture();
+        assert!(read_chat_message_update(&conn, "other-chat", "message").is_err());
+        assert!(read_chat_message_update(&conn, "chat", "missing").is_err());
+    }
+}
+
 /// Retrieves the full, chronological message history for a specific conversation.
 /// rowid is a tiebreaker for rows sharing the same created_at second (e.g.
 /// rapid inserts, or messages copied in bulk when cloning a chat) — it

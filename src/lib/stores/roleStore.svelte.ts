@@ -22,6 +22,15 @@ export const roleState = $state({
     defaultRoleId: null as string | null,
 });
 
+let rolesLoaded = false;
+let initialRoleLoad: Promise<void> | undefined;
+
+export function ensureRolesLoaded(): Promise<void> {
+    if (rolesLoaded) return Promise.resolve();
+    if (!initialRoleLoad) initialRoleLoad = loadRoles().finally(() => { initialRoleLoad = undefined; });
+    return initialRoleLoad;
+}
+
 export async function loadRoles(): Promise<void> {
     try {
         const avatarUrls = new Map(
@@ -29,15 +38,18 @@ export async function loadRoles(): Promise<void> {
                 .filter((role) => role.avatarUrl)
                 .map((role) => [role.id, role.avatarUrl] as const)
         );
-        const roles = await invoke<Role[]>('get_roles');
+        const [roles, savedDefaultId] = await Promise.all([
+            invoke<Role[]>('get_roles'),
+            getSetting(DEFAULT_ROLE_SETTING),
+        ]);
         roleState.roles = roles.map((role) => {
             const avatarUrl = avatarUrls.get(role.id);
             return avatarUrl ? { ...role, avatarUrl } : role;
         });
-        const savedDefaultId = await getSetting(DEFAULT_ROLE_SETTING);
         roleState.defaultRoleId = roles.some((role) => role.id === savedDefaultId)
             ? savedDefaultId
             : null;
+        rolesLoaded = true;
     } catch (error) {
         reportDiagnostic('role');
         throw error;

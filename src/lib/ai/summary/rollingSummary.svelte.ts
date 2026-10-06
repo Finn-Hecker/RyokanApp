@@ -7,6 +7,7 @@ import { appState, snapshotSummaryApiConnection } from '$lib/stores/appState.sve
 import { requestParameterConfig as createRequestParameterConfig, summaryParameterConfig } from '$lib/ai/connections/apiParameters';
 import { getClientLanguageName } from '$lib/utils/clientLanguage';
 import { chatState } from '$lib/stores/chatStore.svelte';
+import { ensureWorldInfosLoaded } from '$lib/stores/worldInfoStore.svelte';
 import type { Message } from '$lib/stores/chatStore.svelte';
 import { decodeMessage, type PersistedMessageRow } from '$lib/chat/messageData';
 import { buildApiMessages, generationConfigurationFingerprint, messageFingerprint } from '$lib/ai/generation/chatApi';
@@ -648,6 +649,7 @@ async function performSummaryCheck(
             loadPersistedMessages(chatId),
             loadPersistedSummary(chatId),
             createRequestParameterConfig(options.apiSettings),
+            ensureWorldInfosLoaded(),
         ]);
         assertOperationCurrent(operation);
 

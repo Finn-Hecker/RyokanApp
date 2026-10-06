@@ -116,3 +116,21 @@ test('a failed save preserves a newer draft typed during persistence', async () 
   assert.equal(c.run('inputText'), 'next draft');
   assert.equal(c.run('isGenerating'), false);
 });
+
+test('mounting an already prepared chat keeps history and avoids a second database load', async () => {
+  let mount, loads = 0;
+  const c = room({
+    onMount: callback => { mount = callback; },
+    loadMessages: async () => { loads++; },
+    getCurrentWindow: () => ({ onCloseRequested: async () => () => {} }),
+    window: { addEventListener() {} },
+  });
+  c.context.chatState.currentMessages.push({ id: 'prepared', content: 'history' });
+  await mount();
+  assert.equal(loads, 0);
+  assert.equal(c.context.chatState.currentMessages[0].id, 'prepared');
+  assert.equal(c.run('chatReady'), true);
+  c.context.chatState.currentMessages = [];
+  await mount();
+  assert.equal(loads, 1, 'an unprepared empty history still loads');
+});

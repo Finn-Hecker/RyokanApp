@@ -231,6 +231,32 @@ fn resolve_role_snapshot(
     }
 }
 
+fn conversation_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conversation> {
+    Ok(Conversation {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        character_id: row.get(2)?,
+        mode: row.get(3)?,
+        created_at: row.get(4)?,
+        updated_at: row.get(5)?,
+        is_pinned: row.get::<_, i64>(6)? != 0,
+        cloned_from_id: row.get(7)?,
+        cloned_from_title: row.get(8)?,
+        folder_id: row.get(9)?,
+        sort_order: row.get(10)?,
+        role_snapshot: deserialize_role_snapshot(row.get(11)?),
+    })
+}
+
+pub(super) fn read_conversation(conn: &rusqlite::Connection, chat_id: &str) -> Result<Conversation, String> {
+    conn.query_row(
+        "SELECT id, title, character_id, mode, created_at, updated_at, is_pinned,
+                cloned_from_id, cloned_from_title, folder_id, sort_order, role_snapshot
+         FROM conversations WHERE id = ?1",
+        params![chat_id], conversation_from_row,
+    ).map_err(|e| e.to_string())
+}
+
 /// Retrieves a page of chat sessions for one experience, ordered by pinned first,
 /// then most recently active.
 #[tauri::command]
@@ -260,22 +286,8 @@ pub async fn get_conversations_page(
          LIMIT ?2 OFFSET ?3"
     ).map_err(|e| e.to_string())?;
 
-    let rows = stmt.query_map(params![mode, limit, offset, folder_id], |row| {
-        Ok(Conversation {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            character_id: row.get(2)?,
-            mode: row.get(3)?,
-            created_at: row.get(4)?,
-            updated_at: row.get(5)?,
-            is_pinned: row.get::<_, i64>(6)? != 0,
-            cloned_from_id: row.get(7)?,
-            cloned_from_title: row.get(8)?,
-            folder_id: row.get(9)?,
-            sort_order: row.get(10)?,
-            role_snapshot: deserialize_role_snapshot(row.get(11)?),
-        })
-    }).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(params![mode, limit, offset, folder_id], conversation_from_row)
+        .map_err(|e| e.to_string())?;
 
     let mut list = Vec::new();
     for row in rows { list.push(row.unwrap()); }

@@ -127,6 +127,7 @@ pub fn run() {
             database::messages::add_swipe_variant,
             database::messages::set_swipe_index,
             database::messages::get_messages_page,
+            database::messages::get_chat_message_update,
             database::settings::get_all_settings,
             database::settings::save_setting,
             database::settings::save_api_connections,

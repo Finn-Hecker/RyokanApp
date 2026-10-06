@@ -15,11 +15,24 @@ export const worldInfoState = $state({
   allWorldInfos: [...DEFAULT_WORLD_INFOS] as WorldInfo[]
 });
 
-export async function loadWorldInfos(): Promise<void> {
-  try {
-    const rows = await invoke<WorldInfo[]>('get_world_infos');
-    worldInfoState.allWorldInfos = [...DEFAULT_WORLD_INFOS, ...rows];
-  } catch (e) {
-    reportDiagnostic('world_info');
+let worldInfosLoaded = false;
+let pendingLoad: Promise<void> | undefined;
+
+export function ensureWorldInfosLoaded(): Promise<void> {
+  return pendingLoad ?? (worldInfosLoaded ? Promise.resolve() : loadWorldInfos());
+}
+
+export function loadWorldInfos(): Promise<void> {
+  if (!pendingLoad) {
+    pendingLoad = (async () => {
+      try {
+        const rows = await invoke<WorldInfo[]>('get_world_infos');
+        worldInfoState.allWorldInfos = [...DEFAULT_WORLD_INFOS, ...rows];
+        worldInfosLoaded = true;
+      } catch (e) {
+        reportDiagnostic('world_info');
+      }
+    })().finally(() => { pendingLoad = undefined; });
   }
+  return pendingLoad;
 }

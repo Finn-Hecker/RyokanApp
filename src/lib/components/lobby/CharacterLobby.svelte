@@ -3,11 +3,11 @@
   import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
   import { appState } from '$lib/stores/appState.svelte';
   import { navigateTo, registerBackHandler } from '$lib/stores/navigation';
-  import { characterState, loadCharacters, toggleHideCharacter, togglePinCharacter, deleteCharacter, loadHiddenIds, loadPinnedIds } from '$lib/stores/characterStore.svelte';
+  import { characterState, ensureLobbyCharactersLoaded, toggleHideCharacter, togglePinCharacter, deleteCharacter } from '$lib/stores/characterStore.svelte';
   import { SOLO_CHARACTERS } from '$lib/data/characters';
   import { startNewChat } from '$lib/stores/chatStore.svelte';
   import type { RoleSelection } from '$lib/stores/chatStore.svelte';
-  import { loadRoles, roleState } from '$lib/stores/roleStore.svelte';
+  import { ensureRolesLoaded, roleState } from '$lib/stores/roleStore.svelte';
   import { onMount } from 'svelte';
 
   import Sidebar from '$lib/components/Sidebar.svelte';
@@ -70,16 +70,11 @@
       void image.decode().catch(() => {});
     }
 
-    void (async () => {
-      await loadHiddenIds();
-      await loadPinnedIds();
-      await loadCharacters();
-      await loadRoles();
-      const saved = localStorage.getItem('ryokan-view-mode');
-      if (saved === 'grid' || saved === 'compact' || saved === 'list') {
-        viewMode = saved;
-      }
-    })();
+    const saved = localStorage.getItem('ryokan-view-mode');
+    if (saved === 'grid' || saved === 'compact' || saved === 'list') viewMode = saved;
+    void Promise.all([ensureLobbyCharactersLoaded(), ensureRolesLoaded()]).catch(() => {
+      // Store loaders report their own diagnostic and failed hydration can retry.
+    });
 
     const greetingTimer = window.setInterval(() => {
       greetingPeriod = getGreetingPeriod(new Date());

@@ -22,7 +22,7 @@ const modules = new Map([
   ['@tauri-apps/api/core', mock('export const invoke = (...args) => h.invoke(...args);')],
   ['@tauri-apps/api/event', mock('export const listen = (...args) => h.listen(...args);')],
   ['$lib/stores/chatStore.svelte', mock('export const chatState = h.chatState;')],
-  ['$lib/stores/worldInfoStore.svelte', mock('export const worldInfoState = { allWorldInfos: [] };')],
+  ['$lib/stores/worldInfoStore.svelte', mock('export const worldInfoState = h.worldInfoState; export const ensureWorldInfosLoaded = () => h.worldInfoReady?.();')],
   ['$lib/utils/clientLanguage', mock('export const getClientLanguageName = () => "English";')],
 ]);
 const libRoot = new URL('../../', import.meta.url);
@@ -32,6 +32,7 @@ function relativeProductionSpecifier(file, specifier) {
     .replaceAll('\\', '/').replace(/\.ts$/, '');
 }
 harness.chatState = { activeChatId: null, summaryMeta: null };
+harness.worldInfoState = { allWorldInfos: [] };
 harness.listen = async (name, callback) => {
   listeners.set(name, callback);
   return () => listeners.delete(name);
@@ -63,6 +64,46 @@ const chatApi = await import(await loadProduction('$lib/ai/generation/chatApi'))
 const parameters = await import(await loadProduction('$lib/ai/connections/apiParameters'));
 const revisions = await import(await loadProduction('$lib/ai/summary/rollingSummaryCore'));
 let serial = 0;
+
+test('startup World Info finishes before budgeting while captured request settings remain immutable', async t => {
+  const f = fixture();
+  let ready, finished = false;
+  harness.worldInfoReady = () => new Promise(resolve => { ready = resolve; });
+  t.after(() => { harness.worldInfoReady = undefined; harness.worldInfoState.allWorldInfos = []; });
+  const options = { apiSettings: state.snapshotActiveApiConnection(), character: { name: 'Rin', world_info_ids: ['custom'] }, recentMessages: f.messages };
+  const preparing = runtime.checkAndSummarizeIfNeeded(harness.chatState.activeChatId, options);
+  preparing.then(() => { finished = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(finished, false);
+  f.chat.temperature = 0.01;
+  harness.worldInfoState.allWorldInfos = [{ id: 'custom', entries: [{ keys: [], content: 'Loaded lore facts', enabled: true, position: 'before' }] }];
+  ready();
+  const prepared = await preparing;
+  const messages = chatApi.buildApiMessages({ ...options, ...prepared });
+  assert.ok(messages.some(message => message.content.includes('Loaded lore facts')));
+  assert.notEqual(options.apiSettings.temperature, f.chat.temperature);
+  assert.equal(f.calls.length, 0);
+});
+
+test('cancellation or revision changes while World Info is pending still reject before generation or CAS', async t => {
+  t.after(() => { harness.worldInfoReady = undefined; });
+  for (const reason of ['cancel', 'revision', 'chat-switch']) {
+    const f = fixture({ chatLimit: 8192, lengths: [16000, 16000, 20] });
+    let ready;
+    harness.worldInfoReady = () => new Promise(resolve => { ready = resolve; });
+    const preparing = f.run();
+    const rejected = assert.rejects(preparing, runtime.SummaryCancelledError);
+    await new Promise(resolve => setImmediate(resolve));
+    const chatId = harness.chatState.activeChatId;
+    if (reason === 'cancel') await runtime.cancelActiveSummary(chatId);
+    else if (reason === 'revision') revisions.bumpConversationRevision(chatId);
+    else harness.chatState.activeChatId = 'another-chat';
+    ready();
+    await rejected;
+    assert.equal(f.calls.length, 0);
+    assert.deepEqual(f.meta(), { summary: null, last_id: null });
+  }
+});
 
 test('per-connection applied preset IDs survive persistence and hydration alongside legacy profiles', async () => {
   const first = { ...state.createDefaultConnection('preset-a'), appliedPresetId: 'first', temperature: 1.2 };

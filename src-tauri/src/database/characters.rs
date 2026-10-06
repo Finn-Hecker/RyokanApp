@@ -1,4 +1,4 @@
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -352,10 +352,12 @@ pub async fn create_character(app: AppHandle, payload: CreateCharacterPayload) -
                 match process_avatar(&avatar_b64) {
                     Ok(avatar_bytes) => {
                         if let Ok(conn) = get_connection(&app_clone) {
-                            let _ = conn.execute(
+                            if conn.execute(
                                 "UPDATE characters SET avatar = ?1 WHERE id = ?2",
                                 params![avatar_bytes, id_clone]
-                            );
+                            ).is_ok() {
+                                let _ = app_clone.emit("character-avatar-updated", &id_clone);
+                            }
                         }
                     }
                     Err(_) => crate::diagnostics::record(crate::diagnostics::Event::AvatarFailed)
@@ -415,10 +417,12 @@ pub async fn update_character(app: AppHandle, id: String, payload: CreateCharact
                 match process_avatar(&avatar_b64) {
                     Ok(avatar_bytes) => {
                         if let Ok(conn) = get_connection(&app_clone) {
-                            let _ = conn.execute(
+                            if conn.execute(
                                 "UPDATE characters SET avatar = ?1 WHERE id = ?2",
                                 params![avatar_bytes, id_clone]
-                            );
+                            ).is_ok() {
+                                let _ = app_clone.emit("character-avatar-updated", &id_clone);
+                            }
                         }
                     }
                     Err(_) => crate::diagnostics::record(crate::diagnostics::Event::AvatarFailed)

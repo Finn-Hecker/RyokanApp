@@ -86,7 +86,10 @@
   // Swipe animation state — null means no animation (e.g. on mount or after streaming)
   let slideDir = $state<null | 'left' | 'right' | 'enter'>(null);
 
-  let cleanHtml = $derived(renderMessageMarkdown(transformMessageText(msg.text, appState.textRules, msg.isUser ? 'user' : 'assistant', 'display')));
+  let displayText = $derived(transformMessageText(msg.text, appState.textRules, msg.isUser ? 'user' : 'assistant', 'display'));
+  // Replacing row metadata or changing a rule without changing its output must
+  // not parse and sanitize the same text again. This cache is component-local.
+  let cleanHtml = $derived(renderMessageMarkdown(displayText));
 
   // Swipe
   let totalVariants = $derived(msg.swipeVariants?.length ?? 1);

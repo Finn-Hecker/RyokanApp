@@ -116,7 +116,8 @@
 
 
   onMount(async () => {
-    if (chatState.activeChatId) await loadMessages(chatState.activeChatId);
+    // New/history navigation already loads this chat before mounting the room.
+    if (chatState.activeChatId && chatState.currentMessages.length === 0) await loadMessages(chatState.activeChatId);
     await tick();
     if (chatContainer) {
       previousChatHeight = chatContainer.clientHeight;
@@ -181,25 +182,28 @@
     }
   }
 
+  // Persisted rows do not depend on streaming state. Keep their display objects
+  // stable while only the new reply (or the retried row) changes.
+  let persistedDisplayMessages = $derived(chatState.currentMessages.map(msg => ({
+    id: msg.id?.toString() || Math.random().toString(),
+    text: msg.content,
+    usage: selectedUsage(msg),
+    isUser: msg.role === 'user',
+    senderName: msg.role === 'user'
+      ? (msg.author || m.chat_sender_you())
+      : (appState.activeCharacter?.name || m.chat_sender_ai()),
+    swipeVariants: msg.swipe_variants ?? [msg.content],
+    swipeIndex: msg.swipe_index ?? 0,
+  })));
+
   let displayMessages = $derived((() => {
-    const msgs: DisplayMessage[] = chatState.currentMessages.map(msg => {
-      const isBeingRetried = isGenerating && retryingMsgId !== null && msg.id?.toString() === retryingMsgId;
-      return {
-        id: msg.id?.toString() || Math.random().toString(),
-        text: isBeingRetried ? streamingText : msg.content,
-        usage: isBeingRetried ? null : selectedUsage(msg),
-        isUser: msg.role === 'user',
-        senderName: msg.role === 'user'
-          ? (msg.author || m.chat_sender_you())
-          : (appState.activeCharacter?.name || m.chat_sender_ai()),
-        swipeVariants: isBeingRetried
-          ? [...(msg.swipe_variants ?? [msg.content]), streamingText]
-          : (msg.swipe_variants ?? [msg.content]),
-        swipeIndex: isBeingRetried
-          ? (msg.swipe_variants ?? [msg.content]).length
-          : (msg.swipe_index ?? 0),
-      };
-    });
+    const msgs: DisplayMessage[] = isGenerating && retryingMsgId !== null
+      ? persistedDisplayMessages.map(msg => msg.id === retryingMsgId ? {
+          ...msg, text: streamingText, usage: null,
+          swipeVariants: [...msg.swipeVariants, streamingText],
+          swipeIndex: msg.swipeVariants.length,
+        } : msg)
+      : [...persistedDisplayMessages];
 
     if (isGenerating && !isThinkingPhase && !retryingMsgId) {
       msgs.push({

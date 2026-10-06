@@ -80,10 +80,12 @@
   });
 
   async function loadApp() {
+    // Hydrate lorebooks in the background; generation awaits this shared load
+    // before budgeting or assembling a prompt.
+    void loadWorldInfos();
     const [settings, interactionMode] = await Promise.all([
       getAllSettings(),
       invoke<'desktop' | 'mobile'>('get_interaction_mode'),
-      loadWorldInfos(),
     ]);
     appState.interactionMode = interactionMode;
     const map = Object.fromEntries(settings.map(s => [s.key, s.value]));

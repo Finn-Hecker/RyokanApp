@@ -343,8 +343,8 @@ export async function addMessage(role: 'user' | 'assistant', content: string, us
     if (!chatId) return;
     // Use the same ID locally and in SQLite so the row keeps its DOM identity.
     // Assistant replies already have a streaming preview; only user sends need one.
-    const messageId = role === 'user' ? crypto.randomUUID() : null;
-    if (messageId) {
+    const messageId = crypto.randomUUID();
+    if (role === 'user') {
         pendingUserSends.add(messageId);
         chatState.currentMessages.push({
             id: messageId, conversation_id: chatId, role, content,
@@ -362,17 +362,38 @@ export async function addMessage(role: 'user' | 'assistant', content: string, us
             createdAt: null,
             usage,
         });
-        if (messageId) pendingUserSends.delete(messageId);
-        await loadAllConversations();
-        if (chatState.activeChatId === chatId) await loadMessages(chatId);
+        pendingUserSends.delete(messageId);
+        await refreshSavedMessage(chatId, messageId);
     } catch (e) {
-        if (messageId && chatState.activeChatId === chatId) {
+        if (role === 'user' && chatState.activeChatId === chatId) {
             chatState.currentMessages = chatState.currentMessages.filter(message => message.id !== messageId);
         }
         reportDiagnostic('chat');
         throw e;
     } finally {
-        if (messageId) pendingUserSends.delete(messageId);
+        pendingUserSends.delete(messageId);
+    }
+}
+
+async function refreshSavedMessage(chatId: string, messageId: string): Promise<void> {
+    try {
+        const update = await invoke<{ message: PersistedMessageRow; conversation: Conversation }>(
+            'get_chat_message_update', { chatId, messageId },
+        );
+        const conversation = chatState.conversations.find(item => item.id === chatId);
+        if (conversation) Object.assign(conversation, formatConversations([update.conversation])[0]);
+        // Saving an old conversation must never append into the newly active one.
+        if (chatState.activeChatId !== chatId) return;
+        const message = decodeMessage(update.message);
+        const existing = chatState.currentMessages.find(item => item.id === messageId);
+        if (existing) Object.assign(existing, message);
+        else chatState.currentMessages.push(message);
+    } catch {
+        // Persistence already succeeded. A failed refresh must not roll back the
+        // optimistic row or report a failed send; retain the previous reload path.
+        reportDiagnostic('chat');
+        await loadAllConversations();
+        if (chatState.activeChatId === chatId) await loadMessages(chatId);
     }
 }
 

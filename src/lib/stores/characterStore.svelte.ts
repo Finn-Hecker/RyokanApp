@@ -1,5 +1,6 @@
 import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { CHARACTERS as STATIC_CHARACTERS } from '$lib/data/characters';
 
 export type PlayMode = 'solo' | 'multiplayer';
@@ -58,6 +59,51 @@ export const characterState = $state({
     pinnedCharacterIds: new Set<string | number>(),
 });
 
+let charactersLoaded = false;
+let hiddenIdsLoaded = false;
+let pinnedIdsLoaded = false;
+let lobbyLoad: Promise<void> | undefined;
+const invalidatedAvatars = new Set<string>();
+const avatarRevisions = new Map<string, number>();
+let avatarUpdateListener: Promise<void> | undefined;
+
+function ensureAvatarUpdateListener(): Promise<void> {
+    if (!avatarUpdateListener) {
+        avatarUpdateListener = listen<string>('character-avatar-updated', event => {
+            const id = event.payload;
+            const character = characterState.allCharacters.find(c => String(c.id) === id);
+            if (!character) return;
+            // Native processing can outlast the existing delayed metadata refresh.
+            // Retire both old bytes and in-flight reads only after SQLite commits.
+            avatarRevisions.set(id, (avatarRevisions.get(id) ?? 0) + 1);
+            avatarFetchesInFlight.delete(id);
+            invalidatedAvatars.delete(id);
+            character.has_avatar = true;
+            character.avatarUrl = undefined;
+        }).then(() => undefined).catch(() => {
+            avatarUpdateListener = undefined;
+            reportDiagnostic('character');
+        });
+    }
+    return avatarUpdateListener;
+}
+
+/** Library writes already update state; only the first lobby mount needs hydration. */
+export function ensureLobbyCharactersLoaded(): Promise<void> {
+    if (charactersLoaded && hiddenIdsLoaded && pinnedIdsLoaded) return Promise.resolve();
+    if (!lobbyLoad) {
+        lobbyLoad = (async () => {
+            await Promise.all([
+                hiddenIdsLoaded ? Promise.resolve() : loadHiddenIds(),
+                pinnedIdsLoaded ? Promise.resolve() : loadPinnedIds(),
+            ]);
+            // Publish cards after visibility/pin flags, avoiding a flash of hidden cards.
+            if (!charactersLoaded) await loadCharacters();
+        })().finally(() => { lobbyLoad = undefined; });
+    }
+    return lobbyLoad;
+}
+
 export function normalizePlayMode(playMode: unknown): PlayMode {
     return playMode === 'multiplayer' ? 'multiplayer' : 'solo';
 }
@@ -66,6 +112,7 @@ export async function loadHiddenIds() {
     try {
         const ids = await invoke<string[]>('get_hidden_character_ids');
         characterState.hiddenCharacterIds = new Set(ids.map(String));
+        hiddenIdsLoaded = true;
     } catch (e) {
         reportDiagnostic('character');
     }
@@ -75,6 +122,7 @@ export async function loadPinnedIds() {
     try {
         const ids = await invoke<string[]>('get_pinned_character_ids');
         characterState.pinnedCharacterIds = new Set(ids.map(String));
+        pinnedIdsLoaded = true;
     } catch (e) {
         reportDiagnostic('character');
     }
@@ -82,6 +130,7 @@ export async function loadPinnedIds() {
 
 export async function loadCharacters() {
     try {
+        const revisionsAtLoad = new Map(avatarRevisions);
         const dbChars = await invoke<Character[]>('get_custom_characters');
 
         const customChars = dbChars.map(c => ({
@@ -98,7 +147,26 @@ export async function loadCharacters() {
             bundled_roles: Array.isArray(c.bundled_roles) ? c.bundled_roles : [],
         }));
 
-        characterState.allCharacters = [...customChars, ...STATIC_CHARACTERS];
+        const existing = new Map(characterState.allCharacters.map(c => [String(c.id), c]));
+        const nextCharacters = customChars.map(character => {
+            const id = String(character.id);
+            const previous = existing.get(id);
+            // A list request started before an avatar edit cannot retire that
+            // edit's invalidation or replace its preview with older DB metadata.
+            if (previous && (revisionsAtLoad.get(id) ?? 0) !== (avatarRevisions.get(id) ?? 0)) return previous;
+            const avatarUrl = character.has_avatar && !invalidatedAvatars.has(id)
+                ? previous?.avatarUrl : undefined;
+            invalidatedAvatars.delete(id);
+            if (!previous) return character;
+            Object.assign(previous, character, { avatarUrl });
+            return previous;
+        });
+        nextCharacters.push(...STATIC_CHARACTERS);
+        if (nextCharacters.length !== characterState.allCharacters.length
+            || nextCharacters.some((character, index) => character !== characterState.allCharacters[index])) {
+            characterState.allCharacters = nextCharacters;
+        }
+        charactersLoaded = true;
 
         // Avatars are intentionally NOT fetched here. Each view (grid/list/compact)
         // renders a <CharacterAvatar> that lazily calls loadCharacterAvatar() via an
@@ -117,23 +185,28 @@ export async function loadCharacters() {
  * since switching between grid/list/compact view can mount a new
  * <CharacterAvatar> for the same character before the first fetch lands.
  */
-const avatarFetchesInFlight = new Set<string>();
+const avatarFetchesInFlight = new Map<string, Promise<void>>();
 
-export async function loadCharacterAvatar(id: string): Promise<void> {
-    if (avatarFetchesInFlight.has(id)) return;
-    avatarFetchesInFlight.add(id);
-
-    try {
-        const avatarUrl = await invoke<string | null>('get_character_avatar', { id });
-        if (!avatarUrl) return;
-        characterState.allCharacters = characterState.allCharacters.map(c =>
-            String(c.id) === id ? { ...c, avatarUrl } : c
-        );
-    } catch (e) {
-        reportDiagnostic('character');
-    } finally {
-        avatarFetchesInFlight.delete(id);
-    }
+export function loadCharacterAvatar(id: string): Promise<void> {
+    const current = characterState.allCharacters.find(c => String(c.id) === id);
+    if (!current?.has_avatar || current.avatarUrl || invalidatedAvatars.has(id)) return Promise.resolve();
+    const pending = avatarFetchesInFlight.get(id);
+    if (pending) return pending;
+    const revision = avatarRevisions.get(id) ?? 0;
+    const request = (async () => {
+        try {
+            const avatarUrl = await invoke<string | null>('get_character_avatar', { id });
+            if (!avatarUrl || revision !== (avatarRevisions.get(id) ?? 0) || invalidatedAvatars.has(id)) return;
+            const character = characterState.allCharacters.find(c => String(c.id) === id);
+            if (character?.has_avatar) character.avatarUrl = avatarUrl;
+        } catch (e) {
+            reportDiagnostic('character');
+        }
+    })().finally(() => {
+        if (avatarFetchesInFlight.get(id) === request) avatarFetchesInFlight.delete(id);
+    });
+    avatarFetchesInFlight.set(id, request);
+    return request;
 }
 
 export async function createCharacter(charData: CharacterInput) {
@@ -163,6 +236,7 @@ export async function createCharacter(charData: CharacterInput) {
     ];
 
     try {
+        if (charData.avatar) await ensureAvatarUpdateListener();
         const realId = await invoke<string>('create_character', {
             payload: {
                 name: charData.name,
@@ -183,6 +257,10 @@ export async function createCharacter(charData: CharacterInput) {
             c.id === tempId ? { ...c, id: realId } : c
         );
 
+        // The optimistic preview is the upload, not the processed DB image.
+        // Let the existing delayed refresh replace it once native processing finishes.
+        if (charData.avatar) invalidatedAvatars.add(realId);
+
         setTimeout(() => loadCharacters(), 800);
         return realId;
 
@@ -195,6 +273,7 @@ export async function createCharacter(charData: CharacterInput) {
 
 export async function updateCharacter(id: string, charData: CharacterInput) {
     try {
+        if (charData.avatar && !charData.avatar.startsWith('blob:')) await ensureAvatarUpdateListener();
         await invoke('update_character', {
             id,
             payload: {
@@ -211,12 +290,17 @@ export async function updateCharacter(id: string, charData: CharacterInput) {
             }
         });
 
-        const { bundled_roles: _portableBundledRoles, ...displayData } = charData;
-        characterState.allCharacters = characterState.allCharacters.map(c =>
-            c.id === id
-                ? { ...c, ...displayData, role_policy: charData.role_policy ?? c.role_policy, id, isCustom: true }
-                : c
-        );
+        const { bundled_roles: _portableBundledRoles, avatar: _uploadedAvatar, ...displayData } = charData;
+        const character = characterState.allCharacters.find(c => String(c.id) === id);
+        if (charData.avatar && !charData.avatar.startsWith('blob:')) {
+            avatarRevisions.set(id, (avatarRevisions.get(id) ?? 0) + 1);
+            invalidatedAvatars.add(id);
+            avatarFetchesInFlight.delete(id);
+        }
+        if (character) {
+            Object.assign(character, displayData, { role_policy: charData.role_policy ?? character.role_policy, isCustom: true });
+            if (charData.avatar && !charData.avatar.startsWith('blob:')) character.avatarUrl = charData.avatar;
+        }
 
         setTimeout(() => loadCharacters(), 800);
         return id;
@@ -300,6 +384,9 @@ export async function loadBundledRoleAvatar(
 export async function deleteCharacter(id: string) {
     try {
         await invoke('delete_character', { id });
+        avatarRevisions.set(id, (avatarRevisions.get(id) ?? 0) + 1);
+        invalidatedAvatars.delete(id);
+        avatarFetchesInFlight.delete(id);
         
         characterState.allCharacters = characterState.allCharacters.filter(c => c.id !== id);
         
