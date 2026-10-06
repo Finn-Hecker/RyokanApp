@@ -15,8 +15,22 @@ export function reportDiagnostic(area: DiagnosticArea, warning = false): void {
   } catch { /* Diagnostics must never affect the calling operation. */ }
 }
 
-export async function downloadDiagnostics(metadata: { provider: string; modelConfigured: boolean; summaryEnabled: boolean }): Promise<void> {
+export async function downloadDiagnostics(
+  metadata: { provider: string; modelConfigured: boolean; summaryEnabled: boolean },
+  interactionMode: 'desktop' | 'mobile' = 'desktop'
+): Promise<boolean> {
   const content = await invoke<string>('export_diagnostics', { metadata });
+  if (interactionMode === 'mobile') {
+    const { save } = await import('@tauri-apps/plugin-dialog');
+    const uri = await save({
+      defaultPath: 'ryokan-diagnostics.json',
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    });
+    if (uri === null) return false;
+    await invoke('write_android_export', { uri, bytes: Array.from(new TextEncoder().encode(content)) });
+    return true;
+  }
+
   const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
   const link = document.createElement('a');
   try {
@@ -29,4 +43,5 @@ export async function downloadDiagnostics(metadata: { provider: string; modelCon
     // Allow WebViews time to consume the download before revoking its URL.
     setTimeout(() => URL.revokeObjectURL(url), 30_000);
   }
+  return true;
 }

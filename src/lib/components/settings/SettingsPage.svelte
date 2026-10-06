@@ -31,8 +31,11 @@
     exportingDiagnostics = true;
     diagnosticsStatus = '';
     try {
-      await downloadDiagnostics(diagnosticsMetadata(appState.apiSettings, appState.longTermMemory));
-      diagnosticsStatus = m.settings_diagnostics_started();
+      const exported = await downloadDiagnostics(
+        diagnosticsMetadata(appState.apiSettings, appState.longTermMemory),
+        appState.interactionMode
+      );
+      if (exported) diagnosticsStatus = m.settings_diagnostics_started();
     } catch {
       diagnosticsStatus = m.settings_diagnostics_failed();
     } finally {
