@@ -1138,3 +1138,76 @@ test('resolved presets reach immutable request snapshots and the production prom
   assert.equal(payload.request_parameter_config.presencePenaltyEnabled, true);
   assert.deepEqual(payload.request_parameter_config.additionalParameters, { chat_template_kwargs: { enable_thinking: false } });
 });
+
+
+test('summary reference uses chat background, active lore and persona consistently across chunks', async t => {
+  t.after(() => { harness.worldInfoState.allWorldInfos = []; harness.chatState.activeRoleSnapshot = undefined; });
+  for (const same of [false, true]) {
+    const f = fixture({ same, chatLimit: 8192, summaryLimit: 4096, lengths: [16000, 16000, 20] });
+    f.chat.systemPrompt = 'Chat system baseline';
+    f.chat.postHistoryPrompt = 'Chat style baseline';
+    if (!same) f.summary.systemPrompt = 'Separate summary profile instructions';
+    harness.chatState.activeRoleSnapshot = { name: 'Aya', prompt: '{{user}} is a navigator.' };
+    harness.worldInfoState.allWorldInfos = [{ id: 'selected', entries: [
+      { keys: [], enabled: true, position: 'before', content: '{{char}} lives by the sea.' },
+      { keys: ['harbor'], enabled: true, position: 'after', content: 'The harbor belongs to the guild.' },
+      { keys: ['unmentioned'], enabled: true, position: 'after', content: 'Inactive lore' },
+      { keys: [], enabled: false, position: 'before', content: 'Disabled lore' },
+    ] }, { id: 'unselected', entries: [{ keys: [], enabled: true, position: 'before', content: 'Unselected lore' }] }];
+    const options = {
+      apiSettings: state.snapshotActiveApiConnection(),
+      character: { name: 'Rin', prompt: '{{char}} is a cartographer.', world_info_ids: ['selected'] },
+      recentMessages: f.messages, userPrompt: 'harbor',
+    };
+    f.beforeResponse = () => {
+      // Later live changes must not alter the reference for remaining chunks.
+      f.chat.systemPrompt = 'Later system edit';
+      harness.chatState.activeRoleSnapshot = { name: 'Other', prompt: 'Later persona edit' };
+      harness.worldInfoState.allWorldInfos = [];
+    };
+    await runtime.checkAndSummarizeIfNeeded(harness.chatState.activeChatId, options);
+    assert.ok(f.calls.length > 1, 'exercise chunking with the reference included in capacity checks');
+    let reference;
+    for (const call of f.calls) {
+      const prompt = call.messages[0].content;
+      const current = prompt.split('REFERENCE BACKGROUND (separate from conversation memory):\n')[1]
+        .split(/\n\n(?:Session excerpt to summarize:|EXISTING SUMMARY:)/)[0];
+      reference ??= current;
+      assert.equal(current, reference);
+      for (const expected of ['Chat system baseline', 'Chat style baseline', 'Rin is a cartographer.', 'Aya is a navigator.',
+        'Rin lives by the sea.', 'The harbor belongs to the guild.']) assert.ok(current.includes(expected), expected);
+      for (const excluded of ['Separate summary profile instructions', 'Inactive lore', 'Disabled lore', 'Unselected lore',
+        'Later system edit', 'Later persona edit', 'x'.repeat(100)]) assert.ok(!current.includes(excluded), excluded);
+      assert.ok(prompt.includes('conversation delta relative to the reference'));
+      assert.ok(prompt.includes('include enough background to explain a conversation-specific development'));
+      assert.ok(prompt.includes('Keep discoveries, changed facts and what participants learned'));
+      assert.ok(prompt.includes('World Info is conditional: retain names or activation cues'));
+      assert.ok(prompt.includes('Write in English'));
+      assert.ok(!prompt.includes('Preserve every still-relevant established fact'));
+    }
+    assert.equal(f.messages[0].content, 'x'.repeat(16000));
+  }
+});
+
+test('restored summary recompression retains delta instructions and explicit persona selection', async t => {
+  t.after(() => { harness.chatState.activeRoleSnapshot = undefined; });
+  for (const role of [null, { name: 'Chosen', prompt: 'Chosen persona background' }]) {
+    const f = fixture({ chatLimit: 8192, summaryLimit: 4096, lengths: [20, 40000, 20] });
+    f.chat.systemPrompt = 'Static system background';
+    harness.chatState.activeRoleSnapshot = { name: 'Fallback', prompt: 'Fallback persona background' };
+    f.setMeta({ summary: 'Old redundant character facts. ' + 'a'.repeat(8000), last_id: f.messages[0].id });
+    await runtime.checkAndSummarizeIfNeeded(harness.chatState.activeChatId, {
+      apiSettings: state.snapshotActiveApiConnection(), character: null, role, recentMessages: f.messages,
+    });
+    assert.ok(f.calls.length > 1);
+    for (const call of f.calls) {
+      const prompt = call.messages[0].content;
+      assert.ok(prompt.includes('Static system background'));
+      assert.ok(prompt.includes('Remove redundant static background from older summaries'));
+      assert.ok(prompt.includes('Preserve still-relevant conversation-specific information'));
+      assert.ok(!prompt.includes('Fallback persona background'));
+      assert.equal(prompt.includes('Chosen persona background'), role !== null);
+    }
+    assert.ok(f.calls[0].messages[0].content.includes('Old redundant character facts.'));
+  }
+});

@@ -52,35 +52,52 @@ export interface ChatPromptMessage {
 
 const START_ROLEPLAY_MARKER = '[Start Roleplay]';
 
-/**
- * Builds the exact message array sent to the model. Runtime state is resolved by
- * chatApi before calling this function so this production path remains directly
- * regression-testable without a Tauri or Svelte runtime.
- */
-export function buildPromptMessages(options: PromptBuildOptions): ChatPromptMessage[] {
-  const { character, recentMessages, userPrompt } = options;
+/** Fixed prompt and currently activated lore, without summary or dialogue. */
+export function buildPromptReferenceContext(options: PromptBuildOptions): { baseSystemPrompt: string; worldInfoBlock: string } {
   const rules = options.textRules ?? [];
   const sendText = (message: PromptMessage) => {
     const transformed = transformMessageText(message.content, rules, message.role, 'send');
     return message.role === 'assistant' ? stripThinkingContent(transformed) : transformed;
   };
   const worldInfoById = new Map(options.worldInfos.map(worldInfo => [worldInfo.id, worldInfo]));
-  const selectedIds = [...new Set(character?.world_info_ids ?? [])];
+  const selectedIds = [...new Set(options.character?.world_info_ids ?? [])];
   const relevantEntries = selectedIds
     .flatMap(id => worldInfoById.get(id)?.entries ?? []);
   const recentContext = [
     options.summaryMeta?.currentSummary ?? '',
-    ...recentMessages.slice(-10).map(sendText),
-    applyTextRules(userPrompt ?? '', rules, 'user', 'send'),
+    ...options.recentMessages.slice(-10).map(sendText),
+    applyTextRules(options.userPrompt ?? '', rules, 'user', 'send'),
   ].join(' ');
 
-  const charName = character?.name || 'Unknown';
+  const charName = options.character?.name || 'Unknown';
   const baseSystemPrompt = buildSystemPrompt({
     systemPrompt: options.systemPrompt,
     charName,
-    prompt: character?.prompt,
+    prompt: options.character?.prompt,
     role: options.role,
   });
+
+  const worldInfoBlock = buildWorldInfoBlock(
+    buildWiString(relevantEntries, 'before', recentContext, content => applyTextRules(content, rules, 'lorebook', 'send')),
+    buildWiString(relevantEntries, 'after', recentContext, content => applyTextRules(content, rules, 'lorebook', 'send')),
+    charName,
+  );
+  return { baseSystemPrompt, worldInfoBlock };
+}
+
+/**
+ * Builds the exact message array sent to the model. Runtime state is resolved by
+ * chatApi before calling this function so this production path remains directly
+ * regression-testable without a Tauri or Svelte runtime.
+ */
+export function buildPromptMessages(options: PromptBuildOptions): ChatPromptMessage[] {
+  const { recentMessages, userPrompt } = options;
+  const rules = options.textRules ?? [];
+  const sendText = (message: PromptMessage) => {
+    const transformed = transformMessageText(message.content, rules, message.role, 'send');
+    return message.role === 'assistant' ? stripThinkingContent(transformed) : transformed;
+  };
+  const { baseSystemPrompt, worldInfoBlock } = buildPromptReferenceContext(options);
 
   const { currentSummary = null, lastSummarizedMessageId = null } = options.summaryMeta ?? {};
   const fullSystemContent = currentSummary
@@ -104,12 +121,6 @@ export function buildPromptMessages(options: PromptBuildOptions): ChatPromptMess
     const systemIndex = messages.findLastIndex(message => message.role === 'system');
     messages.splice(systemIndex + 1, 0, { role: 'user', content: START_ROLEPLAY_MARKER });
   }
-
-  const worldInfoBlock = buildWorldInfoBlock(
-    buildWiString(relevantEntries, 'before', recentContext, content => applyTextRules(content, rules, 'lorebook', 'send')),
-    buildWiString(relevantEntries, 'after', recentContext, content => applyTextRules(content, rules, 'lorebook', 'send')),
-    charName,
-  );
 
   if (worldInfoBlock) {
     const lastUserIndex = messages.findLastIndex(message => message.role === 'user');
