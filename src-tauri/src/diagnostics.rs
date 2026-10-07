@@ -20,8 +20,94 @@ const RETENTION: u64 = 7 * DAY;
 const SEGMENT_BYTES: u64 = 1024 * 1024;
 const SEGMENTS: usize = 48; // Hard cap: 48 MiB, including the active segment.
 const EXPORT_SEGMENTS: usize = 2;
-static LOGGER: Lazy<Mutex<Option<Store>>> = Lazy::new(|| Mutex::new(None));
+static LOGGER: Lazy<Mutex<Logger>> = Lazy::new(|| Mutex::new(Logger::default()));
 static BUSY_DROPS: AtomicU64 = AtomicU64::new(0);
+
+// Only closed stages survive initialization; never retain paths or OS errors.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum InitializationFailure {
+    NotInitialized,
+    ResolveDirectory,
+    CreateDirectory,
+    OpenWriterLock,
+    AcquireWriterLock,
+    PruneLogs,
+    WriteStartup,
+}
+
+struct Logger {
+    store: Option<Store>,
+    initialization_failure: Option<InitializationFailure>,
+}
+
+impl Default for Logger {
+    fn default() -> Self {
+        Self {
+            store: None,
+            initialization_failure: Some(InitializationFailure::NotInitialized),
+        }
+    }
+}
+
+impl Logger {
+    fn initialize(dir: Result<PathBuf, InitializationFailure>) -> Self {
+        let result = dir.and_then(|dir| Store::open(dir.join("diagnostics")));
+        match result {
+            Ok(mut store) => {
+                let initialization_failure = store
+                    .write(Event::AppStarted, Area::Runtime, now())
+                    .err()
+                    .map(|_| InitializationFailure::WriteStartup);
+                // Keep the locked Store so a transient startup write failure can
+                // recover on later writes, as it did before stage reporting.
+                Self {
+                    store: Some(store),
+                    initialization_failure,
+                }
+            }
+            Err(stage) => Self {
+                store: None,
+                initialization_failure: Some(stage),
+            },
+        }
+    }
+
+    fn export_logs(&self, time: u64) -> serde_json::Value {
+        let recent = self.store.as_ref().map(|store| store.recent(time));
+        let available = matches!(recent, Some(Ok(_)));
+        let logs = recent.and_then(Result::ok).unwrap_or_default();
+        serde_json::json!({
+            "logsAvailable": available,
+            "loggingDegraded": self.store.as_ref().is_none_or(|store| store.write_failed) || !available,
+            "loggingInitializationFailure": self.initialization_failure,
+            "logs": logs,
+        })
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+fn try_writer_lock(file: &File) -> io::Result<()> {
+    file.try_lock().map_err(io::Error::other)
+}
+
+#[cfg(target_os = "android")]
+fn try_writer_lock(file: &File) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+    // std::fs::File::try_lock is unsupported on Android in Rust 1.90/1.93.
+    // flock is available in bionic. The owned File stays open for the Store's
+    // lifetime; closing it releases the lock, including after process death.
+    loop {
+        // SAFETY: file owns a valid fd throughout this call; flock takes no pointers.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+            return Ok(());
+        }
+        let error = io::Error::last_os_error();
+        if error.kind() != io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -148,14 +234,15 @@ fn now() -> u64 {
 }
 
 impl Store {
-    fn open(dir: PathBuf) -> io::Result<Self> {
-        fs::create_dir_all(&dir)?;
+    fn open(dir: PathBuf) -> Result<Self, InitializationFailure> {
+        fs::create_dir_all(&dir).map_err(|_| InitializationFailure::CreateDirectory)?;
         let lock = OpenOptions::new()
             .create(true)
             .truncate(false)
             .write(true)
-            .open(dir.join("writer.lock"))?;
-        lock.try_lock().map_err(io::Error::other)?;
+            .open(dir.join("writer.lock"))
+            .map_err(|_| InitializationFailure::OpenWriterLock)?;
+        try_writer_lock(&lock).map_err(|_| InitializationFailure::AcquireWriterLock)?;
         let store = Self {
             dir,
             _lock: lock,
@@ -166,7 +253,9 @@ impl Store {
             decision_window: 0,
             decision_count: 0,
         };
-        store.prune(now())?;
+        store
+            .prune(now())
+            .map_err(|_| InitializationFailure::PruneLogs)?;
         Ok(store)
     }
 
@@ -308,16 +397,17 @@ impl Store {
 }
 
 pub fn init(app: &AppHandle) {
-    if let Ok(dir) = app.path().app_log_dir() {
-        *LOGGER.lock() = Store::open(dir.join("diagnostics")).ok();
-    }
-    record(Event::AppStarted);
+    let dir = app
+        .path()
+        .app_log_dir()
+        .map_err(|_| InitializationFailure::ResolveDirectory);
+    *LOGGER.lock() = Logger::initialize(dir);
     // Expire old logs even during an otherwise idle long-running session.
     let _ = std::thread::Builder::new()
         .name("diagnostics-retention".into())
         .spawn(|| loop {
             std::thread::sleep(Duration::from_secs(3600));
-            if let Some(store) = LOGGER.lock().as_mut() {
+            if let Some(store) = LOGGER.lock().store.as_mut() {
                 if store.prune(now()).is_err() {
                     store.write_failed = true;
                 }
@@ -331,7 +421,7 @@ pub fn record(event: Event) {
 fn record_in(event: Event, area: Area) {
     // Logging must not block generation behind an export, or propagate I/O failures.
     if let Some(mut guard) = LOGGER.try_lock() {
-        if let Some(store) = guard.as_mut() {
+        if let Some(store) = guard.store.as_mut() {
             let _ = store.write(event, area, now());
         }
     }
@@ -352,7 +442,7 @@ pub fn record_frontend_event(area: Area, warning: bool) {
 #[tauri::command]
 pub fn record_diagnostic_decision(decision: Decision) {
     if let Some(mut guard) = LOGGER.try_lock() {
-        if let Some(store) = guard.as_mut() {
+        if let Some(store) = guard.store.as_mut() {
             let _ = store.decision(decision, now());
         }
     } else {
@@ -366,19 +456,18 @@ pub async fn export_diagnostics(app: AppHandle, metadata: Metadata) -> Result<St
     tauri::async_runtime::spawn_blocking(move || {
         let time = now();
         let guard = LOGGER.lock();
-        let recent = guard.as_ref().map(|store| store.recent(time));
-        let available = matches!(recent, Some(Ok(_)));
-        let logs = recent.and_then(Result::ok).unwrap_or_default();
+        let logging = guard.export_logs(time);
         serde_json::to_string_pretty(&serde_json::json!({
             "schemaVersion": 2, "ryokanVersion": version, "exportedAt": time,
             "os": std::env::consts::OS, "architecture": std::env::consts::ARCH,
             "runtime": { "tauri": 2, "debugBuild": cfg!(debug_assertions) },
-            "metadata": metadata, "logsAvailable": available,
-            "loggingDegraded": guard.as_ref().is_none_or(|store| store.write_failed) || !available,
+            "metadata": metadata, "logsAvailable": logging["logsAvailable"],
+            "loggingDegraded": logging["loggingDegraded"],
+            "loggingInitializationFailure": logging["loggingInitializationFailure"],
             "retentionDays": 7, "maxLogBytes": SEGMENT_BYTES * SEGMENTS as u64,
             "exportSourceLimitBytes": SEGMENT_BYTES * EXPORT_SEGMENTS as u64,
             "rateLimitSeconds": 60, "decisionLimitPerMinute": 600,
-            "busyDecisionDropsThisSession": BUSY_DROPS.load(Ordering::Relaxed), "logs": logs,
+            "busyDecisionDropsThisSession": BUSY_DROPS.load(Ordering::Relaxed), "logs": logging["logs"],
         }))
         .map_err(|_| "Diagnostics export failed".to_string())
     })
@@ -399,6 +488,123 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn writer_lock_is_exclusive_and_released_when_file_closes() {
+        // Also exercises the native flock branch when run on Android.
+        let temp = Temp::new();
+        fs::create_dir_all(&temp.0).unwrap();
+        let path = temp.0.join("writer.lock");
+        let first = File::create(&path).unwrap();
+        let second = OpenOptions::new().write(true).open(&path).unwrap();
+        try_writer_lock(&first).unwrap();
+        assert!(try_writer_lock(&second).is_err());
+        drop(first);
+        try_writer_lock(&second).unwrap();
+    }
+
+    fn assert_initialization_failure(logger: &Logger, stage: InitializationFailure) {
+        let export = logger.export_logs(now());
+        assert_eq!(export["logsAvailable"], false);
+        assert_eq!(export["loggingDegraded"], true);
+        assert_eq!(export["logs"], serde_json::json!([]));
+        assert_eq!(
+            export["loggingInitializationFailure"],
+            serde_json::to_value(stage).unwrap()
+        );
+        assert!(logger.store.is_none());
+    }
+
+    #[test]
+    fn initialization_exports_closed_stages_without_private_errors() {
+        assert_initialization_failure(&Logger::default(), InitializationFailure::NotInitialized);
+        assert_initialization_failure(
+            &Logger::initialize(Err(InitializationFailure::ResolveDirectory)),
+            InitializationFailure::ResolveDirectory,
+        );
+        let temp = Temp::new();
+        fs::create_dir_all(&temp.0).unwrap();
+        let dir = temp.0.join("diagnostics");
+        File::create(&dir).unwrap();
+        assert_initialization_failure(
+            &Logger::initialize(Ok(temp.0.clone())),
+            InitializationFailure::CreateDirectory,
+        );
+        fs::remove_file(&dir).unwrap();
+        fs::create_dir_all(dir.join("writer.lock")).unwrap();
+        assert_initialization_failure(
+            &Logger::initialize(Ok(temp.0.clone())),
+            InitializationFailure::OpenWriterLock,
+        );
+        fs::remove_dir(dir.join("writer.lock")).unwrap();
+        let store = Store::open(dir.clone()).unwrap();
+        assert_initialization_failure(
+            &Logger::initialize(Ok(temp.0.clone())),
+            InitializationFailure::AcquireWriterLock,
+        );
+        drop(store);
+        fs::create_dir(dir.join("events-00.jsonl")).unwrap();
+        assert_initialization_failure(
+            &Logger::initialize(Ok(temp.0.clone())),
+            InitializationFailure::PruneLogs,
+        );
+        fs::remove_dir(dir.join("events-00.jsonl")).unwrap();
+        // Failed initialization releases the writer lock and allows recovery.
+        let logger = Logger::initialize(Ok(temp.0.clone()));
+        let export = logger.export_logs(now());
+        assert_eq!(
+            export["loggingInitializationFailure"],
+            serde_json::Value::Null
+        );
+        assert_eq!(export["logsAvailable"], true);
+        assert_eq!(export["loggingDegraded"], false);
+        assert_eq!(export["logs"][0]["event"], "app_started");
+        assert!(!export
+            .to_string()
+            .contains(&temp.0.to_string_lossy().to_string()));
+        for stage in [
+            "not_initialized",
+            "resolve_directory",
+            "create_directory",
+            "open_writer_lock",
+            "acquire_writer_lock",
+            "prune_logs",
+            "write_startup",
+        ] {
+            assert!(
+                serde_json::from_value::<InitializationFailure>(serde_json::json!(stage)).is_ok()
+            );
+        }
+        for secret in [
+            "private prompt",
+            "https://private",
+            "sk-private",
+            "C:/private/model",
+            "raw OS error",
+        ] {
+            assert!(
+                serde_json::from_value::<InitializationFailure>(serde_json::json!(secret)).is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn runtime_io_failure_keeps_successful_initialization_observable() {
+        let temp = Temp::new();
+        let mut logger = Logger::initialize(Ok(temp.0.clone()));
+        let store = logger.store.as_mut().unwrap();
+        fs::create_dir(store.path(1)).unwrap();
+        assert!(store
+            .write(Event::FrontendError, Area::Summary, now())
+            .is_err());
+        let export = logger.export_logs(now());
+        assert_eq!(
+            export["loggingInitializationFailure"],
+            serde_json::Value::Null
+        );
+        assert_eq!(export["logsAvailable"], false);
+        assert_eq!(export["loggingDegraded"], true);
     }
 
     #[test]

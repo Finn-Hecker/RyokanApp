@@ -3371,6 +3371,7 @@ dependencies = [
  "futures",
  "image",
  "jni 0.21.1",
+ "libc",
  "once_cell",
  "parking_lot",
  "reqwest 0.11.27",
