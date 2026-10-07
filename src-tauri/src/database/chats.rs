@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::database::get_connection;
 use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
+use crate::diagnostics::chat_export::{Command, Probe, Reason};
 
 // Read custom cards from SQLite, so their snapshot does not depend on a stale
 // lobby object or whether its avatar has already been loaded.
@@ -68,24 +69,33 @@ pub async fn get_chat_character_snapshot(
     app: AppHandle,
     chat_id: String,
     fallback: Option<Value>,
+    trace_export: Option<bool>,
 ) -> Result<Option<Value>, String> {
-    let mut conn = get_connection(&app)?;
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let tracing = trace_export.unwrap_or(false);
+    let mut probe = if tracing { Probe::entered(Command::Snapshot) } else { Probe::default() };
+    let result = (|| {
+    let mut conn = get_connection(&app).map_err(|e| probe.error(Reason::Connection, e))?;
+    let tx = conn.transaction().map_err(|e| probe.error(Reason::Transaction, e.to_string()))?;
     let (raw, character_id, mode): (Option<String>, Option<String>, String) = tx.query_row(
         "SELECT character_snapshot, character_id, mode FROM conversations WHERE id = ?1",
         params![chat_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-    ).map_err(|e| e.to_string())?;
+    ).map_err(|e| probe.error(Reason::SnapshotRead, e.to_string()))?;
     if let Some(raw) = raw {
-        return serde_json::from_str(&raw).map(Some).map_err(|e| e.to_string());
+        return serde_json::from_str(&raw).map(Some)
+            .map_err(|e| probe.error(Reason::SnapshotJson, e.to_string()));
     }
     if mode != "singleplayer" { return Ok(None); }
-    let snapshot = resolve_character_snapshot(&tx, character_id.as_deref(), fallback)?;
+    let snapshot = resolve_character_snapshot(&tx, character_id.as_deref(), fallback)
+        .map_err(|e| probe.error(Reason::SnapshotResolveCharacter, e))?;
     if let Some(value) = &snapshot {
         tx.execute("UPDATE conversations SET character_snapshot = ?1 WHERE id = ?2",
-            params![value.to_string(), chat_id]).map_err(|e| e.to_string())?;
+            params![value.to_string(), chat_id]).map_err(|e| probe.error(Reason::SnapshotWrite, e.to_string()))?;
     }
-    tx.commit().map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| probe.error(Reason::SnapshotCommit, e.to_string()))?;
     Ok(snapshot)
+    })();
+    if tracing { probe.finished(Command::Snapshot, result.is_ok()); }
+    result
 }
 
 #[derive(Deserialize, Serialize)]

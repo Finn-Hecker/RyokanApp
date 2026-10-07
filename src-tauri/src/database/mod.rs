@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 
 mod avatar;
 pub mod chats;
+pub mod chat_transfer;
 pub mod messages;
 pub mod settings;
 pub mod characters;

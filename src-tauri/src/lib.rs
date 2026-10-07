@@ -9,27 +9,38 @@ async fn write_android_export(webview: tauri::Webview, uri: String, bytes: Vec<u
     #[cfg(target_os = "android")]
     {
     if !uri.starts_with("content://") {
-        return Err("Expected an Android document URI".into());
+        return Err("android_export_invalid_uri".into());
     }
 
     let (sender, receiver) = tokio::sync::oneshot::channel();
     webview.with_webview(move |platform_webview| {
         platform_webview.jni_handle().exec(move |env, activity, _| {
             let result = (|| {
-                let uri = jni::objects::JObject::from(env.new_string(uri)?);
-                let bytes = jni::objects::JObject::from(env.byte_array_from_slice(&bytes)?);
+                let uri = jni::objects::JObject::from(env.new_string(uri)
+                    .map_err(|_| "android_export_bridge")?);
+                let bytes = jni::objects::JObject::from(env.byte_array_from_slice(&bytes)
+                    .map_err(|_| "android_export_bytes")?);
                 env.call_method(
                     activity,
                     "writeExportDocument",
                     "(Ljava/lang/String;[B)V",
                     &[jni::objects::JValue::Object(&uri), jni::objects::JValue::Object(&bytes)],
-                )?;
-                Ok::<(), jni::errors::Error>(())
-            })().map_err(|error| error.to_string());
+                ).map_err(|error| match error {
+                    jni::errors::Error::JavaException => "android_export_write",
+                    _ => "android_export_bridge",
+                })?;
+                Ok::<(), &str>(())
+            })();
+            // Do not leave a provider exception pending on Wry's shared JNI
+            // thread. Never describe it: its message can include the URI.
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_clear();
+            }
+            let result = result.map_err(str::to_owned);
             let _ = sender.send(result);
         });
-    }).map_err(|error| error.to_string())?;
-    receiver.await.map_err(|error| error.to_string())?
+    }).map_err(|_| "android_export_dispatch".to_string())?;
+    receiver.await.map_err(|_| "android_export_dispatch".to_string())?
     }
     #[cfg(not(target_os = "android"))]
     {
@@ -97,6 +108,7 @@ pub fn run() {
             finish_android_activity,
             supports_updates,
             diagnostics::record_frontend_event,
+            diagnostics::chat_export::record_chat_export_frontend,
             diagnostics::record_diagnostic_decision,
             diagnostics::export_diagnostics,
             ai::call_ai_api,
@@ -104,6 +116,8 @@ pub fn run() {
             ai::detect_context,
             ai::stop_generation,
             database::chats::create_chat,
+            database::chat_transfer::export_chat_json,
+            database::chat_transfer::import_chat_json,
             database::chats::delete_chat,
             database::chats::rename_chat,
             database::chats::toggle_pin_chat,

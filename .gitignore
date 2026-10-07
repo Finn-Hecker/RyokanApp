@@ -13,3 +13,4 @@ vite.config.ts.timestamp-*
 /docs/*
 !/docs/architecture.md
 !/docs/presets.md
+!/docs/chat-format.md

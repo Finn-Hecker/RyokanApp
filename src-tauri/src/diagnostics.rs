@@ -1,6 +1,7 @@
 //! Local, content-free diagnostics. Never accept messages, errors, URLs or payloads.
 //! Deliberately not a global log subscriber: dependency logs may contain secrets.
 mod decisions;
+pub(crate) mod chat_export;
 use decisions::Decision;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -224,6 +225,8 @@ struct Store {
     sequence: u64,
     decision_window: u64,
     decision_count: u32,
+    chat_export_window: u64,
+    chat_export_count: u32,
 }
 
 fn now() -> u64 {
@@ -252,6 +255,8 @@ impl Store {
             sequence: 0,
             decision_window: 0,
             decision_count: 0,
+            chat_export_window: 0,
+            chat_export_count: 0,
         };
         store
             .prune(now())
@@ -330,6 +335,10 @@ impl Store {
             sequence: self.sequence,
             decision,
         })?;
+        self.append_bytes(&mut bytes, time)
+    }
+
+    fn append_bytes(&self, bytes: &mut Vec<u8>, time: u64) -> io::Result<()> {
         bytes.push(b'\n');
         let files = self.prune(time)?;
         let active = files.last().filter(|file| {
@@ -354,7 +363,26 @@ impl Store {
             .create(true)
             .append(true)
             .open(path)?
-            .write_all(&bytes)
+            .write_all(bytes)
+    }
+
+    fn chat_export(&mut self, trace: chat_export::Trace, time: u64) -> io::Result<()> {
+        if self.chat_export_window != time / 60 {
+            self.chat_export_window = time / 60;
+            self.chat_export_count = 0;
+        }
+        self.chat_export_count = self.chat_export_count.saturating_add(1);
+        // Retain ordered transitions for reproductions, including repeated
+        // failures, while bounding accidental IPC loops in production.
+        let trace = match self.chat_export_count {
+            1..=120 => trace,
+            121 => chat_export::Trace::Throttled,
+            _ => return Ok(()),
+        };
+        let mut bytes = serde_json::to_vec(&chat_export::Record::new(trace))?;
+        let result = self.append_bytes(&mut bytes, time);
+        self.write_failed = result.is_err();
+        result
     }
 
     fn decision(&mut self, decision: Decision, time: u64) -> io::Result<()> {
@@ -378,6 +406,7 @@ impl Store {
     fn recent(&self, time: u64) -> io::Result<Vec<serde_json::Value>> {
         let files = self.prune(time)?;
         let mut records = Vec::new();
+        let mut export_traces = Vec::new();
         for file in files.iter().rev().take(EXPORT_SEGMENTS).rev() {
             let mut bytes = Vec::new();
             File::open(&file.path)?
@@ -388,10 +417,16 @@ impl Store {
                     if record.timestamp <= time && time - record.timestamp < RETENTION {
                         records.push(serde_json::json!({ "timestamp": record.timestamp, "level": record.event.level(), "event": record.event, "area": record.area, "session": record.session, "sequence": record.sequence, "decision": record.decision }));
                     }
+                } else if let Ok(record) = serde_json::from_slice::<chat_export::Record>(line) {
+                    // The segment's retention is checked by prune(). Keep
+                    // export traces in file order without adding timestamps,
+                    // session identifiers or conversation identifiers.
+                    export_traces.push(serde_json::to_value(record)?);
                 }
             }
         }
         records.sort_by_key(|record| record["timestamp"].as_u64().unwrap_or_default());
+        records.extend(export_traces);
         Ok(records)
     }
 }

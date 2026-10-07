@@ -1,5 +1,7 @@
 <script lang="ts">
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
+  import { exportFile } from '$lib/utils/fileExport';
+  import { exportConversationJson, importConversationJson } from '$lib/stores/chatStore.svelte';
   import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
   import { flip } from 'svelte/animate';
   import type { AnimationConfig } from 'svelte/animate';
@@ -28,6 +30,41 @@
   } = $props();
 
   let chatToDelete      = $state<string | null>(null);
+  let managementOpen = $state(false);
+  let transferBusy = $state(false);
+  let transferError = $state('');
+  let importInput: HTMLInputElement;
+
+  async function exportChat(chat: Conversation) {
+    closeContextMenu();
+    if (transferBusy) return;
+    transferBusy = true;
+    transferError = '';
+    let stage: 'serialize' | 'save' = 'serialize';
+    try {
+      const json = await exportConversationJson(chat);
+      stage = 'save';
+      await exportFile(new TextEncoder().encode(json), 'ryokan-chat.json', 'application/json',
+        { name: 'Ryokan chat', extensions: ['json'] }, interactionMode === 'mobile');
+    } catch {
+      transferError = stage === 'save' ? m.chat_export_save_error() : m.chat_export_error();
+    } finally { transferBusy = false; }
+  }
+
+  async function importChat(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file || transferBusy) return;
+    transferBusy = true;
+    transferError = '';
+    try {
+      if (file.size > 64 * 1024 * 1024) throw new Error('File too large');
+      await importConversationJson(await file.text());
+    } catch {
+      transferError = m.chat_import_error();
+    } finally { transferBusy = false; }
+  }
   let contextTarget     = $state<{ type: 'chat' | 'folder'; id: string } | null>(null);
   let contextMenuPosition = $state<{ x: number; y: number } | null>(null);
   let pressedItemKey    = $state<string | null>(null);
@@ -37,11 +74,12 @@
   let isConfirmingRename = false;
 
   $effect(() => {
-    if (!chatToDelete && !chatToRename && !folderToRename && !(interactionMode === 'desktop' && contextTarget)) return;
+    if (!chatToDelete && !chatToRename && !folderToRename && !(interactionMode === 'desktop' && (managementOpen || contextTarget))) return;
     return registerBackHandler(() => {
       if (chatToDelete) chatToDelete = null;
       else if (chatToRename) cancelRename();
       else if (folderToRename) folderToRename = null;
+      else if (managementOpen) managementOpen = false;
       else closeContextMenu();
       return true;
     });
@@ -137,6 +175,7 @@
 
   $effect(() => {
     if (layout !== 'drawer' || isOpen) return;
+    managementOpen = false;
     if (observer) observer.disconnect();
     clearDragState();
     closeContextMenu();
@@ -205,7 +244,15 @@
   }
 
   function closeMenuOnOutsideClick() {
-    if (interactionMode === 'desktop') closeContextMenu();
+    if (interactionMode === 'desktop') {
+      closeManagementMenu();
+      closeContextMenu();
+    }
+  }
+
+  function closeManagementMenu(after?: () => void) {
+    managementOpen = false;
+    after?.();
   }
 
   async function loadMoreFromFolder(folderId: string) {
@@ -230,7 +277,10 @@
   }
 
   function closeMenuOnEscape(event: KeyboardEvent) {
-    if (interactionMode === 'desktop' && event.key === 'Escape') closeContextMenu();
+    if (interactionMode === 'desktop' && event.key === 'Escape') {
+      closeManagementMenu();
+      closeContextMenu();
+    }
   }
 
   function closeContextMenu() {
@@ -255,7 +305,7 @@
     contextTarget = { type, id };
     contextMenuPosition = {
       x: Math.max(8, Math.min(event.clientX, window.innerWidth - 176)),
-      y: Math.max(8, Math.min(event.clientY, window.innerHeight - (type === 'chat' ? 174 : 120))),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - (type === 'chat' ? 214 : 120))),
     };
   }
 
@@ -266,7 +316,7 @@
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
     contextTarget = { type, id };
     contextMenuPosition = interactionMode === 'desktop'
-      ? { x: Math.min(rect.left + 24, window.innerWidth - 176), y: Math.min(rect.bottom, window.innerHeight - 174) }
+      ? { x: Math.min(rect.left + 24, window.innerWidth - 176), y: Math.min(rect.bottom, window.innerHeight - 214) }
       : null;
   }
 
@@ -1021,6 +1071,12 @@
 {/snippet}
 
 {#snippet chatActions(chat: Conversation, dismiss: (after: () => void) => void = after => after())}
+  {#if chat.mode === 'singleplayer'}
+    <button disabled={transferBusy} onclick={() => { const selectedChat = chat; dismiss(() => { void exportChat(selectedChat); }); }} class="context-action">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/></svg>
+      {m.chat_export()}
+    </button>
+  {/if}
   <button
     onclick={(e) => { const id = chat.id; dismiss(() => handlePin(id, e)); }}
     class="context-action"
@@ -1077,14 +1133,8 @@
   >
     <div class="section-heading">
       <span>{m.sidebar_folders()}</span>
-      <button
-        type="button"
-        onclick={() => interactionMode === 'mobile' && isCreatingFolder ? addFolder() : isCreatingFolder = true}
-        disabled={interactionMode === 'mobile' && isCreatingFolder && !newFolderName.trim()}
-        class="add-folder-button"
-        aria-label={interactionMode === 'mobile' && isCreatingFolder ? m.create_char_btn_save() : m.sidebar_new_folder()}
-      >{interactionMode === 'mobile' && isCreatingFolder ? '✓' : '＋'}</button>
     </div>
+    {#if transferError}<p role="alert" class="px-2 py-2 text-xs text-red-300">{transferError}</p>{/if}
 
     {#if isCreatingFolder}
       <div transition:slide={{ duration: 180, easing: cubicOut }}>
@@ -1263,6 +1313,7 @@
 {/snippet}
 
 <div bind:this={dragImageElement} class="fixed -left-[9999px] top-0 h-px w-px opacity-0" aria-hidden="true"></div>
+<input bind:this={importInput} type="file" accept=".json,application/json" onchange={importChat} hidden />
 
 {#if dragging && dragGhost}
   <div
@@ -1304,10 +1355,39 @@
   </div>
 {/snippet}
 
+{#snippet managementActions(dismiss: (after: () => void) => void = closeManagementMenu)}
+  <button class="context-action" onclick={() => dismiss(() => { isCreatingFolder = true; })}>{m.sidebar_new_folder()}</button>
+  <button class="context-action" disabled={transferBusy} onclick={() => dismiss(() => importInput.click())}>{m.chat_import()}</button>
+{/snippet}
+
+{#snippet addAction()}
+  <div class="relative">
+    <button
+      type="button"
+      onclick={(event) => {
+        event.stopPropagation();
+        if (interactionMode === 'mobile' && isCreatingFolder) { void addFolder(); return; }
+        if (mode === 'singleplayer') managementOpen = !managementOpen;
+        else isCreatingFolder = true;
+      }}
+      disabled={interactionMode === 'mobile' && isCreatingFolder && !newFolderName.trim()}
+      class="sidebar-add-button"
+      aria-label={interactionMode === 'mobile' && isCreatingFolder ? m.create_char_btn_save() : mode === 'singleplayer' ? m.sidebar_conversation_actions() : m.sidebar_new_folder()}
+      aria-expanded={mode === 'singleplayer' ? managementOpen : undefined}
+    >{interactionMode === 'mobile' && isCreatingFolder ? '✓' : '＋'}</button>
+    {#if interactionMode === 'desktop' && managementOpen && mode === 'singleplayer'}
+      <div class="context-menu absolute right-0 top-full z-20 normal-case tracking-normal font-normal">
+        {@render managementActions()}
+      </div>
+    {/if}
+  </div>
+{/snippet}
+
 {#if layout === 'inline'}
   <aside class="sidebar-shell w-64 h-full border-r border-white/5 flex flex-col shrink-0" oncontextmenu={(event) => { if (interactionMode === 'desktop') event.preventDefault(); }}>
-    <div class="sidebar-header">
+    <div class="sidebar-header justify-between">
       <h2 class="text-lg font-medium text-ryokan-accent">{m.history_title()}</h2>
+      {@render addAction()}
     </div>
     <div class="sidebar-scroll flex-1 overflow-y-auto min-h-0">
       {@render chatList()}
@@ -1326,7 +1406,7 @@
   <aside class="sidebar-shell fixed left-0 top-0 bottom-0 w-72 border-r border-white/5 shadow-2xl z-50 flex flex-col bg-ryokan-sidebar" oncontextmenu={(event) => { if (interactionMode === 'desktop') event.preventDefault(); }}>
     <div class="sidebar-header sidebar-header--drawer flex justify-between items-center shrink-0">
       <h2 class="text-lg font-medium text-ryokan-accent">{m.history_title()}</h2>
-      <button onclick={close} aria-label={m.history_close_label()} class="sidebar-close-button">✕</button>
+      {@render addAction()}
     </div>
     <div class="sidebar-scroll flex-1 overflow-y-auto min-h-0">
       {@render chatList()}
@@ -1348,6 +1428,16 @@
     {#if contextMenuChat}{@render chatActions(contextMenuChat)}
     {:else if contextMenuFolder}{@render folderActions(contextMenuFolder)}{/if}
   </div>
+{/if}
+
+{#if interactionMode === 'mobile' && managementOpen && mode === 'singleplayer'}
+  <BottomSheet onClose={closeManagementMenu} label={m.sidebar_conversation_actions()} breakpoint={768} forceMobile>
+    {#snippet children(dismiss)}
+      <div class="context-sheet-actions">
+        {@render managementActions(dismiss)}
+      </div>
+    {/snippet}
+  </BottomSheet>
 {/if}
 
 {#if interactionMode === 'mobile' && (contextMenuChat || contextMenuFolder)}
@@ -1403,11 +1493,11 @@
   .sidebar-list { display:flex; flex-direction:column; gap:5px; }
   .section-heading { min-height:32px; display:flex; align-items:center; justify-content:space-between; padding:0 8px; color:#626267; font-size:10px; font-weight:650; letter-spacing:.09em; text-transform:uppercase; }
   .section-heading--chats { margin-top:8px; }
-  .add-folder-button,.sidebar-close-button { width:36px; height:36px; display:grid; place-items:center; border-radius:9px; color:#6d6d72; cursor:pointer; transition:color .15s,background .15s,transform .1s; }
-  .add-folder-button { margin-right:-6px; font-size:18px; font-weight:350; }
-  .add-folder-button:disabled { opacity:.4; cursor:default; }
-  .add-folder-button:hover,.sidebar-close-button:hover { color:#d4b483; background:rgba(255,255,255,.04); }
-  .add-folder-button:active,.sidebar-close-button:active { transform:scale(.96); background:rgba(255,255,255,.07); }
+  .sidebar-add-button { width:36px; height:36px; display:grid; place-items:center; border-radius:9px; color:#6d6d72; cursor:pointer; transition:color .15s,background .15s,transform .1s; }
+  .sidebar-add-button { font-size:18px; font-weight:350; }
+  .sidebar-add-button:disabled { opacity:.4; cursor:default; }
+  .sidebar-add-button:hover { color:#d4b483; background:rgba(255,255,255,.04); }
+  .sidebar-add-button:active { transform:scale(.96); background:rgba(255,255,255,.07); }
   .sidebar-footer { padding:8px 10px; }
   .bottom-nav-button { min-height:40px; flex:1; display:flex; align-items:center; justify-content:center; gap:8px; padding:8px 10px; border:0; border-radius:8px; background:transparent; color:#737378; font-size:12px; font-weight:550; line-height:1; cursor:pointer; transition:background .14s ease,color .14s ease; }
   .bottom-nav-button:active { background:rgba(212,180,131,.075); }
@@ -1455,8 +1545,7 @@
   @media (max-width:767px) {
     .sidebar-scroll { padding:15px 12px 24px; }
     .section-heading { min-height:38px; padding-left:10px; }
-    .add-folder-button,.sidebar-close-button { width:44px; height:44px; }
-    .add-folder-button { margin-right:-8px; }
+    .sidebar-add-button { width:44px; height:44px; }
     .folder-row { min-height:54px; gap:11px; padding:7px 10px; }
     .folder-row-icon { width:36px; height:36px; border-radius:10px; }
     .folder-row-icon svg { width:22px; height:22px; }

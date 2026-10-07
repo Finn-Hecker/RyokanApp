@@ -680,5 +680,11 @@
   "text_rules_remove_placeholder": "Leer lassen zum Entfernen",
   "text_rules_preview_empty": "Gib einen Beispieltext ein, um das Ergebnis zu sehen.",
   "text_rules_sample_placeholder": "Text zum Ausprobieren eingeben …",
-  "text_rules_sort_help": "Zum Sortieren ziehen oder auf Mobilgeräten gedrückt halten. Mit Alt + Pfeil hoch/runter per Tastatur verschieben."
+  "text_rules_sort_help": "Zum Sortieren ziehen oder auf Mobilgeräten gedrückt halten. Mit Alt + Pfeil hoch/runter per Tastatur verschieben.",
+  "chat_export": "Chat exportieren",
+  "chat_import": "Chat importieren",
+  "sidebar_conversation_actions": "Chat-Aktionen",
+  "chat_export_error": "Dieser Chat konnte nicht exportiert werden. Die gespeicherten Daten sind möglicherweise unvollständig oder ungültig.",
+  "chat_export_save_error": "Der Chat-Export konnte nicht gespeichert werden. Bitte versuche es erneut und wähle einen beschreibbaren Speicherort für das Dokument.",
+  "chat_import_error": "Dieser Chat konnte nicht importiert werden. Wähle eine vollständige Ryokan-V1-Chat-JSON-Datei (bis 64 MiB)."
 }

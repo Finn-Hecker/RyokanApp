@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { exportFile } from './fileExport.ts';
+import { exportFile, FileExportError } from './fileExport.ts';
 
 const bytes = new TextEncoder().encode('Grüße 🌸');
 const filter = { name: 'JSON', extensions: ['json'] };
@@ -32,13 +32,19 @@ test('Android cancellation skips writing; dialog and write errors propagate', as
     const calls = [];
     globalThis.window = { __TAURI_INTERNALS__: { invoke: async command => {
       calls.push(command);
-      if (outcome === 'dialog-error' || command === 'write_android_export') throw new Error(outcome);
+      if (outcome === 'dialog-error' || command === 'write_android_export') throw new Error('content://private-provider/private-chat');
       return outcome === 'cancel' ? null : 'content://document';
     } } };
     try {
       const result = exportFile(bytes, 'preset.json', 'application/json', filter, true);
       if (outcome === 'cancel') assert.equal(await result, false);
-      else await assert.rejects(result, new RegExp(outcome));
+      else await assert.rejects(result, error => {
+        assert.ok(error instanceof FileExportError);
+        assert.equal(error.stage, outcome === 'dialog-error' ? 'picker' : 'write');
+        assert.equal(error.message.includes('private'), false);
+        assert.equal(error.cause, undefined);
+        return true;
+      });
       assert.equal(calls.length, outcome === 'write-error' ? 2 : 1);
     } finally { delete globalThis.window; }
   }

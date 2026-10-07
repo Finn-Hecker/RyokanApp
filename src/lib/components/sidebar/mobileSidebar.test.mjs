@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { parse } from 'svelte/compiler';
 
 // Exercise the component controllers with deterministic DOM, lifecycle and IPC
 // boundaries. Derived getters stay live as shared drag previews change state.
@@ -219,5 +220,191 @@ test('a small gap beside a drop section is accepted without accepting drops outs
     assert.equal(chatState.conversations[0].folder_id, 'f');
   } finally {
     list.querySelectorAll = previousQuery;
+  }
+});
+
+
+test('drawer backdrops retain their dismissal callbacks without a header close button', () => {
+  for (const filename of ['./SidebarBase.svelte', '../layouts/PageLayout.svelte']) {
+    const source = readFileSync(new URL(filename, import.meta.url), 'utf8');
+    const ast = parse(source, { modern: true });
+    const buttons = [];
+    function visit(node) {
+      if (!node || typeof node !== 'object') return;
+      if (node.type === 'RegularElement' && node.name === 'button') buttons.push(node);
+      for (const value of Object.values(node)) {
+        if (Array.isArray(value)) value.forEach(visit);
+        else if (value && typeof value === 'object') visit(value);
+      }
+    }
+    visit(ast.fragment);
+    const backdrops = buttons.filter(button => button.attributes.some(attribute =>
+      attribute.name === 'class' && source.slice(attribute.start, attribute.end).includes('z-40')));
+    assert.equal(backdrops.length, 1);
+    const expression = backdrops[0].attributes.find(attribute => attribute.name === 'onclick').value.expression;
+    let closed = false;
+    const context = vm.createContext({ isMobileSidebarOpen: true, close: () => { closed = true; } });
+    vm.runInContext('(' + source.slice(expression.start, expression.end) + ')()', context);
+    assert.equal(filename === './SidebarBase.svelte' ? closed : context.isMobileSidebarOpen === false, true);
+    assert.equal(source.includes('sidebar-close-button'), false);
+  }
+});
+
+test('mobile add sheet owns Back; desktop add menu uses the sidebar Back handler', async () => {
+  const effects = [];
+  let backHandler;
+  let closed = 0;
+  const opened = [];
+  const h = controller('./SidebarBase.svelte', {
+    $props: () => ({ isOpen: true, layout: 'drawer', interactionMode: 'mobile', mode: 'singleplayer', close: () => { closed++; } }),
+    $effect: callback => effects.push(callback),
+    registerBackHandler: callback => { backHandler = callback; return () => {}; },
+    chatState: { conversations: [{ id: 'a', mode: 'singleplayer' }] },
+    openHistoryChat: async id => opened.push(id), navigateTo: () => {},
+  });
+  assert.equal(effects[0](), undefined);
+  h.run('managementOpen = true');
+  assert.equal(effects[0](), undefined, 'BottomSheet owns mobile Back through its exit animation');
+  h.run("interactionMode = 'desktop'");
+  effects[0]();
+  assert.equal(backHandler(), true);
+  assert.equal(h.run('managementOpen'), false);
+  assert.equal(closed, 0);
+  assert.equal(effects[0](), undefined, 'drawer Back handler can take over after menu dismissal');
+  h.run("interactionMode = 'mobile'");
+  await h.run("loadChat('a')");
+  assert.deepEqual(opened, ['a']);
+  assert.equal(closed, 1);
+});
+
+function findNodes(node, predicate) {
+  if (!node || typeof node !== 'object') return [];
+  return [
+    ...(predicate(node) ? [node] : []),
+    ...Object.values(node).flatMap(value => Array.isArray(value)
+      ? value.flatMap(child => findNodes(child, predicate)) : findNodes(value, predicate)),
+  ];
+}
+
+for (const interactionMode of ['mobile', 'desktop']) {
+  test(`${interactionMode} chat export retains the selected conversation through dismissal`, async () => {
+    const source = readFileSync(new URL('./SidebarBase.svelte', import.meta.url), 'utf8');
+    const ast = parse(source, { modern: true });
+    const snippet = ast.fragment.nodes.find(node => node.type === 'SnippetBlock' && node.expression.name === 'chatActions');
+    const button = findNodes(snippet.body, node => node.type === 'RegularElement' && node.name === 'button')
+      .find(node => source.slice(node.start, node.end).includes('m.chat_export()'));
+    const onclick = button.attributes.find(attribute => attribute.name === 'onclick').value.expression;
+    const selected = { id: 'selected', title: 'Selected chat', mode: 'singleplayer' };
+    const prepared = [], saved = [];
+    const h = controller('./SidebarBase.svelte', {
+      $props: () => ({ isOpen: true, mode: 'singleplayer', interactionMode }),
+      chatState: { conversations: [selected], folders: [] }, TextEncoder,
+      exportConversationJson: async chat => { prepared.push(chat); return '{"chat":"selected"}'; },
+      exportFile: async (...args) => saved.push(args),
+    });
+    h.run("contextTarget = { type: 'chat', id: 'selected' }");
+    // Svelte snippet arguments are live getters, not snapshots of the selection.
+    Object.defineProperty(h.context, 'chat', { get: () => h.run('contextMenuChat') });
+    let afterClose;
+    if (interactionMode === 'mobile') {
+      h.context.dismiss = after => { afterClose = after; };
+    } else {
+      const defaultDismiss = snippet.parameters[1].right;
+      h.context.dismiss = h.run('(' + source.slice(defaultDismiss.start, defaultDismiss.end) + ')');
+    }
+    h.run('(' + source.slice(onclick.start, onclick.end) + ')()');
+    if (interactionMode === 'mobile') {
+      assert.equal(prepared.length, 0, 'export waits for the sheet to finish closing');
+      h.run('closeContextMenu()'); // BottomSheet calls onClose before the deferred action.
+      assert.equal(h.run('contextMenuChat'), null);
+      afterClose();
+    }
+    assert.equal(prepared.length, 1);
+    assert.equal(prepared[0], selected);
+    assert.equal(h.run('contextTarget'), null);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(saved.length, 1);
+    assert.equal(new TextDecoder().decode(saved[0][0]), '{"chat":"selected"}');
+    assert.equal(saved[0][1], 'ryokan-chat.json');
+    assert.equal(saved[0][2], 'application/json');
+    assert.equal(saved[0][3].name, 'Ryokan chat');
+    assert.deepEqual(Array.from(saved[0][3].extensions), ['json']);
+    assert.equal(saved[0][4], interactionMode === 'mobile');
+    assert.equal(h.run('transferError'), '');
+    assert.equal(h.run('transferBusy'), false);
+  });
+}
+
+test('the global add menu renders the shared actions in a desktop popover or mobile BottomSheet', () => {
+  const source = readFileSync(new URL('./SidebarBase.svelte', import.meta.url), 'utf8');
+  const ast = parse(source, { modern: true });
+  const branches = findNodes(ast.fragment, node => node.type === 'IfBlock'
+    && source.slice(node.test.start, node.test.end).includes('managementOpen'));
+  assert.equal(branches.length, 2);
+  for (const interactionMode of ['desktop', 'mobile']) {
+    for (const managementOpen of [false, true]) {
+      for (const mode of ['singleplayer', 'multiplayer']) {
+        const active = branches.filter(branch => vm.runInNewContext(source.slice(branch.test.start, branch.test.end),
+          { interactionMode, managementOpen, mode }));
+        assert.equal(active.length, managementOpen && mode === 'singleplayer' ? 1 : 0);
+        if (!active.length) continue;
+        const sheets = findNodes(active[0].consequent, node => node.type === 'Component' && node.name === 'BottomSheet');
+        assert.equal(sheets.length, interactionMode === 'mobile' ? 1 : 0);
+        const renders = findNodes(active[0].consequent, node => node.type === 'RenderTag');
+        assert.equal(renders.length, 1);
+        assert.equal(source.slice(renders[0].expression.start, renders[0].expression.end),
+          interactionMode === 'mobile' ? 'managementActions(dismiss)' : 'managementActions()');
+        if (sheets.length) {
+          assert.ok(sheets[0].attributes.some(attribute => attribute.name === 'forceMobile' && attribute.value === true));
+          const onClose = sheets[0].attributes.find(attribute => attribute.name === 'onClose').value.expression;
+          const h = controller('./SidebarBase.svelte');
+          h.run('managementOpen = true');
+          h.run(source.slice(onClose.start, onClose.end) + '()');
+          assert.equal(h.run('managementOpen'), false);
+        }
+      }
+    }
+  }
+});
+
+test('shared add actions preserve selection behavior and wait for mobile sheet dismissal', () => {
+  const source = readFileSync(new URL('./SidebarBase.svelte', import.meta.url), 'utf8');
+  const ast = parse(source, { modern: true });
+  const snippet = ast.fragment.nodes.find(node => node.type === 'SnippetBlock' && node.expression.name === 'managementActions');
+  const buttons = findNodes(snippet.body, node => node.type === 'RegularElement' && node.name === 'button');
+  assert.equal(buttons.length, 2);
+  assert.ok(buttons[1].attributes.some(attribute => attribute.name === 'disabled'
+    && source.slice(attribute.start, attribute.end).includes('transferBusy')));
+  for (const interactionMode of ['desktop', 'mobile']) {
+    for (const [index, button] of buttons.entries()) {
+      let imports = 0, afterClose;
+      const h = controller('./SidebarBase.svelte', { importPicker: { click: () => { imports++; } } });
+      h.run('managementOpen = true; importInput = importPicker');
+      h.context.dismiss = interactionMode === 'mobile' ? after => { afterClose = after; } : h.run('closeManagementMenu');
+      const onclick = button.attributes.find(attribute => attribute.name === 'onclick').value.expression;
+      h.run('(' + source.slice(onclick.start, onclick.end) + ')()');
+      if (interactionMode === 'mobile') {
+        assert.equal(h.run('isCreatingFolder'), false);
+        assert.equal(imports, 0);
+        h.run('closeManagementMenu()');
+        afterClose();
+      }
+      assert.equal(h.run('managementOpen'), false);
+      assert.equal(h.run('isCreatingFolder'), index === 0);
+      assert.equal(imports, index === 1 ? 1 : 0);
+    }
+  }
+});
+
+test('document click and Escape dismiss desktop menus but leave mobile dismissal to BottomSheet', () => {
+  const h = controller('./SidebarBase.svelte');
+  for (const interactionMode of ['desktop', 'mobile']) {
+    h.run(`interactionMode = '${interactionMode}'`);
+    for (const event of ['closeMenuOnOutsideClick()', "closeMenuOnEscape({ key: 'Escape' })"]) {
+      h.run("managementOpen = true; contextTarget = { type: 'chat', id: 'a' }");
+      h.run(event);
+      assert.equal(h.run('managementOpen'), interactionMode === 'mobile');
+      assert.equal(h.run('contextTarget === null'), interactionMode === 'desktop');
+    }
   }
 });

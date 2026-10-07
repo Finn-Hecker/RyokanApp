@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { diagnosticsMetadata } from './diagnosticsMetadata.ts';
-import { reportDiagnostic, downloadDiagnostics } from './diagnostics.ts';
+import { reportDiagnostic, reportChatExportStage, downloadDiagnostics } from './diagnostics.ts';
 
 test('metadata projects only fixed provider and boolean configuration flags', () => {
   const privateValue = 'sk-secret Authorization: Bearer secret /Users/private/model prompt chat summary character role lorebook encryption-key';
@@ -27,6 +27,28 @@ test('frontend logging sends categories only, throttles and tolerates IPC failur
   assert.deepEqual(calls, [{ command: 'record_frontend_event', args: { area: 'settings', warning: false } }]);
   delete globalThis.window;
   assert.doesNotThrow(() => reportDiagnostic('editor'));
+});
+
+test('chat export diagnostics send only whitelisted stage and phase codes', async () => {
+  const calls = [];
+  globalThis.window = { __TAURI_INTERNALS__: { invoke: (command, args) => {
+    calls.push({ command, args });
+    return Promise.reject(new Error('PRIVATE native error'));
+  } } };
+  try {
+    reportChatExportStage('prepare', 'entered');
+    reportChatExportStage('snapshot_ipc', 'failed');
+    reportChatExportStage('export_ipc', 'completed');
+    reportChatExportStage('PRIVATE URL', 'failed');
+    reportChatExportStage('prepare', 'PRIVATE content');
+    await Promise.resolve();
+    assert.deepEqual(calls, [
+      { command: 'record_chat_export_frontend', args: { stage: 'prepare', phase: 'entered' } },
+      { command: 'record_chat_export_frontend', args: { stage: 'snapshot_ipc', phase: 'failed' } },
+      { command: 'record_chat_export_frontend', args: { stage: 'export_ipc', phase: 'completed' } },
+    ]);
+  } finally { delete globalThis.window; }
+  assert.doesNotThrow(() => reportChatExportStage('export_ipc', 'failed'));
 });
 
 test('export failure propagates to the UI without creating a download', async () => {

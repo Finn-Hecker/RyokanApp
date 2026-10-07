@@ -1,5 +1,6 @@
-import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
+import { reportDiagnostic, reportChatExportStage, type ChatExportStage } from '$lib/diagnostics/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
+import { loadWorldInfos } from './worldInfoStore.svelte';
 import { selectInitialGreeting } from '$lib/chat/characterGreeting';
 import { appState } from './appState.svelte';
 import { characterState, loadCharacters, type Character } from './characterStore.svelte';
@@ -42,6 +43,46 @@ function characterSnapshot(character: Character): ChatCharacterSnapshot {
         greeting: character.greeting, initials: character.initials, color: character.color,
         avatarUrl: character.avatarUrl, world_info_ids: [...(character.world_info_ids ?? [])],
     };
+}
+
+/** Backfill legacy bundled cards through the existing snapshot path. */
+export async function exportConversationJson(chat: Conversation): Promise<string> {
+    let stage: ChatExportStage = 'prepare';
+    reportChatExportStage(stage, 'entered');
+    try {
+    if (chat.mode !== 'singleplayer') throw new Error('Only solo chats can be exported');
+    if (characterState.allCharacters.length === 0) await loadCharacters();
+    const character = characterState.allCharacters.find(item => String(item.id) === chat.character_id);
+    const fallback = character ? characterSnapshot(character) : null;
+    reportChatExportStage(stage, 'completed');
+    stage = 'snapshot_ipc';
+    reportChatExportStage(stage, 'entered');
+    await invoke('get_chat_character_snapshot', {
+        chatId: chat.id, fallback,
+        traceExport: true,
+    });
+    reportChatExportStage(stage, 'completed');
+    stage = 'export_ipc';
+    reportChatExportStage(stage, 'entered');
+    const json = await invoke<string>('export_chat_json', { chatId: chat.id });
+    reportChatExportStage(stage, 'completed');
+    return json;
+    } catch (error) {
+        reportChatExportStage(stage, 'failed');
+        throw error;
+    }
+}
+
+export async function importConversationJson(json: string): Promise<string> {
+    const conversation = await invoke<Conversation>('import_chat_json', { json });
+    await loadWorldInfos();
+    await loadAllConversations('singleplayer');
+    // Retain the committed row even if the library refresh failed or omitted it.
+    if (!chatState.conversations.some(chat => chat.id === conversation.id)) {
+        chatState.conversations.push(...formatConversations([conversation]));
+        supplementalConversationIds.add(conversation.id);
+    }
+    return conversation.id;
 }
 
 /** Save only the chat-owned card, and publish it after persistence succeeds. */
@@ -108,6 +149,8 @@ const dateFormatter = new Intl.DateTimeFormat(getLocale(), {
 
 const PAGE_SIZE = 10;
 let loadedConversationMode: ConversationMode = 'singleplayer';
+// Imported rows supplied outside loaded pages must not advance pagination.
+const supplementalConversationIds = new Set<string>();
 
 function formatConversations(conversations: Conversation[]) {
     return conversations.map(chat => ({
@@ -117,6 +160,9 @@ function formatConversations(conversations: Conversation[]) {
 }
 
 function replaceModeConversations(mode: ConversationMode, conversations: Conversation[]) {
+    for (const chat of chatState.conversations) {
+        if (chat.mode === mode) supplementalConversationIds.delete(chat.id);
+    }
     chatState.conversations = [
         ...chatState.conversations.filter(chat => chat.mode !== mode),
         ...formatConversations(conversations),
@@ -166,7 +212,7 @@ export async function loadMoreConversations(mode: ConversationMode = loadedConve
     }
     try {
         const currentLength = chatState.conversations.filter(
-            chat => chat.mode === mode && chat.folder_id === null,
+            chat => chat.mode === mode && chat.folder_id === null && !supplementalConversationIds.has(chat.id),
         ).length;
         const result = await invoke<Conversation[]>('get_conversations_page', {
             limit: PAGE_SIZE,
@@ -175,9 +221,11 @@ export async function loadMoreConversations(mode: ConversationMode = loadedConve
             folderId: null,
         });
         if (result.length === 0) return false;
+        const knownIds = new Set(chatState.conversations.map(chat => chat.id));
+        for (const chat of result) supplementalConversationIds.delete(chat.id);
         chatState.conversations = [
             ...chatState.conversations,
-            ...formatConversations(result)
+            ...formatConversations(result).filter(chat => !knownIds.has(chat.id))
         ];
         return result.length === PAGE_SIZE;
     } catch (e) {

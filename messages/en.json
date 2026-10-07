@@ -679,5 +679,11 @@
   "text_rules_remove_placeholder": "Leave empty to remove",
   "text_rules_preview_empty": "Enter an example text to see the result.",
   "text_rules_sample_placeholder": "Enter text to try the rule …",
-  "text_rules_sort_help": "Drag to reorder, or long press on mobile. Use Alt + Up/Down to reorder with the keyboard."
+  "text_rules_sort_help": "Drag to reorder, or long press on mobile. Use Alt + Up/Down to reorder with the keyboard.",
+  "chat_export": "Export chat",
+  "chat_import": "Import chat",
+  "sidebar_conversation_actions": "Conversation actions",
+  "chat_export_error": "Could not export this chat. Its saved state may be incomplete or invalid.",
+  "chat_export_save_error": "The chat export could not be saved. Please try again and choose a writable document destination.",
+  "chat_import_error": "Could not import this chat. Choose a complete Ryokan V1 chat JSON file (up to 64 MiB)."
 }

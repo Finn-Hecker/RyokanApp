@@ -4,6 +4,19 @@ import { invoke } from '@tauri-apps/api/core';
 export type DiagnosticArea = 'runtime' | 'settings' | 'chat' | 'character' | 'role' | 'world_info' | 'editor' | 'sidebar' | 'multiplayer' | 'summary';
 const lastEvents = new Map<string, number>();
 
+export type ChatExportStage = 'prepare' | 'snapshot_ipc' | 'export_ipc';
+export type ChatExportPhase = 'entered' | 'completed' | 'failed';
+
+/** Closed codes only; never accept an error or application values. */
+export function reportChatExportStage(stage: ChatExportStage, phase: ChatExportPhase): void {
+  // Enforce the boundary even for untyped callers. Native enums validate again.
+  if (!['prepare', 'snapshot_ipc', 'export_ipc'].includes(stage)
+    || !['entered', 'completed', 'failed'].includes(phase)) return;
+  try {
+    void invoke('record_chat_export_frontend', { stage, phase }).catch(() => {});
+  } catch { /* Diagnostics must never affect export. */ }
+}
+
 /** Only fixed categories cross IPC. Never pass an error, message or application data. */
 export function reportDiagnostic(area: DiagnosticArea, warning = false): void {
   const key = `${area}:${warning}`;
