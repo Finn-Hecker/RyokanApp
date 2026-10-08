@@ -20,7 +20,10 @@ fn export_diagnostics_identify_first_validation_predicate_without_changing_error
         (Reason::UsageCost, |v| v["messages"][1]["usage_variants"] = json!([{"costUsd":-1.0}])),
         (Reason::SummaryBoundary, |v| v["conversation"]["summary"]["last_message_id"] = json!("absent")),
         (Reason::LorebookIdEmpty, |v| v["world_infos"][0]["id"] = json!("")),
-        (Reason::LorebookIdDuplicate, |v| v["world_infos"].as_array_mut().unwrap().push(v["world_infos"][0].clone())),
+        (Reason::LorebookIdDuplicate, |v| {
+            let world_info = v["world_infos"][0].clone();
+            v["world_infos"].as_array_mut().unwrap().push(world_info);
+        }),
         (Reason::LorebookCreatedAt, |v| v["world_infos"][0]["created_at"] = json!("bad")),
         (Reason::LoreEntryIdEmpty, |v| v["world_infos"][0]["entries"][0]["id"] = json!("")),
         (Reason::LoreEntryIdDuplicate, |v| {
