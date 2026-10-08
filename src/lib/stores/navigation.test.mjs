@@ -55,17 +55,17 @@ test('a view without recorded history returns home before exiting', () => {
   assert.equal(n.appState.currentView, 'lobby');
 });
 
-function page({ reducedMotion = false, deferredListener = false, userAgent = 'Android WebView' } = {}) {
+function page({ reducedMotion = false, deferredListener = false, userAgent = 'Android WebView', preload, settings = async () => [] } = {}) {
   const context = navigation();
   const invocations = [];
   const animations = [];
   let mount, back, resolveListener;
   let unregistered = 0;
-  let prefetchEffect;
-  const prefetchCalls = [];
+  const preloadCalls = [], diagnostics = [];
   Object.assign(context, {
-    console, $state: value => value, $derived: value => value, $effect: callback => { prefetchEffect = callback; }, tick: async () => {},
-    prefetchLazyViews: views => { prefetchCalls.push(views); return () => {}; },
+    console, $state: value => value, $derived: value => value, tick: async () => {},
+    preloadLazyViews: (views, concurrency) => { preloadCalls.push({ views, concurrency }); return preload?.() ?? Promise.resolve(); },
+    reportDiagnostic: area => diagnostics.push(area),
     createLazyView: () => ({ component: undefined, load: () => { throw new Error('views must not load during page setup'); } }),
     window: { matchMedia: () => ({ matches: reducedMotion }) },
     navigator: { userAgent },
@@ -76,7 +76,7 @@ function page({ reducedMotion = false, deferredListener = false, userAgent = 'An
       const listener = { unregister: async () => { unregistered++; } };
       return deferredListener ? new Promise(resolve => { resolveListener = () => resolve(listener); }) : Promise.resolve(listener);
     },
-    getAllSettings: async () => [], loadWorldInfos: async () => {},
+    getAllSettings: settings, loadWorldInfos: async () => {},
     parseTextRules: () => [], TEXT_RULES_KEY: "text_rules_v1", hydrateApiConnections: () => {}, updater: { initialize: async () => {} },
     container: { animate: (...args) => { animations.push(args); return { cancel() {} }; } },
   });
@@ -86,21 +86,83 @@ function page({ reducedMotion = false, deferredListener = false, userAgent = 'An
   vm.runInContext('viewContainer = container', context);
   return { context, invocations, animations, mount: () => mount(), back: payload => back(payload),
     resolveListener: () => resolveListener(), unregistered: () => unregistered,
-    runPrefetchEffect: () => prefetchEffect(), prefetchCalls };
+    preloadCalls, diagnostics, get: expression => vm.runInContext(expression, context) };
 }
 
-test('background prefetch starts only in the ready app, follows priority and excludes onboarding', () => {
-  const h = page();
-  assert.equal(h.runPrefetchEffect(), undefined);
-  assert.equal(h.prefetchCalls.length, 0);
-  vm.runInContext('loaded = true; appState.isOnboarding = true', h.context);
-  assert.equal(h.runPrefetchEffect(), undefined);
-  assert.equal(h.prefetchCalls.length, 0);
-  vm.runInContext('appState.isOnboarding = false', h.context);
-  assert.equal(typeof h.runPrefetchEffect(), 'function');
-  const expected = vm.runInContext('[chat, settings, editor, multiplayer, play]', h.context);
-  assert.deepEqual(Array.from(h.prefetchCalls[0]), Array.from(expected));
-  assert.ok(!h.prefetchCalls[0].includes(vm.runInContext('onboarding', h.context)));
+const flush = () => new Promise(resolve => setImmediate(resolve));
+
+for (const android of [false, true]) {
+  test(`startup imports all six views alongside hydration and gates normal navigation (Android=${android})`, async () => {
+    let releaseViews, releaseSettings;
+    const h = page({ userAgent: android ? 'Android' : 'Windows',
+      preload: () => new Promise(resolve => { releaseViews = resolve; }),
+      settings: () => new Promise(resolve => { releaseSettings = resolve; }) });
+    assert.equal(h.preloadCalls.length, 0, 'no imports during page setup');
+    const dispose = h.mount();
+    assert.equal(h.preloadCalls.length, 1);
+    const { views, concurrency } = h.preloadCalls[0];
+    assert.deepEqual(Array.from(views), Array.from(h.get('[chat, settings, editor, list, multiplayer, play]')));
+    assert.ok(!views.includes(h.get('onboarding')));
+    assert.equal(concurrency, android ? 2 : 6);
+    assert.equal(typeof releaseSettings, 'function', 'hydration starts without waiting for modules');
+    releaseSettings([{ key: 'onboarding_completed', value: 'true' }]);
+    await flush();
+    assert.equal(h.get('loaded'), true);
+    assert.equal(h.get('viewsReady'), false);
+    releaseViews();
+    await flush();
+    assert.equal(h.get('viewsReady'), true);
+    dispose();
+  });
+}
+
+test('onboarding remains available while main views load, and completing it cannot bypass the gate', async () => {
+  let release;
+  const h = page({ preload: () => new Promise(resolve => { release = resolve; }) });
+  const dispose = h.mount();
+  await flush();
+  assert.equal(h.get('loaded'), true);
+  assert.equal(h.context.appState.isOnboarding, true);
+  assert.equal(h.get('viewsReady'), false);
+  h.context.appState.isOnboarding = false;
+  assert.equal(h.get('viewsReady'), false);
+  const markup = readFileSync(new URL('../../routes/+page.svelte', import.meta.url), 'utf8').split('</script>')[1];
+  assert.ok(markup.indexOf('appState.isOnboarding') < markup.indexOf('!viewsReady'));
+  assert.ok(markup.indexOf('!viewsReady') < markup.indexOf('<main'));
+  release();
+  await flush();
+  assert.equal(h.get('viewsReady'), true);
+  dispose();
+});
+
+test('failed startup preload reports diagnostics and retry keeps navigation gated until success', async () => {
+  let calls = 0, release;
+  const h = page({ preload: () => ++calls === 1 ? Promise.reject(new Error('import failed'))
+    : new Promise(resolve => { release = resolve; }) });
+  const dispose = h.mount();
+  await flush();
+  assert.equal(h.get('viewsReady'), false);
+  assert.equal(h.get('preloadFailed'), true);
+  assert.deepEqual(h.diagnostics, ['runtime']);
+  const retry = h.context.preloadMainViews();
+  assert.equal(h.context.preloadMainViews(), retry, 'deduplicate retry clicks');
+  assert.equal(h.get('preloadFailed'), false);
+  assert.equal(h.get('viewsReady'), false);
+  release();
+  await retry;
+  assert.equal(h.get('viewsReady'), true);
+  dispose();
+});
+
+test('a preload completing after disposal does not release the startup gate', async () => {
+  let release;
+  const h = page({ preload: () => new Promise(resolve => { release = resolve; }) });
+  const dispose = h.mount();
+  dispose();
+  release();
+  await flush();
+  assert.equal(h.get('viewsReady'), false);
+  assert.equal(h.get('loaded'), false);
 });
 
 for (const view of ['lobby', 'play']) {

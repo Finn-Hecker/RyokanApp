@@ -5,7 +5,8 @@
   import CharacterLobby from '$lib/components/lobby/CharacterLobby.svelte';
   import LazyView from '$lib/components/LazyView.svelte';
   import { createLazyView } from '$lib/utils/lazyView';
-  import { prefetchLazyViews } from '$lib/utils/prefetchLazyViews';
+  import { preloadLazyViews } from '$lib/utils/preloadLazyViews';
+  import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
   import { getAllSettings } from '$lib/settings/settings';
   import { onBackButtonPress } from '@tauri-apps/api/app';
   import { handleBackNavigation } from '$lib/stores/navigation';
@@ -34,13 +35,29 @@
   const lazyView = $derived(views[appState.currentView]);
 
   let loaded = $state(false); 
+  let viewsReady = $state(false);
+  let preloadFailed = $state(false);
+  let disposed = false;
+  let pendingPreload: Promise<void> | undefined;
   let viewContainer = $state<HTMLDivElement>();
   let backTransition: Animation | undefined;
 
-  $effect(() => {
-    if (!loaded || appState.isOnboarding) return;
-    return prefetchLazyViews([chat, settings, editor, multiplayer, play]);
-  });
+  function preloadMainViews(): Promise<void> {
+    if (pendingPreload) return pendingPreload;
+    preloadFailed = false;
+    pendingPreload = preloadLazyViews(
+      [chat, settings, editor, list, multiplayer, play],
+      /Android/i.test(navigator.userAgent) ? 2 : 6,
+    ).then(() => {
+      if (!disposed) viewsReady = true;
+    }).catch(() => {
+      if (!disposed) {
+        preloadFailed = true;
+        reportDiagnostic('runtime');
+      }
+    }).finally(() => { pendingPreload = undefined; });
+    return pendingPreload;
+  }
 
   async function handleAndroidBack() {
     const previousView = appState.currentView;
@@ -62,7 +79,6 @@
   }
 
   onMount(() => {
-    let disposed = false;
     let backButtonListener: { unregister: () => Promise<void> } | undefined;
     if (/Android/i.test(navigator.userAgent)) void onBackButtonPress(() => {
       if (!disposed) void handleAndroidBack().catch(error => console.error('Android back navigation failed', error));
@@ -80,6 +96,9 @@
   });
 
   async function loadApp() {
+    // Start imports alongside IPC hydration. Onboarding need not wait for these,
+    // but normal navigation stays gated until all six modules are cached.
+    void preloadMainViews();
     // Hydrate lorebooks in the background; generation awaits this shared load
     // before budgeting or assembling a prompt.
     void loadWorldInfos();
@@ -96,6 +115,7 @@
     appState.textRules = parseTextRules(settings.find(row => row.key === TEXT_RULES_KEY)?.value);
 
     appState.isOnboarding = map['onboarding_completed'] !== 'true';
+    if (disposed) return;
     loaded = true;
     void updater.initialize();
 
@@ -107,6 +127,15 @@
   {:else if appState.isOnboarding}
   <div class="h-screen w-screen bg-ryokan-bg">
     <LazyView view={onboarding} />
+  </div>
+{:else if !viewsReady}
+  <div class="h-screen w-screen flex items-center justify-center bg-ryokan-bg text-sm text-gray-400">
+    {#if preloadFailed}
+      <div class="text-center" role="alert">
+        <p>{m.view_load_failed()}</p>
+        <button class="mt-3 text-ryokan-accent" onclick={() => void preloadMainViews()}>{m.chat_retry()}</button>
+      </div>
+    {/if}
   </div>
 {:else}
   <main
