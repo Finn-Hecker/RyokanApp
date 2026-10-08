@@ -178,6 +178,7 @@
   "settings_context_manual_help": "Limits how much context Ryokan uses.",
   "settings_context_token_limit": "Token limit",
   "settings_context_strategy": "Context strategy",
+  "settings_context_strategy_manual_help": "The context strategy is ignored while a manual limit is active. The limit determines the available context, reserving response space and a safety margin.",
   "settings_context_strategy_economy": "Economy",
   "settings_context_strategy_balanced": "Balanced",
   "settings_context_strategy_maximum": "Maximum Context",

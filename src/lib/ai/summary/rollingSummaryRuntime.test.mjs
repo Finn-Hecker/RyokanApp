@@ -779,14 +779,37 @@ test('changing strategy changes the actual pre-request trigger without changing 
   assert.equal(f.chat.detectedContext.tokens, 524288);
 });
 
-test('strategy with a manual cap uses the same runtime target as settings', async () => {
+test('a manual cap overrides every strategy in runtime and restores it when disabled', async () => {
   const f = fixture({ manual: 8192, strategy: 'maximum', lengths: [8000, 8000, 20] });
   await f.run();
   assert.equal(f.calls.length, 0);
+  for (const strategy of ['economy', 'balanced', 'maximum']) {
+    f.chat.contextStrategy = strategy;
+    await f.run();
+    assert.equal(f.calls.length, 0);
+    assert.equal(resolvedWorkingContextTarget(f.chat), 8192);
+    assert.equal(f.chat.contextStrategy, strategy);
+  }
+  f.chat.detectedContext.tokens = 8192;
+  f.chat.manualContextCap = null;
   f.chat.contextStrategy = 'economy';
   await f.run();
   assert.ok(f.calls.length > 0);
   assert.equal(resolvedWorkingContextTarget(f.chat), 4096);
+});
+
+test('manual limits keep summary output and diagnostics independent of the saved strategy', async () => {
+  for (const same of [true, false]) {
+    for (const strategy of ['economy', 'balanced', 'maximum']) {
+      const f = fixture({ manual: 16384, same, strategy, lengths: [33000, 33000, 20] });
+      await f.run();
+      assert.ok(f.calls.length > 0, 'hard capacity still triggers summarization');
+      assert.equal(f.calls[0].request_parameter_config.maxTokens, 8192, 'summary output includes the existing reasoning allowance');
+      assert.ok(f.calls[0].messages[0].content.includes('Hard limit: 2048 tokens total.'));
+      assert.ok(f.decisions.some(d => d.kind === 'budget' && d.strategy === 'maximum' && d.working_target === 16384));
+      assert.equal(f.chat.contextStrategy, strategy);
+    }
+  }
 });
 
 test('restart hydration recomputes stale limits and preserves summary selection', () => {

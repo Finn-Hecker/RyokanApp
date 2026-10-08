@@ -942,7 +942,8 @@
               value={appState.apiSettings.manualContextCap ?? ''}
               oninput={(event) => {
                 const value = event.currentTarget.valueAsNumber;
-                appState.apiSettings.manualContextCap = Number.isFinite(value) ? Math.round(value) : null;
+                if (!Number.isFinite(value)) return;
+                appState.apiSettings.manualContextCap = Math.round(value);
                 appState.apiSettings.contextLimit = resolvedHardContextLimit(appState.apiSettings);
               }} />
           </label>
@@ -954,6 +955,7 @@
       <label>
         <span class="settings-label">{m.settings_context_strategy()}</span>
         <Select label={m.settings_context_strategy()} bind:value={appState.apiSettings.contextStrategy}
+          disabled={appState.apiSettings.manualContextCap !== null}
           items={[
             { id: 'economy', label: m.settings_context_strategy_economy() },
             { id: 'balanced', label: m.settings_context_strategy_balanced() },
@@ -962,7 +964,8 @@
       </label>
     </div>
     <div class="context-strategy-help">
-      {#if appState.apiSettings.contextStrategy === 'economy'}{m.settings_context_strategy_economy_help()}
+      {#if appState.apiSettings.manualContextCap !== null}{m.settings_context_strategy_manual_help()}
+      {:else if appState.apiSettings.contextStrategy === 'economy'}{m.settings_context_strategy_economy_help()}
       {:else if appState.apiSettings.contextStrategy === 'maximum'}{m.settings_context_strategy_maximum_help()}
       {:else}{m.settings_context_strategy_balanced_help()}{/if}
     </div>

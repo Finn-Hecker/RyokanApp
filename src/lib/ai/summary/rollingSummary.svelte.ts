@@ -38,7 +38,7 @@ import {
     type ApiRequestParameterConfig,
     type SummaryMarkerState,
 } from '$lib/ai/summary/rollingSummaryCore';
-import { adaptiveSummaryOutputCap, resolvedHardContextLimit, resolvedWorkingContextTarget, shouldTriggerSummary, summaryCompressionGoal } from '$lib/ai/connections/connectionCore';
+import { adaptiveSummaryOutputCap, resolvedContextStrategy, resolvedHardContextLimit, resolvedWorkingContextTarget, shouldTriggerSummary, summaryCompressionGoal } from '$lib/ai/connections/connectionCore';
 import { countRequestMessages, countRequestAdditional } from '$lib/ai/tokens/requestBudget';
 import { ensureContextDetection } from '$lib/ai/connections/apiConnections';
 import { estimateBudgetTokens } from '$lib/ai/tokens/tokenEstimate';
@@ -71,7 +71,7 @@ function summarySelectionFingerprint(): string {
     const connection = snapshotSummaryApiConnection(appState.apiSettings);
     return JSON.stringify([appState.summaryConnectionId, appState.longTermMemory,
         connection.id, connection.providerKind, connection.url, connection.model,
-        connection.apiKey, connection.manualContextCap, appState.apiSettings.contextStrategy]);
+        connection.apiKey, connection.manualContextCap, resolvedContextStrategy(appState.apiSettings)]);
 }
 
 export class SummaryCancelledError extends Error {
@@ -171,7 +171,7 @@ function traceBudget(
     const working = resolvedWorkingContextTarget(options.apiSettings);
     const chatPressure = shouldTriggerSummary(measurement.promptTokens, working) || !measurement.fits;
     traceDecision({ kind: 'budget', operation, conversation: diagnosticScope(chatState.activeChatId ?? 'no-active-chat'),
-        connection: diagnosticConnection(options.apiSettings), strategy: options.apiSettings.contextStrategy, compression_goal: summaryCompressionGoal(working), stage, measurement: measurement.diagnostic,
+        connection: diagnosticConnection(options.apiSettings), strategy: resolvedContextStrategy(options.apiSettings), compression_goal: summaryCompressionGoal(working), stage, measurement: measurement.diagnostic,
         working_target: working, summary_limit: summaryLimit, summary_pressure: summaryPressure,
         trigger: !appState.longTermMemory ? 'disabled' : chatPressure ? 'chat' : 'none',
         history_count: history.length, marker_index: resolveSummaryMarker(history, meta).markerIndex,
@@ -1008,7 +1008,7 @@ export function checkAndSummarizeIfNeeded(
     if (existing) { options.diagnosticOperation = existing.diagnosticId; return existing; }
 
     const summaryConnection = snapshotSummaryApiConnection(options.apiSettings);
-    const maximumSummaryTokens = adaptiveSummaryOutputCap(options.apiSettings.contextStrategy);
+    const maximumSummaryTokens = adaptiveSummaryOutputCap(resolvedContextStrategy(options.apiSettings));
     const operation: SummaryOperation = {
         diagnosticId: diagnosticOperation(),
         chatId,

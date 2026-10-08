@@ -36,13 +36,13 @@ test('shared displayed/runtime working budget reacts to strategy, manual cap, an
   connection.manualContextCap = 8192;
   assert.equal(resolvedWorkingContextTarget(connection), 8192);
   connection.contextStrategy = 'balanced';
-  assert.equal(resolvedWorkingContextTarget(connection), 6963);
+  assert.equal(resolvedWorkingContextTarget(connection), 8192);
   connection.contextStrategy = 'economy';
-  assert.equal(resolvedWorkingContextTarget(connection), 4096);
+  assert.equal(resolvedWorkingContextTarget(connection), 8192);
   connection.manualContextCap = 1048576;
   assert.equal(resolvedHardContextLimit(connection), 524288);
   connection.detectedContext = { tokens: 4096, provenance: 'runtime' };
-  assert.equal(resolvedWorkingContextTarget(connection), 2048);
+  assert.equal(resolvedWorkingContextTarget(connection), 4096);
   connection.manualContextCap = null;
   connection.detectedContext = null;
   assert.equal(resolvedWorkingContextTarget(connection), 16384);
@@ -52,6 +52,20 @@ test('provider or model identity changes invalidate the cache key', () => {
   const original = connectionIdentity('ollama', 'http://localhost:11434/v1', 'llama');
   assert.notEqual(original, connectionIdentity('llama_cpp', 'http://localhost:11434/v1', 'llama'));
   assert.notEqual(original, connectionIdentity('ollama', 'http://localhost:11434/v1', 'mistral'));
+});
+
+test('manual working targets respect model capacity and only valid caps override strategy', () => {
+  for (const contextStrategy of ['economy', 'balanced', 'maximum']) {
+    const connection = { detectedContext: null, manualContextCap: 16384, contextStrategy };
+    assert.equal(resolvedWorkingContextTarget(connection), 16384);
+    connection.detectedContext = { tokens: 8192, provenance: 'runtime' };
+    assert.equal(resolvedWorkingContextTarget(connection), 8192);
+    for (const manualContextCap of [null, 0, 512, NaN, 8192.5, 16777217]) {
+      connection.manualContextCap = manualContextCap;
+      assert.equal(resolvedWorkingContextTarget(connection), deriveWorkingContextTarget(8192, contextStrategy));
+    }
+    assert.equal(connection.contextStrategy, contextStrategy);
+  }
 });
 
 test('malformed detection never replaces a previously valid result', () => {

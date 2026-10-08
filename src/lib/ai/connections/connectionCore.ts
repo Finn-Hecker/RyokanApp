@@ -23,7 +23,12 @@ export function resolvedHardContextLimit(connection: ContextInputs): number {
 
 /** Shared by Memory settings and generation; this is a soft working target. */
 export function resolvedWorkingContextTarget(connection: ContextInputs & { contextStrategy: ContextStrategy }): number {
-  return deriveWorkingContextTarget(resolvedHardContextLimit(connection), connection.contextStrategy);
+  return deriveWorkingContextTarget(resolvedHardContextLimit(connection), resolvedContextStrategy(connection));
+}
+
+/** A valid manual cap overrides strategy without changing the saved preference. */
+export function resolvedContextStrategy(connection: ContextInputs & { contextStrategy: ContextStrategy }): ContextStrategy {
+  return validContextSize(connection.manualContextCap) ? 'maximum' : connection.contextStrategy;
 }
 
 /** Soft input-token target, independent of output and safety reserves.
