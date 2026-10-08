@@ -54,7 +54,7 @@ test('preparation diagnostics identify the failing stage and preserve the origin
     // Snapshot construction is local preparation, before the snapshot IPC.
     if (failingStage === 'prepare') context.characterState.allCharacters[0].world_info_ids = 7;
     const pending = context.exportConversationJson({ id: 'chat', mode: 'singleplayer', character_id: 'card' });
-    if (failingStage === 'prepare') await assert.rejects(pending, TypeError);
+    if (failingStage === 'prepare') await assert.rejects(pending, vm.runInContext('TypeError', context));
     else if (failingStage) await assert.rejects(pending, error => error === originalError);
     else await pending;
     const expected = [];
