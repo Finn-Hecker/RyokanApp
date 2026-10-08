@@ -32,9 +32,15 @@
   let messagesEl = $state<HTMLDivElement | null>(null);
   let loadedSessionId = '';
 
+  $effect(() => registerBackHandler(() => {
+    leaveRoom();
+    return true;
+  }));
+
   $effect(() => {
     if (!roomMenuOpen) return;
     return registerBackHandler(() => {
+      if (!roomMenuOpen) return false;
       roomMenuOpen = false;
       return true;
     });
