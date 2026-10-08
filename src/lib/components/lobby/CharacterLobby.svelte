@@ -247,6 +247,7 @@
   pageTitle={greeting}
   showSidebar={true}
   animateEntrance={false}
+  stickyHeader={true}
   maxContentWidth="max-w-7xl"
   {sidebar}
   {header}

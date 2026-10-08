@@ -15,6 +15,7 @@
   let {
     pageTitle,
     animateEntrance = true,
+    stickyHeader = false,
     showSidebar = false,
     sidebarWidth = "w-64",
     maxContentWidth = "max-w-7xl",
@@ -24,6 +25,7 @@
   }: {
     pageTitle: string;
     animateEntrance?: boolean;
+    stickyHeader?: boolean;
     showSidebar?: boolean;
     sidebarWidth?: string;
     maxContentWidth?: string;
@@ -79,7 +81,7 @@
   {/if}
 
   <div class="flex-1 overflow-y-auto min-w-0 scrollbar-hide">
-    <div class="app-page-header flex items-center justify-between border-b border-white/5">
+    <div class="app-page-header flex items-center justify-between border-b border-white/5 {stickyHeader ? 'sticky top-0 z-30 bg-ryokan-bg' : ''}">
         {#if showSidebar}
           <button
             onclick={() => isMobileSidebarOpen = true}
