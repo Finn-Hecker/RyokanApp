@@ -90,3 +90,56 @@ test('a history load failure leaves the previous complete chat snapshot intact',
   assert.equal(h.state.currentMessages[0].id, 'A-message');
 });
 
+test('an old pagination response, including an empty page, cannot mutate a new chat', async () => {
+  for (const result of [[row('A', 'A-old')], []]) {
+    const page = deferred();
+    const h = store((command, params) => command === 'get_messages_page' && params.offset > 0 ? page.promise : undefined);
+    await h.context.loadMessages('A');
+    h.state.hasMoreMessages = true;
+    const paging = h.context.loadMoreMessages();
+    await h.context.loadMessages('B');
+    h.state.hasMoreMessages = true;
+    page.resolve(result);
+    await paging;
+    assert.equal(h.state.hasMoreMessages, true);
+    assert.deepEqual(Array.from(h.state.currentMessages, message => message.id), ['B-message']);
+  }
+});
+
+test('concurrent pagination loads one page and filters overlap with existing rows', async () => {
+  const page = deferred();
+  const h = store((command, params) => command === 'get_messages_page' && params.offset > 0 ? page.promise : undefined);
+  await h.context.loadMessages('A');
+  h.state.hasMoreMessages = true;
+  const first = h.context.loadMoreMessages();
+  await h.context.loadMoreMessages();
+  assert.equal(h.calls.filter(call => call.params.offset > 0).length, 1);
+  page.resolve([row('A', 'A-old'), row('A')]);
+  await first;
+  assert.deepEqual(Array.from(h.state.currentMessages, message => message.id), ['A-old', 'A-message']);
+});
+
+test('pagination finishing after a same-chat refresh cannot append stale rows', async () => {
+  const page = deferred();
+  const h = store((command, params) => command === 'get_messages_page' && params.offset > 0 ? page.promise : undefined);
+  await h.context.loadMessages('A');
+  h.state.hasMoreMessages = true;
+  const paging = h.context.loadMoreMessages();
+  await h.context.loadMessages('A');
+  page.resolve([row('A', 'A-old')]);
+  await paging;
+  assert.deepEqual(Array.from(h.state.currentMessages, message => message.id), ['A-message']);
+});
+
+test('failed pagination releases its pending request so the next attempt can load', async () => {
+  let attempts = 0;
+  const h = store((command, params) => command === 'get_messages_page' && params.offset > 0
+    ? ++attempts === 1 ? Promise.reject(new Error('Read failure')) : [row('A', 'A-old')]
+    : undefined);
+  await h.context.loadMessages('A');
+  h.state.hasMoreMessages = true;
+  await h.context.loadMoreMessages();
+  await h.context.loadMoreMessages();
+  assert.equal(attempts, 2);
+  assert.deepEqual(Array.from(h.state.currentMessages, message => message.id), ['A-old', 'A-message']);
+});

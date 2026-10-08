@@ -384,11 +384,16 @@ export async function loadMessages(chatId: string) {
 
 // Rows shown locally while SQLite is still saving must not count as page offsets.
 const pendingUserSends = new Set<string>();
+let olderMessageRequest: { chatId: string; generation: number } | null = null;
 
 // Triggered when the user scrolls up
 export async function loadMoreMessages() {
     const chatId = chatState.activeChatId;
     if (!chatId || !chatState.hasMoreMessages) return;
+    const generation = messageLoadGeneration;
+    if (olderMessageRequest?.chatId === chatId && olderMessageRequest.generation === generation) return;
+    const request = { chatId, generation };
+    olderMessageRequest = request;
 
     try {
         const currentLength = chatState.currentMessages.filter(message => !pendingUserSends.has(message.id ?? '')).length;
@@ -397,18 +402,23 @@ export async function loadMoreMessages() {
             limit: 25,
             offset: currentLength,
         });
+        if (generation !== messageLoadGeneration || chatState.activeChatId !== chatId) return;
 
         if (result.length === 0) {
             chatState.hasMoreMessages = false;
             return;
         }
 
-        const parsed = result.map(decodeMessage);
+        const knownIds = new Set(chatState.currentMessages.map(message => message.id));
+        const parsed = result.map(decodeMessage).filter(message => !knownIds.has(message.id));
 
         // Prepend older messages at the beginning
         chatState.currentMessages = [...parsed, ...chatState.currentMessages];
         chatState.hasMoreMessages = result.length === 25;
     } catch (e) { reportDiagnostic('chat'); }
+    finally {
+        if (olderMessageRequest === request) olderMessageRequest = null;
+    }
 }
 
 export async function addMessage(role: 'user' | 'assistant', content: string, usage: TokenUsage | null = null) {
