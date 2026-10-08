@@ -79,6 +79,21 @@ test('old chat background refresh does not supersede a pending navigation', asyn
   assert.equal(h.calls.filter(call => call.command === 'get_messages_page' && call.params.chatId === 'A').length, 1);
 });
 
+test('explicitly selecting the visible chat cancels a pending switch to another chat', async () => {
+  const page = deferred();
+  const h = store((command, params) => command === 'get_messages_page' && params.chatId === 'B' ? page.promise : undefined);
+  await h.context.openHistoryChat('A');
+  const loadingB = h.context.openHistoryChat('B');
+  await flush();
+  await h.context.openHistoryChat('A');
+  page.resolve([row('B')]);
+  await loadingB;
+  assert.equal(h.state.activeChatId, 'A');
+  assert.equal(h.context.appState.activeCharacter.name, 'A');
+  assert.equal(h.state.summaryMeta.currentSummary, 'summary-A');
+  assert.equal(h.state.currentMessages[0].id, 'A-message');
+});
+
 test('a history load failure leaves the previous complete chat snapshot intact', async () => {
   const h = store((command, params) => command === 'get_messages_page' && params.chatId === 'B'
     ? Promise.reject(new Error('Disk failure')) : undefined);

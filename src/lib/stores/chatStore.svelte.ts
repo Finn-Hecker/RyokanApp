@@ -276,6 +276,11 @@ export async function startNewChat(character: any, roleSelection: RoleSelection 
 }
 
 export async function openHistoryChat(chatId: string) {
+    // Unlike background refreshes, an explicit selection supersedes a pending switch.
+    if (pendingMessageChatId && pendingMessageChatId !== chatId) {
+        messageLoadGeneration++;
+        pendingMessageChatId = null;
+    }
     await loadMessages(chatId);
 }
 
