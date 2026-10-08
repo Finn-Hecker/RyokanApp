@@ -351,6 +351,7 @@
       if (chatState.activeChatId !== chatId) return;
       await addMessage('assistant', result.text, result.usage);
       rememberGenerationAnchor(chatId, result.promptSnapshot, chatState.currentMessages.at(-1));
+      pendingUserMessage = '';
     } catch (err) {
       if (err instanceof SummaryCancelledError || sendCancelled) return;
       reportDiagnostic('chat');
@@ -570,16 +571,6 @@
 
   async function closeErrorModal() {
     showErrorModal = false;
-    if (pendingUserMessage) {
-      const lastUserMsg = [...chatState.currentMessages].reverse().find(msg => msg.role === 'user');
-      if (lastUserMsg?.id) {
-        try {
-          await deleteMessage(lastUserMsg.id);
-        } catch {
-          return;
-        }
-      }
-    }
     pendingUserMessage = '';
   }
 

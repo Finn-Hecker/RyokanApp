@@ -134,3 +134,40 @@ test('mounting an already prepared chat keeps history and avoids a second databa
   await mount();
   assert.equal(loads, 1, 'an unprepared empty history still loads');
 });
+
+test('a successful send followed by a clone error never deletes persisted history', async () => {
+  const deleted = [];
+  const messages = [];
+  const c = room({
+    crypto: { randomUUID: () => 'generation' },
+    snapshotActiveApiConnection: () => ({}),
+    checkAndSummarizeIfNeeded: async () => ({ recentMessages: messages }),
+    assertPreparedGenerationFits: async () => {},
+    runGeneration: async () => ({ text: 'answer', usage: null, promptSnapshot: {} }),
+    rememberGenerationAnchor() {}, positionSentChatMessage() {},
+    addMessage: async (role, content) => { messages.push({ id: role, role, content }); },
+    cloneChatFromMessage: async () => null,
+    deleteMessage: async id => { deleted.push(id); },
+    setTimeout: () => 1, clearTimeout() {},
+  });
+  c.context.chatState.currentMessages = messages;
+  c.run("inputText = 'hello'");
+  await c.context.sendMessage();
+  assert.equal(c.run('pendingUserMessage'), '');
+  await c.context.handleCloneFromMessage({ msgId: 'assistant' });
+  assert.equal(c.run('showErrorModal'), true);
+  await c.context.closeErrorModal();
+  assert.deepEqual(deleted, []);
+  assert.deepEqual(messages.map(message => message.role), ['user', 'assistant']);
+});
+
+test('closing a clone error preserves history even with a pending generation retry', async () => {
+  const deleted = [];
+  const c = room({ deleteMessage: async id => { deleted.push(id); } });
+  c.context.chatState.currentMessages.push({ id: 'saved-user', role: 'user', content: 'hello' });
+  c.run("pendingUserMessage = 'hello'; showErrorModal = true");
+  await c.context.closeErrorModal();
+  assert.deepEqual(deleted, []);
+  assert.equal(c.context.chatState.currentMessages[0].id, 'saved-user');
+  assert.equal(c.run('showErrorModal'), false);
+});
