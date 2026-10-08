@@ -236,3 +236,28 @@ test('a listener registered after unmount is removed and ignores back events', a
   assert.equal(h.unregistered(), 1);
   assert.deepEqual(h.invocations, []);
 });
+
+test('a startup settings read failure preserves profiles and never enables onboarding', async () => {
+  let fail = true, hydrations = 0;
+  const h = page({ settings: async () => {
+    if (fail) throw new Error('Read failure');
+    return [{ key: 'onboarding_completed', value: 'true' }];
+  } });
+  const profile = { id: 'existing' };
+  h.context.appState.apiConnections = [profile];
+  h.context.appState.isOnboarding = false;
+  h.context.hydrateApiConnections = () => { hydrations++; };
+  const dispose = h.mount();
+  await flush();
+  assert.equal(h.get('loaded'), false);
+  assert.equal(h.get('settingsLoadFailed'), true);
+  assert.equal(h.context.appState.isOnboarding, false);
+  assert.equal(h.context.appState.apiConnections[0], profile);
+  assert.equal(hydrations, 0);
+  fail = false;
+  await h.context.loadApp();
+  assert.equal(h.get('loaded'), true);
+  assert.equal(h.get('settingsLoadFailed'), false);
+  assert.equal(hydrations, 1);
+  dispose();
+});

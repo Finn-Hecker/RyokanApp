@@ -35,6 +35,7 @@
   const lazyView = $derived(views[appState.currentView]);
 
   let loaded = $state(false); 
+  let settingsLoadFailed = $state(false);
   let viewsReady = $state(false);
   let preloadFailed = $state(false);
   let disposed = false;
@@ -102,10 +103,22 @@
     // Hydrate lorebooks in the background; generation awaits this shared load
     // before budgeting or assembling a prompt.
     void loadWorldInfos();
-    const [settings, interactionMode] = await Promise.all([
-      getAllSettings(),
-      invoke<'desktop' | 'mobile'>('get_interaction_mode'),
-    ]);
+    settingsLoadFailed = false;
+    let settings: Awaited<ReturnType<typeof getAllSettings>>;
+    let interactionMode: 'desktop' | 'mobile';
+    try {
+      [settings, interactionMode] = await Promise.all([
+        getAllSettings(),
+        invoke<'desktop' | 'mobile'>('get_interaction_mode'),
+      ]);
+    } catch {
+      if (!disposed) {
+        settingsLoadFailed = true;
+        reportDiagnostic('settings');
+      }
+      return;
+    }
+    if (disposed) return;
     appState.interactionMode = interactionMode;
     const map = Object.fromEntries(settings.map(s => [s.key, s.value]));
     const chatFontScale = Number(map['chat_font_scale']);
@@ -123,7 +136,14 @@
 </script>
 
 {#if !loaded}
-  <div class="h-screen w-screen bg-ryokan-bg"></div>
+  <div class="h-screen w-screen bg-ryokan-bg flex items-center justify-center">
+    {#if settingsLoadFailed}
+      <div class="text-center text-sm text-red-400" role="alert">
+        <p>{m.settings_load_failed()}</p>
+        <button class="mt-3 text-ryokan-accent" onclick={() => void loadApp()}>{m.chat_retry()}</button>
+      </div>
+    {/if}
+  </div>
   {:else if appState.isOnboarding}
   <div class="h-screen w-screen bg-ryokan-bg">
     <LazyView view={onboarding} />

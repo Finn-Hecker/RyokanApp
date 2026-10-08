@@ -71,6 +71,8 @@
   let mobileCategoryHolding = $state(false);
   let isSaving = $state(false);
   let settingsReady = $state(false);
+  let settingsLoadFailed = $state(false);
+  let settingsSaveFailed = $state(false);
   let settingsContentEl: HTMLDivElement;
   const activeCategory = $derived(CATEGORIES.find((item) => item.id === activeSection) ?? CATEGORIES[0]);
   const generalCategory = $derived(activeSection === "language" ? "language" : "appearance");
@@ -116,6 +118,8 @@
   onMount(loadSettings);
 
   async function loadSettings() {
+    settingsReady = false;
+    settingsLoadFailed = false;
     try {
       const settings = await getAllSettings();
       hydrateApiConnections(settings);
@@ -124,13 +128,17 @@
       powerUser = settings.find(row => row.key === 'settings_power_user')?.value === 'true';
       const chatFontScale = Number(settings.find(row => row.key === 'chat_font_scale')?.value);
       appState.chatFontScale = Number.isFinite(chatFontScale) && chatFontScale >= 80 && chatFontScale <= 140 ? chatFontScale : 100;
-    } catch (err) { reportDiagnostic('settings'); }
-    finally { settingsReady = true; }
+      settingsReady = true;
+    } catch (err) {
+      settingsLoadFailed = true;
+      reportDiagnostic('settings');
+    }
   }
 
   async function saveSettings() {
-    if (!additionalApiParametersValidation.valid) return;
+    if (!settingsReady || isSaving || !additionalApiParametersValidation.valid) return;
     isSaving = true;
+    settingsSaveFailed = false;
     try {
       appState.apiSettings.parameterEnabled = { ...parameterEnabled };
       appState.apiSettings.contextLimit = resolvedHardContextLimit(appState.apiSettings);
@@ -145,7 +153,10 @@
       const locale = appState.pendingUiLocale;
       if (locale) setLocale(locale as any);
       goBack();
-    } catch (err) { reportDiagnostic('settings'); }
+    } catch (err) {
+      settingsSaveFailed = true;
+      reportDiagnostic('settings');
+    }
     finally { isSaving = false; }
   }
 
@@ -189,7 +200,7 @@
 {/snippet}
 
 {#snippet saveButton()}
-  <Button variant="secondary" disabled={isSaving || !additionalApiParametersValidation.valid} onclick={saveSettings}>
+  <Button variant="secondary" disabled={!settingsReady || isSaving || !additionalApiParametersValidation.valid} onclick={saveSettings}>
     {#if isSaving}<span class="save-spinner"></span>{:else}{m.settings_btn_save()}{/if}
   </Button>
 {/snippet}
@@ -233,6 +244,13 @@
       {@render saveButton()}
     </header>
 
+    {#if settingsLoadFailed || settingsSaveFailed}
+      <div class="p-4 text-sm text-red-400" role="alert">
+        <p>{settingsLoadFailed ? m.settings_load_failed() : m.settings_save_failed()}</p>
+        {#if settingsLoadFailed}<button class="mt-2 text-ryokan-accent" onclick={() => void loadSettings()}>{m.chat_retry()}</button>{/if}
+      </div>
+    {/if}
+
     <div class="mobile-overview" class:mobile-overview--hidden={mobileCategoryOpen}>
       <nav class="mobile-category-groups" class:mobile-category-groups--holding={mobileCategoryHolding} aria-label={m.settings_categories_aria()} use:mobileCategoryGesture={{
         onHolding: (holding) => { mobileCategoryHolding = holding; },
@@ -260,6 +278,7 @@
     </div>
 
     <div bind:this={settingsContentEl} class="settings-content" class:settings-content--mobile-hidden={!mobileCategoryOpen}>
+      {#if settingsReady}
       <div class="content-panel" hidden={activeSection !== "provider" && activeSection !== "memory"}><ApiSection powerUser={powerUser} active={activeSection === "provider"} section={activeSection === "memory" ? "memory" : "provider"} {settingsReady} bind:parameterEnabled onConnectionChange={handleConnectionChange} /></div>
       <div class="content-panel" hidden={activeSection === "provider" || activeSection === "memory"}>
         {#if activeSection === "presets" && settingsReady}<PresetSection {parameterEnabled} onApply={applyPreset} onDeactivate={deactivatePreset} onDeleted={syncPresetParameters} />{/if}
@@ -282,6 +301,7 @@
           <GeneralSection powerUser={powerUser} bind:parameterEnabled category={generalCategory} />
         {/if}
       </div>
+      {/if}
     </div>
   </main>
 </div>

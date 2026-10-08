@@ -11,7 +11,7 @@ export async function getAllSettings(): Promise<SettingRow[]> {
     return await invoke<SettingRow[]>("get_all_settings");
   } catch (e) {
     reportDiagnostic('settings');
-    return [];
+    throw e;
   }
 }
 
@@ -21,6 +21,7 @@ export async function saveSetting(key: string, value: string | boolean | number)
     await invoke("save_setting", { key, value: stringValue });
   } catch (e) {
     reportDiagnostic('settings');
+    throw e;
   }
 }
 
