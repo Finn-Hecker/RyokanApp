@@ -4,6 +4,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { decodeMessage } from '../chat/messageData.ts';
+import { getPromptUsageAnchor, rememberPromptUsageAnchor, forgetPromptUsageAnchor } from '../ai/summary/rollingSummaryCore.ts';
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 function deferred() {
@@ -20,7 +21,7 @@ function store(invoke = () => undefined) {
     .map(statement => statement.getText(ast).replace(/^export /, '')).join('\n');
   const calls = [];
   const context = vm.createContext({
-    $state: value => value, getLocale: () => 'en', reportDiagnostic() {}, decodeMessage,
+    $state: value => value, getLocale: () => 'en', reportDiagnostic() {}, decodeMessage, forgetPromptUsageAnchor,
     appState: { activeCharacter: { name: 'initial' } }, characterState: { allCharacters: [{ id: 'card' }] },
     loadCharacters: async () => {},
     invoke: async (command, params) => {
@@ -157,4 +158,20 @@ test('failed pagination releases its pending request so the next attempt can loa
   await h.context.loadMoreMessages();
   assert.equal(attempts, 2);
   assert.deepEqual(Array.from(h.state.currentMessages, message => message.id), ['A-old', 'A-message']);
+});
+
+test('deleting a chat releases its prompt anchor only after successful persistence', async t => {
+  const anchor = { prompt: [], historyFingerprint: [], summaryFingerprint: '', configurationFingerprint: '',
+    responseSwipeIndex: 0, responseFingerprint: '', revision: 0 };
+  t.after(() => { forgetPromptUsageAnchor('delete-test'); forgetPromptUsageAnchor('retained-test'); });
+  rememberPromptUsageAnchor('delete-test', anchor);
+  rememberPromptUsageAnchor('retained-test', anchor);
+  let fail = true;
+  const h = store(command => command === 'delete_chat' && fail ? Promise.reject(new Error('Disk failure')) : undefined);
+  await h.context.deleteConversation('delete-test');
+  assert.equal(getPromptUsageAnchor('delete-test'), anchor);
+  fail = false;
+  await h.context.deleteConversation('delete-test');
+  assert.equal(getPromptUsageAnchor('delete-test'), undefined);
+  assert.equal(getPromptUsageAnchor('retained-test'), anchor);
 });

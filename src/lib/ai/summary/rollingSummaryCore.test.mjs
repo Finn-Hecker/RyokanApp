@@ -6,6 +6,9 @@ import {
   summaryRequestParameterConfig,
   summarySafetyMargin,
   canReusePromptAnchor,
+  getPromptUsageAnchor,
+  rememberPromptUsageAnchor,
+  forgetPromptUsageAnchor,
   commitOrRollback,
   deriveEffectiveTokenBudget,
   fitsContextBudget,
@@ -69,6 +72,23 @@ const anchor = {
   responseFingerprint: '["a1","assistant","reply",0]',
   revision: 2,
 };
+
+test('prompt usage anchors are bounded, keep recent entries and release forgotten chats', t => {
+  const id = index => `cache-test-${index}`;
+  t.after(() => { for (let index = 0; index < 35; index++) forgetPromptUsageAnchor(id(index)); });
+  for (let index = 0; index < 33; index++) rememberPromptUsageAnchor(id(index), anchor);
+  assert.equal(getPromptUsageAnchor(id(0)), undefined);
+  assert.equal(getPromptUsageAnchor(id(1)), anchor, 'reading an anchor keeps it recent');
+  rememberPromptUsageAnchor(id(33), anchor);
+  assert.equal(getPromptUsageAnchor(id(2)), undefined);
+  rememberPromptUsageAnchor(id(3), { ...anchor, revision: 3 });
+  rememberPromptUsageAnchor(id(34), anchor);
+  assert.equal(getPromptUsageAnchor(id(4)), undefined);
+  assert.equal(getPromptUsageAnchor(id(3)).revision, 3, 'replacing an anchor keeps it recent');
+  forgetPromptUsageAnchor(id(3));
+  assert.equal(getPromptUsageAnchor(id(3)), undefined);
+  assert.equal(getPromptUsageAnchor(id(1)), anchor, 'forgetting one chat preserves other anchors');
+});
 
 test('provider input is reconciled against only the prompt tail', async () => {
   const counted = [];

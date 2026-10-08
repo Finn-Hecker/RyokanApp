@@ -5,7 +5,7 @@ import { selectInitialGreeting } from '$lib/chat/characterGreeting';
 import { appState } from './appState.svelte';
 import { characterState, loadCharacters, type Character } from './characterStore.svelte';
 import { getLocale } from '$lib/paraglide/runtime';
-import { bumpConversationRevision, isMessageCoveredBySummary } from '$lib/ai/summary/rollingSummaryCore';
+import { bumpConversationRevision, isMessageCoveredBySummary, forgetPromptUsageAnchor } from '$lib/ai/summary/rollingSummaryCore';
 import type { TokenUsage } from '$lib/ai/tokens/tokenUsage';
 
 import { decodeMessage, type Message, type PersistedMessageRow } from '$lib/chat/messageData';
@@ -604,6 +604,7 @@ export async function togglePinConversation(id: string) {
 export async function deleteConversation(id: string) {
     try {
         await invoke('delete_chat', { id });
+        forgetPromptUsageAnchor(id);
         await loadAllConversations();
         if (chatState.activeChatId === id) {
             chatState.activeChatId    = null;

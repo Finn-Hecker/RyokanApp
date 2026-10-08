@@ -21,6 +21,30 @@ export interface PromptUsageAnchor {
   revision: number;
 }
 
+const MAX_PROMPT_USAGE_ANCHORS = 32;
+const promptUsageAnchors = new Map<string, PromptUsageAnchor>();
+
+export function getPromptUsageAnchor(chatId: string): PromptUsageAnchor | undefined {
+  const anchor = promptUsageAnchors.get(chatId);
+  if (anchor) {
+    promptUsageAnchors.delete(chatId);
+    promptUsageAnchors.set(chatId, anchor);
+  }
+  return anchor;
+}
+
+export function rememberPromptUsageAnchor(chatId: string, anchor: PromptUsageAnchor): void {
+  promptUsageAnchors.delete(chatId);
+  promptUsageAnchors.set(chatId, anchor);
+  if (promptUsageAnchors.size > MAX_PROMPT_USAGE_ANCHORS) {
+    promptUsageAnchors.delete(promptUsageAnchors.keys().next().value!);
+  }
+}
+
+export function forgetPromptUsageAnchor(chatId: string): void {
+  promptUsageAnchors.delete(chatId);
+}
+
 /** Only an append to the exact anchored conversation may reuse provider usage. */
 export function canReusePromptAnchor(
   anchor: PromptUsageAnchor,

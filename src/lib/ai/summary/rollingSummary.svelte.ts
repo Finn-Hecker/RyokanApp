@@ -21,6 +21,9 @@ import {
     summaryRequestParameterConfig as createSummaryRequestParameterConfig,
     bumpConversationRevision,
     canReusePromptAnchor,
+    getPromptUsageAnchor,
+    rememberPromptUsageAnchor,
+    forgetPromptUsageAnchor,
     currentConversationRevision,
     deriveEffectiveTokenBudget,
     fitsContextBudget,
@@ -34,7 +37,6 @@ import {
     unicodeCodePointBoundaries,
     type ApiRequestParameterConfig,
     type SummaryMarkerState,
-    type PromptUsageAnchor,
 } from '$lib/ai/summary/rollingSummaryCore';
 import { adaptiveSummaryOutputCap, resolvedHardContextLimit, resolvedWorkingContextTarget, shouldTriggerSummary, summaryCompressionGoal } from '$lib/ai/connections/connectionCore';
 import { countRequestMessages, countRequestAdditional } from '$lib/ai/tokens/requestBudget';
@@ -117,7 +119,7 @@ async function measureNormalRequest(
     const apiMessages = buildApiMessages({ ...options, recentMessages, userPrompt: undefined, summaryMeta });
     let promptTokens: number | null = null;
     let anchorState: DiagnosticMeasurement['anchor'] = 'none';
-    const anchor = anchorChatId && promptAnchors.get(anchorChatId);
+    const anchor = anchorChatId && getPromptUsageAnchor(anchorChatId);
     const response = anchor && recentMessages[anchor.historyFingerprint.length];
     if (anchor) {
         const fingerprints = recentMessages.map(messageFingerprint);
@@ -220,7 +222,6 @@ let activeSummaryOperation: SummaryOperation | null = null;
 const summaryWorkByBoundary = new Map<string, Promise<PreparedGenerationContext> & { diagnosticId?: number }>();
 const pendingSummaryOperations = new Set<SummaryOperation>();
 let summarySerial: Promise<void> = Promise.resolve();
-const promptAnchors = new Map<string, PromptUsageAnchor>();
 
 /** Associates an exact pre-response request snapshot with its persisted variant. */
 export function rememberGenerationAnchor(
@@ -231,10 +232,10 @@ export function rememberGenerationAnchor(
     const usage = response?.usage_variants?.[response.swipe_index];
     if (!response?.id || response.role !== 'assistant'
         || !Number.isSafeInteger(usage?.inputTokens) || usage!.inputTokens! < 0) {
-        promptAnchors.delete(chatId);
+        forgetPromptUsageAnchor(chatId);
         return;
     }
-    promptAnchors.set(chatId, {
+    rememberPromptUsageAnchor(chatId, {
         historyFingerprint: promptSnapshot.historyFingerprint,
         summaryFingerprint: promptSnapshot.summaryFingerprint,
         configurationFingerprint: promptSnapshot.configurationFingerprint,
@@ -337,7 +338,7 @@ export function updateRollingSummary(
             throw new Error('Die Summary wurde inzwischen geändert. Bitte die aktuelle Version erneut bearbeiten.');
         }
         bumpConversationRevision(chatId);
-        promptAnchors.delete(chatId);
+        forgetPromptUsageAnchor(chatId);
         applySummaryToActiveChat(chatId, next);
     });
     summarySerial = work.then(() => undefined, () => undefined);
