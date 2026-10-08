@@ -260,7 +260,7 @@ test('mobile add sheet owns Back; desktop add menu uses the sidebar Back handler
     $effect: callback => effects.push(callback),
     registerBackHandler: callback => { backHandler = callback; return () => {}; },
     chatState: { conversations: [{ id: 'a', mode: 'singleplayer' }] },
-    openHistoryChat: async id => opened.push(id), navigateTo: () => {},
+    openHistoryChat: async id => { opened.push(id); h.context.chatState.activeChatId = id; }, navigateTo: () => {},
   });
   assert.equal(effects[0](), undefined);
   h.run('managementOpen = true');
@@ -274,6 +274,28 @@ test('mobile add sheet owns Back; desktop add menu uses the sidebar Back handler
   h.run("interactionMode = 'mobile'");
   await h.run("loadChat('a')");
   assert.deepEqual(opened, ['a']);
+  assert.equal(closed, 1);
+});
+
+test('a superseded sidebar chat load neither navigates nor closes the new drawer', async () => {
+  let release;
+  const navigations = [];
+  let closed = 0;
+  const state = { activeChatId: null, conversations: ['a', 'b'].map(id => ({ id, mode: 'singleplayer' })) };
+  const h = controller('./SidebarBase.svelte', {
+    $props: () => ({ layout: 'drawer', mode: 'singleplayer', close: () => { closed++; } }),
+    chatState: state,
+    openHistoryChat: async id => {
+      if (id === 'a') await new Promise(resolve => { release = resolve; });
+      else state.activeChatId = id;
+    },
+    navigateTo: view => navigations.push(view),
+  });
+  const older = h.run("loadChat('a')");
+  await h.run("loadChat('b')");
+  release();
+  await older;
+  assert.deepEqual(navigations, ['chat']);
   assert.equal(closed, 1);
 });
 

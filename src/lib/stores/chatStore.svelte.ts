@@ -300,61 +300,86 @@ export async function cloneChatFromMessage(messageId: string): Promise<string | 
     }
 }
 
-export async function loadMessages(chatId: string) {
-    if (chatState.activeChatId !== chatId) {
-        // Resolve the chat-owned card before exposing this conversation to the
-        // composer. A deleted or edited library card must not alter its prompt.
-        const conversation = chatState.conversations.find(chat => chat.id === chatId);
-        if (characterState.allCharacters.length === 0) await loadCharacters();
-        const libraryCharacter = characterState.allCharacters.find(
-            character => String(character.id) === conversation?.character_id,
-        );
-        if (conversation?.mode === 'multiplayer') {
-            // Multiplayer restores its session-owned character separately.
-            appState.activeCharacter = libraryCharacter ?? null;
-        } else {
-            appState.activeCharacter = await invoke<ChatCharacterSnapshot | null>('get_chat_character_snapshot', {
-                chatId,
-                fallback: libraryCharacter ? characterSnapshot(libraryCharacter) : null,
-            });
-        }
-        // Chat was switched: clear local history to avoid flickering
-        chatState.currentMessages = [];
-        chatState.hasMoreMessages = false;
-        chatState.activeRoleSnapshot = chatState.conversations.find(
-            (conversation) => conversation.id === chatId
-        )?.role_snapshot ?? null;
-        
-        try {
-            const meta = await invoke<{ summary: string | null; last_id: string | null }>(
-                'get_summary_meta', { chatId }
-            );
-            chatState.summaryMeta = {
-                currentSummary:          meta.summary,
-                lastSummarizedMessageId: meta.last_id,
-            };
-        } catch {
-            chatState.summaryMeta = { currentSummary: null, lastSummarizedMessageId: null };
-        }
-    }
-    
-    try {
-        // Smart limit: If we're still in the same chat (e.g. after sending a message),
-        // we don't want to suddenly collapse the history back to 25.
-        // Instead, request the currently loaded amount + 1 (for the new message).
-        const limit = chatState.activeChatId === chatId && chatState.currentMessages.length >= 25
-            ? chatState.currentMessages.length + 1
-            : 25;
+let messageLoadGeneration = 0;
+let pendingMessageChatId: string | null = null;
 
-        // Use your get_messages_page function from the backend
-        const result = await invoke<PersistedMessageRow[]>('get_messages_page', { chatId, limit, offset: 0 });
-        
-        chatState.currentMessages = result.map(decodeMessage);
-        chatState.activeChatId = chatId;
-        
-        // If we hit the limit exactly, there are probably more messages available
-        chatState.hasMoreMessages = result.length === limit;
-    } catch (e) { reportDiagnostic('chat'); }
+export async function loadMessages(chatId: string) {
+    // A refresh of the old chat must not supersede an intentional chat switch.
+    if (chatState.activeChatId === chatId && pendingMessageChatId && pendingMessageChatId !== chatId) return;
+    const generation = ++messageLoadGeneration;
+    const previousChatId = chatState.activeChatId;
+    const switching = previousChatId !== chatId;
+    pendingMessageChatId = chatId;
+    const isCurrent = () => generation === messageLoadGeneration && chatState.activeChatId === previousChatId;
+    let nextCharacter: ChatCharacterSnapshot | null = null;
+    let nextRole = chatState.activeRoleSnapshot;
+    let nextSummary = chatState.summaryMeta;
+    try {
+        if (switching) {
+            // Resolve the chat-owned card before exposing this conversation to the
+            // composer. A deleted or edited library card must not alter its prompt.
+            const conversation = chatState.conversations.find(chat => chat.id === chatId);
+            if (characterState.allCharacters.length === 0) await loadCharacters();
+            if (!isCurrent()) return;
+            const libraryCharacter = characterState.allCharacters.find(
+                character => String(character.id) === conversation?.character_id,
+            );
+            if (conversation?.mode === 'multiplayer') {
+                // Multiplayer restores its session-owned character separately.
+                nextCharacter = libraryCharacter ?? null;
+            } else {
+                nextCharacter = await invoke<ChatCharacterSnapshot | null>('get_chat_character_snapshot', {
+                    chatId,
+                    fallback: libraryCharacter ? characterSnapshot(libraryCharacter) : null,
+                });
+            }
+            if (!isCurrent()) return;
+            nextRole = chatState.conversations.find(
+                (conversation) => conversation.id === chatId
+            )?.role_snapshot ?? null;
+
+            try {
+                const meta = await invoke<{ summary: string | null; last_id: string | null }>(
+                    'get_summary_meta', { chatId }
+                );
+                nextSummary = {
+                    currentSummary:          meta.summary,
+                    lastSummarizedMessageId: meta.last_id,
+                };
+            } catch {
+                nextSummary = { currentSummary: null, lastSummarizedMessageId: null };
+            }
+            if (!isCurrent()) return;
+        }
+
+        try {
+            // Smart limit: If we're still in the same chat (e.g. after sending a message),
+            // we don't want to suddenly collapse the history back to 25.
+            // Instead, request the currently loaded amount + 1 (for the new message).
+            const limit = chatState.activeChatId === chatId && chatState.currentMessages.length >= 25
+                ? chatState.currentMessages.length + 1
+                : 25;
+
+            // Use your get_messages_page function from the backend
+            const result = await invoke<PersistedMessageRow[]>('get_messages_page', { chatId, limit, offset: 0 });
+            if (!isCurrent()) return;
+            const messages = result.map(decodeMessage);
+
+            // Publish a complete chat snapshot together; no old load can mix its metadata in.
+            if (switching) {
+                appState.activeCharacter = nextCharacter;
+                chatState.activeRoleSnapshot = nextRole;
+                chatState.summaryMeta = nextSummary;
+            }
+            chatState.currentMessages = messages;
+            chatState.activeChatId = chatId;
+
+            // If we hit the limit exactly, there are probably more messages available
+            chatState.hasMoreMessages = result.length === limit;
+        } catch (e) { reportDiagnostic('chat'); }
+    } finally {
+        if (generation === messageLoadGeneration) pendingMessageChatId = null;
+    }
 }
 
 // Rows shown locally while SQLite is still saving must not count as page offsets.

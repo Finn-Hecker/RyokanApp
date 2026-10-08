@@ -233,6 +233,7 @@
     const conversation = chatState.conversations.find((chat) => chat.id === id);
     if (!conversation || conversation.mode !== mode) return;
     await openHistoryChat(id);
+    if (chatState.activeChatId !== id) return;
     if (conversation?.mode === 'multiplayer') {
       const { openPersistentSession } = await import('$lib/stores/multiplayer.svelte');
       await openPersistentSession(id, appState.activeCharacter);
