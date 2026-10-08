@@ -57,6 +57,7 @@
   let clonedFromTitle = $derived(activeConversation?.cloned_from_title ?? null);
 
   let unlistenClose: (() => void) | undefined;
+  let disposed = false;
   let chatResizeObserver: ResizeObserver | undefined;
   let previousChatHeight = 0;
   let bottomGap = Number.POSITIVE_INFINITY;
@@ -119,6 +120,7 @@
     // New/history navigation already loads this chat before mounting the room.
     if (chatState.activeChatId && chatState.currentMessages.length === 0) await loadMessages(chatState.activeChatId);
     await tick();
+    if (disposed) return;
     if (chatContainer) {
       previousChatHeight = chatContainer.clientHeight;
       measureBottomGap();
@@ -128,16 +130,23 @@
     chatReady = true;
 
     const win = getCurrentWindow();
-    unlistenClose = await win.onCloseRequested(async (event) => {
+    const closeListener = await win.onCloseRequested(async (event) => {
+      if (disposed) return;
       event.preventDefault();
       await stopGeneration();
       await win.destroy();
     });
+    if (disposed) {
+      closeListener();
+      return;
+    }
+    unlistenClose = closeListener;
 
     window.addEventListener('keydown', handleArrowKey);
   });
 
   onDestroy(() => {
+    disposed = true;
     retryCancelled = true;
     sendCancelled = true;
     if (isGenerating) {

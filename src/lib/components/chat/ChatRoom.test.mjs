@@ -171,3 +171,59 @@ test('closing a clone error preserves history even with a pending generation ret
   assert.equal(c.context.chatState.currentMessages[0].id, 'saved-user');
   assert.equal(c.run('showErrorModal'), false);
 });
+
+function lifecycleRoom({ deferTick = false, deferClose = false } = {}) {
+  let mount, destroy, finishTick, finishClose, closeCallback;
+  const listeners = new Set();
+  let observed = 0, disconnected = 0, unlistened = 0, closeRegistrations = 0;
+  const c = room({
+    onMount: callback => { mount = callback; }, onDestroy: callback => { destroy = callback; },
+    tick: () => deferTick ? new Promise(resolve => { finishTick = resolve; }) : Promise.resolve(),
+    window: { addEventListener: (_name, callback) => listeners.add(callback), removeEventListener: (_name, callback) => listeners.delete(callback) },
+    ResizeObserver: class { observe() { observed++; } disconnect() { disconnected++; } },
+    getCurrentWindow: () => ({
+      onCloseRequested: callback => {
+        closeRegistrations++;
+        closeCallback = callback;
+        const unlisten = () => { unlistened++; };
+        return deferClose ? new Promise(resolve => { finishClose = () => resolve(unlisten); }) : Promise.resolve(unlisten);
+      },
+    }),
+    container: { clientHeight: 400, scrollHeight: 1000, scrollTop: 600 },
+  });
+  c.context.chatState.currentMessages.push({ id: 'prepared' });
+  c.run('chatContainer = container');
+  return { ...c, mount: () => mount(), destroy: () => destroy(),
+    finishTick: () => finishTick(), finishClose: () => finishClose(), close: event => closeCallback(event),
+    resources: () => ({ observed, disconnected, unlistened, closeRegistrations, keys: listeners.size }) };
+}
+
+test('destroy during close-listener registration immediately unlistens the late result', async () => {
+  const h = lifecycleRoom({ deferClose: true });
+  const mounting = h.mount();
+  await new Promise(resolve => setImmediate(resolve));
+  h.destroy();
+  h.finishClose();
+  await mounting;
+  assert.deepEqual(h.resources(), { observed: 1, disconnected: 1, unlistened: 1, closeRegistrations: 1, keys: 0 });
+  let prevented = false;
+  await h.close({ preventDefault: () => { prevented = true; } });
+  assert.equal(prevented, false, 'an obsolete close callback cannot intercept the current window');
+});
+
+test('destroy before the render tick creates no observer or listeners', async () => {
+  const h = lifecycleRoom({ deferTick: true });
+  const mounting = h.mount();
+  h.destroy();
+  h.finishTick();
+  await mounting;
+  assert.deepEqual(h.resources(), { observed: 0, disconnected: 0, unlistened: 0, closeRegistrations: 0, keys: 0 });
+});
+
+test('normal mount and destroy still register and release each chat resource once', async () => {
+  const h = lifecycleRoom();
+  await h.mount();
+  assert.equal(h.resources().keys, 1);
+  h.destroy();
+  assert.deepEqual(h.resources(), { observed: 1, disconnected: 1, unlistened: 1, closeRegistrations: 1, keys: 0 });
+});
