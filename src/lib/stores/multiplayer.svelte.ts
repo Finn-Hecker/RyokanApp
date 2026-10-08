@@ -1235,14 +1235,19 @@ function scheduleSnapshot(): void {
   if (snapshotTimer) clearTimeout(snapshotTimer);
   snapshotTimer = setTimeout(() => {
     snapshotTimer = null;
-    void sendHostRelay({
-      k: 'snap',
-      charName: mpState.characterName,
-      character: mpState.sessionCharacter,
-      msgs: mpState.messages
-        .filter((m) => m.kind !== 'system' && !m.streaming)
-        .map(({ id, kind, author, text, ts }) => ({ id, kind, author, text, ts })),
-    });
+    const messages = mpState.messages
+      .filter((m) => m.kind !== 'system' && !m.streaming)
+      .map(({ id, kind, author, text, ts }) => ({ id, kind, author, text, ts }));
+    // Each existing snap frame stays within the receiver limit, including an
+    // empty first frame so guests can authenticate the host before its policy.
+    for (let offset = 0; offset < Math.max(messages.length, 1); offset += MAX_SNAPSHOT_MESSAGES) {
+      void sendHostRelay({
+        k: 'snap',
+        charName: mpState.characterName,
+        character: mpState.sessionCharacter,
+        msgs: messages.slice(offset, offset + MAX_SNAPSHOT_MESSAGES),
+      });
+    }
     void sendHostRelay({ k: 'policy', everyone: mpState.everyoneCanGenerate });
   }, SNAPSHOT_DEBOUNCE_MS);
 }
