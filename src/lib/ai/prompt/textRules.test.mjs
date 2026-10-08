@@ -111,6 +111,8 @@ test('Settings saves the ordered payload via existing settings persistence and r
     hydrateApiConnections: () => {}, resolvedHardContextLimit: () => 100, goBack: () => {}, reportDiagnostic: () => assert.fail('Unexpected diagnostic'),
   });
   vm.runInContext(ts.transpile(settingsFunctions(), { target: ts.ScriptTarget.ES2022 }), context);
+  await context.loadSettings();
+  appState.textRules = rules;
   await context.saveSettings();
   assert.deepEqual(parseTextRules(saved.get(TEXT_RULES_KEY)), rules);
   appState.textRules = [];
