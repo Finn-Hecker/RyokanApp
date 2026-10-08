@@ -1,5 +1,30 @@
 <script module lang="ts">
+  import type { Action } from 'svelte/action';
+
   let activeMenuId = $state<string | null>(null);
+  let menuPosition = $state({ x: 0, y: 0 });
+
+  export const desktopCharacterContextMenu: Action<HTMLButtonElement, { id: string; enabled: boolean }> = (node, options) => {
+    function contextMenu(event: MouseEvent) {
+      if (!options.enabled || !window.matchMedia('(min-width: 768px)').matches) return;
+      event.preventDefault();
+      event.stopPropagation();
+      menuPosition = { x: event.clientX, y: event.clientY };
+      activeMenuId = options.id;
+    }
+
+    node.addEventListener('contextmenu', contextMenu);
+    return {
+      update(nextOptions) {
+        if (activeMenuId === options.id && (!nextOptions.enabled || nextOptions.id !== options.id)) activeMenuId = null;
+        options = nextOptions;
+      },
+      destroy() {
+        node.removeEventListener('contextmenu', contextMenu);
+        if (activeMenuId === options.id) activeMenuId = null;
+      }
+    };
+  };
 </script>
 
 <script lang="ts">
@@ -9,7 +34,6 @@
     char,
     isHidden,
     isPinned,
-    size = 'md',
     menuMode = 'full',
     sheet = false,
     onClose = () => {},
@@ -36,11 +60,6 @@
   let menuId = $derived(String(char?.id));
   let open = $derived(activeMenuId === menuId);
 
-  function toggle(e: MouseEvent) {
-    e.stopPropagation();
-    activeMenuId = open ? null : menuId;
-  }
-
   function close() {
     if (sheet) {
       onClose();
@@ -59,52 +78,41 @@
     e.stopPropagation();
   }
 
-  const buttonSizes: Record<string, string> = {
-    sm: 'w-6 h-6 rounded-full',
-    md: 'w-7 h-7 rounded-lg',
-    lg: 'w-8 h-8 rounded-full',
-  };
-
-  const iconSizes: Record<string, number> = {
-    sm: 11,
-    md: 13,
-    lg: 14,
-  };
+  function positionMenu(node: HTMLDivElement) {
+    // Keep viewport coordinates independent of card transforms and clipping.
+    if (!sheet) document.body.appendChild(node);
+    $effect(() => {
+      if (sheet) return;
+      const { x, y } = menuPosition;
+      const { width, height } = node.getBoundingClientRect();
+      node.style.left = `${Math.max(8, Math.min(x, window.innerWidth - width - 8))}px`;
+      node.style.top = `${Math.max(8, Math.min(y, window.innerHeight - height - 8))}px`;
+      node.style.visibility = 'visible';
+    });
+    return { destroy() { if (!sheet) node.remove(); } };
+  }
 </script>
 
 <svelte:window
   onclick={() => { if (!sheet) close(); }}
+  onresize={() => { if (!sheet) close(); }}
+  onscroll={() => { if (!sheet) close(); }}
   onkeydown={(event) => { if (!sheet && event.key === 'Escape') close(); }}
 />
 
-{#if !sheet}
-<button
-  type="button"
-  onclick={toggle}
-  aria-label={m.lobby_aria_options()}
-  aria-haspopup="menu"
-  aria-expanded={open}
-  class="{buttonSizes[size]} relative flex items-center justify-center bg-black/50 hover:bg-black/70 backdrop-blur-md border border-white/10 hover:border-ryokan-accent/40 text-gray-300 hover:text-white transition-all duration-150 active:scale-90 touch-manipulation select-none [-webkit-tap-highlight-color:transparent] before:content-[''] before:absolute before:-inset-2.5
-    {size === 'md' ? 'bg-white/5 hover:bg-white/[0.07]' : ''}
-    {open ? 'bg-black/70 border-ryokan-accent/50 text-white' + (size === 'md' ? ' !bg-white/[0.07]' : '') : ''}"
->
-  <svg width={iconSizes[size]} height={iconSizes[size]} viewBox="0 0 24 24" fill="currentColor">
-    <circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/>
-  </svg>
-</button>
-{/if}
-
 {#if char && (sheet || open)}
   <div
+    use:positionMenu
     role="menu"
     aria-label={m.lobby_aria_character_options()}
     tabindex="-1"
+    oncontextmenu={(event) => { if (!sheet) event.preventDefault(); }}
     onclick={stopProp}
     onkeydown={stopProp}
     class={sheet
       ? 'sheet-action-list w-full'
-      : 'absolute right-0 top-full mt-1.5 w-44 max-w-[calc(100vw-2rem)] bg-[#16161f] border border-ryokan-accent/[0.22] rounded-xl z-30 py-1 overflow-hidden'}
-    style={sheet ? '' : 'box-shadow: 0 20px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(212,180,131,0.04) inset;'}
+      : 'desktop-context-menu fixed w-44 max-w-[calc(100vw-2rem)] bg-[#16161f] border border-ryokan-accent/[0.22] rounded-xl z-50 py-1 overflow-y-auto max-h-[calc(100vh-1rem)]'}
+    style={sheet ? '' : 'visibility: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(212,180,131,0.04) inset;'}
   >
     {#if menuMode === 'manage'}
       <button
@@ -213,6 +221,19 @@
 {/if}
 
 <style>
+  .desktop-context-menu {
+    animation: context-menu-appear 100ms ease-out;
+  }
+
+  @keyframes context-menu-appear {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .desktop-context-menu { animation: none; }
+  }
+
   .sheet-action {
     min-height: 44px;
     padding: 9px 10px;
