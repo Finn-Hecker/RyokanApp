@@ -213,8 +213,14 @@ try {
     Write-Host 'Generated latest.json:' -ForegroundColor Green
     Write-Host $manifestJson
 
-    $existingReleaseJson = (& gh release view $tag --repo $Repo --json isDraft,tagName 2>$null)
+    $existingReleaseJson = & gh release view $tag --repo $Repo --json isDraft,tagName 2>&1
     $releaseExists = $LASTEXITCODE -eq 0
+
+    if ($releaseExists) {
+        $existingReleaseJson = ($existingReleaseJson | Out-String).Trim()
+    } else {
+        $existingReleaseJson = $null
+    }
     if ($releaseExists) {
         $existingRelease = $existingReleaseJson | ConvertFrom-Json
         if (-not $existingRelease.isDraft) { throw "Release $tag is already published. Refusing to replace signed assets." }
