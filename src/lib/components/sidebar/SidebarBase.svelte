@@ -156,7 +156,7 @@
   };
 
   onMount(() => {
-    if (layout === 'inline') initializeChats();
+    initializeChats();
     document.addEventListener('click', closeMenuOnOutsideClick);
     document.addEventListener('keydown', closeMenuOnEscape);
   });
@@ -196,8 +196,7 @@
     isLoading = true;
     hasMore = true;
     try {
-      if (mode === 'singleplayer') await ensureConversationsLoaded(mode);
-      else await loadAllConversations(mode);
+      await ensureConversationsLoaded(mode);
       hasMore = chatState.conversations.filter(
         chat => chat.mode === mode && chat.folder_id === null,
       ).length === 10;
@@ -1398,7 +1397,7 @@
     {@render navButtons()}
   </aside>
 
-{:else if isOpen}
+{:else}
   <button
     type="button"
     aria-label={m.history_close_label()}

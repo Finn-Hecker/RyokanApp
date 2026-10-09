@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
-  import { onDestroy, tick, type Snippet } from 'svelte';
+  import { onMount, onDestroy, tick, type Snippet } from 'svelte';
   import { appState, type InteractionMode } from '$lib/stores/appState.svelte';
   import { registerBackHandler } from '$lib/stores/navigation';
   import { mobileSidebarSwipe } from './mobileSidebarSwipe';
@@ -38,7 +38,8 @@
   } = $props();
 
   let isMobileSidebarOpen = $state(false);
-  let isMobileSidebarMounted = $state(false);
+  let isMobileSidebarVisible = $state(false);
+  let wideLayout = $state(window.matchMedia('(min-width: 1024px)').matches);
   let sidebarDragging = $state(false);
   let sidebarProgress = $state(0);
   let sidebarLayer = $state<HTMLDivElement | null>(null);
@@ -52,6 +53,12 @@
   }
 
   onDestroy(cancelSidebarMotion);
+  onMount(() => {
+    const query = window.matchMedia('(min-width: 1024px)');
+    const sync = () => { wideLayout = query.matches; closeSidebar(); };
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  });
 
   function sidebarDrawerWidth() {
     return sidebarLayer?.querySelector<HTMLElement>('[data-sidebar-drawer]')?.getBoundingClientRect().width
@@ -60,7 +67,7 @@
 
   function dragSidebar(progress: number) {
     cancelSidebarMotion();
-    isMobileSidebarMounted = true;
+    isMobileSidebarVisible = true;
     sidebarDragging = true;
     sidebarProgress = progress;
   }
@@ -70,9 +77,9 @@
     isMobileSidebarOpen = false;
     sidebarDragging = false;
     sidebarProgress = 0;
-    if (!isMobileSidebarMounted) return;
+    if (!isMobileSidebarVisible) return;
     sidebarSettleTimer = setTimeout(() => {
-      isMobileSidebarMounted = false;
+      isMobileSidebarVisible = false;
       sidebarSettleTimer = undefined;
     }, 180);
   }
@@ -80,7 +87,7 @@
   async function openSidebar() {
     cancelSidebarMotion();
     const revision = sidebarMotionRevision;
-    isMobileSidebarMounted = true;
+    isMobileSidebarVisible = true;
     isMobileSidebarOpen = true;
     sidebarDragging = false;
     await tick();
@@ -125,13 +132,14 @@
   aria-label={pageTitle}
 >
   {#if showSidebar}
+    {#if wideLayout}
     <div class="hidden lg:flex shrink-0 bg-ryokan-sidebar">
       <aside class="{sidebarWidth} h-full border-r border-white/5 flex flex-col shrink-0">
         {@render sidebar?.({ layout: 'inline', interactionMode: appState.interactionMode, isOpen: true, close: () => {} })}
       </aside>
     </div>
 
-    {#if isMobileSidebarMounted}
+    {:else}
       <button
         type="button"
         aria-label="Close sidebar"
@@ -144,10 +152,12 @@
         bind:this={sidebarLayer}
         class="mobile-sidebar-layer lg:hidden fixed inset-0 z-40"
         class:mobile-sidebar-layer--dragging={sidebarDragging}
+        class:mobile-sidebar-layer--visible={isMobileSidebarVisible}
         inert={!isMobileSidebarOpen}
+        aria-hidden={!isMobileSidebarOpen}
         style:--sidebar-progress={sidebarProgress}
       >
-        {@render sidebar?.({ layout: 'drawer', interactionMode: appState.interactionMode, isOpen: true, close: closeSidebar })}
+        {@render sidebar?.({ layout: 'drawer', interactionMode: appState.interactionMode, isOpen: isMobileSidebarOpen || sidebarDragging, close: closeSidebar })}
       </div>
     {/if}
   {/if}
@@ -184,6 +194,12 @@
 <style>
   .mobile-sidebar-layer {
     --sidebar-motion-duration: 180ms;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .mobile-sidebar-layer--visible {
+    visibility: visible;
+    pointer-events: auto;
   }
   .mobile-sidebar-layer--dragging {
     --sidebar-motion-duration: 0ms;

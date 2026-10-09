@@ -174,7 +174,8 @@ for (const view of ['lobby', 'play']) {
       $state: value => value,
       $props: () => ({ pageTitle: 'Test', showSidebar: true }),
       $effect: callback => { effect = callback; },
-      onDestroy: () => {}, clearTimeout: () => {},
+      onDestroy: () => {}, onMount: () => {}, clearTimeout: () => {},
+      window: { matchMedia: () => ({ matches: false }) },
     });
     const source = readFileSync(new URL('../components/layouts/PageLayout.svelte', import.meta.url), 'utf8')
       .match(/<script lang="ts">([\s\S]*?)<\/script>/)[1];

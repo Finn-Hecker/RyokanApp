@@ -26,6 +26,7 @@ function controller(filename, globals = {}) {
   const context = vm.createContext({
     console, $state: value => value, $props: () => ({ isOpen: true, mode: 'singleplayer', interactionMode: 'mobile' }),
     $effect: () => {}, onMount: () => {}, onDestroy: () => {},
+    window: { matchMedia: () => ({ matches: false }) },
     setTimeout: (callback, delay) => { const id = ++nextTimer; timers.set(id, { callback, delay }); return id; },
     clearTimeout: id => timers.delete(id), cancelAnimationFrame: () => {}, requestAnimationFrame: () => 1,
     m: new Proxy({}, { get: () => () => '' }), ...globals,
@@ -247,25 +248,25 @@ test('drawer backdrops retain their dismissal callbacks without a header close b
     const expression = backdrops[0].attributes.find(attribute => attribute.name === 'onclick').value.expression;
     let closed = false;
     const h = controller(filename, { $props: () => ({ close: () => { closed = true; } }) });
-    if (filename !== './SidebarBase.svelte') h.run('isMobileSidebarOpen = true; isMobileSidebarMounted = true; sidebarProgress = 1');
+    if (filename !== './SidebarBase.svelte') h.run('isMobileSidebarOpen = true; isMobileSidebarVisible = true; sidebarProgress = 1');
     h.run('(' + source.slice(expression.start, expression.end) + ')()');
     assert.equal(filename === './SidebarBase.svelte' ? closed : h.run('isMobileSidebarOpen === false && sidebarProgress === 0'), true);
     assert.equal(source.includes('sidebar-close-button'), false);
   }
 });
 
-test('the page drawer follows progress immediately and keeps its contents until settling finishes', () => {
+test('the retained page drawer follows progress immediately and stays visible until settling finishes', () => {
   const h = controller('../layouts/PageLayout.svelte');
   h.run('dragSidebar(.12)');
-  assert.equal(h.run('isMobileSidebarMounted && sidebarDragging && !isMobileSidebarOpen'), true);
+  assert.equal(h.run('isMobileSidebarVisible && sidebarDragging && !isMobileSidebarOpen'), true);
   assert.equal(h.run('sidebarProgress'), .12);
   h.run('releaseSidebar(false)');
   assert.equal(h.run('sidebarProgress'), 0);
-  assert.equal(h.run('isMobileSidebarMounted'), true);
+  assert.equal(h.run('isMobileSidebarVisible'), true);
   h.finishSidebarMotion();
-  assert.equal(h.run('isMobileSidebarMounted'), false);
+  assert.equal(h.run('isMobileSidebarVisible'), false);
   h.run('dragSidebar(.4); releaseSidebar(true)');
-  assert.equal(h.run('isMobileSidebarOpen && isMobileSidebarMounted && !sidebarDragging'), true);
+  assert.equal(h.run('isMobileSidebarOpen && isMobileSidebarVisible && !sidebarDragging'), true);
   assert.equal(h.run('sidebarProgress'), 1);
 });
 
@@ -274,7 +275,7 @@ test('a new drag cancels pending drawer cleanup and menu-button opening cannot o
   const h = controller('../layouts/PageLayout.svelte', { tick: () => new Promise(resolve => { releaseTick = resolve; }) });
   h.run('dragSidebar(.2); releaseSidebar(false); dragSidebar(.35); releaseSidebar(true)');
   h.finishSidebarMotion();
-  assert.equal(h.run('isMobileSidebarMounted && isMobileSidebarOpen'), true);
+  assert.equal(h.run('isMobileSidebarVisible && isMobileSidebarOpen'), true);
   const opening = h.run('openSidebar()');
   h.run('closeSidebar()');
   releaseTick();
@@ -282,7 +283,7 @@ test('a new drag cancels pending drawer cleanup and menu-button opening cannot o
   assert.equal(h.run('isMobileSidebarOpen'), false);
   assert.equal(h.run('sidebarProgress'), 0);
   h.finishSidebarMotion();
-  assert.equal(h.run('isMobileSidebarMounted'), false);
+  assert.equal(h.run('isMobileSidebarVisible'), false);
 });
 
 test('mobile add sheet owns Back; desktop add menu uses the sidebar Back handler', async () => {
