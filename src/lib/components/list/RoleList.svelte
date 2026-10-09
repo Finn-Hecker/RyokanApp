@@ -3,12 +3,12 @@
   import * as m from '$lib/paraglide/messages';
   import { appState } from '$lib/stores/appState.svelte';
   import { navigateTo } from '$lib/stores/navigation';
-  import { deleteRole, loadRoleAvatar, loadRoles, roleState, setDefaultRole, type Role } from '$lib/stores/roleStore.svelte';
+  import { deleteRole, loadRoleAvatar, ensureRolesLoaded, roleState, setDefaultRole, type Role } from '$lib/stores/roleStore.svelte';
 
   let deletingId = $state<string | null>(null);
 
   onMount(async () => {
-    await loadRoles();
+    await ensureRolesLoaded();
     await Promise.all(roleState.roles.filter((role) => role.has_avatar).map((role) => loadRoleAvatar(role.id)));
   });
 

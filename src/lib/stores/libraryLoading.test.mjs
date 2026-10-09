@@ -75,6 +75,44 @@ test('failed role hydration propagates and can be retried', async () => {
 const conversation = (id, mode = 'singleplayer', folderId = null) => ({
   id, title: id, mode, folder_id: folderId, created_at: '2026-01-01', updated_at: '2026-01-01',
 });
+
+test('role images share pending reads and keep cached row/list identities on remount and refresh', async () => {
+  let resolve, avatarReads = 0;
+  const c = store('./roleStore.svelte.ts', {
+    getSetting: async () => null,
+    invoke: async command => command === 'get_roles' ? [{ id: 'r', has_avatar: true, name: 'Player' }]
+      : (avatarReads++, new Promise(done => { resolve = done; })),
+  });
+  await c.context.ensureRolesLoaded();
+  const state = c.read('roleState'), list = state.roles, role = list[0];
+  const first = c.context.loadRoleAvatar('r');
+  assert.equal(c.context.loadRoleAvatar('r'), first);
+  resolve('data:image'); await first;
+  await c.context.loadRoles();
+  await c.context.loadRoleAvatar('r');
+  assert.equal(avatarReads, 1);
+  assert.equal(state.roles, list);
+  assert.equal(state.roles[0], role);
+  assert.equal(role.avatarUrl, 'data:image');
+});
+
+test('a replaced role image rejects old in-flight bytes and a deleted role cannot be revived', async () => {
+  let resolve, reads = 0;
+  const c = store('./roleStore.svelte.ts', {
+    getSetting: async () => null,
+    invoke: async command => command === 'get_roles' ? [{ id: 'r', has_avatar: true }]
+      : command === 'get_role_avatar' ? ++reads === 1 ? new Promise(done => { resolve = done; }) : 'data:new' : undefined,
+  });
+  await c.context.ensureRolesLoaded();
+  const first = c.context.loadRoleAvatar('r');
+  await c.context.updateRole('r', { avatar: 'data:upload' });
+  resolve('data:old'); await first;
+  assert.equal(c.read('roleState.roles[0].avatarUrl'), 'data:new');
+  await c.context.deleteRole('r');
+  await c.context.loadRoleAvatar('r');
+  assert.equal(c.read('roleState.roles.length'), 0);
+  assert.equal(reads, 2);
+});
 const folder = (id, isCollapsed = false) => ({
   id, name: id, mode: 'singleplayer', is_collapsed: isCollapsed, chat_count: 1, sort_order: 0,
 });

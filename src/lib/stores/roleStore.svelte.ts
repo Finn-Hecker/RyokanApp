@@ -33,19 +33,20 @@ export function ensureRolesLoaded(): Promise<void> {
 
 export async function loadRoles(): Promise<void> {
     try {
-        const avatarUrls = new Map(
-            roleState.roles
-                .filter((role) => role.avatarUrl)
-                .map((role) => [role.id, role.avatarUrl] as const)
-        );
         const [roles, savedDefaultId] = await Promise.all([
             invoke<Role[]>('get_roles'),
             getSetting(DEFAULT_ROLE_SETTING),
         ]);
-        roleState.roles = roles.map((role) => {
-            const avatarUrl = avatarUrls.get(role.id);
-            return avatarUrl ? { ...role, avatarUrl } : role;
+        const existing = new Map(roleState.roles.map(role => [role.id, role]));
+        const next = roles.map(role => {
+            const previous = existing.get(role.id);
+            if (!previous) return role;
+            Object.assign(previous, role, { avatarUrl: role.has_avatar ? previous.avatarUrl : undefined });
+            return previous;
         });
+        if (next.length !== roleState.roles.length || next.some((role, index) => role !== roleState.roles[index])) {
+            roleState.roles = next;
+        }
         roleState.defaultRoleId = roles.some((role) => role.id === savedDefaultId)
             ? savedDefaultId
             : null;
@@ -61,41 +62,40 @@ export async function setDefaultRole(id: string | null): Promise<void> {
     roleState.defaultRoleId = id;
 }
 
-const avatarFetchesInFlight = new Set<string>();
+const avatarFetchesInFlight = new Map<string, Promise<void>>();
+const avatarRevisions = new Map<string, number>();
 
-export async function loadRoleAvatar(id: string): Promise<void> {
-    if (avatarFetchesInFlight.has(id)) return;
-    avatarFetchesInFlight.add(id);
-
-    try {
-        const avatarUrl = await invoke<string | null>('get_role_avatar', { id });
-        if (!avatarUrl) return;
-        roleState.roles = roleState.roles.map((role) =>
-            role.id === id ? { ...role, avatarUrl } : role
-        );
-    } catch (error) {
-        reportDiagnostic('role');
-        throw error;
-    } finally {
-        avatarFetchesInFlight.delete(id);
-    }
+export function loadRoleAvatar(id: string): Promise<void> {
+    const role = roleState.roles.find(role => role.id === id);
+    if (!role?.has_avatar || role.avatarUrl) return Promise.resolve();
+    const pending = avatarFetchesInFlight.get(id);
+    if (pending) return pending;
+    const revision = avatarRevisions.get(id) ?? 0;
+    const request = (async () => {
+        try {
+            const avatarUrl = await invoke<string | null>('get_role_avatar', { id });
+            if (!avatarUrl || revision !== (avatarRevisions.get(id) ?? 0)) return;
+            const current = roleState.roles.find(role => role.id === id);
+            if (current?.has_avatar) current.avatarUrl = avatarUrl;
+        } catch (error) {
+            reportDiagnostic('role');
+            throw error;
+        }
+    })().finally(() => {
+        if (avatarFetchesInFlight.get(id) === request) avatarFetchesInFlight.delete(id);
+    });
+    avatarFetchesInFlight.set(id, request);
+    return request;
 }
 
 export async function createRole(input: RoleInput): Promise<string> {
     try {
-        await loadRoles();
+        await ensureRolesLoaded();
         const isFirstRole = roleState.roles.length === 0;
         const id = await invoke<string>('create_role', { payload: input });
         if (isFirstRole) await setDefaultRole(id);
         await loadRoles();
-        if (input.avatar) {
-            roleState.roles = roleState.roles.map((role) =>
-                role.id === id
-                    ? { ...role, has_avatar: true, avatarUrl: input.avatar ?? undefined }
-                    : role
-            );
-            setTimeout(() => void loadRoles(), 800);
-        }
+        if (input.avatar) await loadRoleAvatar(id);
         return id;
     } catch (error) {
         reportDiagnostic('role');
@@ -106,15 +106,14 @@ export async function createRole(input: RoleInput): Promise<string> {
 export async function updateRole(id: string, input: RoleInput): Promise<void> {
     try {
         await invoke('update_role', { id, payload: input });
-        await loadRoles();
-        if (input.avatar) {
-            roleState.roles = roleState.roles.map((role) =>
-                role.id === id
-                    ? { ...role, has_avatar: true, avatarUrl: input.avatar ?? undefined }
-                    : role
-            );
-            setTimeout(() => void loadRoles(), 800);
+        if (input.avatar && !input.avatar.startsWith('blob:')) {
+            avatarRevisions.set(id, (avatarRevisions.get(id) ?? 0) + 1);
+            avatarFetchesInFlight.delete(id);
+            const role = roleState.roles.find(role => role.id === id);
+            if (role) role.avatarUrl = undefined;
         }
+        await loadRoles();
+        if (input.avatar) await loadRoleAvatar(id);
     } catch (error) {
         reportDiagnostic('role');
         throw error;
@@ -124,6 +123,8 @@ export async function updateRole(id: string, input: RoleInput): Promise<void> {
 export async function deleteRole(id: string): Promise<void> {
     try {
         await invoke('delete_role', { id });
+        avatarRevisions.set(id, (avatarRevisions.get(id) ?? 0) + 1);
+        avatarFetchesInFlight.delete(id);
         roleState.roles = roleState.roles.filter((role) => role.id !== id);
         if (roleState.defaultRoleId === id) roleState.defaultRoleId = null;
     } catch (error) {

@@ -3,7 +3,7 @@
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { onMount } from 'svelte';
   import * as m from '$lib/paraglide/messages';
-  import { loadRoles, roleState } from '$lib/stores/roleStore.svelte';
+  import { ensureRolesLoaded, roleState } from '$lib/stores/roleStore.svelte';
   import type { BundledRoleSnapshot, RolePolicy } from '$lib/stores/characterStore.svelte';
 
   let { rolePolicy = $bindable('open'), bundledRoles = [], onAdd, onRemove }: {
@@ -14,7 +14,7 @@
 
   let pickerOpen = $state(false);
   let busy = $state(false);
-  onMount(() => loadRoles());
+  onMount(() => ensureRolesLoaded());
 
   async function add(roleId: string) {
     if (busy) return;
