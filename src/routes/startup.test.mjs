@@ -4,19 +4,18 @@ import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-test('hydration does not wait for sidebar metadata, World Info or view imports and initializes settings and platform', async () => {
+test('settings hydration runs alongside local preparation and warms models without waiting for a provider', async () => {
   const script = readFileSync(new URL('./+page.svelte', import.meta.url), 'utf8').match(/<script lang="ts">([\s\S]*?)<\/script>/)[1];
   const ast = ts.createSourceFile('page.ts', script, ts.ScriptTarget.Latest, true);
   const load = ast.statements.find(statement => ts.isFunctionDeclaration(statement) && statement.name.text === 'loadApp').getText(ast);
-  let finishWorldInfo, hydrated = false, updateInitialized = false, preloading = false, prefetchedMode;
-  const worldInfo = new Promise(resolve => { finishWorldInfo = resolve; });
+  let hydrated = false, updateInitialized = false, preloading = false, modelWarmup;
+  const connection = { url: 'configured-provider' };
   const context = vm.createContext({
-    appState: {}, loaded: false, disposed: false, loadWorldInfos: () => worldInfo,
+    appState: { apiSettings: connection }, loaded: false, disposed: false,
     preloadMainViews: () => { preloading = true; return new Promise(() => {}); },
-    ensureConversationsLoaded: mode => { prefetchedMode = mode; return new Promise(() => {}); },
+    warmModelCatalog: config => { modelWarmup = config; return new Promise(() => {}); },
     getAllSettings: async () => {
       assert.equal(preloading, true, 'imports already run when hydration starts');
-      assert.equal(prefetchedMode, 'singleplayer', 'sidebar metadata loads alongside hydration');
       return [{ key: 'onboarding_completed', value: 'true' }, { key: 'chat_font_scale', value: '120' }];
     },
     invoke: async () => 'mobile', hydrateApiConnections: () => { hydrated = true; },
@@ -29,5 +28,5 @@ test('hydration does not wait for sidebar metadata, World Info or view imports a
   assert.equal(context.appState.chatFontScale, 120);
   assert.equal(context.appState.isOnboarding, false);
   assert.equal(hydrated, true); assert.equal(updateInitialized, true);
-  finishWorldInfo();
+  assert.equal(modelWarmup, connection);
 });

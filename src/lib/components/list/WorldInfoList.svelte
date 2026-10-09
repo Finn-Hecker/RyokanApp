@@ -2,7 +2,7 @@
   import * as m from '$lib/paraglide/messages';
   import { onMount }    from 'svelte';
   import { fade }       from 'svelte/transition';
-  import { worldInfoState, loadWorldInfos, type WorldInfo } from '$lib/stores/worldInfoStore.svelte';
+  import { worldInfoState, ensureWorldInfosLoaded, type WorldInfo } from '$lib/stores/worldInfoStore.svelte';
   import { deleteWorldInfo }  from '$lib/components/editor/worldinfo/worldInfoLogic';
   import { appState } from '$lib/stores/appState.svelte';
   import { navigateTo } from '$lib/stores/navigation';
@@ -14,7 +14,7 @@
     worldInfoState.allWorldInfos.filter(w => !DEFAULT_WORLD_INFOS.some(d => d.id === w.id))
   );
 
-  onMount(() => loadWorldInfos());
+  onMount(() => ensureWorldInfosLoaded());
 
   function openEdit(wi: WorldInfo) {
     appState.editingCharacter = (wi as any);

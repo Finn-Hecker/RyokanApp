@@ -1,7 +1,16 @@
 import { fetchModels, type ModelInfo } from '$lib/settings/settings';
+import { PROVIDERS, type ProviderKind } from './providers';
 
 const catalogs = new Map<string, { models?: ModelInfo[]; pending?: Promise<ModelInfo[]> }>();
 const MAX_CATALOGS = 8;
+
+export async function warmModelCatalog(connection: { url: string; apiKey: string; providerKind: ProviderKind; customMode: boolean }): Promise<void> {
+  const local = PROVIDERS.find(provider => provider.kind === connection.providerKind)?.tab === 'local';
+  if (!connection.url.trim() || !(local || connection.customMode || connection.apiKey.trim())) return;
+  try { await ensureModelsLoaded(connection.url, connection.apiKey, connection.providerKind); } catch {
+    // Settings surface provider failures and retain an explicit retry action.
+  }
+}
 
 function key(url: string, apiKey: string, providerKind?: string): string {
   return JSON.stringify([url, apiKey, providerKind]);

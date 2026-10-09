@@ -4,8 +4,7 @@
   import { mpState, enterRoom, prepareCreate, prepareJoin } from '$lib/stores/multiplayer.svelte';
   import {
     characterState,
-    loadCharacters,
-    loadHiddenIds,
+    ensureLobbyCharactersLoaded,
     type Character,
   } from '$lib/stores/characterStore.svelte';
   import { onMount, tick } from 'svelte';
@@ -64,8 +63,7 @@
     if (saved === 'grid' || saved === 'compact' || saved === 'list') {
       viewMode = saved;
     }
-    await loadHiddenIds();
-    if (characterState.allCharacters.length === 0) await loadCharacters();
+    await ensureLobbyCharactersLoaded();
   });
 
   function scenarioDescription(character: Character): string {

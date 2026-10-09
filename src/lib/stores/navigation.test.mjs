@@ -55,7 +55,7 @@ test('a view without recorded history returns home before exiting', () => {
   assert.equal(n.appState.currentView, 'lobby');
 });
 
-function page({ reducedMotion = false, deferredListener = false, userAgent = 'Android WebView', preload, settings = async () => [] } = {}) {
+function page({ reducedMotion = false, deferredListener = false, userAgent = 'Android WebView', preload, library, settings = async () => [] } = {}) {
   const context = navigation();
   const invocations = [];
   const animations = [];
@@ -76,7 +76,7 @@ function page({ reducedMotion = false, deferredListener = false, userAgent = 'An
       const listener = { unregister: async () => { unregistered++; } };
       return deferredListener ? new Promise(resolve => { resolveListener = () => resolve(listener); }) : Promise.resolve(listener);
     },
-    getAllSettings: settings, loadWorldInfos: async () => {}, ensureConversationsLoaded: async () => {},
+    getAllSettings: settings, prepareLibrary: () => library?.() ?? Promise.resolve(), warmModelCatalog: async () => {},
     parseTextRules: () => [], TEXT_RULES_KEY: "text_rules_v1", hydrateApiConnections: () => {}, updater: { initialize: async () => {} },
     container: { animate: (...args) => { animations.push(args); return { cancel() {} }; } },
   });
@@ -115,6 +115,32 @@ for (const android of [false, true]) {
     dispose();
   });
 }
+
+test('cached view imports do not release navigation until local libraries and thumbnails are ready', async () => {
+  let ready;
+  const h = page({ library: () => new Promise(resolve => { ready = resolve; }) });
+  const dispose = h.mount();
+  await flush();
+  assert.equal(h.get('loaded'), true);
+  assert.equal(h.get('viewsReady'), false);
+  ready();
+  await flush();
+  assert.equal(h.get('viewsReady'), true);
+  dispose();
+});
+
+test('a failed local preparation keeps navigation gated and can be retried', async () => {
+  let calls = 0;
+  const h = page({ library: async () => { if (++calls === 1) throw new Error('Database unavailable'); } });
+  const dispose = h.mount();
+  await flush();
+  assert.equal(h.get('viewsReady'), false);
+  assert.equal(h.get('preloadFailed'), true);
+  await h.context.preloadMainViews();
+  assert.equal(h.get('viewsReady'), true);
+  assert.equal(calls, 2);
+  dispose();
+});
 
 test('onboarding remains available while main views load, and completing it cannot bypass the gate', async () => {
   let release;

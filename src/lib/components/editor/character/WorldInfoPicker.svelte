@@ -1,7 +1,7 @@
 <script lang="ts">
   import * as m from '$lib/paraglide/messages';
   import { onMount } from 'svelte';
-  import { worldInfoState, loadWorldInfos } from '$lib/stores/worldInfoStore.svelte';
+  import { worldInfoState, ensureWorldInfosLoaded } from '$lib/stores/worldInfoStore.svelte';
   import { DEFAULT_WORLD_INFOS } from '$lib/data/worldInfo';
 
   let {
@@ -10,7 +10,7 @@
     selectedIds?: string[];
   } = $props();
 
-  onMount(() => loadWorldInfos());
+  onMount(() => ensureWorldInfosLoaded());
 
   const defaultIds = new Set(DEFAULT_WORLD_INFOS.map(w => w.id));
   let userWorldInfos = $derived(worldInfoState.allWorldInfos.filter(w => !defaultIds.has(w.id)));

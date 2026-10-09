@@ -9,7 +9,9 @@ function catalog(fetchModels) {
   const ast = ts.createSourceFile('catalog.ts', source, ts.ScriptTarget.Latest, true);
   const body = ast.statements.filter(statement => !ts.isImportDeclaration(statement))
     .map(statement => statement.getText(ast).replace(/^export /, '')).join('\n');
-  const context = vm.createContext({ fetchModels, structuredClone });
+  const context = vm.createContext({ fetchModels, structuredClone, PROVIDERS: [
+    { kind: 'lm_studio', tab: 'local' }, { kind: 'openai', tab: 'cloud' },
+  ] });
   vm.runInContext(ts.transpile(body, { target: ts.ScriptTarget.ES2022 }), context);
   return context;
 }
@@ -25,6 +27,24 @@ test('catalog survives remounts, deduplicates pending requests and isolates cons
   assert.equal(c.cachedModels('url', 'key', 'provider')[0].id, 'model');
   assert.deepEqual((await c.ensureModelsLoaded('url', 'key', 'provider'))[0].architecture.inputModalities, ['text']);
   assert.equal(calls, 1);
+});
+
+test('startup warming fetches usable configurations, shares settings requests and tolerates offline providers', async () => {
+  let calls = 0, resolve;
+  const c = catalog(() => { calls++; return new Promise(done => { resolve = done; }); });
+  const config = { url: 'server', apiKey: '', providerKind: 'lm_studio', customMode: false };
+  const warming = c.warmModelCatalog(config);
+  const settings = c.ensureModelsLoaded(config.url, config.apiKey, config.providerKind);
+  resolve([{ id: 'ready' }]);
+  await Promise.all([warming, settings]);
+  assert.equal(calls, 1);
+  await c.warmModelCatalog({ ...config, url: '' });
+  await c.warmModelCatalog({ ...config, providerKind: 'openai' });
+  assert.equal(calls, 1, 'empty endpoints and cloud providers without credentials do not fetch');
+  const offline = catalog(async () => { throw new Error('Offline'); });
+  await offline.warmModelCatalog(config);
+  await offline.warmModelCatalog({ ...config, providerKind: 'openai', customMode: true });
+  assert.equal(offline.cachedModels(config.url, config.apiKey, config.providerKind), undefined);
 });
 
 test('catalog scopes credentials and providers, refreshes on retry and retries failures', async () => {

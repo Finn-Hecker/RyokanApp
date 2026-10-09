@@ -11,8 +11,8 @@
   import { onBackButtonPress } from '@tauri-apps/api/app';
   import { handleBackNavigation } from '$lib/stores/navigation';
   import { invoke } from '@tauri-apps/api/core';
-  import { loadWorldInfos } from '$lib/stores/worldInfoStore.svelte';
-  import { ensureConversationsLoaded } from '$lib/stores/chatStore.svelte';
+  import { prepareLibrary } from '$lib/startup/prepareLibrary';
+  import { warmModelCatalog } from '$lib/ai/connections/modelCatalog';
   import { hydrateApiConnections } from '$lib/ai/connections/apiConnections';
   import { updater } from '$lib/stores/updater';
   import * as m from '$lib/paraglide/messages';
@@ -47,10 +47,13 @@
   function preloadMainViews(): Promise<void> {
     if (pendingPreload) return pendingPreload;
     preloadFailed = false;
-    pendingPreload = preloadLazyViews(
-      [chat, settings, editor, list, multiplayer, play],
-      /Android/i.test(navigator.userAgent) ? 2 : 6,
-    ).then(() => {
+    pendingPreload = Promise.all([
+      preloadLazyViews(
+        [chat, settings, editor, list, multiplayer, play],
+        /Android/i.test(navigator.userAgent) ? 2 : 6,
+      ),
+      prepareLibrary(),
+    ]).then(() => {
       if (!disposed) viewsReady = true;
     }).catch(() => {
       if (!disposed) {
@@ -98,15 +101,9 @@
   });
 
   async function loadApp() {
-    // Start imports alongside IPC hydration. Onboarding need not wait for these,
-    // but normal navigation stays gated until all six modules are cached.
+    // Prepare modules, local libraries and thumbnails alongside settings.
+    // Onboarding remains available; normal navigation waits for preparation.
     void preloadMainViews();
-    // Tauri initializes SQLite before exposing IPC. Warm the initial solo sidebar
-    // metadata alongside hydration without gating startup on the library query.
-    void ensureConversationsLoaded('singleplayer');
-    // Hydrate lorebooks in the background; generation awaits this shared load
-    // before budgeting or assembling a prompt.
-    void loadWorldInfos();
     settingsLoadFailed = false;
     let settings: Awaited<ReturnType<typeof getAllSettings>>;
     let interactionMode: 'desktop' | 'mobile';
@@ -129,6 +126,9 @@
     appState.chatFontScale = Number.isFinite(chatFontScale) && chatFontScale >= 80 && chatFontScale <= 140 ? chatFontScale : 100;
 
     hydrateApiConnections(settings);
+    // Provider access can be offline. Warm its catalog without making local
+    // screens wait for a remote server; settings reuse this same request/cache.
+    void warmModelCatalog(appState.apiSettings);
     appState.textRules = parseTextRules(settings.find(row => row.key === TEXT_RULES_KEY)?.value);
 
     appState.isOnboarding = map['onboarding_completed'] !== 'true';
