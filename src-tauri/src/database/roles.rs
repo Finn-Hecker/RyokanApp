@@ -117,6 +117,20 @@ pub async fn get_role_avatar(app: AppHandle, id: String) -> Result<Option<String
     }))
 }
 
+/// Display-only thumbnail; original bytes remain available for editing and snapshots.
+#[tauri::command]
+pub async fn get_role_thumbnail(app: AppHandle, id: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = get_connection(&app)?;
+        let bytes: Option<Vec<u8>> = conn.query_row(
+            "SELECT avatar FROM roles WHERE id = ?1", params![id], |row| row.get(0),
+        ).map_err(|error| error.to_string())?;
+        bytes.filter(|bytes| !bytes.is_empty()).map(|bytes| {
+            super::avatar::avatar_thumbnail(&bytes).map(super::characters::image_data_url)
+        }).transpose()
+    }).await.map_err(|error| error.to_string())?
+}
+
 /// Inserts a new role. Avatar processing completes before this command returns,
 /// so a subsequent Card snapshot can always copy the persisted bytes.
 /// Returns the new UUID so the frontend can update its optimistic entry.

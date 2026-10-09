@@ -130,12 +130,12 @@
     rolePolicy = current.role_policy ?? 'open';
     bundledRoles = Array.isArray(current.bundled_roles) ? current.bundled_roles : [];
 
-    if (current.avatarUrl) {
+    if (current.avatarUrl || current.thumbnailUrl) {
       if (activeTab === 'role') {
-        roleAvatarPreview = current.avatarUrl;
+        roleAvatarPreview = current.avatarUrl || current.thumbnailUrl;
         roleAvatarChanged = false;
       } else {
-        avatarPreview = current.avatarUrl;
+        avatarPreview = current.avatarUrl || current.thumbnailUrl;
         avatarChanged = false;
       }
     }

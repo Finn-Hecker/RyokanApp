@@ -11,6 +11,7 @@ export interface Role {
     has_avatar: boolean;
     created_at: string;
     avatarUrl?: string;
+    thumbnailUrl?: string;
 }
 
 export type RoleInput = Pick<Role, 'name' | 'prompt'> & {
@@ -41,7 +42,10 @@ export async function loadRoles(): Promise<void> {
         const next = roles.map(role => {
             const previous = existing.get(role.id);
             if (!previous) return role;
-            Object.assign(previous, role, { avatarUrl: role.has_avatar ? previous.avatarUrl : undefined });
+            Object.assign(previous, role, {
+                avatarUrl: role.has_avatar ? previous.avatarUrl : undefined,
+                thumbnailUrl: role.has_avatar ? previous.thumbnailUrl : undefined,
+            });
             return previous;
         });
         if (next.length !== roleState.roles.length || next.some((role, index) => role !== roleState.roles[index])) {
@@ -63,28 +67,39 @@ export async function setDefaultRole(id: string | null): Promise<void> {
 }
 
 const avatarFetchesInFlight = new Map<string, Promise<void>>();
+const thumbnailFetchesInFlight = new Map<string, Promise<void>>();
 const avatarRevisions = new Map<string, number>();
 
 export function loadRoleAvatar(id: string): Promise<void> {
+    return loadRoleImage(id, false);
+}
+
+export function loadRoleThumbnail(id: string): Promise<void> {
+    return loadRoleImage(id, true);
+}
+
+function loadRoleImage(id: string, thumbnail: boolean): Promise<void> {
+    const field = thumbnail ? 'thumbnailUrl' : 'avatarUrl';
+    const requests = thumbnail ? thumbnailFetchesInFlight : avatarFetchesInFlight;
     const role = roleState.roles.find(role => role.id === id);
-    if (!role?.has_avatar || role.avatarUrl) return Promise.resolve();
-    const pending = avatarFetchesInFlight.get(id);
+    if (!role?.has_avatar || role[field]) return Promise.resolve();
+    const pending = requests.get(id);
     if (pending) return pending;
     const revision = avatarRevisions.get(id) ?? 0;
     const request = (async () => {
         try {
-            const avatarUrl = await invoke<string | null>('get_role_avatar', { id });
+            const avatarUrl = await invoke<string | null>(thumbnail ? 'get_role_thumbnail' : 'get_role_avatar', { id });
             if (!avatarUrl || revision !== (avatarRevisions.get(id) ?? 0)) return;
             const current = roleState.roles.find(role => role.id === id);
-            if (current?.has_avatar) current.avatarUrl = avatarUrl;
+            if (current?.has_avatar) current[field] = avatarUrl;
         } catch (error) {
             reportDiagnostic('role');
             throw error;
         }
     })().finally(() => {
-        if (avatarFetchesInFlight.get(id) === request) avatarFetchesInFlight.delete(id);
+        if (requests.get(id) === request) requests.delete(id);
     });
-    avatarFetchesInFlight.set(id, request);
+    requests.set(id, request);
     return request;
 }
 
@@ -109,8 +124,9 @@ export async function updateRole(id: string, input: RoleInput): Promise<void> {
         if (input.avatar && !input.avatar.startsWith('blob:')) {
             avatarRevisions.set(id, (avatarRevisions.get(id) ?? 0) + 1);
             avatarFetchesInFlight.delete(id);
+            thumbnailFetchesInFlight.delete(id);
             const role = roleState.roles.find(role => role.id === id);
-            if (role) role.avatarUrl = undefined;
+            if (role) { role.avatarUrl = undefined; role.thumbnailUrl = undefined; }
         }
         await loadRoles();
         if (input.avatar) await loadRoleAvatar(id);
@@ -125,6 +141,7 @@ export async function deleteRole(id: string): Promise<void> {
         await invoke('delete_role', { id });
         avatarRevisions.set(id, (avatarRevisions.get(id) ?? 0) + 1);
         avatarFetchesInFlight.delete(id);
+        thumbnailFetchesInFlight.delete(id);
         roleState.roles = roleState.roles.filter((role) => role.id !== id);
         if (roleState.defaultRoleId === id) roleState.defaultRoleId = null;
     } catch (error) {

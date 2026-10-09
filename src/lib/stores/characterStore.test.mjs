@@ -28,6 +28,7 @@ function store() {
       if (handlers[command]) return handlers[command](args);
       if (command === 'get_custom_characters') return structuredClone(rows);
       if (command === 'get_character_avatar') return 'data:original';
+      if (command === 'get_character_thumbnail') return 'data:thumbnail';
       return [];
     },
   });
@@ -51,6 +52,38 @@ test('avatar loading and metadata refresh retain character/list identities and c
   assert.equal(character.name, 'Edited name');
   assert.equal(character.avatarUrl, 'data:original');
   assert.equal(c.calls.filter(call => call.command === 'get_character_avatar').length, 1);
+});
+
+test('thumbnail caching is independent from original bytes and survives metadata refresh', async () => {
+  const c = store();
+  await c.context.loadCharacters();
+  const character = c.state.allCharacters[0];
+  await c.context.loadCharacterThumbnail('card');
+  await c.context.loadCharacters();
+  await c.context.loadCharacterThumbnail('card');
+  assert.equal(character.thumbnailUrl, 'data:thumbnail');
+  assert.equal(character.avatarUrl, undefined);
+  assert.equal(c.calls.filter(call => call.command === 'get_character_thumbnail').length, 1);
+  await c.context.loadCharacterAvatar('card');
+  assert.equal(character.avatarUrl, 'data:original');
+  assert.equal(character.thumbnailUrl, 'data:thumbnail');
+});
+
+test('an avatar edit retires an old thumbnail response and its cached preview', async () => {
+  const c = store();
+  await c.context.loadCharacters();
+  const pending = deferred();
+  c.handlers.get_character_thumbnail = () => pending.promise;
+  const first = c.context.loadCharacterThumbnail('card');
+  assert.equal(c.context.loadCharacterThumbnail('card'), first);
+  await c.context.updateCharacter('card', { ...c.rows[0], avatar: 'data:upload' });
+  pending.resolve('data:stale'); await first;
+  assert.equal(c.state.allCharacters[0].thumbnailUrl, undefined);
+  c.avatarUpdated('card');
+  c.handlers.get_character_thumbnail = () => 'data:new-thumbnail';
+  await c.context.loadCharacterThumbnail('card');
+  await c.context.loadCharacters();
+  assert.equal(c.state.allCharacters[0].thumbnailUrl, 'data:new-thumbnail');
 });
 
 test('avatar changes invalidate the cache and reject an old in-flight image response', async () => {

@@ -3,6 +3,13 @@ use image::ImageFormat;
 use std::io::Cursor;
 use webp::{Encoder, WebPMemory};
 
+/// Small display-only image; persisted avatars and exports retain their original bytes.
+pub(super) fn avatar_thumbnail(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let image = image::load_from_memory(bytes).map_err(|error| error.to_string())?;
+    let rgba = image.thumbnail(512, 512).to_rgba8();
+    Ok(Encoder::from_rgba(rgba.as_raw(), rgba.width(), rgba.height()).encode(85.0).to_vec())
+}
+
 /// Decodes a Base64 image from the frontend, resizes it if it exceeds 2048×2048,
 /// and re-encodes it as WebP. Returns the original bytes if they are already smaller.
 pub(super) fn process_avatar(base64_img: &str) -> Result<Vec<u8>, String> {
@@ -56,6 +63,19 @@ pub(super) fn process_avatar(base64_img: &str) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn thumbnails_bound_decoded_size_preserve_aspect_and_leave_originals_intact() {
+        let image = image::DynamicImage::new_rgba8(1200, 1600);
+        let mut png = Cursor::new(Vec::new());
+        image.write_to(&mut png, ImageFormat::Png).unwrap();
+        let bytes = png.into_inner();
+        let thumbnail = avatar_thumbnail(&bytes).unwrap();
+        let decoded = image::load_from_memory(&thumbnail).unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (384, 512));
+        assert_eq!(image::load_from_memory(&bytes).unwrap().width(), 1200);
+        assert!(avatar_thumbnail(b"invalid").is_err());
+    }
 
     #[test]
     fn enabled_avatar_formats_decode_and_removed_codecs_are_rejected() {

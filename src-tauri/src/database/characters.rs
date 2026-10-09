@@ -273,6 +273,19 @@ pub async fn get_character_avatar(app: AppHandle, id: String) -> Result<Option<S
 }
 
 #[tauri::command]
+pub async fn get_character_thumbnail(app: AppHandle, id: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = get_connection(&app)?;
+        let bytes: Option<Vec<u8>> = conn.query_row(
+            "SELECT avatar FROM characters WHERE id = ?1", params![id], |row| row.get(0),
+        ).map_err(|error| error.to_string())?;
+        bytes.filter(|bytes| !bytes.is_empty()).map(|bytes| {
+            super::avatar::avatar_thumbnail(&bytes).map(image_data_url)
+        }).transpose()
+    }).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 pub async fn get_bundled_role_avatar(
     app: AppHandle,
     character_id: String,

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { loadCharacterAvatar } from '$lib/stores/characterStore.svelte';
+  import { loadCharacterThumbnail } from '$lib/stores/characterStore.svelte';
 
   let {
     char,
@@ -14,18 +14,19 @@
   } = $props();
 
   // Only the fallback (initials) placeholder is ever observed. Once a real
-  // avatar has loaded, char.avatarUrl becomes truthy and this element is
+  // avatar has loaded, imageUrl becomes truthy and this element is
   // removed from the DOM, so there's nothing left to watch — no explicit
   // "stop observing once loaded" branch needed beyond that.
   let fallbackEl: HTMLDivElement | undefined = $state();
+  const imageUrl = $derived(char.thumbnailUrl || char.avatarUrl);
 
   $effect(() => {
-    if (!char.has_avatar || char.avatarUrl || !fallbackEl) return;
+    if (!char.has_avatar || imageUrl || !fallbackEl) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
-          loadCharacterAvatar(String(char.id));
+          void loadCharacterThumbnail(String(char.id));
           observer.disconnect();
         }
       },
@@ -37,8 +38,8 @@
   });
 </script>
 
-{#if char.avatarUrl}
-  <img src={char.avatarUrl} alt={char.name} class={imgClass} decoding="async" />
+{#if imageUrl}
+  <img src={imageUrl} alt={char.name} class={imgClass} decoding="async" />
   {#if gradientClass}
     <div class="absolute inset-0 {gradientClass}"></div>
   {/if}

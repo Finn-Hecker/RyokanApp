@@ -3,13 +3,13 @@
   import * as m from '$lib/paraglide/messages';
   import { appState } from '$lib/stores/appState.svelte';
   import { navigateTo } from '$lib/stores/navigation';
-  import { deleteRole, loadRoleAvatar, ensureRolesLoaded, roleState, setDefaultRole, type Role } from '$lib/stores/roleStore.svelte';
+  import { deleteRole, loadRoleThumbnail, ensureRolesLoaded, roleState, setDefaultRole, type Role } from '$lib/stores/roleStore.svelte';
 
   let deletingId = $state<string | null>(null);
 
   onMount(async () => {
     await ensureRolesLoaded();
-    await Promise.all(roleState.roles.filter((role) => role.has_avatar).map((role) => loadRoleAvatar(role.id)));
+    await Promise.all(roleState.roles.filter((role) => role.has_avatar).map((role) => loadRoleThumbnail(role.id)));
   });
 
   function openEdit(role: Role) {
@@ -26,7 +26,7 @@
 
 <div class="list">
   {#each roleState.roles as role (role.id)}
-    {@const avatar = role.avatarUrl}
+    {@const avatar = role.thumbnailUrl || role.avatarUrl}
     <div class="role-card" role="button" tabindex="0" onclick={() => openEdit(role)} onkeydown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openEdit(role); } }}>
       <div class="avatar">
         {#if avatar}

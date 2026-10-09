@@ -41,6 +41,8 @@ export interface Character {
     has_avatar?: boolean;
     avatarUrl?: string;
     hidden?: boolean;
+    /** Display-only thumbnail; editors and chat snapshots retain the original avatar. */
+    thumbnailUrl?: string;
     alternate_greetings?: string[];
     world_info_ids?: string[];
     role_policy: RolePolicy;
@@ -77,9 +79,11 @@ function ensureAvatarUpdateListener(): Promise<void> {
             // Retire both old bytes and in-flight reads only after SQLite commits.
             avatarRevisions.set(id, (avatarRevisions.get(id) ?? 0) + 1);
             avatarFetchesInFlight.delete(id);
+            thumbnailFetchesInFlight.delete(id);
             invalidatedAvatars.delete(id);
             character.has_avatar = true;
             character.avatarUrl = undefined;
+            character.thumbnailUrl = undefined;
         }).then(() => undefined).catch(() => {
             avatarUpdateListener = undefined;
             reportDiagnostic('character');
@@ -156,9 +160,11 @@ export async function loadCharacters() {
             if (previous && (revisionsAtLoad.get(id) ?? 0) !== (avatarRevisions.get(id) ?? 0)) return previous;
             const avatarUrl = character.has_avatar && !invalidatedAvatars.has(id)
                 ? previous?.avatarUrl : undefined;
+            const thumbnailUrl = character.has_avatar && !invalidatedAvatars.has(id)
+                ? previous?.thumbnailUrl : undefined;
             invalidatedAvatars.delete(id);
             if (!previous) return character;
-            Object.assign(previous, character, { avatarUrl });
+            Object.assign(previous, character, { avatarUrl, thumbnailUrl });
             return previous;
         });
         nextCharacters.push(...STATIC_CHARACTERS);
@@ -169,9 +175,8 @@ export async function loadCharacters() {
         charactersLoaded = true;
 
         // Avatars are intentionally NOT fetched here. Each view (grid/list/compact)
-        // renders a <CharacterAvatar> that lazily calls loadCharacterAvatar() via an
-        // IntersectionObserver once a card actually scrolls into view - fetching
-        // eagerly for every character here would defeat that.
+        // renders a small thumbnail. Startup prepares these separately; the
+        // observer is a fallback for newly imported or edited cards.
 
     } catch (e) {
         reportDiagnostic('character');
@@ -186,6 +191,29 @@ export async function loadCharacters() {
  * <CharacterAvatar> for the same character before the first fetch lands.
  */
 const avatarFetchesInFlight = new Map<string, Promise<void>>();
+const thumbnailFetchesInFlight = new Map<string, Promise<void>>();
+
+export function loadCharacterThumbnail(id: string): Promise<void> {
+    const current = characterState.allCharacters.find(character => String(character.id) === id);
+    if (!current?.has_avatar || current.thumbnailUrl || invalidatedAvatars.has(id)) return Promise.resolve();
+    const pending = thumbnailFetchesInFlight.get(id);
+    if (pending) return pending;
+    const revision = avatarRevisions.get(id) ?? 0;
+    const request = (async () => {
+        try {
+            const url = await invoke<string | null>('get_character_thumbnail', { id });
+            if (!url || revision !== (avatarRevisions.get(id) ?? 0) || invalidatedAvatars.has(id)) return;
+            const character = characterState.allCharacters.find(character => String(character.id) === id);
+            if (character?.has_avatar) character.thumbnailUrl = url;
+        } catch {
+            reportDiagnostic('character');
+        }
+    })().finally(() => {
+        if (thumbnailFetchesInFlight.get(id) === request) thumbnailFetchesInFlight.delete(id);
+    });
+    thumbnailFetchesInFlight.set(id, request);
+    return request;
+}
 
 export function loadCharacterAvatar(id: string): Promise<void> {
     const current = characterState.allCharacters.find(c => String(c.id) === id);
@@ -296,6 +324,8 @@ export async function updateCharacter(id: string, charData: CharacterInput) {
             avatarRevisions.set(id, (avatarRevisions.get(id) ?? 0) + 1);
             invalidatedAvatars.add(id);
             avatarFetchesInFlight.delete(id);
+            thumbnailFetchesInFlight.delete(id);
+            if (character) character.thumbnailUrl = undefined;
         }
         if (character) {
             Object.assign(character, displayData, { role_policy: charData.role_policy ?? character.role_policy, isCustom: true });

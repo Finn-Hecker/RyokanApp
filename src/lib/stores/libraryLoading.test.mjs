@@ -96,6 +96,25 @@ test('role images share pending reads and keep cached row/list identities on rem
   assert.equal(role.avatarUrl, 'data:image');
 });
 
+test('role thumbnails remain separate from originals and are reused after metadata refresh', async () => {
+  const calls = [];
+  const c = store('./roleStore.svelte.ts', {
+    getSetting: async () => null,
+    invoke: async command => {
+      calls.push(command);
+      return command === 'get_roles' ? [{ id: 'r', has_avatar: true }] : 'data:thumbnail';
+    },
+  });
+  await c.context.ensureRolesLoaded();
+  await c.context.loadRoleThumbnail('r');
+  await c.context.loadRoles();
+  await c.context.loadRoleThumbnail('r');
+  assert.equal(c.read('roleState.roles[0].thumbnailUrl'), 'data:thumbnail');
+  assert.equal(c.read('roleState.roles[0].avatarUrl'), undefined);
+  assert.equal(calls.filter(command => command === 'get_role_thumbnail').length, 1);
+  assert.equal(calls.includes('get_role_avatar'), false);
+});
+
 test('a replaced role image rejects old in-flight bytes and a deleted role cannot be revived', async () => {
   let resolve, reads = 0;
   const c = store('./roleStore.svelte.ts', {
