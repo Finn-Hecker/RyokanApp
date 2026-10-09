@@ -10,7 +10,8 @@ import type { TokenUsage } from '$lib/ai/tokens/tokenUsage';
 
 import { decodeMessage, type Message, type PersistedMessageRow } from '$lib/chat/messageData';
 export type { Message } from '$lib/chat/messageData';
-import type { ChatKind } from '$lib/chat/groupChatData';
+import { decodeGroupParticipant, type ChatKind, type GroupParticipant, type PersistedGroupParticipantRow } from '$lib/chat/groupChatData';
+import { stopGroupGeneration } from '$lib/ai/generation/groupGenerationLifecycle';
 
 export interface Conversation {
     id: string;
@@ -142,6 +143,7 @@ export const chatState = $state({
         lastSummarizedMessageId: null,
     } as SummaryMeta,
     activeRoleSnapshot: null as ChatRoleSnapshot | null,
+    activeGroupParticipants: [] as GroupParticipant[],
 });
 
 const dateFormatter = new Intl.DateTimeFormat(getLocale(), {
@@ -311,6 +313,7 @@ let messageLoadGeneration = 0;
 let pendingMessageChatId: string | null = null;
 
 export async function loadMessages(chatId: string) {
+    if (chatState.activeChatId !== chatId) stopGroupGeneration(chatState.activeChatId ?? undefined);
     // A refresh of the old chat must not supersede an intentional chat switch.
     if (chatState.activeChatId === chatId && pendingMessageChatId && pendingMessageChatId !== chatId) return;
     const generation = ++messageLoadGeneration;
@@ -319,6 +322,7 @@ export async function loadMessages(chatId: string) {
     pendingMessageChatId = chatId;
     const isCurrent = () => generation === messageLoadGeneration && chatState.activeChatId === previousChatId;
     let nextCharacter: ChatCharacterSnapshot | null = null;
+    let nextParticipants = chatState.activeGroupParticipants;
     let nextRole = chatState.activeRoleSnapshot;
     let nextSummary = chatState.summaryMeta;
     try {
@@ -326,12 +330,17 @@ export async function loadMessages(chatId: string) {
             // Resolve the chat-owned card before exposing this conversation to the
             // composer. A deleted or edited library card must not alter its prompt.
             const conversation = chatState.conversations.find(chat => chat.id === chatId);
-            if (characterState.allCharacters.length === 0) await loadCharacters();
+            if (conversation?.chat_kind !== 'group' && characterState.allCharacters.length === 0) await loadCharacters();
             if (!isCurrent()) return;
             const libraryCharacter = characterState.allCharacters.find(
                 character => String(character.id) === conversation?.character_id,
             );
-            if (conversation?.mode === 'multiplayer') {
+            nextParticipants = [];
+            if (conversation?.chat_kind === 'group') {
+                const group = await invoke<{ participants: PersistedGroupParticipantRow[] }>('get_group_chat', { chatId });
+                nextParticipants = group.participants.map(decodeGroupParticipant);
+                nextCharacter = null;
+            } else if (conversation?.mode === 'multiplayer') {
                 // Multiplayer restores its session-owned character separately.
                 nextCharacter = libraryCharacter ?? null;
             } else {
@@ -376,6 +385,7 @@ export async function loadMessages(chatId: string) {
             if (switching) {
                 appState.activeCharacter = nextCharacter;
                 chatState.activeRoleSnapshot = nextRole;
+                chatState.activeGroupParticipants = nextParticipants;
                 chatState.summaryMeta = nextSummary;
             }
             chatState.currentMessages = messages;
@@ -604,11 +614,13 @@ export async function togglePinConversation(id: string) {
 }
 
 export async function deleteConversation(id: string) {
+    stopGroupGeneration(id);
     try {
         await invoke('delete_chat', { id });
         forgetPromptUsageAnchor(id);
         await loadAllConversations();
         if (chatState.activeChatId === id) {
+            chatState.activeGroupParticipants = [];
             chatState.activeChatId    = null;
             chatState.currentMessages = [];
             chatState.summaryMeta     = {

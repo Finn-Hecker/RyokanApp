@@ -24,7 +24,12 @@ export interface PromptUsageAnchor {
 const MAX_PROMPT_USAGE_ANCHORS = 32;
 const promptUsageAnchors = new Map<string, PromptUsageAnchor>();
 
-export function getPromptUsageAnchor(chatId: string): PromptUsageAnchor | undefined {
+function promptAnchorKey(chatId: string, participantId?: string): string {
+  return participantId ? `${chatId}:participant:${participantId}` : chatId;
+}
+
+export function getPromptUsageAnchor(chatId: string, participantId?: string): PromptUsageAnchor | undefined {
+  chatId = promptAnchorKey(chatId, participantId);
   const anchor = promptUsageAnchors.get(chatId);
   if (anchor) {
     promptUsageAnchors.delete(chatId);
@@ -33,7 +38,8 @@ export function getPromptUsageAnchor(chatId: string): PromptUsageAnchor | undefi
   return anchor;
 }
 
-export function rememberPromptUsageAnchor(chatId: string, anchor: PromptUsageAnchor): void {
+export function rememberPromptUsageAnchor(chatId: string, anchor: PromptUsageAnchor, participantId?: string): void {
+  chatId = promptAnchorKey(chatId, participantId);
   promptUsageAnchors.delete(chatId);
   promptUsageAnchors.set(chatId, anchor);
   if (promptUsageAnchors.size > MAX_PROMPT_USAGE_ANCHORS) {
@@ -41,8 +47,15 @@ export function rememberPromptUsageAnchor(chatId: string, anchor: PromptUsageAnc
   }
 }
 
-export function forgetPromptUsageAnchor(chatId: string): void {
+export function forgetPromptUsageAnchor(chatId: string, participantId?: string): void {
+  if (participantId) {
+    promptUsageAnchors.delete(promptAnchorKey(chatId, participantId));
+    return;
+  }
   promptUsageAnchors.delete(chatId);
+  for (const key of promptUsageAnchors.keys()) {
+    if (key.startsWith(`${chatId}:participant:`)) promptUsageAnchors.delete(key);
+  }
 }
 
 /** Only an append to the exact anchored conversation may reuse provider usage. */

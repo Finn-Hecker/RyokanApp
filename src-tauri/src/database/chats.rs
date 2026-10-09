@@ -9,7 +9,7 @@ use crate::diagnostics::chat_export::{Command, Probe, Reason};
 
 // Read custom cards from SQLite, so their snapshot does not depend on a stale
 // lobby object or whether its avatar has already been loaded.
-fn resolve_character_snapshot(
+pub(super) fn resolve_character_snapshot(
     conn: &rusqlite::Connection,
     character_id: Option<&str>,
     fallback: Option<Value>,
@@ -196,7 +196,7 @@ fn deserialize_role_snapshot(raw: Option<String>) -> Option<ChatRoleSnapshot> {
     raw.and_then(|value| serde_json::from_str(&value).ok())
 }
 
-fn resolve_role_snapshot(
+pub(super) fn resolve_role_snapshot(
     conn: &rusqlite::Connection,
     character_id: Option<&str>,
     selection: Option<&RoleSelection>,

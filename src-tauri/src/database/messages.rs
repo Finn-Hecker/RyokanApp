@@ -26,7 +26,7 @@ pub struct DbMessage {
     pub created_at: String,
 }
 
-fn message_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbMessage> {
+pub(super) fn message_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbMessage> {
     Ok(DbMessage {
         id: row.get(0)?,
         conversation_id: row.get(1)?,
@@ -210,7 +210,7 @@ pub async fn add_swipe_variant(app: AppHandle, message_id: String, content: Stri
     append_swipe_variant(&conn, &message_id, content, usage)
 }
 
-fn append_swipe_variant(conn: &rusqlite::Connection, message_id: &str, content: String, usage: Option<TokenUsage>) -> Result<i64, String> {
+pub(super) fn append_swipe_variant(conn: &rusqlite::Connection, message_id: &str, content: String, usage: Option<TokenUsage>) -> Result<i64, String> {
     // Fetch current variants JSON.
     let (current_variants_json, current_usage_json): (String, String) = conn.query_row(
         "SELECT swipe_variants, usage_variants FROM messages WHERE id = ?1",

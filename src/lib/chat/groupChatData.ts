@@ -13,11 +13,14 @@ export interface GroupParticipant {
     character_id: string | null;
     character_snapshot: GroupCharacterSnapshot;
     sort_order: number;
+    /** Inactive participants remain addressable in historical turns. */
+    is_active: boolean;
     created_at: string;
 }
 
-export interface PersistedGroupParticipantRow extends Omit<GroupParticipant, 'character_snapshot'> {
+export interface PersistedGroupParticipantRow extends Omit<GroupParticipant, 'character_snapshot' | 'is_active'> {
     character_snapshot: GroupCharacterSnapshot | string;
+    is_active?: boolean;
 }
 
 /** Older IPC payloads predate chat_kind; unknown kinds must not become solo chats. */
@@ -49,11 +52,13 @@ export function decodeGroupParticipant(row: PersistedGroupParticipantRow): Group
         || typeof row.conversation_id !== 'string' || !row.conversation_id.trim()
         || (row.character_id !== null && typeof row.character_id !== 'string')
         || !Number.isSafeInteger(row.sort_order) || row.sort_order < 0
+        || (row.is_active !== undefined && typeof row.is_active !== 'boolean')
         || typeof row.created_at !== 'string') {
         throw new Error('Invalid group participant');
     }
     return {
         ...row,
+        is_active: row.is_active ?? true,
         character_snapshot: {
             id: fields.id as string,
             name: fields.name as string,

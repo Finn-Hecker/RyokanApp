@@ -4,7 +4,7 @@ import { recordModelUse } from '$lib/ai/connections/modelPickerData';
 import { traceDecision, diagnosticOperation, diagnosticConnection } from '$lib/diagnostics/diagnosticDecisions';
 import { worldInfoState } from '$lib/stores/worldInfoStore.svelte';
 import { chatState } from '$lib/stores/chatStore.svelte';
-import { buildPromptMessages } from '$lib/ai/prompt/chatPromptBuilder';
+import { buildPromptMessages, type GroupPromptPerspective, type PromptWorldInfo } from '$lib/ai/prompt/chatPromptBuilder';
 import { appState, snapshotApiConnection, type ApiConnection } from '$lib/stores/appState.svelte';
 import { requestParameterConfig } from '$lib/ai/connections/apiParameters';
 import type { Message } from '$lib/stores/chatStore.svelte';
@@ -29,6 +29,9 @@ export interface GenerationCallbacks {
 }
 
 export interface GenerationOptions {
+    group?: GroupPromptPerspective;
+    /** Frozen lore shared by planning, summarization and the provider request. */
+    worldInfos?: PromptWorldInfo[];
     /** Bound to the same rules during budgeting, summarization and generation. */
     textRules?: readonly TextRule[];
     /** Persisted conversation ID, shared by chat and summary requests. */
@@ -66,6 +69,7 @@ export interface ChatMessage {
 
 export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
     return buildPromptMessages({
+        group: options.group,
         systemPrompt: options.apiSettings.systemPrompt,
         postHistoryPrompt: options.apiSettings.postHistoryPrompt,
         textRules: options.textRules ?? appState.textRules,
@@ -74,7 +78,7 @@ export function buildApiMessages(options: GenerationOptions): ChatMessage[] {
         recentMessages: options.recentMessages,
         userPrompt: options.userPrompt,
         summaryMeta: options.summaryMeta ?? chatState.summaryMeta,
-        worldInfos: worldInfoState.allWorldInfos,
+        worldInfos: options.worldInfos ?? worldInfoState.allWorldInfos,
     });
 }
 
@@ -86,7 +90,7 @@ export interface GenerationPromptSnapshot {
 }
 
 export function messageFingerprint(message: Message): string {
-    return JSON.stringify([message.id, message.role, message.content, message.swipe_index]);
+    return JSON.stringify([message.id, message.role, message.content, message.swipe_index, message.participant_id ?? null]);
 }
 
 export function generationConfigurationFingerprint(options: GenerationOptions): string {
@@ -100,8 +104,9 @@ export function generationConfigurationFingerprint(options: GenerationOptions): 
         requestSettings,
         options.requestParameterConfig,
         options.character,
+        options.group,
         options.role === undefined ? chatState.activeRoleSnapshot : options.role,
-        worldInfoState.allWorldInfos,
+        options.worldInfos ?? worldInfoState.allWorldInfos,
         (options.textRules ?? appState.textRules).filter(rule => rule.enabled && rule.targets.includes('send')),
     ]);
 }

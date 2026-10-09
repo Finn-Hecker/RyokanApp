@@ -1,4 +1,4 @@
-import { buildPromptReferenceContext } from '$lib/ai/prompt/chatPromptBuilder';
+import { buildPromptReferenceContext, groupSpeakerLabel } from '$lib/ai/prompt/chatPromptBuilder';
 import { traceDecision, diagnosticOperation, diagnosticScope, diagnosticConnection, type DiagnosticMeasurement, type DiagnosticDecision } from '$lib/diagnostics/diagnosticDecisions';
 import type { TokenUsage } from '$lib/ai/tokens/tokenUsage';
 import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
@@ -58,6 +58,7 @@ interface SummaryOperation {
     chatId: string;
     generationId: string | null;
     cancelled: boolean;
+    shouldCancel?: () => boolean;
     requestParameterConfig: ApiRequestParameterConfig;
     contextLimit: number;
     apiSettings: GenerationOptions['apiSettings'];
@@ -119,7 +120,7 @@ async function measureNormalRequest(
     const apiMessages = buildApiMessages({ ...options, recentMessages, userPrompt: undefined, summaryMeta });
     let promptTokens: number | null = null;
     let anchorState: DiagnosticMeasurement['anchor'] = 'none';
-    const anchor = anchorChatId && getPromptUsageAnchor(anchorChatId);
+    const anchor = anchorChatId && getPromptUsageAnchor(anchorChatId, options.group?.participantId);
     const response = anchor && recentMessages[anchor.historyFingerprint.length];
     if (anchor) {
         const fingerprints = recentMessages.map(messageFingerprint);
@@ -228,11 +229,12 @@ export function rememberGenerationAnchor(
     chatId: string,
     promptSnapshot: GenerationPromptSnapshot,
     response: Message | undefined,
+    participantId?: string,
 ): void {
     const usage = response?.usage_variants?.[response.swipe_index];
     if (!response?.id || response.role !== 'assistant'
         || !Number.isSafeInteger(usage?.inputTokens) || usage!.inputTokens! < 0) {
-        forgetPromptUsageAnchor(chatId);
+        forgetPromptUsageAnchor(chatId, participantId);
         return;
     }
     rememberPromptUsageAnchor(chatId, {
@@ -243,10 +245,11 @@ export function rememberGenerationAnchor(
         responseSwipeIndex: response.swipe_index,
         responseFingerprint: messageFingerprint(response),
         revision: currentConversationRevision(chatId),
-    });
+    }, participantId);
 }
 
 function assertOperationCurrent(operation: SummaryOperation): void {
+    if (operation.shouldCancel?.()) operation.cancelled = true;
     if (!isSummaryCommitCurrent(
         operation.chatId,
         chatState.activeChatId,
@@ -414,7 +417,7 @@ function buildSummaryPrompt(
         `World Info is conditional: retain names or activation cues needed to retrieve relevant lore, and conversation-specific facts needed if that lore is absent later. ` +
         `(4) Distinguish established facts from uncertainty, suspicion, plans, or inference; never convert uncertainty into fact. ` +
         `(5) Drop filler, small talk, and details with no lasting story relevance. ` +
-        `(6) Use short, dense sentences with clear attribution and no prose padding. ` +
+        `(6) Use short, dense sentences with clear attribution and no prose padding. When the excerpt or previous summary includes explicit speaker IDs, preserve those IDs and names and keep distinct speakers distinct. ` +
         `(7) Hard limit: ${maximumSummaryTokens} tokens total. Cut the lowest-priority details before exceeding it. ` +
         `(8) Write in ${getClientLanguageName()}. ` +
         `Output only the summary — no intro, labels, or commentary.`;
@@ -678,6 +681,7 @@ async function performSummaryCheck(
             // Capture the chat profile's background once, after lore loads. Every
             // chunk, fit check and recompression uses this same reference.
             const reference = buildPromptReferenceContext({
+                group: options.group,
                 systemPrompt: options.apiSettings.systemPrompt,
                 textRules: options.textRules ?? appState.textRules,
                 character: options.character,
@@ -685,7 +689,7 @@ async function performSummaryCheck(
                 recentMessages: history,
                 userPrompt: options.userPrompt,
                 summaryMeta: persistedMeta,
-                worldInfos: worldInfoState.allWorldInfos,
+                worldInfos: options.worldInfos ?? worldInfoState.allWorldInfos,
             });
             operation.referenceContext = `${reference.baseSystemPrompt}\n\n${reference.worldInfoBlock}`;
             if (options.apiSettings.postHistoryPrompt?.trim()) {
@@ -732,12 +736,16 @@ async function performSummaryCheck(
         }
         marker = resolveSummaryMarker(history, meta);
 
-        const clean = (message: Message) => ({
-            role: message.role,
-            content: message.role === 'assistant'
+        const clean = (message: Message) => {
+            const content = message.role === 'assistant'
                 ? stripThinkingContent(transformMessageText(message.content, options.textRules ?? appState.textRules, 'assistant', 'send'))
-                : transformMessageText(message.content, options.textRules ?? appState.textRules, 'user', 'send'),
-        });
+                : transformMessageText(message.content, options.textRules ?? appState.textRules, 'user', 'send');
+            return {
+                role: message.role,
+                content: options.group
+                    ? `[${groupSpeakerLabel(message, options.group, options.role)}]\n${content}` : content,
+            };
+        };
         // Summary capacity is diagnostic information here. Once chat input or
         // hard capacity triggers compression, generation chunks to this window.
         const summaryTailFits = (summaryMeta: SummaryMarkerState, trace = false) => summaryRequestFits(
@@ -1003,7 +1011,7 @@ export function checkAndSummarizeIfNeeded(
     beforeMessageId?: string,
 ): Promise<PreparedGenerationContext> {
     const selectionFingerprint = summarySelectionFingerprint();
-    const workKey = JSON.stringify([summaryWorkKey(chatId, beforeMessageId), selectionFingerprint, options.apiSettings, currentConversationRevision(chatId)]);
+    const workKey = JSON.stringify([summaryWorkKey(chatId, beforeMessageId), selectionFingerprint, options.apiSettings, generationConfigurationFingerprint(options), currentConversationRevision(chatId)]);
     const existing = summaryWorkByBoundary.get(workKey);
     if (existing) { options.diagnosticOperation = existing.diagnosticId; return existing; }
 
@@ -1014,6 +1022,7 @@ export function checkAndSummarizeIfNeeded(
         chatId,
         generationId: null,
         cancelled: false,
+        shouldCancel: options.shouldCancel,
         requestParameterConfig: summaryParameterConfig(summaryConnection, maximumSummaryTokens),
         contextLimit: summaryConnection.contextLimit,
         apiSettings: summaryConnection,
