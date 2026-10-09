@@ -122,6 +122,7 @@ pub fn run() {
             database::chats::rename_chat,
             database::chats::toggle_pin_chat,
             database::chats::get_conversations_page,
+            database::chats::get_conversation,
             database::chats::get_chat_character_snapshot,
             database::chats::update_chat_character_snapshot,
             database::chats::save_summary_meta,

@@ -56,7 +56,7 @@ test('a late old chat load cannot replace the latest chat or mix its metadata', 
   assert.deepEqual(Array.from(h.state.currentMessages, message => message.id), ['B-message']);
 });
 
-test('a stale character snapshot cannot overwrite the new chat or request its history', async () => {
+test('a stale character snapshot cannot overwrite the complete new chat after parallel reads', async () => {
   const snapshot = deferred();
   const h = store((command, params) => command === 'get_chat_character_snapshot' && params.chatId === 'A' ? snapshot.promise : undefined);
   const loadingA = h.context.loadMessages('A');
@@ -64,7 +64,34 @@ test('a stale character snapshot cannot overwrite the new chat or request its hi
   snapshot.resolve({ name: 'A' });
   await loadingA;
   assert.equal(h.context.appState.activeCharacter.name, 'B');
-  assert.equal(h.calls.some(call => call.command === 'get_messages_page' && call.params.chatId === 'A'), false);
+  assert.equal(h.state.activeChatId, 'B');
+  assert.equal(h.state.summaryMeta.currentSummary, 'summary-B');
+  assert.equal(h.state.currentMessages[0].id, 'B-message');
+});
+
+test('opening a chat starts character, memory and message reads together and commits only when all finish', async () => {
+  const snapshot = deferred(), memory = deferred(), page = deferred();
+  const h = store(command => command === 'get_chat_character_snapshot' ? snapshot.promise
+    : command === 'get_summary_meta' ? memory.promise : command === 'get_messages_page' ? page.promise : undefined);
+  const opening = h.context.loadMessages('A');
+  assert.deepEqual(h.calls.map(call => call.command), ['get_chat_character_snapshot', 'get_summary_meta', 'get_messages_page']);
+  page.resolve([row('A')]); memory.resolve({ summary: 'memory', last_id: null }); await flush();
+  assert.equal(h.state.activeChatId, null);
+  snapshot.resolve({ name: 'A' }); await opening;
+  assert.equal(h.state.activeChatId, 'A');
+  assert.equal(h.state.summaryMeta.currentSummary, 'memory');
+});
+
+test('new chat opening uses its persisted role without waiting for the sidebar library refresh', async () => {
+  const library = deferred();
+  const h = store(command => command === 'create_chat' ? 'new-chat'
+    : command === 'get_conversation' ? { id: 'new-chat', mode: 'singleplayer', created_at: '2026-01-01', role_snapshot: { name: 'Saved role' } }
+    : command === 'get_conversations_page' ? library.promise : undefined);
+  h.context.selectInitialGreeting = () => 'Hello';
+  await h.context.startNewChat({ id: 'card', name: 'Character' });
+  assert.equal(h.state.activeChatId, 'new-chat');
+  assert.equal(h.state.activeRoleSnapshot.name, 'Saved role');
+  library.resolve(h.state.conversations); await flush();
 });
 
 test('old chat background refresh does not supersede a pending navigation', async () => {

@@ -267,6 +267,11 @@ pub(super) fn read_conversation(conn: &rusqlite::Connection, chat_id: &str) -> R
     ).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn get_conversation(app: AppHandle, chat_id: String) -> Result<Conversation, String> {
+    read_conversation(&get_connection(&app)?, &chat_id)
+}
+
 /// Retrieves a page of chat sessions for one experience, ordered by pinned first,
 /// then most recently active.
 #[tauri::command]

@@ -40,6 +40,7 @@ function store(overrides = {}) {
         return id;
       }
       if (command === 'get_chat_character_snapshot') return structuredClone(snapshots.get(params.chatId));
+      if (command === 'get_conversation') return structuredClone(chats.find(chat => chat.id === params.chatId));
       if (command === 'get_conversations_page') return chats;
       if (command === 'get_summary_meta') return { summary: null, last_id: null };
       return [];

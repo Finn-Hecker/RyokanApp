@@ -308,7 +308,14 @@ export async function startNewChat(character: any, roleSelection: RoleSelection 
             characterSnapshot: characterSnapshot(character),
         });
         invalidateConversationLibrary('singleplayer');
-        await loadAllConversations('singleplayer');
+        const conversation = await invoke<Conversation>('get_conversation', { chatId: newId });
+        chatState.conversations = [
+            ...chatState.conversations.filter(chat => chat.id !== newId),
+            ...formatConversations([conversation]),
+        ];
+        supplementalConversationIds.add(newId);
+        // Opening this chat must not wait for every expanded sidebar folder.
+        void ensureConversationsLoaded('singleplayer');
         await loadMessages(newId);
     } catch (e) {
         reportDiagnostic('chat');
@@ -361,6 +368,11 @@ export async function loadMessages(chatId: string) {
     let nextCharacter: ChatCharacterSnapshot | null = null;
     let nextRole = chatState.activeRoleSnapshot;
     let nextSummary = chatState.summaryMeta;
+    const limit = !switching && chatState.currentMessages.length >= 25
+        ? chatState.currentMessages.length + 1 : 25;
+    const readMessages = () => invoke<PersistedMessageRow[]>('get_messages_page', { chatId, limit, offset: 0 })
+        .catch(() => { reportDiagnostic('chat'); return undefined; });
+    let result: PersistedMessageRow[] | undefined;
     try {
         if (switching) {
             // Resolve the chat-owned card before exposing this conversation to the
@@ -371,45 +383,31 @@ export async function loadMessages(chatId: string) {
             const libraryCharacter = characterState.allCharacters.find(
                 character => String(character.id) === conversation?.character_id,
             );
-            if (conversation?.mode === 'multiplayer') {
-                // Multiplayer restores its session-owned character separately.
-                nextCharacter = libraryCharacter ?? null;
-            } else {
-                nextCharacter = await invoke<ChatCharacterSnapshot | null>('get_chat_character_snapshot', {
+            // Fetch independent parts together, then publish one complete snapshot.
+            const [character, meta, page] = await Promise.all([
+                conversation?.mode === 'multiplayer' ? Promise.resolve(libraryCharacter ?? null)
+                    : invoke<ChatCharacterSnapshot | null>('get_chat_character_snapshot', {
                     chatId,
                     fallback: libraryCharacter ? characterSnapshot(libraryCharacter) : null,
-                });
-            }
+                }),
+                invoke<{ summary: string | null; last_id: string | null }>('get_summary_meta', { chatId })
+                    .catch(() => ({ summary: null, last_id: null })),
+                readMessages(),
+            ]);
             if (!isCurrent()) return;
+            nextCharacter = character;
             nextRole = chatState.conversations.find(
                 (conversation) => conversation.id === chatId
             )?.role_snapshot ?? null;
 
-            try {
-                const meta = await invoke<{ summary: string | null; last_id: string | null }>(
-                    'get_summary_meta', { chatId }
-                );
-                nextSummary = {
-                    currentSummary:          meta.summary,
-                    lastSummarizedMessageId: meta.last_id,
-                };
-            } catch {
-                nextSummary = { currentSummary: null, lastSummarizedMessageId: null };
-            }
-            if (!isCurrent()) return;
+            nextSummary = { currentSummary: meta.summary, lastSummarizedMessageId: meta.last_id };
+            result = page;
+        } else {
+            result = await readMessages();
         }
 
         try {
-            // Smart limit: If we're still in the same chat (e.g. after sending a message),
-            // we don't want to suddenly collapse the history back to 25.
-            // Instead, request the currently loaded amount + 1 (for the new message).
-            const limit = chatState.activeChatId === chatId && chatState.currentMessages.length >= 25
-                ? chatState.currentMessages.length + 1
-                : 25;
-
-            // Use your get_messages_page function from the backend
-            const result = await invoke<PersistedMessageRow[]>('get_messages_page', { chatId, limit, offset: 0 });
-            if (!isCurrent()) return;
+            if (!isCurrent() || !result) return;
             const messages = result.map(decodeMessage);
 
             // Publish a complete chat snapshot together; no old load can mix its metadata in.
