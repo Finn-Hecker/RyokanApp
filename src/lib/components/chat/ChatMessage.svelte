@@ -308,6 +308,15 @@
     </div>
 
     <div class="relative group/message flex-1 min-w-0 pb-1">
+      {#if msg.participantId}
+        <div class="mb-2 flex items-center gap-2 text-xs text-ryokan-accent">
+          <span class="sm:hidden h-7 w-7 rounded-lg overflow-hidden shrink-0">
+            {#if character?.avatarUrl}<img src={character.avatarUrl} alt="" class="w-full h-full object-cover" />
+            {:else}<span class="w-full h-full flex items-center justify-center {character?.color ?? 'bg-ryokan-surface'}">{character?.initials ?? '?'}</span>{/if}
+          </span>
+          <span title={msg.participantId}>{msg.senderName}</span>
+        </div>
+      {/if}
 
         <div
           bind:this={msgEl}

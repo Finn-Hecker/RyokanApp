@@ -29,7 +29,7 @@
   let isSaving = $state(false);
   let isReadingAvatar = $state(false);
   let editError = $state('');
-  let canEditSnapshot = $derived(activeConversation?.mode === 'singleplayer' && !!character);
+  let canEditSnapshot = $derived(activeConversation?.mode === 'singleplayer' && activeConversation.chat_kind !== 'group' && !!character);
   let summaryDraft = $state<{ chatId: string; expected: SummaryMeta; text: string } | null>(null);
   let isSavingSummary = $state(false);
   let summaryError = $state('');
@@ -194,6 +194,7 @@
 <BottomSheet {onClose} label="Info" height="min(640px, calc(var(--app-visible-height, 100dvh) * .85))" mobileHeight="calc(var(--app-visible-height, 100dvh) * .8)">
   {#snippet toolbar()}
       <div class="info-tabs">
+        {#if activeConversation?.chat_kind !== 'group'}
         <button
           class="info-tab"
           class:active={activeTab === 'character'}
@@ -201,6 +202,7 @@
         >
           Character
         </button>
+        {/if}
         <button
           class="info-tab"
           class:active={activeTab === 'chat'}

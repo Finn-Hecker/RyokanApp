@@ -116,6 +116,7 @@ export interface ChatFolder {
 }
 
 export interface DisplayMessage {
+    participantId?: string | null;
     usage?: TokenUsage | null;
     id: string;
     text: string;

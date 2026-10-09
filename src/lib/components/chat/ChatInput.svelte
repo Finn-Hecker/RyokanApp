@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import type { InteractionMode } from '$lib/stores/appState.svelte';
   import * as m from '$lib/paraglide/messages';
 
@@ -14,7 +14,8 @@
     onSend,
     onStop,
     onCancelEdit,
-    onResize
+    onResize,
+    controls
   }: {
     isGenerating?: boolean;
     isSummarizing?: boolean;
@@ -27,6 +28,7 @@
     onStop?: () => void;
     onCancelEdit?: () => void;
     onResize?: (height: number) => void;
+    controls?: Snippet;
   } = $props();
 
   let inputLayer: HTMLDivElement;
@@ -131,6 +133,7 @@
   class="composer-shell absolute inset-x-0 bottom-0 z-20 w-full px-4 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))] pointer-events-none sm:px-6 sm:pt-3 sm:pb-4"
 >
   <div class="max-w-3xl mx-auto">
+    {@render controls?.()}
 
     <div class="composer-frame pointer-events-auto rounded-2xl p-px {isSummarizing ? 'bg-white/[0.04]' : 'bg-white/10'}"
     >

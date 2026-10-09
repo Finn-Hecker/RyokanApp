@@ -24,5 +24,5 @@ export function selectGroupSpeakers(participants: readonly GroupParticipant[], h
     }
     const lastSpeaker = history.findLast(message => message.role === 'assistant')?.participant_id;
     const start = (ids.indexOf(lastSpeaker ?? '') + 1) % ids.length;
-    return Array.from({ length: Math.min(count, ids.length) }, (_, index) => ids[(start + index) % ids.length]);
+    return Array.from({ length: count }, (_, index) => ids[(start + index) % ids.length]);
 }

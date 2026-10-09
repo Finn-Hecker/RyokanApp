@@ -5,7 +5,7 @@
   import { snapshotTextRules } from '$lib/ai/prompt/textRules';
   import { appState, snapshotActiveApiConnection } from '$lib/stores/appState.svelte';
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
-  import { tick, flushSync, onMount, onDestroy } from 'svelte';
+  import { tick, flushSync, onMount, onDestroy, untrack } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { chatState, addMessage, addSwipeVariant, loadMessages, updateMessage, deleteMessage, setSwipeIndex, loadMoreMessages, cloneChatFromMessage, type DisplayMessage } from '$lib/stores/chatStore.svelte';
   import { runGeneration, type GenerationOptions } from '$lib/ai/generation/chatApi';
@@ -13,12 +13,23 @@
   import { positionSentChatMessage } from '$lib/chat/chatScroll';
   import { summaryState, checkAndSummarizeIfNeeded, assertPreparedGenerationFits, rememberGenerationAnchor, cancelActiveSummary, SummaryCancelledError } from '$lib/ai/summary/rollingSummary.svelte';
   import * as m from '$lib/paraglide/messages';
+  import { generateGroupReplies, groupGenerationState, stopGroupGeneration } from '$lib/ai/generation/groupChatGeneration.svelte';
+  import { getGroupChat } from '$lib/stores/groupChatStore.svelte';
+  import { selectGroupSpeakers } from '$lib/ai/generation/groupSpeakerSelection';
+  import GroupSpeakerControls from './GroupSpeakerControls.svelte';
   import ChatHeader from './ChatHeader.svelte';
   import ChatInput from './ChatInput.svelte';
   import ChatMessage from './ChatMessage.svelte';
   import ThinkingIndicator from './ThinkingIndicator.svelte';
   import ErrorModal from './ErrorModal.svelte';
 
+  let groupSpeaker = $state('auto');
+  let groupResponses = $state(1);
+  let failedGroupReloadOnly = false;
+  let failedGroupSelection: { participantIds?: string[]; maxResponses?: number } | undefined;
+  let pendingGroupSend = $state<{ chatId: string; existingIds: Set<string | undefined> } | null>(null);
+  let groupErrorParticipantId = $state<string | null>(null);
+  let groupAbort: AbortController | null = null;
   let inputText = $state('');
   let chatContainer = $state<HTMLDivElement | null>(null);
   let isGenerating = $state(false);
@@ -48,16 +59,30 @@
     )
   );
 
-  let isBlocked = $derived(isGenerating || summaryState.isSummarizing);
-
   // The active conversation's own record — used to show a "cloned chat" badge.
   let activeConversation = $derived(
     chatState.conversations.find(c => c.id === chatState.activeChatId) ?? null
   );
+  let isGroup = $derived(activeConversation?.chat_kind === 'group');
+  let groupBusy = $derived(isGroup && groupGenerationState.chatId === chatState.activeChatId && groupGenerationState.phase !== 'idle');
+  let isBlocked = $derived(isGenerating || groupBusy || summaryState.isSummarizing);
+  let currentGroupParticipant = $derived(chatState.activeGroupParticipants.find(item => item.id === groupGenerationState.participantId));
+  let groupReplySaved = $derived(groupBusy && groupGenerationState.phase === 'saving'
+    && chatState.currentMessages.some(message => message.id === groupGenerationState.completedMessageIds.at(-1)
+      && message.participant_id === groupGenerationState.participantId));
+  let visibleStreamingText = $derived(isGroup ? groupGenerationState.streamingText : streamingText);
+  let visibleThinking = $derived(isGroup ? groupGenerationState.isThinking : isThinkingPhase);
+  let groupStatus = $derived(groupBusy ? `${currentGroupParticipant?.character_snapshot.name ?? 'Gruppe'} · ${
+    groupGenerationState.phase === 'preparing' ? 'Bereitet Antwort vor…' : groupGenerationState.phase === 'saving' ? 'Speichert…' : 'Antwortet…'
+  } (${groupGenerationState.completedMessageIds.length} abgeschlossen)` : '');
+  function messageCharacter(participantId?: string | null) {
+    return isGroup ? chatState.activeGroupParticipants.find(item => item.id === participantId)?.character_snapshot ?? null : appState.activeCharacter;
+  }
   let clonedFromTitle = $derived(activeConversation?.cloned_from_title ?? null);
 
   let unlistenClose: (() => void) | undefined;
   let disposed = false;
+  let roomWasGroup = false;
   let chatResizeObserver: ResizeObserver | undefined;
   let previousChatHeight = 0;
   let bottomGap = Number.POSITIVE_INFINITY;
@@ -75,6 +100,39 @@
       measureBottomGap();
     });
     return () => { cancelled = true; };
+  });
+
+  $effect(() => {
+    const chatId = chatState.activeChatId;
+    untrack(() => {
+      const resetGroupUi = isGroup || roomWasGroup;
+      roomWasGroup = isGroup;
+      if (!resetGroupUi) return;
+      groupSpeaker = 'auto';
+      groupResponses = 1;
+      failedGroupReloadOnly = false;
+      generationError = null;
+      failedRetryMsgId = null;
+      failedGroupSelection = undefined;
+      groupErrorParticipantId = null;
+      showErrorModal = false;
+      pendingUserMessage = '';
+      mobileActionMessageId = null;
+      handleEditCancel();
+    });
+    return () => { stopGroupGeneration(chatId ?? undefined); groupAbort?.abort(); };
+  });
+
+  $effect(() => {
+    const pending = pendingGroupSend;
+    if (!pending || pending.chatId !== chatState.activeChatId || !chatContainer) return;
+    const sent = chatState.currentMessages.find(message => message.role === 'user' && !pending.existingIds.has(message.id));
+    if (!sent?.id) return;
+    const id = sent.id;
+    untrack(() => { pendingGroupSend = null; });
+    void tick().then(() => {
+      if (!disposed && chatState.activeChatId === pending.chatId) positionSentChatMessage(chatContainer, id);
+    });
   });
 
   function measureBottomGap() {
@@ -147,6 +205,8 @@
 
   onDestroy(() => {
     disposed = true;
+    groupAbort?.abort();
+    stopGroupGeneration();
     retryCancelled = true;
     sendCancelled = true;
     if (isGenerating) {
@@ -172,7 +232,7 @@
     const firstAiMsg = chatState.currentMessages.find(msg => msg.role === 'assistant');
     const lastAiMsg  = [...chatState.currentMessages].reverse().find(msg => msg.role === 'assistant');
 
-    if (!lastAiMsg?.id || lastAiMsg.id === firstAiMsg?.id) return;
+    if (!lastAiMsg?.id || (!isGroup && lastAiMsg.id === firstAiMsg?.id)) return;
 
     const msgId        = lastAiMsg.id.toString();
     const totalVariants = lastAiMsg.swipe_variants?.length ?? 1;
@@ -196,31 +256,33 @@
   let persistedDisplayMessages = $derived(chatState.currentMessages.map(msg => ({
     id: msg.id?.toString() || Math.random().toString(),
     text: msg.content,
+    participantId: msg.participant_id,
     usage: selectedUsage(msg),
     isUser: msg.role === 'user',
     senderName: msg.role === 'user'
       ? (msg.author || m.chat_sender_you())
-      : (appState.activeCharacter?.name || m.chat_sender_ai()),
+      : (messageCharacter(msg.participant_id)?.name || m.chat_sender_ai()),
     swipeVariants: msg.swipe_variants ?? [msg.content],
     swipeIndex: msg.swipe_index ?? 0,
   })));
 
   let displayMessages = $derived((() => {
-    const msgs: DisplayMessage[] = isGenerating && retryingMsgId !== null
+    const msgs: DisplayMessage[] = isGenerating && retryingMsgId !== null && (!isGroup || groupBusy && groupGenerationState.phase !== 'preparing' && !groupReplySaved)
       ? persistedDisplayMessages.map(msg => msg.id === retryingMsgId ? {
-          ...msg, text: streamingText, usage: null,
-          swipeVariants: [...msg.swipeVariants, streamingText],
+          ...msg, text: visibleStreamingText, usage: null,
+          swipeVariants: [...msg.swipeVariants, visibleStreamingText],
           swipeIndex: msg.swipeVariants.length,
         } : msg)
       : [...persistedDisplayMessages];
 
-    if (isGenerating && !isThinkingPhase && !retryingMsgId) {
+    if (isGenerating && !visibleThinking && !retryingMsgId && (!isGroup || (groupBusy && groupGenerationState.phase !== 'preparing' && !groupReplySaved))) {
       msgs.push({
         id: 'temp-stream',
-        text: streamingText,
+        participantId: isGroup ? groupGenerationState.participantId : null,
+        text: visibleStreamingText,
         isUser: false,
-        senderName: appState.activeCharacter?.name || m.chat_sender_ai(),
-        swipeVariants: [streamingText],
+        senderName: (isGroup ? currentGroupParticipant?.character_snapshot.name : appState.activeCharacter?.name) || m.chat_sender_ai(),
+        swipeVariants: [visibleStreamingText],
         swipeIndex: 0,
       });
     }
@@ -228,7 +290,8 @@
     if (generationError) {
       msgs.push({
         id: 'temp-generation-error', text: '', isUser: false,
-        senderName: appState.activeCharacter?.name || m.chat_sender_ai(),
+        participantId: isGroup ? groupErrorParticipantId : null,
+        senderName: messageCharacter(groupErrorParticipantId)?.name || m.chat_sender_ai(),
         swipeVariants: [''], swipeIndex: 0, generationError,
       });
     }
@@ -240,7 +303,7 @@
   let lastAiMsgId = $derived((() => {
     for (let i = displayMessages.length - 1; i >= 0; i--) {
       const msg = displayMessages[i];
-      if (!msg.isUser && msg.id !== 'temp-stream') return msg.id;
+      if (!msg.isUser && msg.id !== 'temp-stream' && !msg.generationError) return msg.id;
     }
     return null;
   })());
@@ -287,7 +350,62 @@
     isThinkingPhase = false;
   }
 
+  async function generateGroup(prompt?: string, swipeMessageId?: string, resumeSelection?: { participantIds?: string[]; maxResponses?: number }) {
+    const chatId = chatState.activeChatId;
+    if (!chatId || isBlocked) return;
+    isGenerating = true;
+    generationError = null;
+    failedRetryMsgId = null;
+    groupErrorParticipantId = null;
+    retryingMsgId = swipeMessageId ?? null;
+    resetStreamState();
+    const existingIds = new Set(chatState.currentMessages.map(message => message.id));
+    const controller = new AbortController();
+    groupAbort = controller;
+    let speakers: string[] = [];
+    const selection = resumeSelection ?? (groupSpeaker === 'auto' ? { maxResponses: groupResponses } : { participantIds: [groupSpeaker] });
+    let roundStarted = false;
+    failedGroupReloadOnly = false;
+    if (prompt !== undefined) pendingGroupSend = { chatId, existingIds };
+    try {
+      const group = await getGroupChat(chatId);
+      if (controller.signal.aborted || disposed || chatState.activeChatId !== chatId) return;
+      if (!swipeMessageId) speakers = selectGroupSpeakers(group.participants, group.messages, selection);
+      roundStarted = true;
+      const result = await generateGroupReplies({ chatId, signal: controller.signal,
+        ...(swipeMessageId ? { swipeMessageId } : { userPrompt: prompt, ...selection }),
+      });
+      if (result.status === 'completed') { pendingUserMessage = ''; failedGroupSelection = undefined; }
+    } catch (cause) {
+      if (controller.signal.aborted || disposed || chatState.activeChatId !== chatId) return;
+      groupErrorParticipantId = (roundStarted ? groupGenerationState.participantId : null) ?? speakers[0] ?? null;
+      const promptSaved = prompt === undefined || chatState.currentMessages.some(message => message.role === 'user' && !existingIds.has(message.id));
+      if (!promptSaved) {
+        if (!inputText) inputText = prompt ?? '';
+        pendingUserMessage = '';
+        errorMessage = describeGenerationError(cause).message;
+        showErrorModal = true;
+      } else {
+        generationError = describeGenerationError(cause);
+        failedRetryMsgId = swipeMessageId ?? null;
+        const completedCount = roundStarted && groupGenerationState.chatId === chatId ? groupGenerationState.completedMessageIds.length : 0;
+        failedGroupReloadOnly = completedCount > 0 && completedCount >= (swipeMessageId ? 1 : speakers.length);
+        const remaining = speakers.slice(completedCount);
+        failedGroupSelection = selection.maxResponses !== undefined
+          ? { maxResponses: Math.max(1, remaining.length || selection.maxResponses) }
+          : { participantIds: remaining.length ? remaining : selection.participantIds };
+      }
+    } finally {
+      if (groupAbort === controller) groupAbort = null;
+      isGenerating = false;
+      retryingMsgId = null;
+      resetStreamState();
+      if (pendingGroupSend?.chatId === chatId) pendingGroupSend = null;
+    }
+  }
+
   async function generate(prompt: string, saveUserMessage: boolean) {
+    if (isGroup) { await generateGroup(saveUserMessage ? prompt : undefined); return; }
     const chatId = chatState.activeChatId;
     if (!chatId) return;
     isGenerating = true;
@@ -407,6 +525,12 @@
 
   async function handleRetry({ msgId }: { msgId: string }) {
     if (isBlocked) return;
+    if (isGroup) {
+      const message = chatState.currentMessages.find(item => item.id === msgId);
+      if (!chatState.activeGroupParticipants.some(item => item.id === message?.participant_id && item.is_active)) return;
+      await generateGroup(undefined, msgId);
+      return;
+    }
 
     const msgs = chatState.currentMessages;
     const idx = msgs.findIndex(msg => msg.id?.toString() === msgId);
@@ -535,7 +659,7 @@
   }
 
   async function handleCloneFromMessage({ msgId }: { msgId: string }) {
-    if (isBlocked || cloneCooldown) return;
+    if (isGroup || isBlocked || cloneCooldown) return;
 
     cloneCooldown = true;
     if (cloneCooldownTimer) clearTimeout(cloneCooldownTimer);
@@ -567,6 +691,27 @@
   }
 
   async function retryGenerationError() {
+    if (isGroup) {
+      if (isBlocked) return;
+      if (failedGroupReloadOnly) {
+        const chatId = chatState.activeChatId;
+        if (!chatId) return;
+        isGenerating = true;
+        try {
+          const snapshot = await getGroupChat(chatId);
+          if (disposed || chatState.activeChatId !== chatId) return;
+          chatState.summaryMeta = { currentSummary: snapshot.summary, lastSummarizedMessageId: snapshot.summary_last_message_id };
+          await loadMessages(chatId);
+          if (chatState.activeChatId === chatId) generationError = null;
+        } catch (cause) {
+          if (!disposed && chatState.activeChatId === chatId) generationError = describeGenerationError(cause);
+        } finally { isGenerating = false; }
+        return;
+      }
+      if (failedRetryMsgId) await generateGroup(undefined, failedRetryMsgId);
+      else await generateGroup(undefined, undefined, failedGroupSelection);
+      return;
+    }
     const msgId = failedRetryMsgId;
     generationError = null;
     if (msgId) await handleRetry({ msgId });
@@ -584,6 +729,7 @@
   }
 
   async function stopGeneration() {
+    if (isGroup) { groupAbort?.abort(); stopGroupGeneration(chatState.activeChatId ?? undefined); return; }
     sendCancelled = true;
     if (retryingMsgId) retryCancelled = true;
     if (await cancelActiveSummary(chatState.activeChatId ?? undefined)) return;
@@ -596,10 +742,14 @@
 <div class="flex flex-col h-full overflow-hidden bg-ryokan-bg relative">
 
   <ChatHeader
-    character={appState.activeCharacter}
+    character={isGroup ? chatState.activeGroupParticipants.find(item => item.is_active)?.character_snapshot : appState.activeCharacter}
+    {isGroup}
+    groupTitle={activeConversation?.title ?? 'Gruppenchat'}
+    participantsDisabled={isBlocked || isSavingEdit}
     isTyping={isGenerating}
     {clonedFromTitle}
     onBack={() => {
+      if (isGroup) void stopGeneration();
       handleEditCancel();
       chatState.activeChatId = null;
       chatState.currentMessages = [];
@@ -631,21 +781,21 @@
       {#each displayMessages as msg, i (msg.id)}
         <ChatMessage
           {msg}
-          character={appState.activeCharacter}
+          character={messageCharacter(msg.participantId)}
           isLast={i === displayMessages.length - 1}
           isGenerating={isGenerating && (
             (retryingMsgId !== null && msg.id === retryingMsgId) ||
-            (retryingMsgId === null && i === displayMessages.length - 1)
+            (retryingMsgId === null && (isGroup ? msg.id === 'temp-stream' : i === displayMessages.length - 1))
           )}
-          canSwipe={!isBlocked && !msg.isUser && msg.id === lastAiMsgId && msg.id !== firstAiMsgId}
-          canRetry={!isBlocked && !msg.isUser && msg.id === lastAiMsgId && msg.id !== firstAiMsgId}
-          canEdit={!isBlocked && msg.id !== 'temp-stream' && (
+          canSwipe={!isBlocked && !msg.generationError && !msg.isUser && msg.id === lastAiMsgId && (isGroup || msg.id !== firstAiMsgId)}
+          canRetry={!isBlocked && !msg.generationError && !msg.isUser && msg.id === lastAiMsgId && (isGroup ? chatState.activeGroupParticipants.some(item => item.id === msg.participantId && item.is_active) : msg.id !== firstAiMsgId)}
+          canEdit={!isBlocked && msg.id !== 'temp-stream' && !msg.generationError && (
             msg.isUser
               ? msg.id === lastUserMsgId
-              : msg.id !== firstAiMsgId
+              : (isGroup || msg.id !== firstAiMsgId)
           )}
           {activeEditMessageId}
-          canCloneFrom={!isBlocked && !msg.isUser && msg.id !== 'temp-stream'}
+          canCloneFrom={!isGroup && !isBlocked && !msg.generationError && !msg.isUser && msg.id !== 'temp-stream'}
           cloneDisabled={cloneCooldown}
           interactionMode={appState.interactionMode}
           mobileActionsOpen={mobileActionMessageId === msg.id}
@@ -662,13 +812,19 @@
       {/each}
 
 
-      {#if isGenerating && isThinkingPhase}
-        <ThinkingIndicator character={appState.activeCharacter} />
+      {#if isGenerating && visibleThinking}
+        <ThinkingIndicator character={isGroup ? currentGroupParticipant?.character_snapshot : appState.activeCharacter} />
       {/if}
     </div>
   </div>
 
+  {#snippet groupControls()}
+    <GroupSpeakerControls participants={chatState.activeGroupParticipants} bind:speaker={groupSpeaker} bind:responses={groupResponses}
+      disabled={isBlocked || isSavingEdit || !!activeEditMessageId} status={groupStatus}
+      onContinue={() => { if (!isBlocked && !isSavingEdit && !activeEditMessageId) void generateGroup(); }} />
+  {/snippet}
   <ChatInput
+    controls={isGroup ? groupControls : undefined}
     bind:value={inputText}
     interactionMode={appState.interactionMode}
     isGenerating={isBlocked}

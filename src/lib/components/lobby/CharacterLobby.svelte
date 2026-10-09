@@ -1,4 +1,5 @@
 <script lang="ts">
+  import GroupCharacterPicker from '$lib/components/chat/GroupCharacterPicker.svelte';
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
   import { appState } from '$lib/stores/appState.svelte';
@@ -6,7 +7,7 @@
   import { characterState, ensureLobbyCharactersLoaded, toggleHideCharacter, togglePinCharacter, deleteCharacter } from '$lib/stores/characterStore.svelte';
   import { SOLO_CHARACTERS } from '$lib/data/characters';
   import { startNewChat } from '$lib/stores/chatStore.svelte';
-  import type { RoleSelection } from '$lib/stores/chatStore.svelte';
+  import type { RoleSelection, ChatRoleSnapshot } from '$lib/stores/chatStore.svelte';
   import { ensureRolesLoaded, roleState } from '$lib/stores/roleStore.svelte';
   import { onMount } from 'svelte';
 
@@ -47,6 +48,9 @@
         : m.lobby_greeting_evening()
   );
   let deleteTarget = $state<{ id: string; name: string } | null>(null);
+  let groupPickerOpen = $state(false);
+  let groupInitialCharacter = $state<any | null>(null);
+  let groupInitialPersona = $state<ChatRoleSnapshot | null | undefined>(undefined);
   let startTarget = $state<any | null>(null);
   let selectedRole = $state('none');
   let isStarting = $state(false);
@@ -254,7 +258,15 @@
 >
   <BrowseIntro title={greeting} subtitle={m.lobby_subtitle()} />
 
-  <LobbyToolbar bind:searchQuery bind:viewMode bind:showHidden {hasHidden} />
+  {#snippet chatCreationActions()}
+    <button type="button" aria-label="Gruppenchat erstellen" title="Gruppenchat erstellen"
+      class="h-9 w-9 sm:w-auto sm:px-3 flex items-center justify-center gap-2 rounded-xl border border-white/10 text-gray-400 hover:text-white"
+      onclick={() => { groupInitialCharacter = null; groupInitialPersona = undefined; groupPickerOpen = true; }}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M2 21v-2a7 7 0 0 1 14 0v2M19 7v6M16 10h6"/></svg>
+      <span class="hidden sm:inline text-xs">Gruppenchat erstellen</span>
+    </button>
+  {/snippet}
+  <div class="group-chat-toolbar"><LobbyToolbar bind:searchQuery bind:viewMode bind:showHidden {hasHidden} actions={chatCreationActions} /></div>
 
   {#if viewMode === 'grid'}
     <CharacterGridView
@@ -336,6 +348,17 @@
     {#snippet children(close)}
     <div>
 
+      <div class="mb-4">
+        <Button disabled={isStarting} onclick={() => {
+          const selection = selectionFromValue();
+          const role = selection?.source === 'bundled'
+            ? startTarget.bundled_roles.find((item: { id: string }) => item.id === selection.id)
+            : roleState.roles.find(item => item.id === selection?.id);
+          groupInitialPersona = role ? { name: role.name, prompt: role.prompt } : null;
+          groupInitialCharacter = startTarget;
+          close(() => { groupPickerOpen = true; });
+        }}>Weitere Charaktere hinzufügen</Button>
+      </div>
       <div class="space-y-2">
         {#if startTarget.role_policy === 'open'}
           <label class="role-option" class:active={selectedRole === 'none'}>
@@ -376,7 +399,13 @@
   </BottomSheet>
 {/if}
 
+{#if groupPickerOpen}
+  <GroupCharacterPicker initialCharacter={groupInitialCharacter} initialPersona={groupInitialPersona} onClose={() => groupPickerOpen = false}
+    onCreated={() => { groupPickerOpen = false; navigateTo('chat'); }} />
+{/if}
+
 <style>
+  .group-chat-toolbar > :global(div) > :global(div:first-child) { min-width:0; }
   .group-label { padding:10px 2px 2px; color:var(--sheet-text-muted); font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
   .role-option { display:flex; align-items:center; gap:12px; min-height:60px; padding:14px; border:1px solid var(--sheet-divider); border-radius:14px; background:transparent; cursor:pointer; transition:background .14s,border-color .14s; }
   .role-option:hover { background:var(--sheet-surface); }

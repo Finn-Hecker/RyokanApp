@@ -1,20 +1,29 @@
 <script lang="ts">
   import * as m from '$lib/paraglide/messages';
+  import GroupParticipantsPanel from './GroupParticipantsPanel.svelte';
+  import { chatState } from '$lib/stores/chatStore.svelte';
   import ChatInfoPanel from './ChatInfoPanel.svelte';
   import ChatSettingsPanel from './ChatSettingsPanel.svelte';
 
   let {
     character = null,
+    isGroup = false,
+    groupTitle = '',
+    participantsDisabled = false,
     isTyping = false,
     clonedFromTitle = null,
     onBack
   }: {
     character?: any;
+    isGroup?: boolean;
+    groupTitle?: string;
+    participantsDisabled?: boolean;
     isTyping?: boolean;
     clonedFromTitle?: string | null;
     onBack?: () => void;
   } = $props();
 
+  let showParticipants = $state(false);
   let showInfoPanel = $state(false);
   let infoTab = $state<'character' | 'chat' | 'summary'>('character');
   let showSettingsPanel = $state(false);
@@ -22,6 +31,7 @@
 
   function openInfoPanel(tab: 'character' | 'chat' = 'character') {
     showSettingsPanel = false;
+    showParticipants = false;
     infoTab = tab;
     showInfoPanel = true;
   }
@@ -30,7 +40,7 @@
     if (showInfoPanel) {
       showInfoPanel = false;
     } else {
-      openInfoPanel('character');
+      openInfoPanel(isGroup ? 'chat' : 'character');
     }
   }
 
@@ -40,6 +50,7 @@
 
   function openSettingsPanel() {
     showInfoPanel = false;
+    showParticipants = false;
     showSettingsPanel = true;
   }
 
@@ -57,7 +68,9 @@
 
   // Close the panels if the user switches to a different character/chat while one is open.
   $effect(() => {
-    character;
+    if (!isGroup) character;
+    chatState.activeChatId;
+    showParticipants = false;
     showInfoPanel = false;
     showSettingsPanel = false;
   });
@@ -89,7 +102,7 @@
 
   <div class="meta">
     <div class="name-row">
-      <h2 class="char-name">{character?.name ?? '—'}</h2>
+      <h2 class="char-name">{isGroup ? groupTitle : character?.name ?? '—'}</h2>
       {#if clonedFromTitle}
         <span
           class="clone-badge"
@@ -115,6 +128,12 @@
   </div>
 
   <div class="actions">
+    {#if isGroup}
+      <button class="icon-btn" aria-label="Teilnehmer verwalten" aria-expanded={showParticipants}
+        onclick={() => { showInfoPanel = false; showSettingsPanel = false; showParticipants = !showParticipants; }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="3"/><path d="M2 21v-2a7 7 0 0 1 14 0v2M16 4a3 3 0 0 1 0 6M22 21v-2a7 7 0 0 0-4-6"/></svg>
+      </button>
+    {/if}
     <button
       class="icon-btn"
       class:icon-btn--active={showInfoPanel}
@@ -157,6 +176,10 @@
 
 {#if showSettingsPanel}
   <ChatSettingsPanel onClose={closeSettingsPanel} />
+{/if}
+
+{#if showParticipants && isGroup}
+  <GroupParticipantsPanel disabled={participantsDisabled} onClose={() => showParticipants = false} />
 {/if}
 
 <style>

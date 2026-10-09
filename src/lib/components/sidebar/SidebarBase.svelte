@@ -1072,7 +1072,7 @@
 {/snippet}
 
 {#snippet chatActions(chat: Conversation, dismiss: (after: () => void) => void = after => after())}
-  {#if chat.mode === 'singleplayer'}
+  {#if chat.mode === 'singleplayer' && chat.chat_kind !== 'group'}
     <button disabled={transferBusy} onclick={() => { const selectedChat = chat; dismiss(() => { void exportChat(selectedChat); }); }} class="context-action">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/></svg>
       {m.chat_export()}
