@@ -127,6 +127,7 @@ fn database() -> Connection {
         CREATE TRIGGER activity AFTER INSERT ON messages BEGIN
             UPDATE conversations SET updated_at = '2026-10-07T10:00:00Z' WHERE id = NEW.conversation_id;
         END;").unwrap();
+    crate::database::group_chats::migrate(&conn).unwrap();
     conn
 }
 

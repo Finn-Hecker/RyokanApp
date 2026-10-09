@@ -7,6 +7,7 @@ mod avatar;
 pub mod chats;
 pub mod chat_transfer;
 pub mod messages;
+pub mod group_chats;
 pub mod settings;
 pub mod characters;
 pub mod world_info;
@@ -374,6 +375,8 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
     );
     migrate_message_usage(&conn)
         .map_err(|e| format!("Failed to migrate message usage: {}", e))?;
+    group_chats::migrate(&conn)
+        .map_err(|e| format!("Failed to migrate group chat schema: {}", e))?;
 
     // Characters created before play modes existed default to singleplayer.
     let _ = conn.execute_batch(

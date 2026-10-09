@@ -6,6 +6,8 @@ export interface Message {
     role: 'user' | 'assistant';
     content: string;
     author?: string | null;
+    /** Stable group speaker ID; absent/null for legacy, single and user messages. */
+    participant_id?: string | null;
     swipe_variants: string[];
     swipe_index: number;
     usage_variants: (TokenUsage | null)[];
@@ -19,6 +21,10 @@ export interface PersistedMessageRow extends Omit<Message, 'swipe_variants' | 'u
 
 /** Decode IPC rows identically for paginated chat and full summary history. */
 export function decodeMessage(row: PersistedMessageRow): Message {
+    if (row.participant_id != null
+        && (typeof row.participant_id !== 'string' || !row.participant_id.trim())) {
+        throw new Error('Invalid message participant_id');
+    }
     return {
         ...row,
         swipe_variants: typeof row.swipe_variants === 'string'

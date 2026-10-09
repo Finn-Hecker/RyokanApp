@@ -158,6 +158,7 @@ pub struct Conversation {
     pub title: String,
     pub character_id: Option<String>,
     pub mode: String,
+    pub chat_kind: super::group_chats::ChatKind,
     pub created_at: String,
     pub updated_at: String,
     pub is_pinned: bool,
@@ -255,13 +256,14 @@ fn conversation_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conversati
         folder_id: row.get(9)?,
         sort_order: row.get(10)?,
         role_snapshot: deserialize_role_snapshot(row.get(11)?),
+        chat_kind: row.get(12)?,
     })
 }
 
 pub(super) fn read_conversation(conn: &rusqlite::Connection, chat_id: &str) -> Result<Conversation, String> {
     conn.query_row(
         "SELECT id, title, character_id, mode, created_at, updated_at, is_pinned,
-                cloned_from_id, cloned_from_title, folder_id, sort_order, role_snapshot
+                cloned_from_id, cloned_from_title, folder_id, sort_order, role_snapshot, chat_kind
          FROM conversations WHERE id = ?1",
         params![chat_id], conversation_from_row,
     ).map_err(|e| e.to_string())
@@ -284,7 +286,7 @@ pub async fn get_conversations_page(
     };
     let mut stmt = conn.prepare(
         "SELECT id, title, character_id, mode, created_at, updated_at, is_pinned,
-                cloned_from_id, cloned_from_title, folder_id, sort_order, role_snapshot
+                cloned_from_id, cloned_from_title, folder_id, sort_order, role_snapshot, chat_kind
          FROM conversations
          WHERE mode = ?1
            AND ((?4 IS NULL AND folder_id IS NULL) OR folder_id = ?4)

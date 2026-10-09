@@ -15,6 +15,8 @@ pub struct DbMessage {
     /// Human display name for multiplayer user messages. Null for legacy and
     /// singleplayer messages.
     pub author: Option<String>,
+    /// Stable group speaker ID. Null for user, legacy and single chats.
+    pub participant_id: Option<String>,
     /// JSON array of all generated content variants (including the active one).
     pub swipe_variants: String,
     /// Zero-based index pointing to the currently displayed variant.
@@ -35,6 +37,7 @@ fn message_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbMessage> {
         swipe_index: row.get(6)?,
         created_at: row.get(7)?,
         usage_variants: row.get(8)?,
+        participant_id: row.get(9)?,
     })
 }
 
@@ -46,7 +49,7 @@ pub struct ChatMessageUpdate {
 
 fn read_chat_message_update(conn: &rusqlite::Connection, chat_id: &str, message_id: &str) -> Result<ChatMessageUpdate, String> {
     let message = conn.query_row(
-        "SELECT id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at, usage_variants
+        "SELECT id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at, usage_variants, participant_id
          FROM messages WHERE conversation_id = ?1 AND id = ?2",
         params![chat_id, message_id], message_from_row,
     ).map_err(|e| e.to_string())?;
@@ -79,6 +82,7 @@ mod message_update_tests {
              INSERT INTO messages VALUES ('message', 'chat', 'assistant', 'second', NULL,
                 '[\"first\",\"second\"]', 1, 'saved timestamp', '[null,{\"inputTokens\":42,\"serviceTier\":\"flex\"}]');"
         ).unwrap();
+        super::super::group_chats::migrate(&conn).unwrap();
         conn
     }
 
@@ -117,7 +121,7 @@ mod message_update_tests {
 pub async fn get_messages(app: AppHandle, chat_id: String) -> Result<Vec<DbMessage>, String> {
     let conn = get_connection(&app)?;
     let mut stmt = conn.prepare(
-        "SELECT id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at, usage_variants \
+        "SELECT id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at, usage_variants, participant_id \
          FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC, rowid ASC"
     ).map_err(|e| e.to_string())?;
 
@@ -141,6 +145,7 @@ pub async fn add_message(
     message_id: Option<String>,
     created_at: Option<String>,
     usage: Option<TokenUsage>,
+    participant_id: Option<String>,
 ) -> Result<(), String> {
     let conn = crate::database::get_connection(&app)?;
 
@@ -151,10 +156,10 @@ pub async fn add_message(
     let initial_usage = serde_json::to_string(&vec![usage]).map_err(|e| e.to_string())?;
 
     let inserted = conn.execute(
-        "INSERT INTO messages (id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at, usage_variants) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, COALESCE(?7, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), ?8) \
+        "INSERT INTO messages (id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at, usage_variants, participant_id) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, COALESCE(?7, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), ?8, ?9) \
          ON CONFLICT(id) DO NOTHING",
-        rusqlite::params![msg_id, chat_id, role, content, author, initial_variants, created_at, initial_usage],
+        rusqlite::params![msg_id, chat_id, role, content, author, initial_variants, created_at, initial_usage, participant_id],
     ).map_err(|e| e.to_string())?;
 
     // Relay snapshots and echoed frames can contain the same stable message
@@ -357,7 +362,7 @@ pub async fn get_messages_page(app: AppHandle, chat_id: String, limit: i64, offs
     // second-level resolution (relevant e.g. right after cloning a chat,
     // where many messages get inserted within the same second).
     let mut stmt = conn.prepare(
-        "SELECT id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at, usage_variants \
+        "SELECT id, conversation_id, role, content, author, swipe_variants, swipe_index, created_at, usage_variants, participant_id \
          FROM messages WHERE conversation_id = ?1 \
          ORDER BY created_at DESC, rowid DESC \
          LIMIT ?2 OFFSET ?3"

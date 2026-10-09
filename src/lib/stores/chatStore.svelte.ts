@@ -10,12 +10,14 @@ import type { TokenUsage } from '$lib/ai/tokens/tokenUsage';
 
 import { decodeMessage, type Message, type PersistedMessageRow } from '$lib/chat/messageData';
 export type { Message } from '$lib/chat/messageData';
+import type { ChatKind } from '$lib/chat/groupChatData';
 
 export interface Conversation {
     id: string;
     title: string;
     character_id: string | null;
     mode: 'singleplayer' | 'multiplayer';
+    chat_kind: ChatKind;
     created_at: string;
     updated_at: string;
     is_pinned: boolean;
