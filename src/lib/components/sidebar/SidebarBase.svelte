@@ -199,7 +199,7 @@
       await ensureConversationsLoaded(mode);
       hasMore = chatState.conversations.filter(
         chat => chat.mode === mode && chat.folder_id === null,
-      ).length === 10;
+      ).length >= 10;
       folderHasMore = Object.fromEntries(
         chatState.folders
           .filter(folder => folder.mode === mode && !folder.is_collapsed)
@@ -215,6 +215,7 @@
 
   function setupObserver() {
     if (observer) observer.disconnect();
+    if (layout === 'drawer' && !isOpen) return;
     if (!sentinel) return;
     observer = new IntersectionObserver(async (entries) => {
       if (!entries[0].isIntersecting || isLoading || !hasMore) return;

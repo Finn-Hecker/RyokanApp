@@ -44,6 +44,8 @@ test('layout compiles with one responsive sidebar branch and an inert retained d
   const responsive = sidebar.consequent.nodes.find(node => node.type === 'IfBlock');
   assert.equal(responsive.test.name, 'wideLayout');
   assert.ok(responsive.alternate);
+  assert.ok(!responsive.alternate.nodes.some(node => node.type === 'RegularElement' && node.name === 'button'),
+    'no fixed backdrop outside the hidden/inert drawer layer can intercept page clicks');
   const drawer = responsive.alternate.nodes.find(node => node.type === 'RegularElement' && node.name === 'div');
   assert.ok(drawer.attributes.some(attribute => attribute.name === 'inert'));
   assert.ok(drawer.fragment.nodes.some(node => node.type === 'RenderTag'));

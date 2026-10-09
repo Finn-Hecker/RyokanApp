@@ -140,14 +140,6 @@
     </div>
 
     {:else}
-      <button
-        type="button"
-        aria-label="Close sidebar"
-        onclick={closeSidebar}
-        disabled={!isMobileSidebarOpen}
-        class="lg:hidden fixed inset-0 w-full h-full z-40 cursor-pointer"
-      ></button>
-      
       <div
         bind:this={sidebarLayer}
         class="mobile-sidebar-layer lg:hidden fixed inset-0 z-40"

@@ -228,7 +228,7 @@ test('a small gap beside a drop section is accepted without accepting drops outs
 });
 
 
-test('drawer backdrops retain their dismissal callbacks without a header close button', () => {
+test('drawer has one shared backdrop with its dismissal callback and no separate page overlay', () => {
   for (const filename of ['./SidebarBase.svelte', '../layouts/PageLayout.svelte']) {
     const source = readFileSync(new URL(filename, import.meta.url), 'utf8');
     const ast = parse(source, { modern: true });
@@ -244,14 +244,17 @@ test('drawer backdrops retain their dismissal callbacks without a header close b
     visit(ast.fragment);
     const backdrops = buttons.filter(button => button.attributes.some(attribute =>
       attribute.name === 'class' && source.slice(attribute.start, attribute.end).includes('z-40')));
+    assert.equal(source.includes('sidebar-close-button'), false);
+    if (filename === '../layouts/PageLayout.svelte') {
+      assert.equal(backdrops.length, 0, 'the page must not retain an overlay outside its inert layer');
+      continue;
+    }
     assert.equal(backdrops.length, 1);
     const expression = backdrops[0].attributes.find(attribute => attribute.name === 'onclick').value.expression;
     let closed = false;
     const h = controller(filename, { $props: () => ({ close: () => { closed = true; } }) });
-    if (filename !== './SidebarBase.svelte') h.run('isMobileSidebarOpen = true; isMobileSidebarVisible = true; sidebarProgress = 1');
     h.run('(' + source.slice(expression.start, expression.end) + ')()');
-    assert.equal(filename === './SidebarBase.svelte' ? closed : h.run('isMobileSidebarOpen === false && sidebarProgress === 0'), true);
-    assert.equal(source.includes('sidebar-close-button'), false);
+    assert.equal(closed, true);
   }
 });
 
@@ -284,6 +287,39 @@ test('a new drag cancels pending drawer cleanup and menu-button opening cannot o
   assert.equal(h.run('sidebarProgress'), 0);
   h.finishSidebarMotion();
   assert.equal(h.run('isMobileSidebarVisible'), false);
+});
+
+test('retained closed drawer never starts pagination observers, including after metadata hydration', async () => {
+  let observed = 0, disconnected = 0;
+  const h = controller('./SidebarBase.svelte', {
+    $props: () => ({ isOpen: false, layout: 'drawer', mode: 'singleplayer', interactionMode: 'mobile' }),
+    chatState: { conversations: [], folders: [] },
+    ensureConversationsLoaded: async () => {},
+    setTimeout: callback => { callback(); return 1; },
+    IntersectionObserver: class {
+      observe() { observed++; }
+      disconnect() { disconnected++; }
+    },
+  });
+  h.run('sentinel = {}');
+  await h.run('initializeChats()');
+  assert.equal(observed, 0, 'hydration callback must not activate pagination while closed');
+  h.run('isOpen = true');
+  await h.run('initializeChats()');
+  assert.equal(observed, 1);
+  h.run('isOpen = false; setupObserver()');
+  assert.equal(observed, 1);
+  assert.equal(disconnected, 1);
+});
+
+test('reopening a cached sidebar with multiple loose pages keeps pagination available', async () => {
+  const h = controller('./SidebarBase.svelte', {
+    $props: () => ({ isOpen: true, layout: 'drawer', mode: 'singleplayer', interactionMode: 'mobile' }),
+    chatState: { conversations: Array.from({ length: 20 }, (_, index) => ({ id: String(index), mode: 'singleplayer', folder_id: null })), folders: [] },
+    ensureConversationsLoaded: async () => {},
+  });
+  await h.run('initializeChats()');
+  assert.equal(h.run('hasMore'), true, 'retaining twenty rows must not mark later pages unavailable');
 });
 
 test('mobile add sheet owns Back; desktop add menu uses the sidebar Back handler', async () => {
