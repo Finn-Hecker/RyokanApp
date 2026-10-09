@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { traceDecision, diagnosticConnection, type DiagnosticDecision } from '$lib/diagnostics/diagnosticDecisions';
 import { appState, createDefaultConnection, replaceApiConnections, type ApiConnection, type DetectedContextMetadata } from '$lib/stores/appState.svelte';
 import type { SettingRow } from '$lib/settings/settings';
+import { invalidateSettingsCache } from '$lib/settings/settings';
 import { normalizeServiceTier } from '$lib/ai/connections/generationCapabilities';
 import { normalizePresetRestore } from '$lib/ai/presets/presetCore';
 import { acceptDetectedContext, connectionIdentity, resolveMemorySettings, resolvedHardContextLimit, SAME_AS_CHAT_CONNECTION, validContextSize } from '$lib/ai/connections/connectionCore';
@@ -70,6 +71,13 @@ function normalizeConnection(value: Partial<ApiConnection>, legacy: Map<string, 
   return connection;
 }
 
+let connectionsHydrated = false;
+
+/** Opening settings must not replace live profiles or their detected metadata. */
+export function ensureApiConnectionsHydrated(settings: SettingRow[]): void {
+  if (!connectionsHydrated) hydrateApiConnections(settings);
+}
+
 export function hydrateApiConnections(settings: SettingRow[]): void {
   const values = new Map(settings.map(row => [row.key, row.value]));
   try {
@@ -84,6 +92,7 @@ export function hydrateApiConnections(settings: SettingRow[]): void {
     appState.longTermMemory = true;
     appState.summaryConnectionId = SAME_AS_CHAT_CONNECTION;
   }
+  connectionsHydrated = true;
 }
 
 export async function persistApiConnections(): Promise<void> {
@@ -93,6 +102,7 @@ export async function persistApiConnections(): Promise<void> {
     return { ...connection, presencePenalty: repetitionPenalty, parameterEnabled: { ...enabled, presencePenalty: repetitionEnabled } };
   });
   await invoke('save_api_connections', { connectionsJson: JSON.stringify(records), activeConnectionId: appState.activeApiConnectionId });
+  invalidateSettingsCache();
 }
 
 export function invalidateDetectedContext(connection: ApiConnection): void {

@@ -175,6 +175,7 @@ test('production persistence and hydration retain independent snapshots across a
   const before = structuredClone(context.appState.apiConnections);
   let rows;
   Object.assign(context, { crypto: { randomUUID: () => 'new' },
+    invalidateSettingsCache() {}, connectionsHydrated: false,
     API_CONNECTIONS_KEY: 'api_connections', ACTIVE_API_CONNECTION_KEY: 'active_api_connection_id',
     LONG_TERM_MEMORY_KEY: 'long_term_memory_enabled', SUMMARY_CONNECTION_KEY: 'summary_api_connection_id',
     SAME_AS_CHAT_CONNECTION: 'same_as_chat', normalizePresetRestore,

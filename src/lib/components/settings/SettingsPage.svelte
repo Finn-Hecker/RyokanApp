@@ -5,7 +5,7 @@
   import { mobileCategoryGesture } from './mobileCategoryGesture';
   import { activateConnectionPreset, deactivateConnectionPreset, type RyokanPreset } from '$lib/ai/presets/presetCore';
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
-  import { getAllSettings, saveSetting } from "$lib/settings/settings";
+  import { ensureSettingsLoaded, saveSetting } from "$lib/settings/settings";
   import { parseTextRules, serializeTextRules, TEXT_RULES_KEY } from '$lib/ai/prompt/textRules';
   import { onMount } from "svelte";
   import { openUrl } from '@tauri-apps/plugin-opener';
@@ -21,7 +21,7 @@
   import Button from "$lib/components/ui/Button.svelte";
   import { createDefaultApiParameterEnabled, type ApiParameterKey } from "$lib/ai/connections/apiParameters";
   import { validateAdditionalApiParameters } from "$lib/ai/connections/additionalApiParameters";
-  import { hydrateApiConnections, LONG_TERM_MEMORY_KEY, persistApiConnections, resolvedHardContextLimit, SUMMARY_CONNECTION_KEY } from "$lib/ai/connections/apiConnections";
+  import { ensureApiConnectionsHydrated, LONG_TERM_MEMORY_KEY, persistApiConnections, resolvedHardContextLimit, SUMMARY_CONNECTION_KEY } from "$lib/ai/connections/apiConnections";
 
   type SettingsCategory = "provider" | "presets" | "memory" | "textRules" | "appearance" | "language" | "advanced" | "about";
   type Category = { id: SettingsCategory; label: string; description: string; mobileDescription: string; icon: string };
@@ -121,8 +121,8 @@
     settingsReady = false;
     settingsLoadFailed = false;
     try {
-      const settings = await getAllSettings();
-      hydrateApiConnections(settings);
+      const settings = await ensureSettingsLoaded();
+      ensureApiConnectionsHydrated(settings);
       appState.textRules = parseTextRules(settings.find(row => row.key === TEXT_RULES_KEY)?.value);
       parameterEnabled = { ...appState.apiSettings.parameterEnabled };
       powerUser = settings.find(row => row.key === 'settings_power_user')?.value === 'true';

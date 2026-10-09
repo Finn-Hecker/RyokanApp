@@ -107,8 +107,8 @@ test('Settings saves the ordered payload via existing settings persistence and r
     appState, TEXT_RULES_KEY, parseTextRules, serializeTextRules, parameterEnabled: {}, powerUser: false,
     LONG_TERM_MEMORY_KEY: 'memory', SUMMARY_CONNECTION_KEY: 'summary', isSaving: false, settingsReady: false,
     additionalApiParametersValidation: { valid: true }, persistApiConnections: async () => {},
-    saveSetting: async (key, value) => saved.set(key, value), getAllSettings: async () => [...saved].map(([key, value]) => ({ key, value })),
-    hydrateApiConnections: () => {}, resolvedHardContextLimit: () => 100, goBack: () => {}, reportDiagnostic: () => assert.fail('Unexpected diagnostic'),
+    saveSetting: async (key, value) => saved.set(key, value), ensureSettingsLoaded: async () => [...saved].map(([key, value]) => ({ key, value })),
+    ensureApiConnectionsHydrated: () => {}, resolvedHardContextLimit: () => 100, goBack: () => {}, reportDiagnostic: () => assert.fail('Unexpected diagnostic'),
   });
   vm.runInContext(ts.transpile(settingsFunctions(), { target: ts.ScriptTarget.ES2022 }), context);
   await context.loadSettings();

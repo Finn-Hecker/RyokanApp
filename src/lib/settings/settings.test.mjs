@@ -8,7 +8,8 @@ function evaluateFunctions(file, context) {
   const input = readFileSync(new URL(file, import.meta.url), 'utf8');
   const source = file.endsWith('.svelte') ? input.match(/<script lang="ts">([\s\S]*?)<\/script>/)[1] : input;
   const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
-  const body = ast.statements.filter(ts.isFunctionDeclaration)
+  const body = ast.statements.filter(statement => ts.isFunctionDeclaration(statement)
+    || (!file.endsWith('.svelte') && ts.isVariableStatement(statement)))
     .map(statement => statement.getText(ast).replace(/^export /, '')).join('\n');
   vm.runInContext(ts.transpile(body, { target: ts.ScriptTarget.ES2022 }), context);
 }
@@ -23,7 +24,7 @@ function settingsPage(invoke) {
     TEXT_RULES_KEY: 'text_rules', LONG_TERM_MEMORY_KEY: 'memory', SUMMARY_CONNECTION_KEY: 'summary',
     reportDiagnostic() {}, parseTextRules: () => [], serializeTextRules: JSON.stringify,
     resolvedHardContextLimit: () => 4096,
-    hydrateApiConnections: rows => hydrated.push(rows),
+    ensureApiConnectionsHydrated: rows => hydrated.push(rows),
     persistApiConnections: async () => { calls.push(['profiles']); },
     returnTo: view => navigations.push(view),
     invoke: async (command, args) => { calls.push([command, args]); return invoke(command, args); },
@@ -93,4 +94,41 @@ test('a partial settings write failure keeps the page open and permits retry', a
   await h.context.saveSettings();
   assert.deepEqual(h.navigations, ['lobby']);
   assert.equal(h.context.settingsSaveFailed, false);
+});
+
+test('settings reuse startup rows, return isolated data and invalidate only successful writes', async () => {
+  let value = '100', fail = false;
+  const h = settingsPage(async command => {
+    if (command === 'get_all_settings') return [{ key: 'chat_font_scale', value }];
+    if (fail) throw new Error('Write failed');
+  });
+  await h.context.getAllSettings();
+  const cached = await h.context.ensureSettingsLoaded();
+  cached[0].value = 'tampered';
+  await h.context.loadSettings();
+  assert.equal(h.context.appState.chatFontScale, 100);
+  assert.equal(h.calls.filter(([command]) => command === 'get_all_settings').length, 1);
+  fail = true;
+  await assert.rejects(h.context.saveSetting('chat_font_scale', 120));
+  await h.context.ensureSettingsLoaded();
+  assert.equal(h.calls.filter(([command]) => command === 'get_all_settings').length, 1);
+  fail = false; value = '120';
+  await h.context.saveSetting('chat_font_scale', 120);
+  await h.context.loadSettings();
+  assert.equal(h.context.appState.chatFontScale, 120);
+  assert.equal(h.calls.filter(([command]) => command === 'get_all_settings').length, 2);
+});
+
+test('a successful write during hydration cannot cache stale settings', async () => {
+  let resolve, reads = 0;
+  const h = settingsPage(command => command === 'get_all_settings'
+    ? ++reads === 1 ? new Promise(done => { resolve = done; }) : [{ key: 'font', value: 'new' }]
+    : undefined);
+  const first = h.context.ensureSettingsLoaded();
+  assert.equal(h.context.ensureSettingsLoaded(), first);
+  await h.context.saveSetting('font', 'new');
+  resolve([{ key: 'font', value: 'old' }]);
+  const rows = await first;
+  assert.equal(rows[0].value, 'new');
+  assert.equal(reads, 2);
 });

@@ -1,7 +1,8 @@
 <script lang="ts">
   import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
   import { activateApiConnection, appState, createDefaultConnection } from "$lib/stores/appState.svelte";
-  import { fetchModels, type ModelInfo } from "$lib/settings/settings";
+  import type { ModelInfo } from "$lib/settings/settings";
+  import { cachedModels, ensureModelsLoaded } from '$lib/ai/connections/modelCatalog';
   import * as m from "$lib/paraglide/messages";
   import Select from '$lib/components/ui/Select.svelte';
   import ProviderSelect from '$lib/components/ui/ProviderSelect.svelte';
@@ -335,7 +336,7 @@
     return appState.apiSettings.customMode || activeTab === 'local' || Boolean(appState.apiSettings.apiKey.trim());
   }
 
-  async function loadModels() {
+  async function loadModels(refresh = false) {
     if (!canFetchModels()) return;
 
     const config = modelConfigKey();
@@ -348,7 +349,7 @@
     modelSearch = "";
     activeModelCategory = "all";
     try {
-      const models = await fetchModels(appState.apiSettings.url, appState.apiSettings.apiKey, appState.apiSettings.providerKind);
+      const models = await ensureModelsLoaded(appState.apiSettings.url, appState.apiSettings.apiKey, appState.apiSettings.providerKind, refresh);
       if (request !== modelLoadRequest || config !== modelConfigKey()) return;
       if (models.length === 0) {
         modelsError = m.settings_model_error_no_models();
@@ -380,13 +381,17 @@
 
   function retryModels() {
     lastAttemptedModelConfig = "";
-    void loadModels();
+    void loadModels(true);
   }
 
   $effect(() => {
     const config = modelConfigKey();
     if (!active || !settingsReady || !canFetchModels() || config === lastAttemptedModelConfig) return;
 
+    if (cachedModels(appState.apiSettings.url, appState.apiSettings.apiKey, appState.apiSettings.providerKind)) {
+      untrack(() => void loadModels());
+      return;
+    }
     const timeout = window.setTimeout(() => void loadModels(), 400);
     return () => window.clearTimeout(timeout);
   });

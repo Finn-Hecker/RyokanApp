@@ -6,9 +6,36 @@ export interface SettingRow {
   value: string;
 }
 
+let cachedSettings: SettingRow[] | undefined;
+let pendingSettings: Promise<SettingRow[]> | undefined;
+let settingsRevision = 0;
+
+export function invalidateSettingsCache(): void {
+  settingsRevision++;
+  cachedSettings = undefined;
+}
+
+/** Reuse startup hydration; explicit getAllSettings calls still refresh SQLite. */
+export function ensureSettingsLoaded(): Promise<SettingRow[]> {
+  if (cachedSettings) return Promise.resolve(cachedSettings.map(row => ({ ...row })));
+  if (!pendingSettings) {
+    pendingSettings = (async () => {
+      while (true) {
+        const revision = settingsRevision;
+        const rows = await getAllSettings();
+        if (revision === settingsRevision) return rows;
+      }
+    })().finally(() => { pendingSettings = undefined; });
+  }
+  return pendingSettings;
+}
+
 export async function getAllSettings(): Promise<SettingRow[]> {
   try {
-    return await invoke<SettingRow[]>("get_all_settings");
+    const revision = settingsRevision;
+    const rows = await invoke<SettingRow[]>("get_all_settings");
+    if (revision === settingsRevision) cachedSettings = rows.map(row => ({ ...row }));
+    return rows;
   } catch (e) {
     reportDiagnostic('settings');
     throw e;
@@ -19,6 +46,7 @@ export async function saveSetting(key: string, value: string | boolean | number)
   try {
     const stringValue = String(value);
     await invoke("save_setting", { key, value: stringValue });
+    invalidateSettingsCache();
   } catch (e) {
     reportDiagnostic('settings');
     throw e;
