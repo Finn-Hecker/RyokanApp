@@ -59,6 +59,7 @@ export const mobileCharacterLongPress: Action<HTMLButtonElement, LongPressOption
   node.addEventListener('pointerup', pointerUp);
   node.addEventListener('pointercancel', cancel);
   node.addEventListener('pointerleave', cancel);
+  node.addEventListener('sidebar-swipe-start', cancel);
   node.addEventListener('click', click, true);
   node.addEventListener('contextmenu', contextMenu);
 
@@ -72,6 +73,7 @@ export const mobileCharacterLongPress: Action<HTMLButtonElement, LongPressOption
       node.removeEventListener('pointerup', pointerUp);
       node.removeEventListener('pointercancel', cancel);
       node.removeEventListener('pointerleave', cancel);
+      node.removeEventListener('sidebar-swipe-start', cancel);
       node.removeEventListener('click', click, true);
       node.removeEventListener('contextmenu', contextMenu);
     }

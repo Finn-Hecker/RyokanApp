@@ -75,6 +75,7 @@ export async function exportConversationJson(chat: Conversation): Promise<string
 
 export async function importConversationJson(json: string): Promise<string> {
     const conversation = await invoke<Conversation>('import_chat_json', { json });
+    invalidateConversationLibrary('singleplayer');
     await loadWorldInfos();
     await loadAllConversations('singleplayer');
     // Retain the committed row even if the library refresh failed or omitted it.
@@ -151,6 +152,21 @@ const PAGE_SIZE = 10;
 let loadedConversationMode: ConversationMode = 'singleplayer';
 // Imported rows supplied outside loaded pages must not advance pagination.
 const supplementalConversationIds = new Set<string>();
+const loadedConversationModes = new Set<ConversationMode>();
+const pendingConversationLoads = new Map<ConversationMode, Promise<void>>();
+const conversationLibraryRevisions = new Map<ConversationMode, number>();
+
+function invalidateConversationLibrary(mode: ConversationMode) {
+    loadedConversationModes.delete(mode);
+    conversationLibraryRevisions.set(mode, (conversationLibraryRevisions.get(mode) ?? 0) + 1);
+}
+
+/** Reuse startup metadata and any refresh already in flight. */
+export function ensureConversationsLoaded(mode: ConversationMode = loadedConversationMode): Promise<void> {
+    loadedConversationMode = mode;
+    return pendingConversationLoads.get(mode)
+        ?? (loadedConversationModes.has(mode) ? Promise.resolve() : loadAllConversations(mode));
+}
 
 function formatConversations(conversations: Conversation[]) {
     return conversations.map(chat => ({
@@ -169,35 +185,55 @@ function replaceModeConversations(mode: ConversationMode, conversations: Convers
     ];
 }
 
-export async function loadAllConversations(mode: ConversationMode = loadedConversationMode) {
+export function loadAllConversations(mode: ConversationMode = loadedConversationMode): Promise<void> {
     loadedConversationMode = mode;
+    const pending = pendingConversationLoads.get(mode);
+    if (pending) return pending;
+    invalidateConversationLibrary(mode);
+    const request = refreshConversationLibrary(mode).finally(() => {
+        pendingConversationLoads.delete(mode);
+    });
+    pendingConversationLoads.set(mode, request);
+    return request;
+}
+
+async function refreshConversationLibrary(mode: ConversationMode): Promise<void> {
     try {
-        const [looseChats, folders] = await Promise.all([
-            invoke<Conversation[]>('get_conversations_page', {
-                limit: PAGE_SIZE,
-                offset: 0,
-                mode,
-                folderId: null,
-            }),
-            invoke<ChatFolder[]>('get_chat_folders', { mode }),
-        ]);
-        const openFolderPages = await Promise.all(
-            folders
-                .filter(folder => !folder.is_collapsed)
-                .map(folder => invoke<Conversation[]>('get_conversations_page', {
-                    limit: Math.max(folder.chat_count, PAGE_SIZE),
+        // A write during prefetch invalidates its snapshot. Finish that request,
+        // then retry through the same promise instead of publishing stale rows.
+        while (true) {
+            const revision = conversationLibraryRevisions.get(mode);
+            const [looseChats, folders] = await Promise.all([
+                invoke<Conversation[]>('get_conversations_page', {
+                    limit: PAGE_SIZE,
                     offset: 0,
                     mode,
-                    folderId: folder.id,
-                })),
-        );
-        // Commit the folder metadata and its visible conversations together. Updating
-        // the folders first briefly rendered expanded folders without their rows.
-        chatState.folders = [
-            ...chatState.folders.filter(folder => folder.mode !== mode),
-            ...folders,
-        ];
-        replaceModeConversations(mode, [...openFolderPages.flat(), ...looseChats]);
+                    folderId: null,
+                }),
+                invoke<ChatFolder[]>('get_chat_folders', { mode }),
+            ]);
+            if (revision !== conversationLibraryRevisions.get(mode)) continue;
+            const openFolderPages = await Promise.all(
+                folders
+                    .filter(folder => !folder.is_collapsed)
+                    .map(folder => invoke<Conversation[]>('get_conversations_page', {
+                        limit: Math.max(folder.chat_count, PAGE_SIZE),
+                        offset: 0,
+                        mode,
+                        folderId: folder.id,
+                    })),
+            );
+            // Commit the folder metadata and its visible conversations together. Updating
+            // the folders first briefly rendered expanded folders without their rows.
+            if (revision !== conversationLibraryRevisions.get(mode)) continue;
+            chatState.folders = [
+                ...chatState.folders.filter(folder => folder.mode !== mode),
+                ...folders,
+            ];
+            replaceModeConversations(mode, [...openFolderPages.flat(), ...looseChats]);
+            loadedConversationModes.add(mode);
+            return;
+        }
     } catch (e) {
         reportDiagnostic('chat');
     }
@@ -211,6 +247,7 @@ export async function loadMoreConversations(mode: ConversationMode = loadedConve
         ).length === PAGE_SIZE;
     }
     try {
+        const revision = conversationLibraryRevisions.get(mode);
         const currentLength = chatState.conversations.filter(
             chat => chat.mode === mode && chat.folder_id === null && !supplementalConversationIds.has(chat.id),
         ).length;
@@ -220,6 +257,7 @@ export async function loadMoreConversations(mode: ConversationMode = loadedConve
             mode,
             folderId: null,
         });
+        if (revision !== conversationLibraryRevisions.get(mode)) return false;
         if (result.length === 0) return false;
         const knownIds = new Set(chatState.conversations.map(chat => chat.id));
         for (const chat of result) supplementalConversationIds.delete(chat.id);
@@ -237,6 +275,7 @@ export async function loadMoreConversations(mode: ConversationMode = loadedConve
 export async function loadMoreFolderConversations(folderId: string, reset = false): Promise<boolean> {
     const folder = chatState.folders.find(item => item.id === folderId);
     if (!folder) return false;
+    const revision = conversationLibraryRevisions.get(folder.mode);
     const loaded = chatState.conversations.filter(chat => chat.folder_id === folderId);
     const offset = reset ? 0 : loaded.length;
     const result = await invoke<Conversation[]>('get_conversations_page', {
@@ -245,6 +284,7 @@ export async function loadMoreFolderConversations(folderId: string, reset = fals
         mode: folder.mode,
         folderId,
     });
+    if (revision !== conversationLibraryRevisions.get(folder.mode)) return false;
     const otherChats = reset
         ? chatState.conversations.filter(chat => chat.folder_id !== folderId)
         : chatState.conversations;
@@ -267,6 +307,7 @@ export async function startNewChat(character: any, roleSelection: RoleSelection 
             roleSelection,
             characterSnapshot: characterSnapshot(character),
         });
+        invalidateConversationLibrary('singleplayer');
         await loadAllConversations('singleplayer');
         await loadMessages(newId);
     } catch (e) {
@@ -297,6 +338,7 @@ export async function cloneChatFromMessage(messageId: string): Promise<string | 
             chatId,
             upToMessageId: messageId,
         });
+        invalidateConversationLibrary('singleplayer');
         await loadAllConversations('singleplayer');
         return newChatId;
     } catch (e) {
@@ -429,6 +471,7 @@ export async function loadMoreMessages() {
 export async function addMessage(role: 'user' | 'assistant', content: string, usage: TokenUsage | null = null) {
     const chatId = chatState.activeChatId;
     if (!chatId) return;
+    const mode = chatState.conversations.find(chat => chat.id === chatId)?.mode ?? 'singleplayer';
     // Use the same ID locally and in SQLite so the row keeps its DOM identity.
     // Assistant replies already have a streaming preview; only user sends need one.
     const messageId = crypto.randomUUID();
@@ -450,6 +493,7 @@ export async function addMessage(role: 'user' | 'assistant', content: string, us
             createdAt: null,
             usage,
         });
+        invalidateConversationLibrary(mode);
         pendingUserSends.delete(messageId);
         await refreshSavedMessage(chatId, messageId);
     } catch (e) {
@@ -588,24 +632,30 @@ export async function deleteMessage(id: string) {
 }
 
 export async function renameConversation(id: string, title: string) {
+    const mode = chatState.conversations.find(chat => chat.id === id)?.mode ?? loadedConversationMode;
     try {
         await invoke('rename_chat', { id, title });
-        await loadAllConversations();
+        invalidateConversationLibrary(mode);
+        await loadAllConversations(mode);
     } catch (e) { reportDiagnostic('chat'); }
 }
 
 export async function togglePinConversation(id: string) {
+    const mode = chatState.conversations.find(chat => chat.id === id)?.mode ?? loadedConversationMode;
     try {
         await invoke('toggle_pin_chat', { id });
-        await loadAllConversations();
+        invalidateConversationLibrary(mode);
+        await loadAllConversations(mode);
     } catch (e) { reportDiagnostic('chat'); }
 }
 
 export async function deleteConversation(id: string) {
+    const mode = chatState.conversations.find(chat => chat.id === id)?.mode ?? loadedConversationMode;
     try {
         await invoke('delete_chat', { id });
+        invalidateConversationLibrary(mode);
         forgetPromptUsageAnchor(id);
-        await loadAllConversations();
+        await loadAllConversations(mode);
         if (chatState.activeChatId === id) {
             chatState.activeChatId    = null;
             chatState.currentMessages = [];
@@ -619,12 +669,15 @@ export async function deleteConversation(id: string) {
 
 export async function createChatFolder(name: string, mode: ConversationMode) {
     const folder = await invoke<ChatFolder>('create_chat_folder', { name, mode });
+    invalidateConversationLibrary(mode);
     chatState.folders = [...chatState.folders, folder];
 }
 
 export async function renameChatFolder(id: string, name: string) {
+    const mode = chatState.folders.find(folder => folder.id === id)?.mode ?? loadedConversationMode;
     await invoke('rename_chat_folder', { id, name });
     const folder = chatState.folders.find(item => item.id === id);
+    invalidateConversationLibrary(mode);
     if (folder) folder.name = name.trim();
 }
 
@@ -639,6 +692,7 @@ export async function setChatFolderCollapsed(id: string, isCollapsed: boolean): 
         folder.is_collapsed = true;
         try {
             await invoke('set_chat_folder_collapsed', { id, isCollapsed: true });
+            invalidateConversationLibrary(folder.mode);
             return false;
         } catch (error) {
             folder.is_collapsed = previousState;
@@ -651,6 +705,7 @@ export async function setChatFolderCollapsed(id: string, isCollapsed: boolean): 
     try {
         const moreAvailable = await loadMoreFolderConversations(id, true);
         await invoke('set_chat_folder_collapsed', { id, isCollapsed: false });
+        invalidateConversationLibrary(folder.mode);
         folder.is_collapsed = false;
         return moreAvailable;
     } catch (error) {
@@ -660,8 +715,10 @@ export async function setChatFolderCollapsed(id: string, isCollapsed: boolean): 
 }
 
 export async function deleteChatFolder(id: string) {
+    const mode = chatState.folders.find(folder => folder.id === id)?.mode ?? loadedConversationMode;
     await invoke('delete_chat_folder', { id });
-    await loadAllConversations(loadedConversationMode);
+    invalidateConversationLibrary(mode);
+    await loadAllConversations(mode);
 }
 
 export async function persistSidebarOrganization(mode: ConversationMode) {
@@ -696,6 +753,7 @@ export async function persistSidebarOrganization(mode: ConversationMode) {
         folderIds: folders.map(folder => folder.id),
         chats,
     });
+    invalidateConversationLibrary(mode);
     chatState.folders = [
         ...chatState.folders.filter(folder => folder.mode !== mode),
         ...refreshedFolders,

@@ -12,6 +12,7 @@
   import { handleBackNavigation } from '$lib/stores/navigation';
   import { invoke } from '@tauri-apps/api/core';
   import { loadWorldInfos } from '$lib/stores/worldInfoStore.svelte';
+  import { ensureConversationsLoaded } from '$lib/stores/chatStore.svelte';
   import { hydrateApiConnections } from '$lib/ai/connections/apiConnections';
   import { updater } from '$lib/stores/updater';
   import * as m from '$lib/paraglide/messages';
@@ -100,6 +101,9 @@
     // Start imports alongside IPC hydration. Onboarding need not wait for these,
     // but normal navigation stays gated until all six modules are cached.
     void preloadMainViews();
+    // Tauri initializes SQLite before exposing IPC. Warm the initial solo sidebar
+    // metadata alongside hydration without gating startup on the library query.
+    void ensureConversationsLoaded('singleplayer');
     // Hydrate lorebooks in the background; generation awaits this shared load
     // before budgeting or assembling a prompt.
     void loadWorldInfos();

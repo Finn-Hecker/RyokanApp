@@ -246,6 +246,7 @@
 <PageLayout
   pageTitle={greeting}
   showSidebar={true}
+  swipeToOpenSidebar={!menuTarget && !deleteTarget && !startTarget}
   animateEntrance={false}
   stickyHeader={true}
   maxContentWidth="max-w-7xl"

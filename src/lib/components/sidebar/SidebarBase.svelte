@@ -8,6 +8,7 @@
   import { cubicOut } from 'svelte/easing';
   import { scale, slide } from 'svelte/transition';
   import { chatState, openHistoryChat, loadAllConversations, loadMoreConversations, loadMoreFolderConversations, deleteConversation, renameConversation, togglePinConversation, createChatFolder, renameChatFolder, setChatFolderCollapsed, deleteChatFolder, persistSidebarOrganization, type Conversation, type ConversationMode } from '$lib/stores/chatStore.svelte';
+  import { ensureConversationsLoaded } from '$lib/stores/chatStore.svelte';
   import { appState } from '$lib/stores/appState.svelte';
   import { navigateTo, registerBackHandler } from '$lib/stores/navigation';
   import * as m from '$lib/paraglide/messages';
@@ -195,7 +196,8 @@
     isLoading = true;
     hasMore = true;
     try {
-      await loadAllConversations(mode);
+      if (mode === 'singleplayer') await ensureConversationsLoaded(mode);
+      else await loadAllConversations(mode);
       hasMore = chatState.conversations.filter(
         chat => chat.mode === mode && chat.folder_id === null,
       ).length === 10;
@@ -1401,10 +1403,10 @@
     type="button"
     aria-label={m.history_close_label()}
     onclick={close}
-    class="fixed inset-0 w-full h-full bg-black/60 z-40 cursor-pointer border-none"
+    class="sidebar-backdrop fixed inset-0 w-full h-full bg-black/60 z-40 cursor-pointer border-none"
   ></button>
 
-  <aside class="sidebar-shell fixed left-0 top-0 bottom-0 w-72 border-r border-white/5 shadow-2xl z-50 flex flex-col bg-ryokan-sidebar" oncontextmenu={(event) => { if (interactionMode === 'desktop') event.preventDefault(); }}>
+  <aside data-sidebar-drawer class="sidebar-shell fixed left-0 top-0 bottom-0 w-72 border-r border-white/5 shadow-2xl z-50 flex flex-col bg-ryokan-sidebar" oncontextmenu={(event) => { if (interactionMode === 'desktop') event.preventDefault(); }}>
     <div class="sidebar-header sidebar-header--drawer flex justify-between items-center shrink-0">
       <h2 class="text-lg font-medium text-ryokan-accent">{m.history_title()}</h2>
       {@render addAction()}

@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { fade, fly } from 'svelte/transition';
-  import type { Snippet } from 'svelte';
+  import { fade } from 'svelte/transition';
+  import { onDestroy, tick, type Snippet } from 'svelte';
   import { appState, type InteractionMode } from '$lib/stores/appState.svelte';
   import { registerBackHandler } from '$lib/stores/navigation';
+  import { mobileSidebarSwipe } from './mobileSidebarSwipe';
 
   type SidebarLayout = 'inline' | 'drawer';
   type SidebarContext = {
@@ -17,6 +18,7 @@
     animateEntrance = true,
     stickyHeader = false,
     showSidebar = false,
+    swipeToOpenSidebar = false,
     sidebarWidth = "w-64",
     maxContentWidth = "max-w-7xl",
     children,
@@ -27,6 +29,7 @@
     animateEntrance?: boolean;
     stickyHeader?: boolean;
     showSidebar?: boolean;
+    swipeToOpenSidebar?: boolean;
     sidebarWidth?: string;
     maxContentWidth?: string;
     children?: Snippet;
@@ -35,6 +38,65 @@
   } = $props();
 
   let isMobileSidebarOpen = $state(false);
+  let isMobileSidebarMounted = $state(false);
+  let sidebarDragging = $state(false);
+  let sidebarProgress = $state(0);
+  let sidebarLayer = $state<HTMLDivElement | null>(null);
+  let sidebarSettleTimer: ReturnType<typeof setTimeout> | undefined;
+  let sidebarMotionRevision = 0;
+
+  function cancelSidebarMotion() {
+    sidebarMotionRevision++;
+    clearTimeout(sidebarSettleTimer);
+    sidebarSettleTimer = undefined;
+  }
+
+  onDestroy(cancelSidebarMotion);
+
+  function sidebarDrawerWidth() {
+    return sidebarLayer?.querySelector<HTMLElement>('[data-sidebar-drawer]')?.getBoundingClientRect().width
+      ?? parseFloat(getComputedStyle(document.documentElement).fontSize) * 18;
+  }
+
+  function dragSidebar(progress: number) {
+    cancelSidebarMotion();
+    isMobileSidebarMounted = true;
+    sidebarDragging = true;
+    sidebarProgress = progress;
+  }
+
+  function closeSidebar() {
+    cancelSidebarMotion();
+    isMobileSidebarOpen = false;
+    sidebarDragging = false;
+    sidebarProgress = 0;
+    if (!isMobileSidebarMounted) return;
+    sidebarSettleTimer = setTimeout(() => {
+      isMobileSidebarMounted = false;
+      sidebarSettleTimer = undefined;
+    }, 180);
+  }
+
+  async function openSidebar() {
+    cancelSidebarMotion();
+    const revision = sidebarMotionRevision;
+    isMobileSidebarMounted = true;
+    isMobileSidebarOpen = true;
+    sidebarDragging = false;
+    await tick();
+    if (revision !== sidebarMotionRevision) return;
+    // Establish the closed position before the menu button starts its transition.
+    sidebarLayer?.getBoundingClientRect();
+    sidebarProgress = 1;
+  }
+
+  function releaseSidebar(open: boolean) {
+    if (!open) { closeSidebar(); return; }
+    cancelSidebarMotion();
+    sidebarDragging = false;
+    isMobileSidebarOpen = true;
+    sidebarProgress = 1;
+  }
 
   function enterPage(node: Element) {
     return animateEntrance ? fade(node, { duration: 200 }) : { duration: 0 };
@@ -44,7 +106,7 @@
     if (!showSidebar || !isMobileSidebarOpen) return;
     return registerBackHandler(() => {
       if (!showSidebar || !isMobileSidebarOpen) return false;
-      isMobileSidebarOpen = false;
+      closeSidebar();
       return true;
     });
   });
@@ -52,6 +114,12 @@
 
 <div 
   class="h-full w-full flex overflow-hidden"
+  use:mobileSidebarSwipe={{
+    enabled: swipeToOpenSidebar && showSidebar && !isMobileSidebarOpen && appState.interactionMode === 'mobile',
+    getWidth: sidebarDrawerWidth,
+    onDrag: dragSidebar,
+    onRelease: releaseSidebar,
+  }}
   in:enterPage
   role="region"
   aria-label={pageTitle}
@@ -63,20 +131,24 @@
       </aside>
     </div>
 
-    {#if isMobileSidebarOpen}
+    {#if isMobileSidebarMounted}
       <button
         type="button"
         aria-label="Close sidebar"
-        onclick={() => isMobileSidebarOpen = false}
-        class="lg:hidden fixed w-full h-full z-40 cursor-pointer"
+        onclick={closeSidebar}
+        disabled={!isMobileSidebarOpen}
+        class="lg:hidden fixed inset-0 w-full h-full z-40 cursor-pointer"
       ></button>
       
-      <aside
-        transition:fly={{ x: -500, duration: 200 }}
-        class="lg:hidden fixed left-0 top-0 bottom-0 w-72 bg-ryokan-sidebar border-r border-white/5 shadow-2xl z-50 flex flex-col"
+      <div
+        bind:this={sidebarLayer}
+        class="mobile-sidebar-layer lg:hidden fixed inset-0 z-40"
+        class:mobile-sidebar-layer--dragging={sidebarDragging}
+        inert={!isMobileSidebarOpen}
+        style:--sidebar-progress={sidebarProgress}
       >
-        {@render sidebar?.({ layout: 'drawer', interactionMode: appState.interactionMode, isOpen: isMobileSidebarOpen, close: () => isMobileSidebarOpen = false })}
-      </aside>
+        {@render sidebar?.({ layout: 'drawer', interactionMode: appState.interactionMode, isOpen: true, close: closeSidebar })}
+      </div>
     {/if}
   {/if}
 
@@ -84,7 +156,7 @@
     <div class="app-page-header flex items-center justify-between border-b border-white/5 {stickyHeader ? 'sticky top-0 z-30 bg-ryokan-bg' : ''}">
         {#if showSidebar}
           <button
-            onclick={() => isMobileSidebarOpen = true}
+            onclick={openSidebar}
             aria-label="Open menu"
             class="lg:hidden w-10 h-10 flex items-center justify-center text-gray-500 hover:text-white transition bg-white/5 rounded-full hover:bg-white/10 border border-white/5 hover:border-ryokan-accent/30 active:scale-95"
           >
@@ -110,6 +182,24 @@
   </div>
 </div>
 <style>
+  .mobile-sidebar-layer {
+    --sidebar-motion-duration: 180ms;
+  }
+  .mobile-sidebar-layer--dragging {
+    --sidebar-motion-duration: 0ms;
+  }
+  .mobile-sidebar-layer :global([data-sidebar-drawer]) {
+    transform: translate3d(calc((var(--sidebar-progress) - 1) * 100%), 0, 0);
+    transition: transform var(--sidebar-motion-duration) cubic-bezier(.22, 1, .36, 1);
+    will-change: transform;
+  }
+  .mobile-sidebar-layer :global(.sidebar-backdrop) {
+    opacity: var(--sidebar-progress);
+    transition: opacity var(--sidebar-motion-duration) ease;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .mobile-sidebar-layer { --sidebar-motion-duration: 0ms; }
+  }
   .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }

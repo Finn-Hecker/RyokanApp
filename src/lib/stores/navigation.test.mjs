@@ -76,7 +76,7 @@ function page({ reducedMotion = false, deferredListener = false, userAgent = 'An
       const listener = { unregister: async () => { unregistered++; } };
       return deferredListener ? new Promise(resolve => { resolveListener = () => resolve(listener); }) : Promise.resolve(listener);
     },
-    getAllSettings: settings, loadWorldInfos: async () => {},
+    getAllSettings: settings, loadWorldInfos: async () => {}, ensureConversationsLoaded: async () => {},
     parseTextRules: () => [], TEXT_RULES_KEY: "text_rules_v1", hydrateApiConnections: () => {}, updater: { initialize: async () => {} },
     container: { animate: (...args) => { animations.push(args); return { cancel() {} }; } },
   });
@@ -174,6 +174,7 @@ for (const view of ['lobby', 'play']) {
       $state: value => value,
       $props: () => ({ pageTitle: 'Test', showSidebar: true }),
       $effect: callback => { effect = callback; },
+      onDestroy: () => {}, clearTimeout: () => {},
     });
     const source = readFileSync(new URL('../components/layouts/PageLayout.svelte', import.meta.url), 'utf8')
       .match(/<script lang="ts">([\s\S]*?)<\/script>/)[1];
