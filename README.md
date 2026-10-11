@@ -1,9 +1,10 @@
+
 # Ryokan
 
 > **Your characters. Your choices. A story you can share.**
-> An AI roleplay app for Windows and Android. Play solo or invite friends to join from their browser.
+> An app for creating interactive stories on Windows and Android. Create stories on your own or invite friends to join from their browser.
 
-Connect an AI model, choose a character, and step into a conversation that grows with your decisions. Create your own worlds, try another direction, or bring friends into the same story.
+Connect an AI model, choose a character or scenario, and shape a story through your ideas and decisions. Invent your own worlds, explore different directions, or create a story together with friends.
 
 **[Download Ryokan](https://github.com/Finn-Hecker/RyokanApp/releases)**
 
@@ -48,25 +49,25 @@ Connect an AI model, choose a character, and step into a conversation that grows
   </tr>
 </table>
 
-***
+---
 
 ## What is Ryokan?
 
-Most AI roleplay frontends feel like control panels.
+Many AI storytelling frontends feel like control panels.
 
 Raw JSON, endless settings, terminal setup, and dozens of options before you can even start a conversation.
 
 Ryokan takes the opposite approach.
 
-It is a native AI roleplay app designed to stay out of the way once the story begins. Download the app, connect your local model or API, pick a character or scenario, and start playing.
+It is a native app for interactive storytelling, designed to stay out of the way once your story begins. Download the app, connect your local model or API, choose a character or scenario, and start creating.
 
 The advanced controls are still there when you want them. They just do not need to be the first thing you see.
 
-***
+---
 
 ## Solo or Multiplayer
 
-Ryokan works as a traditional solo AI roleplay app, but stories do not have to stay single player.
+Ryokan lets you create interactive stories on your own, but stories do not have to stay a solo experience.
 
 The host runs Ryokan and provides the AI connection. Friends can join the same session directly from their browser using an invite link.
 
@@ -76,7 +77,7 @@ They do not need a Ryokan installation, an account, an API key, or their own lan
 
 * **Browser Guests:** Friends join using a simple invite link.
 * **No Accounts:** Multiplayer sessions do not require user accounts.
-* **Shared Roleplay:** Players and the AI participate in the same synchronized conversation.
+* **Shared Stories:** Participants and the AI contribute to the same synchronized story.
 * **Live AI Streaming:** Everyone sees the response as it is generated.
 * **Typing Indicators:** See when another player is writing.
 * **Shared Characters & Scenarios:** The host chooses the experience for the room.
@@ -84,11 +85,11 @@ They do not need a Ryokan installation, an account, an API key, or their own lan
 * **Saved Sessions:** Multiplayer conversations are stored locally and can later be reopened or hosted again.
 * **End to End Encryption:** Story content is encrypted on the client before it passes through the relay. The relay never receives the room key.
 
-***
+---
 
 ## Features
 
-### Roleplay First
+### Storytelling First
 
 * **Edit & Retry:** Edit your latest message and regenerate the AI response.
 * **Swipe to Reroll:** Move between alternative AI responses without losing previous generations.
@@ -101,7 +102,7 @@ They do not need a Ryokan installation, an account, an API key, or their own lan
 * **Player Roles:** Create reusable roles for who you play, set a default role, or use roles bundled with individual characters.
 * **Lorebooks & World Info:** Automatically inject relevant context when keywords appear.
 * **Alternate Greetings:** Characters can start conversations in different ways.
-* **Ready to Play Content:** Ryokan includes built in characters and scenarios so you can start without downloading anything first.
+* **Ready to Explore Content:** Ryokan includes built in characters and scenarios so you can start without downloading anything first.
 * **Solo & Multiplayer Scenarios:** Experiences can be designed specifically for one player or a group.
 
 ### AI & Context
@@ -123,18 +124,18 @@ Single player conversations do not require a Ryokan server.
 
 For multiplayer, encrypted session traffic is passed through a relay so remote players can stay synchronized. AI generation still happens through the host's configured local model or API.
 
-***
+---
 
 ## Built Like an App, Not a Toolkit
 
-Ryokan is designed for people who want to roleplay, not spend an evening configuring their frontend.
+Ryokan is designed for people who want to create interactive stories, not spend an evening configuring their frontend.
 
 For normal use:
 
 * Download the app.
 * Open it.
 * Connect your model or API.
-* Start playing.
+* Start creating stories.
 
 No Docker setup.
 No Git clone.
@@ -143,7 +144,7 @@ No terminal required.
 
 Power user features are available when you need them without defining the default experience.
 
-***
+---
 
 ## Platforms
 
@@ -158,20 +159,20 @@ Ryokan supports signed automatic updates on Windows. Android updates are availab
 
 Multiplayer guests can join supported sessions directly through their browser.
 
-***
+---
 
 ## Tech Stack
 
-| Layer                  | Technology                        |
-| ---------------------- | --------------------------------- |
-| Native Core            | Tauri v2 + Rust                   |
-| Frontend               | Svelte 5 + TailwindCSS            |
-| Database               | SQLite                            |
-| Internationalization   | ParaglideJS                       |
-| Multiplayer Transport  | WebSocket relay                   |
+| Layer | Technology |
+| --- | --- |
+| Native Core | Tauri v2 + Rust |
+| Frontend | Svelte 5 + TailwindCSS |
+| Database | SQLite |
+| Internationalization | ParaglideJS |
+| Multiplayer Transport | WebSocket relay |
 | Multiplayer Encryption | Client side end to end encryption |
 
-***
+---
 
 ## Languages
 
@@ -182,7 +183,7 @@ Ryokan includes native interface support for:
 
 Built in characters and scenarios are available in both languages where supported.
 
-***
+---
 
 ## Getting Started
 
@@ -209,7 +210,7 @@ npm run tauri dev
 
 The project handles its required tokenizer setup automatically during installation.
 
-***
+---
 
 ## Contributing
 
@@ -219,7 +220,7 @@ For larger changes, please open an issue before submitting a pull request so the
 
 Bug reports, compatibility reports, UI improvements, translations, and focused pull requests are especially useful.
 
-***
+---
 
 ## License
 
