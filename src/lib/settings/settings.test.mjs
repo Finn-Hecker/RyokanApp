@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { PRESETS_KEY } from '../ai/presets/presetCore.ts';
 
 function evaluateFunctions(file, context) {
   const input = readFileSync(new URL(file, import.meta.url), 'utf8');
@@ -21,7 +22,7 @@ function settingsPage(invoke) {
     appState: { apiConnections: [profile], apiSettings: profile, textRules: [], chatFontScale: 120 },
     settingsReady: false, settingsLoadFailed: false, settingsSaveFailed: false, isSaving: false,
     parameterEnabled: {}, additionalApiParametersValidation: { valid: true }, powerUser: false,
-    TEXT_RULES_KEY: 'text_rules', LONG_TERM_MEMORY_KEY: 'memory', SUMMARY_CONNECTION_KEY: 'summary',
+    PRESETS_KEY, TEXT_RULES_KEY: 'text_rules', LONG_TERM_MEMORY_KEY: 'memory', SUMMARY_CONNECTION_KEY: 'summary',
     reportDiagnostic() {}, parseTextRules: () => [], serializeTextRules: JSON.stringify,
     resolvedHardContextLimit: () => 4096,
     ensureApiConnectionsHydrated: rows => hydrated.push(rows),

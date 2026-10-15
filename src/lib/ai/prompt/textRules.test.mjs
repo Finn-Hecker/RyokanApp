@@ -104,7 +104,7 @@ test('Settings saves the ordered payload via existing settings persistence and r
   const rules = [rule({ id: 'second', enabled: false }), rule()];
   const appState = { textRules: rules, apiSettings: { parameterEnabled: {}, contextLimit: 100 }, pendingUiLocale: '' };
   const context = vm.createContext({
-    appState, TEXT_RULES_KEY, parseTextRules, serializeTextRules, parameterEnabled: {}, powerUser: false,
+    appState, PRESETS_KEY: 'generation_presets_v1', parseTextRules, TEXT_RULES_KEY, serializeTextRules, parameterEnabled: {}, powerUser: false,
     LONG_TERM_MEMORY_KEY: 'memory', SUMMARY_CONNECTION_KEY: 'summary', isSaving: false, settingsReady: false,
     additionalApiParametersValidation: { valid: true }, persistApiConnections: async () => {},
     saveSetting: async (key, value) => saved.set(key, value), ensureSettingsLoaded: async () => [...saved].map(([key, value]) => ({ key, value })),

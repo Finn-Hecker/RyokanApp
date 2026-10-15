@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { PRESETS_KEY, parsePresetLibrary, exportPreset, deactivateConnectionPreset, type StoredPreset } from './presetCore';
 import { appState, snapshotApiConnection } from '$lib/stores/appState.svelte';
 import { persistApiConnections } from '$lib/ai/connections/apiConnections';
+import { invalidateSettingsCache } from '$lib/settings/settings';
 
 /** Persist separately from profiles; let errors reach the editor before publishing changes. */
 export async function loadPresetLibrary(): Promise<StoredPreset[]> {
@@ -12,6 +13,7 @@ export async function loadPresetLibrary(): Promise<StoredPreset[]> {
 export async function savePresetLibrary(items: StoredPreset[]): Promise<void> {
   const safe = parsePresetLibrary(JSON.stringify(items));
   await invoke('save_setting', { key: PRESETS_KEY, value: JSON.stringify(safe) });
+  invalidateSettingsCache();
 }
 /** Restore all affected profiles before removing the library entry. */
 export async function deletePreset(items: StoredPreset[], id: string): Promise<StoredPreset[]> {

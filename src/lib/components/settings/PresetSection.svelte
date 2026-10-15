@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { untrack } from 'svelte';
   import { appState, snapshotApiConnection, type ApiConnection } from '$lib/stores/appState.svelte';
   import { createDefaultApiParameterEnabled, type ApiParameterKey } from '$lib/ai/connections/apiParameters';
-  import { capturePreset, connectionPresetIsActive, importPreset, PresetError, MAX_PRESET_BYTES, type RyokanPreset, type StoredPreset } from '$lib/ai/presets/presetCore';
+  import { capturePreset, connectionPresetIsActive, importPreset, parsePresetLibrary, PresetError, MAX_PRESET_BYTES, type RyokanPreset, type StoredPreset } from '$lib/ai/presets/presetCore';
   import { loadPresetLibrary, savePresetLibrary, deletePreset, downloadPreset } from '$lib/ai/presets/presetLibrary';
   import { clearExportFeedback, showExportFeedback } from '$lib/stores/exportFeedback';
   import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
@@ -13,7 +13,8 @@
   import Button from '$lib/components/ui/Button.svelte';
   import { resolvePreset } from '$lib/ai/presets/presetCore';
 
-  let { parameterEnabled, onApply, onDeactivate, onDeleted }: {
+  let { initialPresetLibrary, parameterEnabled, onApply, onDeactivate, onDeleted }: {
+    initialPresetLibrary: string;
     parameterEnabled: Record<ApiParameterKey, boolean>;
     onApply: (preset: RyokanPreset, id: string) => Promise<void>;
     onDeactivate: () => Promise<void>;
@@ -47,7 +48,12 @@
     try { items = await loadPresetLibrary(); ready = true; }
     catch (cause) { showError(cause); }
   }
-  onMount(() => { void load(); });
+  function initializeLibrary(json: string) {
+    try { items = parsePresetLibrary(json); ready = true; }
+    catch (cause) { showError(cause); }
+  }
+  // SettingsPage already loaded this data. Initialize before the first render.
+  untrack(() => initializeLibrary(initialPresetLibrary));
 
   function edit(item?: StoredPreset) {
     const current = snapshotApiConnection(appState.apiSettings);

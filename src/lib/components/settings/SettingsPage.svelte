@@ -3,7 +3,7 @@
   import { appState, snapshotApiConnection } from "$lib/stores/appState.svelte";
   import PresetSection from './PresetSection.svelte';
   import { mobileCategoryGesture } from './mobileCategoryGesture';
-  import { activateConnectionPreset, deactivateConnectionPreset, type RyokanPreset } from '$lib/ai/presets/presetCore';
+  import { PRESETS_KEY, activateConnectionPreset, deactivateConnectionPreset, type RyokanPreset } from '$lib/ai/presets/presetCore';
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { ensureSettingsLoaded, saveSetting } from "$lib/settings/settings";
   import { parseTextRules, serializeTextRules, TEXT_RULES_KEY } from '$lib/ai/prompt/textRules';
@@ -71,6 +71,7 @@
   let mobileCategoryHolding = $state(false);
   let isSaving = $state(false);
   let settingsReady = $state(false);
+  let initialPresetLibrary = $state('[]');
   let settingsLoadFailed = $state(false);
   let settingsSaveFailed = $state(false);
   let settingsContentEl: HTMLDivElement;
@@ -123,6 +124,7 @@
     try {
       const settings = await ensureSettingsLoaded();
       ensureApiConnectionsHydrated(settings);
+      initialPresetLibrary = settings.find(row => row.key === PRESETS_KEY)?.value ?? '[]';
       appState.textRules = parseTextRules(settings.find(row => row.key === TEXT_RULES_KEY)?.value);
       parameterEnabled = { ...appState.apiSettings.parameterEnabled };
       powerUser = settings.find(row => row.key === 'settings_power_user')?.value === 'true';
@@ -280,8 +282,8 @@
     <div bind:this={settingsContentEl} class="settings-content" class:settings-content--mobile-hidden={!mobileCategoryOpen}>
       {#if settingsReady}
       <div class="content-panel" hidden={activeSection !== "provider" && activeSection !== "memory"}><ApiSection powerUser={powerUser} active={activeSection === "provider"} section={activeSection === "memory" ? "memory" : "provider"} {settingsReady} bind:parameterEnabled onConnectionChange={handleConnectionChange} /></div>
+      <div class="content-panel" hidden={activeSection !== "presets"}><PresetSection {initialPresetLibrary} {parameterEnabled} onApply={applyPreset} onDeactivate={deactivatePreset} onDeleted={syncPresetParameters} /></div>
       <div class="content-panel" hidden={activeSection === "provider" || activeSection === "memory"}>
-        {#if activeSection === "presets" && settingsReady}<PresetSection {parameterEnabled} onApply={applyPreset} onDeactivate={deactivatePreset} onDeleted={syncPresetParameters} />{/if}
         {#if activeSection === "textRules" && settingsReady}<TextRulesSection />{/if}
         {#if activeSection === "advanced"}
           <div class="advanced-mode">{@render powerToggle()}</div>

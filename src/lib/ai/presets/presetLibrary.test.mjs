@@ -28,6 +28,7 @@ function fixture() {
   const disk = { profiles: structuredClone([connection, other, unrelated]), library: structuredClone(items) };
   const context = vm.createContext({ appState: { apiSettings: connection, apiConnections: [connection, other, unrelated] },
     PRESETS_KEY, parsePresetLibrary, activateConnectionPreset, deactivateConnectionPreset, snapshotApiConnection: structuredClone,
+    invalidateSettingsCache() {},
     parameterEnabled: { ...connection.parameterEnabled },
     persistApiConnections: async () => { disk.profiles = structuredClone(context.appState.apiConnections); },
     invoke: async (command, args) => {
@@ -39,6 +40,17 @@ function fixture() {
   vm.runInContext(functions('../../components/settings/SettingsPage.svelte', true), context);
   return { context, connection, items, disk };
 }
+
+test('library writes invalidate cached settings only after successful persistence', async () => {
+  const { context, items } = fixture();
+  let invalidations = 0;
+  context.invalidateSettingsCache = () => invalidations++;
+  await context.savePresetLibrary(items);
+  assert.equal(invalidations, 1);
+  context.invoke = async () => { throw new Error('Write failed'); };
+  await assert.rejects(context.savePresetLibrary([]), /Write failed/);
+  assert.equal(invalidations, 1);
+});
 
 test('applying persists an explicit association alongside settings and preserves an existing request snapshot', async () => {
   const { context, connection, items, disk } = fixture();

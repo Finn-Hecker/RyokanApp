@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { proxy, snapshot } from 'svelte/internal/client';
-import { capturePreset, activateConnectionPreset, connectionPresetIsActive, resolvePreset, importPreset, exportPreset, PresetError, MAX_PRESET_BYTES } from '../../ai/presets/presetCore.ts';
+import { capturePreset, activateConnectionPreset, connectionPresetIsActive, resolvePreset, importPreset, exportPreset, parsePresetLibrary, PresetError, MAX_PRESET_BYTES } from '../../ai/presets/presetCore.ts';
 import { createDefaultApiParameterEnabled } from '../../ai/connections/apiParameters.ts';
 
 const source = readFileSync(new URL('./PresetSection.svelte', import.meta.url), 'utf8');
@@ -20,7 +20,7 @@ function fixture() {
   const context = vm.createContext({ appState: { apiSettings: connection }, parameterEnabled: { ...connection.parameterEnabled },
     items: [], ready: false, busy: false, status: '', error: '', draft: null, deletingId: '',
     crypto: { randomUUID: () => `new-${writes.length}` }, structuredClone, $state: { snapshot },
-    snapshotApiConnection: snapshot, capturePreset, activateConnectionPreset, connectionPresetIsActive, resolvePreset, importPreset, PresetError, MAX_PRESET_BYTES,
+    snapshotApiConnection: snapshot, capturePreset, activateConnectionPreset, connectionPresetIsActive, resolvePreset, importPreset, parsePresetLibrary, PresetError, MAX_PRESET_BYTES,
     reportDiagnostic() {}, clearExportFeedback() {}, showExportFeedback() {}, m: new Proxy({}, { get: (_, key) => () => key }),
     savePresetLibrary: async items => { writes.push(structuredClone(snapshot(items))); },
     loadPresetLibrary: async () => [], onApply: async () => {}, onDeactivate: async () => {}, onDeleted: () => {},
@@ -33,6 +33,30 @@ function fixture() {
   vm.runInContext(ts.transpile(effectCode, { target: ts.ScriptTarget.ES2022 }), context);
   return { context, connection, writes, syncConnection: () => effects.forEach(effect => effect()) };
 }
+test('initial library is ready synchronously without an IPC loading flash', () => {
+  const { context, connection } = fixture();
+  const item = { id: 'active', preset: capturePreset(connection, 'Active') };
+  Object.assign(connection, activateConnectionPreset(connection, item.preset, item.id));
+  context.loadPresetLibrary = () => { throw new Error('Initial render must use loaded settings'); };
+  context.initializeLibrary(JSON.stringify([item]));
+  assert.equal(context.ready, true);
+  assert.equal(context.items.length, 1);
+  assert.equal(context.isActive(context.items[0]), true);
+  assert.doesNotMatch(source, /onMount/);
+  const page = readFileSync(new URL('./SettingsPage.svelte', import.meta.url), 'utf8');
+  assert.match(page, /hidden=\{activeSection !== "presets"\}><PresetSection \{initialPresetLibrary\}/);
+});
+
+test('invalid initial library preserves error and retry behavior', async () => {
+  const { context } = fixture();
+  context.initializeLibrary('invalid json');
+  assert.equal(context.ready, false);
+  assert.equal(context.error, 'preset_error_invalid');
+  await context.load();
+  assert.equal(context.ready, true);
+  assert.equal(context.error, '');
+});
+
 test('editor create, rename, cancel and delete keep the active connection and saved drafts isolated', async () => {
   const { context, connection, writes } = fixture();
   await context.load(); assert.equal(context.ready, true);
