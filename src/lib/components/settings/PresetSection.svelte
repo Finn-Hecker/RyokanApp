@@ -210,7 +210,7 @@
         <p class="hint">{m.preset_editor_hint({ provider: PROVIDER_LABELS[draft.providerKind] })}</p>
         <ServiceTierControl connection={draft} />
       </div>
-      <GeneralSection bind:connection={draft} promptPrefix="preset" bind:parameterEnabled={draftEnabled} powerUser={true} category="parameters" />
+      <GeneralSection bind:connection={draft} promptPrefix="preset" showPrompts={true} bind:parameterEnabled={draftEnabled} powerUser={true} category="parameters" />
       <GeneralSection bind:connection={draft} bind:parameterEnabled={draftEnabled} powerUser={true} category="advanced" />
       <div class="actions"><Button variant="primary" disabled={busy || !name.trim()} onclick={save}>{m.preset_save()}</Button><Button disabled={busy} onclick={() => draft = null}>{m.preset_cancel()}</Button></div>
     {/if}

@@ -16,6 +16,7 @@
 
   export let connection: import("$lib/stores/appState.svelte").ApiConnection = appState.apiSettings;
   export let promptPrefix = 'connection';
+  export let showPrompts = false;
   export let powerUser: boolean = false;
   export let category: "parameters" | "advanced" | "appearance" | "language" = "parameters";
 
@@ -118,10 +119,12 @@
         <span class="tooltip-hint">{m.settings_penalty_tooltip_hint()}</span>{/snippet}
     </ParameterControl>
 
+    {#if showPrompts}
     <div class="settings-divider"></div>
     <PromptControls systemPrompt={connection.systemPrompt} postHistoryPrompt={connection.postHistoryPrompt}
       onSystemChange={(value) => { connection.systemPrompt = value; }}
       onPostHistoryChange={(value) => { connection.postHistoryPrompt = value; }} prefix={promptPrefix} />
+    {/if}
     {/if}
 
     {#if category === "advanced"}

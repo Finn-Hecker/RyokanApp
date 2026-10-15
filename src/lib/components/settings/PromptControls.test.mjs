@@ -56,6 +56,20 @@ test('prompt input events update parent-owned connection fields through scalar c
   assert.ok(!js.code.includes('$.ownership.mutation'), 'compiled prompt control has no prop mutation to trigger ownership_invalid_mutation');
 });
 
+test('prompt fields are opt-in and enabled only by the preset editor', () => {
+  const parent = component('./GeneralSection.svelte');
+  assert.match(parent.source, /export let showPrompts = false;/);
+  const guard = parent.nodes.find(node => node.type === 'IfBlock' && node.test.type === 'Identifier' && node.test.name === 'showPrompts');
+  assert.ok(guard, 'prompt visibility must have an explicit guard');
+  assert.match(parent.source.slice(guard.start, guard.end), /<PromptControls\b/);
+  for (const filename of ['./ApiSection.svelte', './PresetSection.svelte']) {
+    const { nodes } = component(filename);
+    const forms = nodes.filter(node => node.type === 'Component' && node.name === 'GeneralSection');
+    const enabled = forms.filter(form => form.attributes.some(attribute => attribute.name === 'showPrompts' && attribute.value.expression?.value === true));
+    assert.equal(enabled.length, filename.includes('PresetSection') ? 1 : 0);
+  }
+});
+
 test('both live profile and isolated preset draft bind ownership through GeneralSection', () => {
   for (const filename of ['./ApiSection.svelte', './PresetSection.svelte']) {
     const { nodes } = component(filename);
