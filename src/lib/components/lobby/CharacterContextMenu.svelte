@@ -129,7 +129,7 @@
         {m.play_mp_picker_manage()}
       </button>
     {:else}
-    {#if char.role_policy !== 'restricted' || char.bundled_roles?.length !== 1}
+    {#if char.mode !== 'story' && (char.role_policy !== 'restricted' || char.bundled_roles?.length !== 1)}
       <button
         type="button"
         role="menuitem"

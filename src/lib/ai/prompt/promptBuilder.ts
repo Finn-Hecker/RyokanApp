@@ -1,4 +1,7 @@
+import type { CardMode } from '../../chat/cardMode.ts';
+
 export interface PromptBuilderOptions {
+  mode?: CardMode;
   charName: string;
   prompt?: string | null;
   systemPrompt?: string;
@@ -20,21 +23,32 @@ export function buildSystemPrompt({
   prompt,
   systemPrompt,
   role,
+  mode,
 }: PromptBuilderOptions): string {
-  const coreInstructions = `You are ${charName}.
+  const isStory = mode === 'story';
+  const userName = isStory ? 'Author' : role?.name || 'User';
+  const coreInstructions = isStory ? `You are the narrator of the interactive story "${charName}".
+
+Bring the setting, world, and all main and supporting characters to life. The user is the author outside the story, not an automatically present character. Treat their direction about events, perspective, pacing, or time jumps as instructions to turn into a scene. Write the scene itself, including character dialogue, actions, and thoughts when appropriate, rather than explaining your writing process.
+
+The user may also speak or act as one or more characters, even within a message containing author direction. Distinguish those actions from direction using the conversation. Once the user takes control of a character, leave that character's unprovided dialogue, thoughts, decisions, and actions to the user until they explicitly hand control back. Follow explicit direction for that character without inventing additional choices for them. If control is genuinely unclear, preserve the user's agency and ask a brief clarification only when needed to continue.
+
+Keep characters distinct, consistent, and capable of disagreement within the scene while following the author's intended direction. Preserve established continuity; apply explicit corrections and retire superseded versions. Distinguish events already narrated from future author plans and rejected ideas. Remember which characters the user controls.
+
+Write natural, concrete prose. Let scenes develop and end naturally or pause at a meaningful moment; do not force a closing question, action menu, or dramatic cliffhanger on every reply.` : `You are ${charName}.
 
 You are speaking with the user. React to them as ${charName} naturally would throughout the entire conversation.
 
 Stay fully in character.`;
 
   const cardPrompt = prompt?.trim()
-    ? replacePlaceholders(prompt.trim(), charName)
+    ? replacePlaceholders(prompt.trim(), charName, userName)
     : '';
 
-  // Plain preset instructions replace the default; character/role context remains intact.
+  // Custom instructions replace the default; card context and character-mode roles remain.
   const sections = [systemPrompt?.trim() || coreInstructions];
   if (cardPrompt) sections.push(cardPrompt);
-  if (role) {
+  if (role && !isStory) {
     const rolePrompt = replacePlaceholders(role.prompt.trim(), charName, role.name);
     sections.push(`[Player Role: ${role.name}]${rolePrompt ? `\n${rolePrompt}` : ''}`);
   }
@@ -45,8 +59,10 @@ export function buildWorldInfoBlock(
   wiBefore:  string | null | undefined,
   wiAfter:   string | null | undefined,
   charName:  string,
+  mode?: CardMode,
+  userName = 'User',
 ): string {
-  const rp = (text: string) => replacePlaceholders(text, charName);
+  const rp = (text: string) => replacePlaceholders(text, charName, userName);
   const parts: string[] = [];
 
   if (wiBefore?.trim()) parts.push(formatSection('world_info_before', rp(wiBefore.trim())));
@@ -54,7 +70,7 @@ export function buildWorldInfoBlock(
 
   if (parts.length === 0) return '';
 
-return `[Roleplay context for the next reply only — not something the user said, do not treat it as dialogue]
+return `[${mode === 'story' ? 'Story' : 'Roleplay'} context for the next reply only — not something the user said, do not treat it as dialogue]
 
 ${parts.join('\n\n')}`;
 }

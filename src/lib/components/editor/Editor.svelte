@@ -6,6 +6,7 @@
   import { registerBackHandler, returnTo } from '$lib/stores/navigation';
   import { addBundledRoleSnapshot, characterState, normalizePlayMode, removeBundledRoleSnapshot, setCharacterRolePolicy, toggleHideCharacter } from '$lib/stores/characterStore.svelte';
   import type { BundledRoleSnapshot, PlayMode, PortableBundledRoleSnapshot, RolePolicy } from '$lib/stores/characterStore.svelte';
+  import type { CardMode } from '$lib/chat/cardMode';
   import { roleState } from '$lib/stores/roleStore.svelte';
   import * as m from '$lib/paraglide/messages';
 
@@ -56,11 +57,6 @@
   
   let isEditMode = $derived(!!editChar);
   let isHidden = $derived(editChar?.id != null ? characterState.hiddenCharacterIds.has(editChar.id) : false);
-  let hasMenuActions = $derived(
-    activeTab === 'character'
-      ? !isEditMode || !!editChar?.isCustom
-      : isEditMode
-  );
 
   // Character States
   let charName = $state('');
@@ -68,6 +64,12 @@
   let charPrompt = $state('');
   let charAltGreetings = $state<string[]>([]);
   let charPlayMode = $state<PlayMode>('solo');
+  let charMode = $state<CardMode>('story');
+  let hasMenuActions = $derived(
+    activeTab === 'character'
+      ? charPlayMode === 'solo' || !isEditMode || !!editChar?.isCustom
+      : isEditMode
+  );
   let worldInfoIds = $state<string[]>([]);
   let rolePolicy = $state<RolePolicy>('open');
   let bundledRoles = $state<BundledRoleSnapshot[]>([]);
@@ -126,6 +128,7 @@
     charGreeting = current.greeting ?? '';
     charAltGreetings = Array.isArray(current.alternate_greetings) ? current.alternate_greetings : [];
     charPlayMode = normalizePlayMode(current.play_mode);
+    charMode = current.mode === 'story' && charPlayMode === 'solo' ? 'story' : 'character';
     worldInfoIds = Array.isArray(current.world_info_ids) ? current.world_info_ids : [];
     rolePolicy = current.role_policy ?? 'open';
     bundledRoles = Array.isArray(current.bundled_roles) ? current.bundled_roles : [];
@@ -160,7 +163,7 @@
 
   let canSave = $derived(
     activeTab === 'character'
-      ? !!(charName.trim() && charPrompt.trim() && (rolePolicy === 'open' || bundledRoles.length > 0))
+      ? !!(charName.trim() && charPrompt.trim() && (charMode === 'story' || rolePolicy === 'open' || bundledRoles.length > 0))
       : activeTab === 'role'
         ? !!roleName.trim()
         : !!worldInfoName
@@ -256,6 +259,7 @@
       }
 
       charPlayMode = result.play_mode ?? 'solo';
+      charMode = result.mode ?? 'character';
       rolePolicy = result.role_policy ?? 'open';
       importedBundledRoles = result.bundled_roles ?? [];
       importedWorldInfo = result.world_info ?? null;
@@ -290,10 +294,11 @@
               greeting: charGreeting,
               alternate_greetings: charAltGreetings,
               play_mode: charPlayMode,
+              mode: charPlayMode === 'multiplayer' ? 'character' : charMode,
               world_info_ids: worldInfoIds,
               // New restricted Characters are first created open, then their
               // snapshots are persisted, and only then made restricted.
-              role_policy: editChar?.isCustom ? rolePolicy : 'open',
+              role_policy: charMode === 'story' && charPlayMode === 'solo' ? 'open' : editChar?.isCustom ? rolePolicy : 'open',
               bundled_roles: editChar?.isCustom ? undefined : importedBundledRoles,
             },
             editChar,
@@ -309,7 +314,7 @@
           for (const pending of pendingBundledRoles) {
             await addBundledRoleSnapshot(characterId, pending.roleId);
           }
-          if (rolePolicy === 'restricted') {
+          if (rolePolicy === 'restricted' && (charMode !== 'story' || charPlayMode === 'multiplayer')) {
             await setCharacterRolePolicy(characterId, rolePolicy);
           }
         }
@@ -433,6 +438,24 @@
             <div class="dropdown-menu">
 
             {#if activeTab === 'character'}
+              {#if charPlayMode === 'solo'}
+                <div role="group" aria-label={m.create_page_label_card_mode()}>
+                  {#each ['story', 'character'] as mode}
+                    <button
+                      class="menu-item"
+                      aria-pressed={charMode === mode}
+                      onclick={() => { charMode = mode as CardMode; menuOpen = false; }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        {#if charMode === mode}<path d="m5 12 4 4L19 6"/>{/if}
+                      </svg>
+                      <span>{mode === 'story' ? m.card_mode_story() : m.card_mode_character()}</span>
+                    </button>
+                  {/each}
+                </div>
+                <div class="menu-divider"></div>
+              {/if}
+
               {#if !isEditMode}
                 <button class="menu-item" onclick={handleImportClick}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -563,6 +586,7 @@
               bind:greeting={charGreeting}
               bind:alternate_greetings={charAltGreetings}
               bind:playMode={charPlayMode}
+              bind:mode={charMode}
               bind:worldInfoIds={worldInfoIds}
               bind:rolePolicy
               {bundledRoles}

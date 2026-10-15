@@ -1234,3 +1234,24 @@ test('restored summary recompression retains delta instructions and explicit per
     assert.ok(f.calls[0].messages[0].content.includes('Old redundant character facts.'));
   }
 });
+
+test('story summary requests preserve author plans, corrections and character control without a ghost persona', async t => {
+  t.after(() => { harness.chatState.activeRoleSnapshot = undefined; });
+  const f = fixture({ chatLimit: 8192, summaryLimit: 4096, lengths: [16000, 16000, 16000, 20] });
+  harness.chatState.activeRoleSnapshot = { name: 'Ghost', prompt: 'SECRET_PERSONA present in the story' };
+  const options = {
+    apiSettings: state.snapshotActiveApiConnection(),
+    character: { name: 'Road trip', mode: 'story', prompt: 'Lyvee and Jona travel together.' },
+    recentMessages: f.messages,
+  };
+  await runtime.checkAndSummarizeIfNeeded(harness.chatState.activeChatId, options);
+  assert.ok(f.calls.length > 1, 'story instructions also participate in chunk capacity checks');
+  for (const call of f.calls) {
+    const prompt = call.messages[0].content;
+    assert.match(prompt, /compression engine for interactive story logs/);
+    assert.match(prompt, /narrated events, open author plans for later, and rejected ideas or corrections clearly separate/);
+    assert.match(prompt, /Preserve which characters the user has taken control of/);
+    assert.match(prompt, /Lyvee and Jona travel together/);
+    assert.doesNotMatch(prompt, /SECRET_PERSONA|Player Role: Ghost/);
+  }
+});

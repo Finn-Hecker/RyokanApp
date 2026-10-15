@@ -54,6 +54,21 @@ test('avatar loading and metadata refresh retain character/list identities and c
   assert.equal(c.calls.filter(call => call.command === 'get_character_avatar').length, 1);
 });
 
+test('card modes survive hydration and writes while legacy and multiplayer cards remain characters', async () => {
+  const c = store();
+  c.rows.push({ ...c.rows[0], id: 'story', mode: 'story' }, { ...c.rows[0], id: 'multi', mode: 'story', play_mode: 'multiplayer' });
+  await c.context.loadCharacters();
+  assert.equal(c.state.allCharacters.find(card => card.id === 'card').mode, 'character');
+  assert.equal(c.state.allCharacters.find(card => card.id === 'story').mode, 'story');
+  assert.equal(c.state.allCharacters.find(card => card.id === 'multi').mode, 'character');
+  await c.context.updateCharacter('story', { ...c.rows[1], prompt: 'Edited' });
+  assert.equal(c.calls.find(call => call.command === 'update_character').args.payload.mode, 'story');
+  assert.equal(c.state.allCharacters.find(card => card.id === 'story').mode, 'story');
+  await c.context.updateCharacter('multi', c.rows[2]);
+  assert.equal(c.calls.filter(call => call.command === 'update_character').at(-1).args.payload.mode, 'character');
+  assert.equal(c.state.allCharacters.find(card => card.id === 'multi').mode, 'character');
+});
+
 test('thumbnail caching is independent from original bytes and survives metadata refresh', async () => {
   const c = store();
   await c.context.loadCharacters();

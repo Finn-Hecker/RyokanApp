@@ -5,6 +5,7 @@
   import type { PlayMode } from '$lib/stores/characterStore.svelte';
   import type { BundledRoleSnapshot, RolePolicy } from '$lib/stores/characterStore.svelte';
   import BundledRolesPicker from './BundledRolesPicker.svelte';
+  import type { CardMode } from '$lib/chat/cardMode';
 
   let {
     name = $bindable(''),
@@ -12,6 +13,7 @@
     greeting = $bindable(''),
     alternate_greetings = $bindable([]),
     playMode = $bindable('solo'),
+    mode = $bindable('character'),
     worldInfoIds = $bindable([]),
     rolePolicy = $bindable('open'),
     bundledRoles = [],
@@ -26,6 +28,7 @@
     greeting?: string;
     alternate_greetings?: string[];
     playMode?: PlayMode;
+    mode?: CardMode;
     worldInfoIds?: string[];
     rolePolicy?: RolePolicy;
     bundledRoles?: BundledRoleSnapshot[];
@@ -35,14 +38,20 @@
     onAddRole?: (roleId: string) => Promise<void> | void;
     onRemoveRole?: (snapshotId: string) => Promise<void> | void;
   } = $props();
+
+  $effect(() => {
+    if (playMode === 'multiplayer') mode = 'character';
+  });
 </script>
 
 <AvatarPicker
   {avatarPreview}
+  storyCover
   onFileSelected={(file) => onAvatarFile?.(file)}
 />
 
 <CharacterFormFields
+  {mode}
   bind:name
   bind:prompt
   bind:greeting
@@ -60,7 +69,9 @@
 />
 
 {#if !snapshotMode}
+{#if mode !== 'story'}
 <BundledRolesPicker bind:rolePolicy {bundledRoles} onAdd={onAddRole} onRemove={onRemoveRole} />
+{/if}
 
 <CharacterPlayMode bind:playMode />
 {/if}

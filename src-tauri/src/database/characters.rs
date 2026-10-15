@@ -9,6 +9,24 @@ use super::avatar::process_avatar;
 
 const ROLE_POLICY_OPEN: &str = "open";
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum CardMode {
+    Story,
+    #[default]
+    Character,
+}
+
+impl CardMode {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self { Self::Story => "story", Self::Character => "character" }
+    }
+
+    pub(crate) fn from_stored(value: &str) -> Self {
+        if value == "story" { Self::Story } else { Self::Character }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct StoredBundledRoleSnapshot {
     pub(crate) id: String,
@@ -148,6 +166,7 @@ fn remove_snapshot_by_id(
 /// Avatar is stored as a raw WebP BLOB to minimize database footprint and RAM overhead.
 #[derive(Serialize)]
 pub struct DbCharacter {
+    pub mode: CardMode,
     pub id: String,
     pub name: String,
     pub prompt: String,
@@ -168,6 +187,7 @@ pub struct DbCharacter {
 /// Arrays are received natively from Svelte and converted to JSON strings before SQLite insertion.
 #[derive(Deserialize)]
 pub struct CreateCharacterPayload {
+    pub mode: Option<CardMode>,
     pub name: String,
     pub prompt: String,
     pub greeting: String,
@@ -210,7 +230,7 @@ pub async fn get_custom_characters(app: AppHandle) -> Result<Vec<DbCharacter>, S
         "SELECT id, name, desc, personality, scenario, greeting,
                 alternate_greetings, mes_example, creator_notes, tags,
                 v3_spec, initials, color, play_mode, world_info_ids,
-                LENGTH(avatar) > 0, role_policy, bundled_roles
+                LENGTH(avatar) > 0, role_policy, bundled_roles, mode
          FROM characters ORDER BY created_at DESC"
     ).map_err(|e| e.to_string())?;
 
@@ -224,6 +244,9 @@ pub async fn get_custom_characters(app: AppHandle) -> Result<Vec<DbCharacter>, S
             .collect();
 
         Ok(DbCharacter {
+            mode: if row.get::<_, Option<String>>(13)?.as_deref() == Some("multiplayer") {
+                CardMode::Character
+            } else { CardMode::from_stored(&row.get::<_, String>(18)?) },
             id:                 row.get(0)?,
             name:               row.get(1)?,
             prompt: crate::import::combine_legacy_prompt(
@@ -320,6 +343,7 @@ pub async fn create_character(app: AppHandle, payload: CreateCharacterPayload) -
         .unwrap_or_else(|_| "[]".to_string());
     let tags_json = "[]";
     let play_mode = normalize_play_mode(payload.play_mode.as_deref());
+    let mode = if play_mode == "multiplayer" { CardMode::Character } else { payload.mode.unwrap_or_default() };
     let role_policy = payload.role_policy.as_deref().unwrap_or(ROLE_POLICY_OPEN);
     validate_role_policy(role_policy)?;
     let bundled_roles_json = serde_json::to_string(
@@ -333,8 +357,8 @@ pub async fn create_character(app: AppHandle, payload: CreateCharacterPayload) -
         "INSERT INTO characters
             (id, name, desc, personality, scenario, greeting,
              alternate_greetings, mes_example, creator_notes, tags,
-             v3_spec, initials, color, play_mode, avatar, world_info_ids, role_policy, bundled_roles)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL, ?15, ?16, ?17)",
+             v3_spec, initials, color, play_mode, avatar, world_info_ids, role_policy, bundled_roles, mode)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL, ?15, ?16, ?17, ?18)",
         params![
             new_id,
             payload.name,
@@ -353,6 +377,7 @@ pub async fn create_character(app: AppHandle, payload: CreateCharacterPayload) -
             world_info_ids_json,
             role_policy,
             bundled_roles_json,
+            mode.as_str(),
         ],
     ).map_err(|e| e.to_string())?;
 
@@ -394,6 +419,7 @@ pub async fn update_character(app: AppHandle, id: String, payload: CreateCharact
         &payload.world_info_ids.unwrap_or_default()
     ).unwrap_or_else(|_| "[]".to_string());
     let play_mode = normalize_play_mode(payload.play_mode.as_deref());
+    let mode = if play_mode == "multiplayer" { Some(CardMode::Character) } else { payload.mode };
     if let Some(role_policy) = payload.role_policy.as_deref() {
         validate_role_policy(role_policy)?;
     }
@@ -404,7 +430,7 @@ pub async fn update_character(app: AppHandle, id: String, payload: CreateCharact
             name = ?1, desc = ?2, personality = '', scenario = '',
             greeting = ?3, alternate_greetings = ?4, mes_example = '',
             initials = ?5, color = ?6, play_mode = ?7, world_info_ids = ?8,
-            role_policy = COALESCE(?9, role_policy)
+            role_policy = COALESCE(?9, role_policy), mode = COALESCE(?11, mode)
          WHERE id = ?10",
         params![
             payload.name,
@@ -417,6 +443,7 @@ pub async fn update_character(app: AppHandle, id: String, payload: CreateCharact
             world_info_ids_json,
             payload.role_policy,
             id,
+            mode.map(CardMode::as_str),
         ],
     ).map_err(|e| e.to_string())?;
 

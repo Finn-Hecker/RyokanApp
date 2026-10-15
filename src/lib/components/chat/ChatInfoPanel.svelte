@@ -226,6 +226,7 @@
           <fieldset disabled={isSaving || isReadingAvatar} class="border-0 p-0 m-0 min-w-0">
             <CharacterTab
               snapshotMode
+                mode={draft.mode ?? 'character'}
               bind:name={draft.name}
               bind:prompt={draft.prompt}
               bind:greeting={draft.greeting}

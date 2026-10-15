@@ -1,6 +1,7 @@
 import { buildSystemPrompt, buildWiString, buildWorldInfoBlock } from './promptBuilder.ts';
 import { applyTextRules, transformMessageText, type TextRule } from './textRules.ts';
 import { stripThinkingContent } from '../generation/thinkingOutput.ts';
+import type { CardMode } from '../../chat/cardMode.ts';
 
 export interface PromptMessage {
   id?: string;
@@ -31,6 +32,7 @@ export interface PromptBuildOptions {
   postHistoryPrompt?: string;
   textRules?: readonly TextRule[];
   character: {
+    mode?: CardMode;
     name?: string;
     prompt?: string;
     world_info_ids?: string[];
@@ -75,12 +77,15 @@ export function buildPromptReferenceContext(options: PromptBuildOptions): { base
     charName,
     prompt: options.character?.prompt,
     role: options.role,
+    mode: options.character?.mode,
   });
 
   const worldInfoBlock = buildWorldInfoBlock(
     buildWiString(relevantEntries, 'before', recentContext, content => applyTextRules(content, rules, 'lorebook', 'send')),
     buildWiString(relevantEntries, 'after', recentContext, content => applyTextRules(content, rules, 'lorebook', 'send')),
     charName,
+    options.character?.mode,
+    options.character?.mode === 'story' ? 'Author' : options.role?.name || 'User',
   );
   return { baseSystemPrompt, worldInfoBlock };
 }
@@ -119,7 +124,7 @@ export function buildPromptMessages(options: PromptBuildOptions): ChatPromptMess
   const firstNonSystem = messages.find(message => message.role !== 'system');
   if (firstNonSystem?.role === 'assistant') {
     const systemIndex = messages.findLastIndex(message => message.role === 'system');
-    messages.splice(systemIndex + 1, 0, { role: 'user', content: START_ROLEPLAY_MARKER });
+    messages.splice(systemIndex + 1, 0, { role: 'user', content: options.character?.mode === 'story' ? '[Start Story]' : START_ROLEPLAY_MARKER });
   }
 
   if (worldInfoBlock) {

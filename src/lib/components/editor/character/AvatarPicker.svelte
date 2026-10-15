@@ -4,9 +4,11 @@
 
   let {
     avatarPreview = null,
+    storyCover = false,
     onFileSelected
   }: {
     avatarPreview?: string | null;
+    storyCover?: boolean;
     onFileSelected?: (file: File) => void;
   } = $props();
 
@@ -40,10 +42,17 @@
       <img src={avatarPreview} alt={m.create_page_alt_avatar()} class="w-full h-full object-cover" />
     {:else}
       <div class="w-full h-full flex items-center justify-center text-gray-600 group-hover:text-gray-400">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-          <circle cx="12" cy="7" r="4"/>
-        </svg>
+        {#if storyCover}
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--sheet-text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 11.5C9.5 9.8 6.5 9.3 3 10v10c3.5-.7 6.5-.2 9 1.5 2.5-1.7 5.5-2.2 9-1.5V10c-3.5-.7-6.5-.2-9 1.5Zm0 0v10"/>
+            <path d="m12 2 .9 2.6L15.5 5.5l-2.6.9L12 9l-.9-2.6L8.5 5.5l2.6-.9Z" stroke="var(--accent)" stroke-width="1.2"/>
+          </svg>
+        {:else}
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+        {/if}
       </div>
     {/if}
 

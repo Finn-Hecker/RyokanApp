@@ -675,6 +675,7 @@
     isSummarizing={summaryState.isSummarizing}
     isEditing={editingUserMessage}
     isSavingEdit={isSavingEdit}
+    placeholder={appState.activeCharacter?.mode === 'story' ? m.chat_story_placeholder() : undefined}
     onSend={sendMessage}
     onCancelEdit={handleEditCancel}
     onStop={stopGeneration}

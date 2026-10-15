@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 use tauri::AppHandle;
 use uuid::Uuid;
 use crate::diagnostics::chat_export::{Command, Probe, Reason};
+use super::characters::CardMode;
 
 const SCHEMA: &str = "ryokan.chat";
 const MAX_BYTES: usize = 64 * 1024 * 1024;
@@ -38,6 +39,8 @@ struct Chat {
 
 #[derive(Serialize, Deserialize)]
 struct Character {
+    #[serde(default)]
+    mode: CardMode,
     id: String,
     name: String,
     prompt: String,

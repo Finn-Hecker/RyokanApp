@@ -6,6 +6,7 @@ use crate::database::get_connection;
 use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
 use crate::diagnostics::chat_export::{Command, Probe, Reason};
+use super::characters::CardMode;
 
 // Read custom cards from SQLite, so their snapshot does not depend on a stale
 // lobby object or whether its avatar has already been loaded.
@@ -17,7 +18,7 @@ fn resolve_character_snapshot(
     let Some(id) = character_id else { return Ok(None) };
     let stored = conn.query_row(
         "SELECT name, desc, greeting, initials, color, world_info_ids, avatar,
-                personality, scenario, mes_example
+                personality, scenario, mes_example, mode
          FROM characters WHERE id = ?1",
         params![id],
         |row| {
@@ -25,6 +26,7 @@ fn resolve_character_snapshot(
             let avatar: Option<Vec<u8>> = row.get(6)?;
             Ok(json!({
                 "id": id,
+                "mode": CardMode::from_stored(&row.get::<_, String>(10)?),
                 "name": row.get::<_, String>(0)?,
                 "prompt": crate::import::combine_legacy_prompt(
                     &row.get::<_, Option<String>>(1)?.unwrap_or_default(),
@@ -54,7 +56,8 @@ pub(super) fn backfill_character_snapshots(conn: &rusqlite::Connection) -> Resul
         rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?
     };
     for (chat_id, character_id) in ids {
-        if let Some(snapshot) = resolve_character_snapshot(conn, Some(&character_id), None)? {
+        if let Some(mut snapshot) = resolve_character_snapshot(conn, Some(&character_id), None)? {
+            snapshot["mode"] = json!(CardMode::Character);
             conn.execute(
                 "UPDATE conversations SET character_snapshot = ?1 WHERE id = ?2 AND character_snapshot IS NULL",
                 params![snapshot.to_string(), chat_id],
@@ -85,8 +88,10 @@ pub async fn get_chat_character_snapshot(
             .map_err(|e| probe.error(Reason::SnapshotJson, e.to_string()));
     }
     if mode != "singleplayer" { return Ok(None); }
-    let snapshot = resolve_character_snapshot(&tx, character_id.as_deref(), fallback)
+    let mut snapshot = resolve_character_snapshot(&tx, character_id.as_deref(), fallback)
         .map_err(|e| probe.error(Reason::SnapshotResolveCharacter, e))?;
+    // A pre-snapshot chat must not adopt a library card's newly introduced story mode.
+    if let Some(value) = snapshot.as_mut() { value["mode"] = json!(CardMode::Character); }
     if let Some(value) = &snapshot {
         tx.execute("UPDATE conversations SET character_snapshot = ?1 WHERE id = ?2",
             params![value.to_string(), chat_id]).map_err(|e| probe.error(Reason::SnapshotWrite, e.to_string()))?;
@@ -339,8 +344,9 @@ pub async fn create_chat(
             snapshot["greeting"] = json!(greeting);
         }
     }
+    let is_story = character_snapshot.as_ref().is_some_and(|snapshot| snapshot["mode"] == "story");
     let character_snapshot_json = character_snapshot.map(|snapshot| snapshot.to_string());
-    let role_snapshot = if mode == "singleplayer" {
+    let role_snapshot = if mode == "singleplayer" && !is_story {
         resolve_role_snapshot(&tx, character_id.as_deref(), role_selection.as_ref())?
     } else {
         None
@@ -595,6 +601,7 @@ mod tests {
              CREATE TABLE conversations (id TEXT PRIMARY KEY, character_id TEXT, mode TEXT, character_snapshot TEXT);"
         ).unwrap();
         let original = serde_json::json!({
+            "mode": "story",
             "id": "card", "name": "Original", "prompt": "Original prompt", "greeting": "Hello",
             "initials": "O", "color": "blue", "avatarUrl": null, "world_info_ids": ["world"],
             "future_field": "preserved"
@@ -612,6 +619,7 @@ mod tests {
         assert_eq!(saved["id"], "card");
         assert_eq!(saved["color"], "blue");
         assert_eq!(saved["future_field"], "preserved");
+        assert_eq!(saved["mode"], "story");
         assert_eq!(saved["world_info_ids"], serde_json::json!(["new-world"]));
         let read = |id| conn.query_row("SELECT character_snapshot FROM conversations WHERE id = ?1",
             params![id], |row| row.get::<_, String>(0)).unwrap();
@@ -636,14 +644,14 @@ mod tests {
             "CREATE TABLE characters (
                 id TEXT PRIMARY KEY, name TEXT, desc TEXT, greeting TEXT,
                 initials TEXT, color TEXT, world_info_ids TEXT, avatar BLOB,
-                personality TEXT, scenario TEXT, mes_example TEXT
+                personality TEXT, scenario TEXT, mes_example TEXT, mode TEXT NOT NULL DEFAULT 'character'
              );
              CREATE TABLE conversations (
                 id TEXT PRIMARY KEY, character_id TEXT, mode TEXT, character_snapshot TEXT
              );
              INSERT INTO characters VALUES (
                 'card', 'Original', 'Original prompt', 'Hello', 'OR', 'blue',
-                '[\"world\"]', NULL, '', '', ''
+                '[\"world\"]', NULL, '', '', '', 'character'
              );
              INSERT INTO conversations VALUES ('old-chat', 'card', 'singleplayer', NULL);"
         ).unwrap();
@@ -656,6 +664,7 @@ mod tests {
         let snapshot: serde_json::Value = serde_json::from_str(&original).unwrap();
         assert_eq!(snapshot["prompt"], "Original prompt");
         assert_eq!(snapshot["world_info_ids"], serde_json::json!(["world"]));
+        assert_eq!(snapshot["mode"], "character");
         conn.execute("UPDATE characters SET name = 'Edited', desc = 'Edited prompt'", []).unwrap();
         let fresh = super::resolve_character_snapshot(&conn, Some("card"), None).unwrap().unwrap();
         assert_eq!(fresh["prompt"], "Edited prompt");
@@ -673,16 +682,20 @@ mod tests {
             "CREATE TABLE characters (
                 id TEXT PRIMARY KEY, name TEXT, desc TEXT, greeting TEXT,
                 initials TEXT, color TEXT, world_info_ids TEXT, avatar BLOB,
-                personality TEXT, scenario TEXT, mes_example TEXT
+                personality TEXT, scenario TEXT, mes_example TEXT, mode TEXT NOT NULL DEFAULT 'character'
              );
              INSERT INTO characters VALUES (
                 'card', 'Original', 'Description', '', '', '', NULL, NULL,
-                'Personality', 'Scenario', 'Example'
+                'Personality', 'Scenario', 'Example', 'character'
              );"
         ).unwrap();
         let fallback = serde_json::json!({"id": "1", "name": "Bundled", "prompt": "Bundled prompt"});
         assert_eq!(super::resolve_character_snapshot(&conn, Some("1"), Some(fallback.clone())).unwrap(), Some(fallback.clone()));
         let custom = super::resolve_character_snapshot(&conn, Some("card"), Some(fallback)).unwrap().unwrap();
+        assert_eq!(custom["mode"], "character");
+        conn.execute("UPDATE characters SET mode = 'story' WHERE id = 'card'", []).unwrap();
+        let story = super::resolve_character_snapshot(&conn, Some("card"), None).unwrap().unwrap();
+        assert_eq!(story["mode"], "story");
         assert_eq!(custom["prompt"], crate::import::combine_legacy_prompt("Description", "Personality", "Scenario", "Example"));
         assert_eq!(custom["world_info_ids"], serde_json::json!([]));
     }

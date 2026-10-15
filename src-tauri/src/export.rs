@@ -5,7 +5,7 @@ use base64::{engine::general_purpose, Engine as _};
 use image::ImageFormat;
 use std::io::Cursor;
 use serde_json::{json, Value};
-use crate::database::characters::{parse_bundled_roles, StoredBundledRoleSnapshot};
+use crate::database::characters::{parse_bundled_roles, CardMode, StoredBundledRoleSnapshot};
 use crate::database::world_info::WorldInfoEntry;
 
 const RYOKAN_EXTENSION_KEY: &str = "ryokan";
@@ -112,6 +112,7 @@ pub(crate) fn build_card_json(
     alternate_greetings: Vec<String>, mes_example: &str, creator_notes: &str,
     tags: Vec<String>, role_policy: &str, bundled_roles: &[StoredBundledRoleSnapshot],
     character_book: Option<Value>,
+    mode: CardMode,
 ) -> Value {
     let mut card = json!({
         "spec": "chara_card_v3",
@@ -135,6 +136,7 @@ pub(crate) fn build_card_json(
             "extensions": {
                 (RYOKAN_EXTENSION_KEY): {
                     "version": 1,
+                    "mode": mode,
                     "role_policy": role_policy,
                     "bundled_roles": portable_roles(bundled_roles)
                 }
@@ -248,9 +250,11 @@ pub async fn export_character_card(app: AppHandle, id: String) -> Result<Vec<u8>
         }
     }
     let character_book = build_character_book(&name, books);
+    let mode = conn.query_row("SELECT mode FROM characters WHERE id = ?1", params![id],
+        |row| row.get::<_, String>(0)).map_err(|e| e.to_string())?;
     let card_json = build_card_json(
         &name, &desc, &personality, &scenario, &greeting, alternate_greetings,
-        &mes_example, &creator_notes, tags, &role_policy, &bundled_roles, character_book,
+        &mes_example, &creator_notes, tags, &role_policy, &bundled_roles, character_book, CardMode::from_stored(&mode),
     );
 
     let json_str = serde_json::to_string(&card_json)

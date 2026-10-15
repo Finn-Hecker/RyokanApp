@@ -2,7 +2,7 @@ use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::command;
-use crate::database::characters::StoredBundledRoleSnapshot;
+use crate::database::characters::{CardMode, StoredBundledRoleSnapshot};
 use std::collections::HashSet;
 use crate::database::world_info::WorldInfoEntry;
 
@@ -11,6 +11,8 @@ const RYOKAN_EXTENSION_KEY: &str = "ryokan";
 /// Extracted metadata from AI character cards, mapping to community formats (e.g., V2/V3).
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct CharacterMetadata {
+    #[serde(default)]
+    pub mode: CardMode,
     pub name: Option<String>,
     pub description: Option<String>,
     pub personality: Option<String>,
@@ -148,6 +150,11 @@ fn map_json_to_metadata(json: &Value) -> Option<CharacterMetadata> {
         || json.get("spec_version").and_then(Value::as_str) == Some("3.0");
 
     if let Some(extension) = root.get("extensions").and_then(|value| value.get(RYOKAN_EXTENSION_KEY)) {
+        // Community V3 cards remain characters; only explicit Ryokan metadata opts into stories.
+        if extension.get("version").and_then(Value::as_u64) == Some(1) {
+            meta.mode = extension.get("mode").and_then(Value::as_str)
+                .map(CardMode::from_stored).unwrap_or_default();
+        }
         if let Ok(mut role_data) = serde_json::from_value::<RyokanRoleExtension>(extension.clone()) {
             if valid_role_extension(&role_data) {
                 for role in &mut role_data.bundled_roles {
@@ -339,12 +346,35 @@ mod tests {
     fn open_character_without_roles_round_trips() {
         let card = build_card_json(
             "Rin", "Free prompt", "", "", "Hello", vec![], "", "", vec![],
-            "open", &[], None,
+            "open", &[], None, CardMode::Character,
         );
         let meta = map_json_to_metadata(&card).unwrap();
         assert!(meta.v3_spec);
         assert_eq!(meta.role_policy, "open");
         assert!(meta.bundled_roles.is_empty());
+        assert_eq!(meta.mode, CardMode::Character);
+    }
+
+    #[test]
+    fn ryokan_story_mode_round_trips_without_reclassifying_community_cards() {
+        let card = build_card_json(
+            "Road trip", "Lyvee and Jona", "", "", "On the road", vec![], "", "", vec![],
+            "open", &[], None, CardMode::Story,
+        );
+        let meta = map_json_to_metadata(&card).unwrap();
+        assert_eq!(meta.mode, CardMode::Story);
+        assert_eq!(meta.name.as_deref(), Some("Road trip"));
+        let mut community = card;
+        community["data"].as_object_mut().unwrap().remove("extensions");
+        assert_eq!(map_json_to_metadata(&community).unwrap().mode, CardMode::Character);
+        for extension in [
+            serde_json::json!({"mode": "story"}),
+            serde_json::json!({"version": 99, "mode": "story"}),
+            serde_json::json!({"version": 1, "mode": "unknown"}),
+        ] {
+            community["data"]["extensions"] = serde_json::json!({"ryokan": extension});
+            assert_eq!(map_json_to_metadata(&community).unwrap().mode, CardMode::Character);
+        }
     }
 
     #[test]
@@ -365,7 +395,7 @@ mod tests {
         ];
         let card = build_card_json(
             "Rin", "Free prompt", "", "", "Hello", vec![], "", "", vec![],
-            "open", &roles, None,
+            "open", &roles, None, CardMode::Character,
         );
         let meta = map_json_to_metadata(&card).unwrap();
         assert_eq!(meta.role_policy, "open");
@@ -388,7 +418,7 @@ mod tests {
         }];
         let card = build_card_json(
             "Rin", "Free prompt", "", "", "Hello", vec![], "", "", vec![],
-            "restricted", &roles, None,
+            "restricted", &roles, None, CardMode::Character,
         );
         let meta = map_json_to_metadata(&card).unwrap();
         assert_eq!(meta.role_policy, "restricted");
@@ -452,7 +482,7 @@ mod tests {
         )]);
         let exported_card = build_card_json(
             "Rin", "Free prompt", "", "", "Hello", vec![], "", "", vec![],
-            "open", &[], exported_book,
+            "open", &[], exported_book, CardMode::Character,
         );
         let second_import = map_json_to_metadata(&exported_card).unwrap();
         let round_tripped = second_import.world_info.expect("round-tripped lorebook imported");

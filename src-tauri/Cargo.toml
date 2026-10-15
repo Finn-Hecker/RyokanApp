@@ -1,7 +1,7 @@
 [package]
 name = "ryokan"
 version = "0.7.0"
-description = "An immersive, local-first AI Roleplay Engine."
+description = "Interactive AI storytelling app for Windows & Android with browser multiplayer, and local or API models."
 authors = ["Finn-Hecker"]
 edition = "2021"
 rust-version = "1.90"

@@ -2,6 +2,22 @@ use super::*;
 use serde_json::json;
 
 #[test]
+fn card_modes_survive_chat_export_import_and_legacy_snapshots_default_to_character() {
+    let mut conn = database();
+    for mode in [None, Some("character"), Some("story")] {
+        let mut value = fixture();
+        if let Some(mode) = mode { value["conversation"]["character"]["mode"] = json!(mode); }
+        let file: ChatFile = serde_json::from_value(value).unwrap();
+        assert_eq!(file.conversation.character.as_ref().unwrap().mode,
+            if mode == Some("story") { CardMode::Story } else { CardMode::Character });
+        let imported = import_row(&mut conn, file).unwrap();
+        let exported = export_row(&conn, &imported).unwrap();
+        assert_eq!(exported.conversation.character.unwrap().mode,
+            if mode == Some("story") { CardMode::Story } else { CardMode::Character });
+    }
+}
+
+#[test]
 fn export_diagnostics_identify_first_validation_predicate_without_changing_errors() {
     type Mutation = fn(&mut Value);
     let cases: &[(Reason, Mutation)] = &[

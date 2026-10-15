@@ -1,4 +1,5 @@
 import type { TextRule } from '$lib/ai/prompt/textRules';
+import type { CardMode } from '$lib/chat/cardMode';
 import { invoke } from '@tauri-apps/api/core';
 import { recordModelUse } from '$lib/ai/connections/modelPickerData';
 import { traceDecision, diagnosticOperation, diagnosticConnection } from '$lib/diagnostics/diagnosticDecisions';
@@ -38,6 +39,7 @@ export interface GenerationOptions {
     diagnosticLocalInput?: number;
     diagnosticReserve?: number;
     character: {
+        mode?: CardMode;
         name?: string;
         prompt?: string;
         world_info_ids?: string[];

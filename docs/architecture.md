@@ -48,6 +48,23 @@ Summary generation must finish before chat generation. Keep the current request
 IDs, listener cleanup, stop semantics and settings snapshots when changing this
 flow. Local token estimates and provider-reported usage have distinct meanings.
 
+## Card types and story prompts
+
+Cards and chat-owned card snapshots carry an optional `mode` (`story` or
+`character`), independently of the existing solo/multiplayer `play_mode`.
+Missing modes preserve legacy character roleplay. New editor cards and the two
+bundled solo stories default to `story`; community character-card imports and
+multiplayer remain `character`. Explicit Ryokan story metadata survives card
+PNG and conversation JSON export/import. SQLite adds a card `mode` column with
+the legacy `character` default.
+
+Story prompts omit player personas and use narrator instructions, including
+user-controlled characters and author direction. Story summaries distinguish
+narrated events, future plans, corrections and character control. Custom system
+prompts retain their existing precedence over either default prompt. Original
+bundled solo cards remain available only as fallbacks for legacy chats without
+persisted snapshots; existing snapshots are never rewritten to the new stories.
+
 ## Connections and model/context metadata
 
 `SettingsPage.svelte` / `ApiSection.svelte` use `apiConnections.ts` and

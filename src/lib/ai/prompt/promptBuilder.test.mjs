@@ -41,6 +41,50 @@ test('Role context follows the Character card and resolves player placeholders',
   assert.match(prompt, /Alex is Klea's coworker\./);
 });
 
+test('character mode resolves the selected player name in cards and World Info', () => {
+  for (const mode of [undefined, 'character']) {
+    const messages = buildPromptMessages({
+      character: { name: 'Rin', mode, prompt: '{{char}} travels with {{USER}}.', world_info_ids: ['book'] },
+      role: { name: 'Aya', prompt: '{{user}} knows {{char}}.' },
+      recentMessages: [{ role: 'assistant', content: 'Hello' }], userPrompt: 'Continue',
+      worldInfos: [{ id: 'book', entries: [{ keys: [], enabled: true, position: 'before', content: '{{user}} owns the map.' }] }],
+    });
+    assert.ok(messages[0].content.startsWith('You are Rin.'));
+    assert.match(messages[0].content, /Rin travels with Aya\./);
+    assert.match(messages[0].content, /Aya knows Rin\./);
+    assert.match(messages.at(-1).content, /Aya owns the map\./);
+    assert.equal(messages[1].content, '[Start Roleplay]');
+  }
+});
+
+test('story mode narrates the ensemble without injecting a player persona or treating its title as a person', () => {
+  const character = { name: 'Towards the Sea', mode: 'story', prompt: 'Lyvee and Jona travel together.', world_info_ids: ['book'] };
+  const messages = buildPromptMessages({
+    character, role: { name: 'Ghost', prompt: 'SECRET_PERSONA lives in the car.' },
+    recentMessages: [{ role: 'assistant', content: 'Lyvee unfolds the map.' }],
+    userPrompt: 'I play Jona. Skip ahead to the ferry.',
+    worldInfos: [{ id: 'book', entries: [{ keys: [], enabled: true, position: 'before', content: 'The ferry closes at dusk.' }] }],
+  });
+  assert.match(messages[0].content, /narrator of the interactive story "Towards the Sea"/);
+  assert.match(messages[0].content, /Lyvee and Jona travel together/);
+  assert.match(messages[0].content, /until they explicitly hand control back/);
+  assert.match(messages[0].content, /future author plans and rejected ideas/);
+  assert.doesNotMatch(messages[0].content, /You are Towards the Sea|Player Role|Ghost|SECRET_PERSONA|Stay fully in character/);
+  assert.equal(messages[1].content, '[Start Story]');
+  assert.match(messages.at(-1).content, /Story context for the next reply/);
+  assert.doesNotMatch(messages.at(-1).content, /Roleplay context/);
+  assert.equal(character.name, 'Towards the Sea');
+});
+
+test('custom system prompts keep their existing precedence in both modes while story personas stay excluded', () => {
+  for (const mode of ['story', 'character']) {
+    const prompt = buildSystemPrompt({ charName: 'Card', mode, prompt: 'Card facts', systemPrompt: 'Custom instructions', role: { name: 'Aya', prompt: 'Persona facts' } });
+    assert.ok(prompt.startsWith('Custom instructions\n\nCard facts'));
+    assert.equal(prompt.includes('Persona facts'), mode === 'character');
+    assert.doesNotMatch(prompt, /narrator of the interactive story|Stay fully in character/);
+  }
+});
+
 test('production prompt path injects exactly the matching World Info entries once', () => {
   const worldInfos = [
     {

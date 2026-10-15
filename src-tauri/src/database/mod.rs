@@ -119,6 +119,18 @@ fn migrate_roles_prompt(conn: &Connection) -> rusqlite::Result<usize> {
     )
 }
 
+fn migrate_card_modes(conn: &Connection) -> rusqlite::Result<usize> {
+    let columns = conn.prepare("PRAGMA table_info(characters)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if columns.iter().any(|column| column == "mode") { return Ok(0); }
+    conn.execute_batch(
+        "ALTER TABLE characters ADD COLUMN mode TEXT NOT NULL DEFAULT 'character'
+            CHECK (mode IN ('story', 'character'));"
+    )?;
+    Ok(1)
+}
+
 fn migrate_character_roles(conn: &Connection) -> rusqlite::Result<usize> {
     let columns = conn
         .prepare("PRAGMA table_info(characters)")?
@@ -384,6 +396,8 @@ pub fn init_db(app: &AppHandle) -> Result<(), String> {
     // the reusable global Role library. Defaults preserve every existing Card.
     migrate_character_roles(&conn)
         .map_err(|e| format!("Failed to migrate Character Role snapshots: {}", e))?;
+    migrate_card_modes(&conn)
+        .map_err(|e| format!("Failed to migrate card modes: {}", e))?;
     chats::backfill_character_snapshots(&conn)?;
 
     // "both" is no longer a supported mode. Normalize it, NULLs, and any
@@ -418,6 +432,21 @@ mod tests {
         migrate_message_usage,
     };
     use rusqlite::{params, Connection};
+
+    #[test]
+    fn card_mode_migration_preserves_legacy_characters_and_story_values() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE characters (id TEXT PRIMARY KEY, name TEXT);
+            INSERT INTO characters VALUES ('old', 'Old character');").unwrap();
+        assert_eq!(super::migrate_card_modes(&conn).unwrap(), 1);
+        let mode: String = conn.query_row("SELECT mode FROM characters WHERE id = 'old'", [], |row| row.get(0)).unwrap();
+        assert_eq!(mode, "character");
+        conn.execute("UPDATE characters SET mode = 'story' WHERE id = 'old'", []).unwrap();
+        assert_eq!(super::migrate_card_modes(&conn).unwrap(), 0);
+        let mode: String = conn.query_row("SELECT mode FROM characters WHERE id = 'old'", [], |row| row.get(0)).unwrap();
+        assert_eq!(mode, "story");
+        assert!(conn.execute("UPDATE characters SET mode = 'unknown'", []).is_err());
+    }
 
     #[test]
     fn message_usage_migration_preserves_rows_and_is_idempotent() {

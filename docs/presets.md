@@ -12,8 +12,9 @@ There is no SillyTavern import, compatibility layer or passthrough metadata.
   and frequencyPenalty. Each has an explicit numeric `value` and boolean `enabled`.
   Disabled settings retain their values, but are not sent through typed controls.
 - `prompt`: plain `system` and `postHistory` instructions. Empty system text uses
-  the existing roleplay instructions. Character, player role, memory and world
-  context remain application-owned. Post-history text is a labelled instruction at
+  story narration or character instructions according to the card type. Card,
+  memory and world context remain application-owned; player roles apply only to
+  character cards. Post-history text is a labelled instruction at
   the end of the conversation on every provider, appended to the final user turn
   or placed in a new user turn after an assistant. It is never hoisted into native
   Anthropic/Gemini system fields. Normal system prompt behavior is unchanged.
@@ -95,7 +96,7 @@ settings become the baseline on the next activation.
 
 Normal chat and multiplayer use the resulting profile snapshots. Summary generation
 continues to use its selected profile's generation settings and its own summary prompt
-and output cap; roleplay instructions must not change the summary task. Prompt changes
+and output cap; story or character instructions must not change the summary task. Prompt changes
 participate in the existing generation fingerprint and token budget measurement.
 
 ## Native JSON boundary

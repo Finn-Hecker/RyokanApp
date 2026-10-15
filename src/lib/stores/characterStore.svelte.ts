@@ -2,6 +2,7 @@ import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { CHARACTERS as STATIC_CHARACTERS } from '$lib/data/characters';
+import type { CardMode } from '$lib/chat/cardMode';
 
 export type PlayMode = 'solo' | 'multiplayer';
 export type RolePolicy = 'open' | 'restricted';
@@ -25,6 +26,7 @@ export interface PortableBundledRoleSnapshot {
 }
 
 export interface Character {
+    mode?: CardMode;
     id: string | number;
     name: string;
     /** Short, card-friendly summary. Static characters localize this separately
@@ -49,7 +51,7 @@ export interface Character {
     bundled_roles: BundledRoleSnapshot[];
 }
 
-export type CharacterInput = Pick<Character, 'name' | 'prompt' | 'greeting' | 'initials' | 'color' | 'play_mode' | 'alternate_greetings' | 'world_info_ids'> & {
+export type CharacterInput = Pick<Character, 'name' | 'prompt' | 'greeting' | 'initials' | 'color' | 'play_mode' | 'mode' | 'alternate_greetings' | 'world_info_ids'> & {
     avatar?: string | null;
     role_policy?: RolePolicy;
     bundled_roles?: PortableBundledRoleSnapshot[];
@@ -141,6 +143,7 @@ export async function loadCharacters() {
             ...c,
             isCustom: true,
             play_mode: normalizePlayMode(c.play_mode),
+            mode: c.play_mode !== 'multiplayer' && c.mode === 'story' ? 'story' as const : 'character' as const,
             alternate_greetings: typeof c.alternate_greetings === 'string'
                 ? JSON.parse(c.alternate_greetings)
                 : (c.alternate_greetings ?? []),
@@ -247,6 +250,7 @@ export async function createCharacter(charData: CharacterInput) {
         initials: charData.initials,
         color: charData.color,
         play_mode: charData.play_mode,
+        mode: charData.play_mode === 'multiplayer' ? 'character' : charData.mode ?? 'character',
         isCustom: true,
         avatarUrl: charData.avatar || undefined,
         world_info_ids: charData.world_info_ids ?? [],
@@ -275,6 +279,7 @@ export async function createCharacter(charData: CharacterInput) {
                 initials: charData.initials,
                 color: charData.color,
                 play_mode: charData.play_mode,
+                mode: charData.play_mode === 'multiplayer' ? 'character' : charData.mode,
                 world_info_ids: charData.world_info_ids ?? [],
                 role_policy: charData.role_policy ?? 'open',
                 bundled_roles: charData.bundled_roles ?? [],
@@ -313,6 +318,7 @@ export async function updateCharacter(id: string, charData: CharacterInput) {
                 initials: charData.initials,
                 color: charData.color,
                 play_mode: charData.play_mode,
+                mode: charData.play_mode === 'multiplayer' ? 'character' : charData.mode,
                 world_info_ids: charData.world_info_ids ?? [],
                 role_policy: charData.role_policy,
             }
@@ -328,7 +334,10 @@ export async function updateCharacter(id: string, charData: CharacterInput) {
             if (character) character.thumbnailUrl = undefined;
         }
         if (character) {
-            Object.assign(character, displayData, { role_policy: charData.role_policy ?? character.role_policy, isCustom: true });
+            Object.assign(character, displayData, {
+                mode: charData.play_mode === 'multiplayer' ? 'character' : charData.mode ?? character.mode ?? 'character',
+                role_policy: charData.role_policy ?? character.role_policy, isCustom: true,
+            });
             if (charData.avatar && !charData.avatar.startsWith('blob:')) character.avatarUrl = charData.avatar;
         }
 

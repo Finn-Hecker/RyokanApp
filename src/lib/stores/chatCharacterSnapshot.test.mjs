@@ -19,6 +19,7 @@ function store(overrides = {}) {
     $state: value => value, getLocale: () => 'en', reportDiagnostic() {},
     appState: { activeCharacter: libraryCard }, characterState: { allCharacters: [libraryCard] },
     loadCharacters: async () => {}, selectInitialGreeting: character => character.greeting,
+    LEGACY_SOLO_CHARACTERS: [{ id: 1, mode: 'character', name: 'Lyvee', prompt: 'Legacy roleplay prompt', greeting: 'Legacy greeting' }],
     decodeMessage: row => row,
     invoke: async (command, params) => {
       calls.push({ command, params });
@@ -39,7 +40,7 @@ function store(overrides = {}) {
         chats.push({ ...chats[0], id });
         return id;
       }
-      if (command === 'get_chat_character_snapshot') return structuredClone(snapshots.get(params.chatId));
+      if (command === 'get_chat_character_snapshot') return structuredClone(snapshots.get(params.chatId) ?? params.fallback);
       if (command === 'get_conversation') return structuredClone(chats.find(chat => chat.id === params.chatId));
       if (command === 'get_conversations_page') return chats;
       if (command === 'get_summary_meta') return { summary: null, last_id: null };
@@ -68,6 +69,37 @@ test('reopened chat uses its original character for info and generation after li
   const messages = buildPromptMessages({ character, recentMessages: [], worldInfos: [] });
   assert.match(messages[0].content, /Original prompt/);
   assert.doesNotMatch(messages[0].content, /Edited prompt/);
+});
+
+test('story snapshots preserve their mode through reopening and branching and never send a selected persona', async () => {
+  const c = store();
+  c.libraryCard.mode = 'story';
+  await c.context.startNewChat(c.libraryCard, { source: 'global', id: 'default-role' });
+  const created = c.calls.find(call => call.command === 'create_chat').params;
+  assert.equal(created.roleSelection, null);
+  assert.equal(created.characterSnapshot.mode, 'story');
+  c.libraryCard.mode = 'character';
+  await c.context.openHistoryChat('chat-0');
+  assert.equal(c.context.appState.activeCharacter.mode, 'story');
+  const branch = await c.context.cloneChatFromMessage('message');
+  await c.context.loadMessages(branch);
+  assert.equal(c.context.appState.activeCharacter.mode, 'story');
+});
+
+test('legacy cards keep character behavior and pre-snapshot bundled chats use the original card', async () => {
+  const c = store();
+  await c.context.startNewChat(c.libraryCard, { source: 'global', id: 'role' });
+  const created = c.calls.find(call => call.command === 'create_chat').params;
+  assert.equal(created.characterSnapshot.mode, 'character');
+  assert.equal(created.roleSelection.id, 'role');
+  c.libraryCard.id = 1;
+  c.libraryCard.mode = 'story';
+  c.libraryCard.name = 'New story title';
+  c.state.conversations.push({ id: 'legacy', character_id: '1', mode: 'singleplayer' });
+  await c.context.openHistoryChat('legacy');
+  assert.equal(c.context.appState.activeCharacter.mode, 'character');
+  assert.equal(c.context.appState.activeCharacter.name, 'Lyvee');
+  assert.equal(c.context.appState.activeCharacter.prompt, 'Legacy roleplay prompt');
 });
 
 test('opening a branch resolves the copied snapshot instead of the current lobby card', async () => {

@@ -4,6 +4,7 @@ import { loadWorldInfos } from './worldInfoStore.svelte';
 import { selectInitialGreeting } from '$lib/chat/characterGreeting';
 import { appState } from './appState.svelte';
 import { characterState, loadCharacters, type Character } from './characterStore.svelte';
+import { LEGACY_SOLO_CHARACTERS } from '$lib/data/characters';
 import { getLocale } from '$lib/paraglide/runtime';
 import { bumpConversationRevision, isMessageCoveredBySummary, forgetPromptUsageAnchor } from '$lib/ai/summary/rollingSummaryCore';
 import type { TokenUsage } from '$lib/ai/tokens/tokenUsage';
@@ -35,14 +36,23 @@ export interface ChatRoleSnapshot {
 }
 
 export type ChatCharacterSnapshot = Pick<Character,
-    'id' | 'name' | 'prompt' | 'greeting' | 'initials' | 'color' | 'avatarUrl' | 'world_info_ids'>;
+    'id' | 'name' | 'prompt' | 'greeting' | 'initials' | 'color' | 'avatarUrl' | 'world_info_ids' | 'mode'>;
 
 function characterSnapshot(character: Character): ChatCharacterSnapshot {
     return {
         id: String(character.id), name: character.name, prompt: character.prompt,
         greeting: character.greeting, initials: character.initials, color: character.color,
+        mode: character.mode ?? 'character',
         avatarUrl: character.avatarUrl, world_info_ids: [...(character.world_info_ids ?? [])],
     };
+}
+
+function historyCharacterSnapshot(character: Character): ChatCharacterSnapshot {
+    if (!character.isCustom && character.mode === 'story' && ['1', '2'].includes(String(character.id))) {
+        const legacy = LEGACY_SOLO_CHARACTERS.find(card => String(card.id) === String(character.id));
+        if (legacy) return characterSnapshot({ ...character, ...legacy });
+    }
+    return characterSnapshot(character);
 }
 
 /** Backfill legacy bundled cards through the existing snapshot path. */
@@ -53,7 +63,7 @@ export async function exportConversationJson(chat: Conversation): Promise<string
     if (chat.mode !== 'singleplayer') throw new Error('Only solo chats can be exported');
     if (characterState.allCharacters.length === 0) await loadCharacters();
     const character = characterState.allCharacters.find(item => String(item.id) === chat.character_id);
-    const fallback = character ? characterSnapshot(character) : null;
+    const fallback = character ? historyCharacterSnapshot(character) : null;
     reportChatExportStage(stage, 'completed');
     stage = 'snapshot_ipc';
     reportChatExportStage(stage, 'entered');
@@ -304,7 +314,7 @@ export async function startNewChat(character: any, roleSelection: RoleSelection 
             characterName: character.name,
             initialMessage: selectedGreeting,
             mode: 'singleplayer',
-            roleSelection,
+            roleSelection: character.mode === 'story' ? null : roleSelection,
             characterSnapshot: characterSnapshot(character),
         });
         invalidateConversationLibrary('singleplayer');
@@ -388,7 +398,7 @@ export async function loadMessages(chatId: string) {
                 conversation?.mode === 'multiplayer' ? Promise.resolve(libraryCharacter ?? null)
                     : invoke<ChatCharacterSnapshot | null>('get_chat_character_snapshot', {
                     chatId,
-                    fallback: libraryCharacter ? characterSnapshot(libraryCharacter) : null,
+                    fallback: libraryCharacter ? historyCharacterSnapshot(libraryCharacter) : null,
                 }),
                 invoke<{ summary: string | null; last_id: string | null }>('get_summary_meta', { chatId })
                     .catch(() => ({ summary: null, last_id: null })),

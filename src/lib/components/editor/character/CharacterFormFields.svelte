@@ -3,10 +3,11 @@
   import AltGreetings from './AltGreetings.svelte';
   import WorldInfoPicker from './WorldInfoPicker.svelte';
   import TokenBadge from '$lib/components/TokenBadge.svelte';
-  import { countCoreCharacterTokens } from '$lib/ai/tokens/tokenCount';
+  import type { CardMode } from '$lib/chat/cardMode';
 
   let {
     name = $bindable(''),
+    mode = 'character',
     prompt = $bindable(''),
     greeting = $bindable(''),
     alternate_greetings = $bindable([]),
@@ -17,6 +18,7 @@
     onAltGreetingsRemove
   }: {
     name?: string;
+    mode?: CardMode;
     prompt?: string;
     greeting?: string;
     alternate_greetings?: string[];
@@ -27,23 +29,13 @@
     onAltGreetingsRemove?: (index: number) => void;
   } = $props();
 
-  let totalTokens = $derived(
-    countCoreCharacterTokens({ name, prompt, greeting })
-  );
 </script>
 
 <div class="space-y-4">
 
-  <div class="total-tokens-bar">
-    <span class="total-tokens-label">Gesamt-Kontext</span>
-    <TokenBadge
-      count={totalTokens}
-      />
-  </div>
-
   <div class="field-wrap">
     <div class="field-label-row">
-      <label for="character-name" class="field-label">{m.create_page_label_name()}</label>
+      <label for="character-name" class="field-label">{mode === 'story' ? m.create_page_label_story_title() : m.create_page_label_name()}</label>
       <TokenBadge text={name} />
     </div>
     <input
@@ -130,21 +122,6 @@
     justify-content: space-between;
     gap: 8px;
     padding: 10px 14px 0;
-  }
-
-  .total-tokens-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 2px 4px;
-  }
-
-  .total-tokens-label {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.14em;
-    color: rgba(var(--accent-rgb, 167 139 250) / 0.6);
   }
 
   .field-input {

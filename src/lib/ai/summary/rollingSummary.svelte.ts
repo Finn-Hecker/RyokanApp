@@ -1,4 +1,5 @@
 import { buildPromptReferenceContext } from '$lib/ai/prompt/chatPromptBuilder';
+import type { CardMode } from '$lib/chat/cardMode';
 import { traceDecision, diagnosticOperation, diagnosticScope, diagnosticConnection, type DiagnosticMeasurement, type DiagnosticDecision } from '$lib/diagnostics/diagnosticDecisions';
 import type { TokenUsage } from '$lib/ai/tokens/tokenUsage';
 import { reportDiagnostic } from '$lib/diagnostics/diagnostics';
@@ -54,6 +55,7 @@ export interface PreparedGenerationContext {
 }
 
 interface SummaryOperation {
+    mode: CardMode;
     diagnosticId: number;
     chatId: string;
     generationId: string | null;
@@ -392,6 +394,7 @@ function buildSummaryPrompt(
     messagesToCompress: { role: string; content: string }[],
     maximumSummaryTokens = DEFAULT_SUMMARY_TOKENS,
     referenceContext = '',
+    mode: CardMode = 'character',
 ): string {
     const transcript = messagesToCompress
         .map((message) => `${message.role === 'user' ? 'User' : 'Assistant'}: ${message.content}`)
@@ -401,7 +404,7 @@ function buildSummaryPrompt(
           `Write one complete replacement summary containing the still-relevant conversation developments and the new events.`
         : `Session excerpt to summarize:\n${transcript}`;
     const instruction =
-        `You are a compression engine for roleplay session logs. ` +
+        `You are a compression engine for ${mode === 'story' ? 'interactive story' : 'roleplay session'} logs. ` +
         `Merge the previous summary (if any) with the new excerpt into one complete replacement summary. ` +
         `Rules: ` +
         `(1) Preserve still-relevant conversation-specific information from the previous summary, even when unchanged. Remove redundant static background from older summaries when the reference already supplies it. ` +
@@ -413,6 +416,7 @@ function buildSummaryPrompt(
         `Keep discoveries, changed facts and what participants learned even if related lore appears in the reference. ` +
         `World Info is conditional: retain names or activation cues needed to retrieve relevant lore, and conversation-specific facts needed if that lore is absent later. ` +
         `(4) Distinguish established facts from uncertainty, suspicion, plans, or inference; never convert uncertainty into fact. ` +
+        (mode === 'story' ? `Keep narrated events, open author plans for later, and rejected ideas or corrections clearly separate. Author direction alone is not evidence that an event has already happened. Apply explicit corrections, remove superseded events and cancelled plans, and retain brief rejection constraints only when needed to avoid reintroducing them. Preserve which characters the user has taken control of and any explicit handover back to the narrator; do not confuse the author with a character present in the scene. ` : '') +
         `(5) Drop filler, small talk, and details with no lasting story relevance. ` +
         `(6) Use short, dense sentences with clear attribution and no prose padding. ` +
         `(7) Hard limit: ${maximumSummaryTokens} tokens total. Cut the lowest-priority details before exceeding it. ` +
@@ -430,8 +434,9 @@ async function summaryRequestFits(
     model = '',
     diagnostic?: { operation: number; connection: number; stage: 'pressure' | 'request' },
     referenceContext = '',
+    mode: CardMode = 'character',
 ): Promise<boolean> {
-    const prompt = buildSummaryPrompt(previousSummary, messages, maximumSummaryTokens, referenceContext);
+    const prompt = buildSummaryPrompt(previousSummary, messages, maximumSummaryTokens, referenceContext, mode);
     const [messageTokens, additionalParameterTokens] = await Promise.all([
         countMessagesTokens([{ role: 'user', content: prompt }], model),
         countAdditionalParameterTokens(requestParameterConfig, model),
@@ -467,6 +472,7 @@ async function requestSummary(
         operation.apiSettings.model,
         { operation: operation.diagnosticId, connection: diagnosticConnection(operation.apiSettings), stage: 'request' },
         operation.referenceContext,
+        operation.mode,
     ))) {
         throw new ContextBudgetError('A summary input segment exceeds the configured context token limit.');
     }
@@ -510,6 +516,7 @@ async function requestSummary(
                         messagesToCompress,
                         maximumSummaryTokens,
                         operation.referenceContext,
+                        operation.mode,
                     ),
                 }],
                 temperature: apiSettings.temperature,
@@ -532,7 +539,7 @@ async function requestSummary(
         }
         traceDecision({ kind: 'usage', operation: operation.diagnosticId, request: diagnosticOperation(),
             connection: diagnosticConnection(apiSettings), purpose: 'summary',
-            local_input_tokens: await countMessagesTokens([{ role: 'user', content: buildSummaryPrompt(previousSummary, messagesToCompress, maximumSummaryTokens, operation.referenceContext) }], apiSettings.model)
+            local_input_tokens: await countMessagesTokens([{ role: 'user', content: buildSummaryPrompt(previousSummary, messagesToCompress, maximumSummaryTokens, operation.referenceContext, operation.mode) }], apiSettings.model)
                 + await countAdditionalParameterTokens(summaryRequestParameterConfig, apiSettings.model),
             input_tokens: usage?.inputTokens ?? null, cached_input_tokens: usage?.cachedInputTokens ?? null,
             output_tokens: usage?.outputTokens ?? null, reasoning_tokens: usage?.reasoningTokens ?? null,
@@ -586,7 +593,7 @@ async function largestFittingPrefix(
         const fits = await summaryRequestFits(previousSummary, [{
             ...message,
             content: message.content.slice(0, boundaries[mid]),
-        }], operation.requestParameterConfig, maximumSummaryTokens, operation.contextLimit, operation.apiSettings.model, undefined, operation.referenceContext);
+        }], operation.requestParameterConfig, maximumSummaryTokens, operation.contextLimit, operation.apiSettings.model, undefined, operation.referenceContext, operation.mode);
         if (fits) low = mid;
         else high = mid - 1;
     }
@@ -616,6 +623,7 @@ async function generateRollingSummary(
                 operation.apiSettings.model,
                 undefined,
                 operation.referenceContext,
+                operation.mode,
             )) {
                 batch.push(pending.shift()!);
                 continue;
@@ -692,7 +700,7 @@ async function performSummaryCheck(
                 operation.referenceContext += `\n\n[Post-history instruction]\n${options.apiSettings.postHistoryPrompt.trim()}`;
             }
             const overhead = await countMessagesTokens([{ role: 'user', content:
-                buildSummaryPrompt('x', [], operation.maximumSummaryTokens, operation.referenceContext) }], operation.apiSettings.model)
+                buildSummaryPrompt('x', [], operation.maximumSummaryTokens, operation.referenceContext, operation.mode) }], operation.apiSettings.model)
                 + await countAdditionalParameterTokens(operation.requestParameterConfig, operation.apiSettings.model);
             operation.maximumSummaryTokens = boundedSummaryOutputCap(operation.maximumSummaryTokens, operation.contextLimit, overhead, operation.requestParameterConfig);
             if (operation.maximumSummaryTokens < 1) throw new ContextBudgetError('The summary instructions and configured thinking budget leave no room for a summary within the summary model context limit.');
@@ -749,6 +757,7 @@ async function performSummaryCheck(
             operation.apiSettings.model,
             trace ? { operation: operation.diagnosticId, connection: diagnosticConnection(operation.apiSettings), stage: 'pressure' } : undefined,
             operation.referenceContext,
+            operation.mode,
         );
         const summaryPressure = history.length - marker.startIndex > 1 && !(await summaryTailFits(meta, true));
 
@@ -1010,6 +1019,7 @@ export function checkAndSummarizeIfNeeded(
     const summaryConnection = snapshotSummaryApiConnection(options.apiSettings);
     const maximumSummaryTokens = adaptiveSummaryOutputCap(resolvedContextStrategy(options.apiSettings));
     const operation: SummaryOperation = {
+        mode: options.character?.mode === 'story' ? 'story' : 'character',
         diagnosticId: diagnosticOperation(),
         chatId,
         generationId: null,

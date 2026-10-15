@@ -9,8 +9,10 @@ import {
 } from '$lib/stores/characterStore.svelte';
 import type { PlayMode, PortableBundledRoleSnapshot, RolePolicy } from '$lib/stores/characterStore.svelte';
 import type { WorldInfoFormData } from '$lib/components/editor/worldinfo/worldInfoLogic';
+import type { CardMode } from '$lib/chat/cardMode';
 
 export interface CharFormData {
+  mode?: CardMode;
   name: string;
   prompt: string;
   greeting: string;
@@ -41,6 +43,7 @@ export async function saveCharacter(
     greeting: formData.greeting,
     alternate_greetings: validAltGreetings,
     play_mode: formData.play_mode,
+    mode: formData.play_mode === 'multiplayer' ? 'character' as const : formData.mode ?? (editChar ? editChar.mode ?? 'character' : 'story'),
     world_info_ids: formData.world_info_ids ?? [],
     initials: formData.name.substring(0, 1).toUpperCase(),
     color: editChar?.color ?? 'bg-indigo-600',
@@ -101,6 +104,7 @@ export async function importCharacterFromFile(
   const uint8Array = new Uint8Array(arrayBuffer);
 
   const metadata = await invoke<{
+    mode?: CardMode;
     name: string | null;
     prompt: string;
     first_mes: string | null;
@@ -117,6 +121,7 @@ export async function importCharacterFromFile(
   }
 
   result.prompt = metadata.prompt;
+  result.mode = metadata.mode === 'story' ? 'story' : 'character';
   if (metadata.first_mes) result.greeting = metadata.first_mes;
   if (metadata.alternate_greetings.length > 0) {
     result.alternate_greetings = metadata.alternate_greetings;
